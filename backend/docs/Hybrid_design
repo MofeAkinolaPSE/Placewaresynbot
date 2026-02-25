@@ -1,0 +1,575 @@
+Good. Below is the **complete backend specification + system prompt hybrid** for the developer AI agent.
+
+This merges:
+
+* Section A → Operational Event + Project Controls Core
+* Section B → ERP Integration + Logistics + Supplier + Placeware
+* Section C → Full CRM Layer
+
+This document is written so a backend AI agent (or human team) can implement without ambiguity.
+
+---
+
+# SYNBOT FULL ERP/CRM HYBRID IMPLEMENTATION SPEC
+
+---
+
+# OVERALL SYSTEM VISION
+
+Synbot is a **domain-agnostic, AI-native ERP/CRM hybrid intelligence layer** that:
+
+1. Ingests financial truth from accounting software (e.g., Sage)
+2. Captures operational truth in real time
+3. Reconciles both data streams
+4. Orchestrates cross-department workflows
+5. Coordinates human + AI agents
+6. Tracks logistics, suppliers, inventory, and staff activity
+7. Manages full customer lifecycle (CRM)
+8. Maintains an interconnected knowledge graph
+
+Architecture must be:
+
+* Modular
+* Event-driven
+* Schema-controlled
+* Role-based
+* Agent-integrated
+* Scalable across domains
+
+---
+
+# CORE ARCHITECTURAL PRINCIPLES
+
+1. Everything is an Event.
+2. No free text where structured enums can be used.
+3. All workflows must be state-driven.
+4. Every entity must be linkable in a knowledge graph.
+5. Role-based access enforced at API layer.
+6. Financial source of truth = Sage.
+7. Operational source of truth = Synbot.
+8. All events logged in immutable Event Ledger.
+
+---
+
+# SECTION A — TEMPLATE A
+
+## Operational Event System + Project Controls Core
+
+---
+
+## A1. Microservice: Operational Event Ingestion Service (OEIS)
+
+Purpose:
+Handle all real-time manual activity inputs across departments.
+
+Responsibilities:
+
+* Validate event payload against Schema Registry
+* Persist event in Event Ledger
+* Trigger workflow engine
+* Trigger agent notifications
+* Trigger metric recalculation
+* Update Knowledge Graph
+
+---
+
+## A2. Event Ledger (Immutable)
+
+Table: EventLedger
+
+Fields:
+
+* EventID
+* Department
+* EventType
+* LinkedProjectID
+* LinkedCustomerID (optional)
+* LinkedSupplierID (optional)
+* Payload (JSON structured)
+* Status (Draft / Submitted / Pending / Approved / Executed / Closed)
+* CreatedBy
+* Timestamp
+* ApprovalStatus
+* RiskScore
+* VersionHash
+
+All business activity must pass through this table.
+
+---
+
+## A3. Schema Registry (Dynamic Form Engine)
+
+Table: DepartmentSchemas
+
+Hierarchy:
+Department
+→ EventType
+→ Fields
+- FieldName
+- DataType
+- SourceTable (if dropdown)
+- Required
+- ValidationRules
+- ApprovalRequired
+- RiskWeight
+- WorkflowID
+
+Forms must be generated dynamically from schema.
+
+Cascading dropdown logic required.
+
+Example:
+Category → Vaccine → Type → Batch → Quantity
+
+No hardcoded forms.
+
+---
+
+## A4. Workflow Orchestration Engine
+
+State Model:
+Draft → Submitted → Pending → Approved → Executed → Closed
+
+Workflow Definition Fields:
+
+* TriggerRoles
+* ApprovalRoles
+* EscalationTimer
+* EscalationRole
+* AffectedDepartments
+* NotificationPolicy
+
+Must track:
+
+* Who has approved
+* Who hasn’t
+* Time elapsed
+* Bottleneck detection
+
+---
+
+## A5. Role-Based Access Model
+
+Admin Roles:
+CEO / CFO / CO
+
+* Full system access
+* Override capabilities
+* Full AI function access
+
+Department Roles:
+
+* Access limited to department dashboards
+* Event logging
+* Relevant approvals
+* Limited AI tool calls
+
+Staff Dashboard:
+
+* Personal activity feed
+* Assigned tasks
+* Pending approvals
+* KPI contribution
+* Achievement/badge system (V1 basic)
+
+RBAC must be enforced server-side.
+
+---
+
+## A6. Reconciliation Engine (Sage Sync)
+
+Bi-weekly import from accounting software.
+
+Process:
+
+1. Import snapshot
+2. Normalize financial data
+3. Compare against operational records
+4. Flag discrepancies
+5. Notify Finance
+6. Lock reconciliation snapshot
+7. Begin new operational cycle
+
+Rule:
+Synbot does not overwrite financial core.
+It reconciles and reports.
+
+---
+
+# SECTION B — TEMPLATE B
+
+## ERP Integration Layer (Inventory, Logistics, Suppliers, Placeware, Documents)
+
+---
+
+## B1. Inventory Management Module
+
+Inventory Event Types:
+
+* StockIn
+* StockOut
+* Transfer
+* Adjustment
+* Return
+* Damaged
+
+Core Tables:
+InventoryItems
+StockLevels
+InventoryMovements
+InventoryRequests
+
+Dashboard Sections:
+
+* Live Stock
+* Incoming
+* Outgoing
+* Pending Requests
+* Delays
+* Stock Health
+
+Every movement = event in EventLedger.
+
+---
+
+## B2. Supplier Management Module
+
+Entity: Supplier
+
+Fields:
+
+* SupplierID
+* Name
+* Category
+* ReliabilityScore
+* AvgDeliveryTime
+* PriceVarianceIndex
+* ContactDetails
+* LinkedDeliveries
+* LinkedProjects
+
+System must calculate:
+
+* Delay frequency
+* Price variance
+* Risk score
+
+Supplier intelligence feeds Risk Agent.
+
+---
+
+## B3. Logistics & Routing Service
+
+Microservice: Logistics Routing Service
+
+Responsibilities:
+
+* Assign deliveries to riders
+* Integrate with Google Maps API
+* Generate routes
+* Monitor ETA
+* Detect traffic delays
+* Trigger alerts
+
+Delivery Event Types:
+
+* Assigned
+* PickedUp
+* EnRoute
+* Delivered
+* Failed
+
+Rider Dashboard must show:
+
+* Multi-stop route
+* Destination details
+* Quantity
+* Client info
+* Status update buttons
+
+Each status change triggers event.
+
+---
+
+## B4. Document Vault
+
+Entity: Documents
+
+Fields:
+
+* DocumentID
+* LinkedEventID
+* LinkedProjectID
+* Version
+* UploadedBy
+* Timestamp
+* ApprovalStatus
+
+V1:
+Manual approval button
+
+V2 (Future):
+Digital signature engine
+Signature image upload via Admin Settings
+
+Documents must attach to events.
+
+No standalone documents.
+
+---
+
+## B5. Placeware — Structured Agent Group Collaboration
+
+Thread Model:
+
+Each thread must attach to:
+
+* Event
+* Project
+* Delivery
+* CRM Opportunity
+
+Thread auto-created when:
+
+* Event logged
+* Delivery assigned
+* Approval triggered
+
+Participants:
+
+* Relevant staff
+* Relevant agents
+
+Agents:
+
+* Risk Agent
+* Metrics Agent
+* Inventory Agent
+* Financial Agent
+* Compliance Agent
+
+Threads must store structured metadata, not just chat logs.
+
+---
+
+# SECTION C — TEMPLATE C
+
+## Full CRM Layer Implementation
+
+---
+
+## C1. Lead Management
+
+Entity: Lead
+
+Fields:
+
+* LeadID
+* Source
+* Industry
+* AssignedRep
+* Stage
+* Score
+* ExpectedValue
+* LinkedCampaign
+
+Pipeline Stages:
+New → Qualified → Proposal → Negotiation → Won/Lost
+
+Conversion tracking required.
+
+---
+
+## C2. Opportunity / Deal Management
+
+Entity: Opportunity
+
+Fields:
+
+* OpportunityID
+* LinkedCustomerID
+* Value
+* Probability
+* ExpectedCloseDate
+* LinkedInventoryNeeds
+* LinkedDocuments
+* LinkedEvents
+* Status
+
+Must connect CRM to operational workflows.
+
+---
+
+## C3. Customer 360 View
+
+Entity: Customer
+
+Must aggregate:
+
+* All purchases
+* Deliveries
+* Invoices
+* Support tickets
+* Contracts
+* Approvals
+* Payment history
+* Risk score
+* Account manager
+
+Customer profile becomes relationship memory node.
+
+---
+
+## C4. Activity Tracking
+
+Entity: CRMActivity
+
+Types:
+
+* Call
+* Email
+* Meeting
+* FollowUp
+* Note
+
+Must attach to:
+Customer / Opportunity / Project
+
+---
+
+## C5. Task & Follow-Up Engine
+
+Auto-trigger:
+
+* Follow-up reminders
+* Renewal alerts
+* Contract expiration alerts
+* Escalation if inactive
+
+---
+
+## C6. Support Ticketing
+
+Entity: SupportTicket
+
+Fields:
+
+* Customer
+* IssueType
+* SLA
+* AssignedStaff
+* Status
+* ResolutionTime
+
+Must integrate with Workflow Engine.
+
+---
+
+## C7. Marketing Campaign Tracking
+
+Entity: Campaign
+
+Fields:
+
+* Budget
+* LeadsGenerated
+* ConversionRate
+* RevenueAttributed
+* ROI
+
+Lead must track source.
+
+---
+
+## C8. Revenue Forecasting Engine
+
+Combine:
+
+* Pipeline probability
+* Historical conversion rates
+* Seasonality (future AI enhancement)
+
+Produce:
+Weighted revenue forecast.
+
+---
+
+# KNOWLEDGE GRAPH REQUIREMENT
+
+Entities must link as nodes:
+
+* Staff
+* Customer
+* Supplier
+* Project
+* Event
+* Opportunity
+* Delivery
+* InventoryItem
+* Document
+* Approval
+
+Edges:
+
+* Performed
+* Approved
+* Assigned
+* Delivered
+* Requested
+* LinkedTo
+* Delayed
+
+Agents reason across graph.
+
+---
+
+# AI AGENT LAYER
+
+Agents must subscribe to Event Bus.
+
+When EventLedger entry created:
+
+* Metrics Agent recalculates KPIs
+* Risk Agent evaluates anomaly
+* Inventory Agent updates stock projections
+* Financial Agent updates forecasts
+* CRM Agent updates customer score
+
+Agents must operate independently but read from shared Knowledge Graph.
+
+---
+
+# DEVELOPMENT RULES
+
+1. Backend must be modular microservice architecture.
+2. Use event-driven communication (Event Bus).
+3. All APIs must enforce RBAC.
+4. All workflows state-driven.
+5. All dropdowns schema-driven.
+6. All documents versioned.
+7. All deliveries logged.
+8. All CRM entities connected to operational events.
+9. Reconciliation logic isolated as independent service.
+
+---
+
+# END STATE GOAL
+
+Synbot becomes:
+
+A full ERP/CRM hybrid platform with:
+
+* Operational intelligence
+* Financial reconciliation
+* Customer lifecycle management
+* Supplier performance tracking
+* Logistics optimization
+* HR engagement dashboard
+* AI-driven cross-department reasoning
+
+Domain-agnostic.
+Scalable.
+Agent-native.
+
+---
+

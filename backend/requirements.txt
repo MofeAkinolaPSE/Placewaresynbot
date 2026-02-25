@@ -1,0 +1,15 @@
+fastapi
+uvicorn 
+supabase 
+python-dotenv 
+requests
+pyyaml
+gradio_client
+fastembed
+PyJWT>=2.8.0
+cryptography
+passlib[bcrypt]
+python-multipart
+bcrypt
+openpyxl
+psycopg2-binary

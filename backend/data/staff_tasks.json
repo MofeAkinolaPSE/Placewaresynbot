@@ -1,0 +1,10 @@
+[
+  {
+    "task_id": "task-0001",
+    "title": "Approve inbound shipment #A42",
+    "description": "Verify documents and mark StockIn",
+    "assigned_to": "user:alice",
+    "status": "open",
+    "due_date": null
+  }
+]

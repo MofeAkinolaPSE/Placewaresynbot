@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Staff Dashboard Widget</title>
+  <style>
+    body{font-family:Inter,system-ui,Arial,Helvetica,sans-serif;margin:12px;color:#111}
+    .card{border:1px solid #e6e6e6;padding:12px;border-radius:8px;margin-bottom:12px;background:#fff}
+    .row{display:flex;gap:12px}
+    .kpi{flex:1;text-align:center}
+    .list{max-height:220px;overflow:auto}
+    pre{background:#f8f8f8;padding:8px;border-radius:6px}
+    .muted{color:#666;font-size:0.9rem}
+  </style>
+</head>
+<body>
+  <h3>Staff Dashboard Widget</h3>
+  <div class="card">
+    <label>User ID: <input id="userId" value="user:alice" /></label>
+    <label style="margin-left:12px">Token: <input id="token" placeholder="Bearer token (optional)" style="width:40ch"/></label>
+    <button id="refresh">Refresh</button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div class="row">
+    <div class="card" style="flex:2">
+      <h4>Activities</h4>
+      <div id="activities" class="list"></div>
+    </div>
+    <div style="width:320px">
+      <div class="card">
+        <h4>KPIs</h4>
+        <div id="kpis"></div>
+      </div>
+      <div class="card">
+        <h4>Pending Approvals</h4>
+        <div id="pending" class="list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4>Tasks</h4>
+    <div id="tasks" class="list"></div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    async function fetchDashboard(userId, token){
+      const url = `/staff/${encodeURIComponent(userId)}/dashboard`;
+      const opts = {headers:{}}
+      if(token) opts.headers['Authorization'] = 'Bearer '+token.replace(/^Bearer\s+/i,'')
+      const res = await fetch(url, opts)
+      if(!res.ok) throw new Error(await res.text())
+      return res.json()
+    }
+
+    function renderDashboard(d){
+      const act = $("#activities"); act.innerHTML='';
+      (d.activities||[]).forEach(a=>{
+        const el = document.createElement('div');
+        el.className='muted';
+        el.innerHTML = `<strong>${a.event_type}</strong> — ${a.timestamp}<div>${escapeHtml(JSON.stringify(a.payload))}</div>`;
+        act.appendChild(el);
+      })
+
+      const pend = $("#pending"); pend.innerHTML='';
+      (d.pending_approvals||[]).forEach(p=>{
+        const el = document.createElement('div'); el.innerHTML=`<strong>${p.event_type}</strong> <div class='muted'>${p.timestamp} • ${p.created_by}</div>`; pend.appendChild(el);
+      })
+
+      const tasks = $("#tasks"); tasks.innerHTML='';
+      (d.tasks||[]).forEach(t=>{
+        const el = document.createElement('div'); el.innerHTML=`<strong>${t.title}</strong> — ${t.status}<div class='muted'>${t.description||''}</div>`; tasks.appendChild(el);
+      })
+
+      const kpis = $("#kpis"); kpis.innerHTML='';
+      (d.kpis||[]).forEach(k=>{ const el = document.createElement('div'); el.innerHTML=`<strong>${k.label}</strong>: ${k.value}`; kpis.appendChild(el) })
+    }
+
+    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+    async function refresh(){
+      const userId = $('#userId').value.trim();
+      const token = $('#token').value.trim();
+      $('#status').textContent = 'Loading...';
+      try{
+        const d = await fetchDashboard(userId, token);
+        renderDashboard(d);
+        $('#status').textContent = 'OK';
+      }catch(e){
+        $('#status').textContent = 'Error: '+e.message
+      }
+    }
+
+    $('#refresh').addEventListener('click', refresh)
+    // auto refresh on load
+    window.addEventListener('load', ()=> setTimeout(refresh,200))
+  </script>
+</body>
+</html>

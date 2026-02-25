@@ -1,0 +1,232 @@
+Good question. This is where products either become platforms — or client projects.
+
+You need to give the developer agent a **design doctrine**, not just feature instructions.
+
+Below is the exact directive you should give it.
+
+---
+
+# **SynBot Core Architecture Doctrine — Multi-Industry Design Mandate**
+
+## Objective
+
+All development must treat SynBot (Neurolayer BVE) as:
+
+> An industry-agnostic executive intelligence framework
+> that can be configured per client
+> without rewriting core logic.
+
+No feature may be implemented in a way that locks SynBot into pharmaceutical-specific assumptions.
+
+---
+
+# 1️⃣ Architectural Separation Rule (Non-Negotiable)
+
+Every new feature must be classified as either:
+
+### A. Core Engine (Reusable Across All Clients)
+
+Or
+
+### B. Domain Configuration (Client-Specific)
+
+If a feature mixes both — refactor it.
+
+---
+
+# 2️⃣ Core Engine Responsibilities (Must Remain Generic)
+
+The following components are permanent product IP and must never contain industry-specific logic:
+
+* Agent framework (BaseAgent class)
+* Agent registry
+* Insight object schema
+* Chat orchestration logic
+* Risk scoring engine (structure only, not weights)
+* Workflow state machine engine
+* Batch query utility layer
+* TTL caching system
+* Governance & audit logging
+* Role-based access control
+* Execution logging & observability
+
+These components must operate purely on:
+
+* Config inputs
+* Registered KPI modules
+* Defined entity schemas
+* Workflow state definitions
+
+They must not reference:
+
+* NAFDAC
+* Cold-room
+* Pharma
+* Insurance
+* Port clearing
+* Any domain-specific terminology
+
+---
+
+# 3️⃣ Domain Configuration Layer (Client Adaptable)
+
+All client-specific logic must live inside:
+
+* Config files
+* Domain schema definitions
+* KPI registries
+* Workflow state maps
+* Threshold parameters
+* Risk weighting maps
+* Label dictionaries
+
+Example:
+
+Instead of:
+
+```python
+if batch.status == "Pending NAFDAC":
+```
+
+Use:
+
+```python
+if entity.status in config["compliance"]["restricted_states"]:
+```
+
+Core logic must always defer to configuration.
+
+---
+
+# 4️⃣ Workflow Engine Requirement
+
+All workflows must be implemented as configurable state machines.
+
+Example:
+
+Pharma Workflow:
+
+* In Transit
+* At Port
+* Under Clearance
+* QC Approved
+* Released
+
+Insurance Workflow:
+
+* Policy Created
+* Underwriting
+* Approved
+* Active
+* Lapsed
+
+The engine must:
+
+* Load states dynamically
+* Validate transitions via config
+* Enforce locks via config rules
+
+No hardcoded workflow paths.
+
+---
+
+# 5️⃣ KPI Modularity Rule
+
+KPI definitions must be:
+
+* Registered modules
+* Swappable per client
+* Referenced via registry
+
+Never embed KPI formulas directly inside agents.
+
+Agents consume KPIs.
+They do not define industry formulas internally.
+
+---
+
+# 6️⃣ Risk Engine Modularity
+
+Risk scoring must follow this pattern:
+
+```python
+risk_score = sum(metric * config["risk_weights"][metric])
+```
+
+Risk weights must be configurable.
+
+Different industries = different weights.
+
+Structure remains constant.
+
+---
+
+# 7️⃣ UI Abstraction Rule
+
+Frontend must:
+
+* Pull labels from config
+* Render dynamic workflow states
+* Not hardcode domain wording
+* Support dynamic dashboards
+
+SynBot UI must behave like a template.
+
+---
+
+# 8️⃣ Developer Decision Test
+
+Before merging any new feature, the developer must answer:
+
+1. Does this logic assume a specific industry?
+2. Can this feature be reused for insurance, fintech, logistics, or healthcare?
+3. Can thresholds and terminology be changed without touching core code?
+4. If a new client is onboarded, will we modify config or rewrite logic?
+
+If rewrite is required → architecture is wrong.
+
+---
+
+# 9️⃣ Long-Term Product Goal
+
+SynBot must function as:
+
+Core Engine
+
+* Domain Adapter Layer
+* KPI Modules
+* Workflow Config
+
+Onboarding a new client should involve:
+
+* Requirement gathering
+* Entity mapping
+* KPI definition
+* Workflow state configuration
+* Threshold tuning
+* UI relabeling
+
+Not rebuilding backend logic.
+
+---
+
+# 10️⃣ Final Mandate
+
+All future development must prioritize:
+
+* Configurability
+* Reusability
+* Industry abstraction
+* Deterministic governance
+* Modular intelligence
+
+SynBot is a product framework — not a single-client system.
+
+---
+
+That’s how you align the developer agent.
+
+You’re not telling it what to build.
+You’re defining how it must think while building.
+
+If you want, I can also generate a shorter “engineering principles summary” version for quick reference in your repo README.

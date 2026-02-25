@@ -1,0 +1,120 @@
+from fastapi import APIRouter, Request, HTTPException
+from src.schemas.supplier import Supplier, SupplierDelivery
+from src.middleware import verify_jwt
+from src.db import audit_event, supabase
+import statistics
+import datetime as dt
+from src.services.supplier_intel import compute_supplier_metrics
+
+router = APIRouter()
+
+
+
+
+@router.get('/suppliers')
+async def list_suppliers(request: Request):
+    verify_jwt(request)
+    try:
+        resp = supabase.table('suppliers').select('*').order('created_at', desc=True).execute()
+        data = resp.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail='Failed to load suppliers from DB')
+    try:
+        actor = getattr(request.state, 'user', None)
+        audit_event('list_suppliers', {'count': len(data)}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', subject_type='suppliers')
+    except Exception:
+        pass
+    return data
+
+
+@router.post('/suppliers', status_code=201)
+async def create_supplier(request: Request, payload: Supplier):
+    verify_jwt(request, required_role='admin')
+    s = payload.dict()
+    s['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
+    try:
+        resp = supabase.table('suppliers').insert(s).execute()
+        created = resp.data[0] if resp.data else s
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to create supplier')
+    try:
+        actor = getattr(request.state, 'user', None)
+        audit_event('create_supplier', {'supplier': created.get('name')}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', action='create', subject_type='supplier', subject_id=created.get('id') or created.get('name'))
+    except Exception:
+        pass
+    return {'status': 'created', 'supplier': created}
+
+
+@router.post('/suppliers/{supplier_name}/deliveries', status_code=201)
+async def record_delivery(request: Request, supplier_name: str, payload: SupplierDelivery):
+    verify_jwt(request, required_role='ops')
+    d = payload.dict()
+    d['supplier_name'] = supplier_name
+    d['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
+    try:
+        resp = supabase.table('supplier_deliveries').insert(d).execute()
+        created = resp.data[0] if resp.data else d
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to record supplier delivery')
+    try:
+        actor = getattr(request.state, 'user', None)
+        audit_event('record_supplier_delivery', {'supplier': supplier_name, 'delivery_id': created.get('delivery_id') or created.get('id')}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', action='delivery_recorded', subject_type='supplier_delivery', subject_id=created.get('delivery_id') or created.get('id'))
+    except Exception:
+        pass
+    return {'status': 'recorded', 'delivery': created}
+
+
+@router.get('/suppliers/{supplier_name}/metrics')
+async def supplier_metrics(request: Request, supplier_name: str):
+    verify_jwt(request)
+    try:
+        resp = supabase.table('supplier_deliveries').select('*').eq('supplier_name', supplier_name).execute()
+        deliveries = resp.data or []
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to fetch deliveries')
+    if not deliveries:
+        raise HTTPException(status_code=404, detail='No deliveries found for supplier')
+    # compute on-time rate
+    on_time = [1 if d.get('on_time') else 0 for d in deliveries if d.get('on_time') is not None]
+    on_time_rate = sum(on_time) / len(on_time) if on_time else None
+    # avg delivery time if scheduled_at and delivered_at present
+    deltas = []
+    for d in deliveries:
+        sa = d.get('scheduled_at')
+        da = d.get('delivered_at')
+        if sa and da:
+            try:
+                t1 = dt.datetime.fromisoformat(sa.replace('Z',''))
+                t2 = dt.datetime.fromisoformat(da.replace('Z',''))
+                deltas.append((t2 - t1).total_seconds() / 3600.0)
+            except Exception:
+                pass
+    avg_delivery_time = statistics.mean(deltas) if deltas else None
+    prices = [d.get('price') for d in deliveries if isinstance(d.get('price'), (int, float))]
+    price_variance = statistics.pstdev(prices) if len(prices) > 1 else 0.0
+    reliability_score = (on_time_rate or 0.0) * 100
+    try:
+        actor = getattr(request.state, 'user', None)
+        audit_event('view_supplier_metrics', {'supplier': supplier_name}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', action='metrics_view', subject_type='supplier', subject_id=supplier_name)
+    except Exception:
+        pass
+    return {
+        'supplier': supplier_name,
+        'on_time_rate': on_time_rate,
+        'avg_delivery_time_hours': avg_delivery_time,
+        'price_variance_index': price_variance,
+        'reliability_score': reliability_score,
+        'deliveries_count': len(deliveries),
+    }
+
+
+@router.post('/suppliers/compute-metrics')
+async def compute_metrics_endpoint(request: Request):
+    verify_jwt(request, required_role='admin')
+    ok = compute_supplier_metrics()
+    try:
+        actor = getattr(request.state, 'user', None)
+        audit_event('compute_supplier_metrics', {'status': 'started' if ok else 'failed'}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', action='compute')
+    except Exception:
+        pass
+    return {'status': 'ok' if ok else 'error'}

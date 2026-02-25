@@ -12,6 +12,7 @@ import Workflow from './pages/Workflow'
 import Index from './pages/Index'
 import NotFound from './pages/NotFound'
 import StaffDashboardPage from './pages/StaffDashboardPage'
+import SchemaFormPage from './pages/SchemaFormPage'
 
 export default function App() {
   const config = window.SYNBOT_CONFIG || {}
@@ -19,6 +20,7 @@ export default function App() {
   const navItems = [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/staff', label: 'Staff' },
+    { to: '/forms/inventory_item', label: 'Forms' },
     { to: '/settings', label: 'Settings' },
     { to: '/import', label: 'Data Import' },
     { to: '/analytics', label: 'Finance Analytics' },
@@ -62,6 +64,7 @@ export default function App() {
             <Route path="/" element={<Index />} />
             <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/staff" element={<StaffDashboardPage />} />
+            <Route path="/forms/:name" element={<SchemaFormPage />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/import" element={<SageImport />} />
             <Route path="/analytics" element={<FinanceAnalytics />} />
