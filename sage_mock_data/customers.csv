@@ -1,0 +1,31 @@
+vcustomer_id,name,email,phone,status
+CUST-001,Lagos Central Children Hospital,procurement@lcch.ng,08023246113,active
+CUST-002,Abuja Family Health Clinic,orders@afhc.ng,08090236111,active
+CUST-003,Port Harcourt Immunization Centre,supply@phic.ng,07031127654,active
+CUST-004,Kano Community Pharmacy,admin@kcp.ng,08144360123,active
+CUST-005,Ibadan Metro Hospital,stores@imh.ng,08055611209,active
+CUST-006,Enugu Women and Child Clinic,sourcing@ewcc.ng,08122894561,active
+CUST-007,Kaduna Teaching Hospital,pharmacy@kth.ng,08077631045,active
+CUST-008,Rivers State Vaccination Hub,ops@rsvh.ng,09021237640,active
+CUST-009,Ogun Preventive Care Centre,finance@opcc.ng,08044490190,active
+CUST-010,Delta Family Medical Services,orders@dfms.ng,08198543222,active
+CUST-011,Benin Child Wellness Hospital,supply@bcwh.ng,07056321911,active
+CUST-012,Niger Prime Health Clinic,admin@nphc.ng,08032991144,active
+CUST-013,Yola Immunization Outreach,procure@yio.ng,08166778890,active
+CUST-014,Jos Community Care Hospital,pharmacy@jcch.ng,08078211107,active
+CUST-015,Calabar Family Practice Centre,ops@cfpc.ng,09040112888,active
+CUST-016,Bayelsa Integrated Health Post,stores@bihp.ng,08144100990,active
+CUST-017,Ilorin Urban Medical Centre,purchase@iumc.ng,08081112345,active
+CUST-018,Uyo Maternal and Child Clinic,orders@umcc.ng,08156097011,active
+CUST-019,Abeokuta Public Health Network,procurement@aphn.ng,08090067123,active
+CUST-020,Onitsha Regional Hospital,supply@orh.ng,08101892020,active
+CUST-021,Lokoja Health Access Point,admin@lhap.ng,08055670122,active
+CUST-022,Maiduguri Vaccination Unit,ops@mvu.ng,07088033115,active
+CUST-023,Sokoto Child Care Hospital,stores@scch.ng,08131087111,active
+CUST-024,Ekiti Preventive Medicine Clinic,procure@epmc.ng,08067542100,active
+CUST-025,Osun Community Medical Hub,orders@ocmh.ng,08188077113,active
+CUST-026,Anambra City Health Services,supply@achs.ng,08033218801,active
+CUST-027,Nasarawa Family Specialist Clinic,admin@nfsc.ng,08144991700,active
+CUST-028,Kebbi Primary Care Hospital,procurement@kpch.ng,07022349870,active
+CUST-029,Plateau Immunization & Wellness,stores@piw.ng,08166390123,active
+CUST-030,Cross River Public Health Centre,purchase@crphc.ng,08081231234,active

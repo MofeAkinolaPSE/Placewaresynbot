@@ -1,0 +1,143 @@
+:root {
+  --pw-primary: #0891b2; /* Cyan-600 */
+  --pw-bg: #0f172a; /* Slate-900 */
+  --pw-text: #f8fafc; /* Slate-50 */
+}
+
+#placeware-chat-root {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.pw-launcher {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--pw-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.pw-launcher:hover {
+  transform: scale(1.05);
+}
+
+.pw-launcher svg {
+  width: 32px;
+  height: 32px;
+  fill: white;
+}
+
+.pw-window {
+  position: absolute;
+  bottom: 80px;
+  right: 0;
+  width: 350px;
+  height: 500px;
+  background: var(--pw-bg);
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pw-window.open {
+  display: flex;
+}
+
+.pw-header {
+  padding: 16px;
+  background: var(--pw-primary);
+  color: white;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pw-close {
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.pw-messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pw-msg {
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.pw-msg.user {
+  align-self: flex-end;
+  background: var(--pw-primary);
+  color: white;
+  border-bottom-right-radius: 2px;
+}
+
+.pw-msg.bot {
+  align-self: flex-start;
+  background: #1e293b;
+  color: var(--pw-text);
+  border-bottom-left-radius: 2px;
+}
+
+.pw-input-area {
+  padding: 12px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  gap: 8px;
+}
+
+.pw-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #334155;
+  background: #020617;
+  color: white;
+  outline: none;
+}
+
+.pw-input:focus {
+  border-color: var(--pw-primary);
+}
+
+.pw-send {
+  background: var(--pw-primary);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pw-disclaimer {
+  font-size: 10px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 4px;
+  background: #020617;
+}

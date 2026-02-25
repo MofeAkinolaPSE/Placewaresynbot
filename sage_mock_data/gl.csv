@@ -1,0 +1,113 @@
+period,account_code,account_name,debit,credit
+2025-01,4000,Vaccine Sales Revenue,201555.5,1353965.67
+2025-01,4010,Cold-Chain Service Revenue,147779.43,3686613.68
+2025-01,5000,Cost of Vaccines Sold,922509.68,313553.67
+2025-01,5010,Cold-Chain Logistics Cost,2537263.62,346267.83
+2025-01,6100,Salaries and Wages,218502.44,197970.46
+2025-01,6200,Utilities,961633.76,119798.64
+2025-01,6300,Distribution Fuel and Transport,564254.27,131653.94
+2025-01,6400,Quality Assurance and Compliance,1027971.96,363017.17
+2025-02,4000,Vaccine Sales Revenue,411255.74,1446279.25
+2025-02,4010,Cold-Chain Service Revenue,277562.43,2255833.42
+2025-02,5000,Cost of Vaccines Sold,2187998.43,158883.76
+2025-02,5010,Cold-Chain Logistics Cost,1677237.16,172629.1
+2025-02,6100,Salaries and Wages,943507.25,240592.63
+2025-02,6200,Utilities,724691.37,187597.8
+2025-02,6300,Distribution Fuel and Transport,1004796.35,248225.93
+2025-02,6400,Quality Assurance and Compliance,1031815.66,209779.56
+2025-03,4000,Vaccine Sales Revenue,460966.86,4148651.32
+2025-03,4010,Cold-Chain Service Revenue,286204.79,1829846.72
+2025-03,5000,Cost of Vaccines Sold,1540119.36,242963.34
+2025-03,5010,Cold-Chain Logistics Cost,2825789.94,326898.46
+2025-03,6100,Salaries and Wages,997284.41,122591.44
+2025-03,6200,Utilities,435003.28,313648.03
+2025-03,6300,Distribution Fuel and Transport,1071599.28,280725.48
+2025-03,6400,Quality Assurance and Compliance,284641.53,391439.07
+2025-04,4000,Vaccine Sales Revenue,426419.78,1840707.95
+2025-04,4010,Cold-Chain Service Revenue,394722.06,1800211.29
+2025-04,5000,Cost of Vaccines Sold,2691673.66,132731.11
+2025-04,5010,Cold-Chain Logistics Cost,1662439.63,364459.85
+2025-04,6100,Salaries and Wages,406478.77,241428.64
+2025-04,6200,Utilities,536576.78,80134.67
+2025-04,6300,Distribution Fuel and Transport,234322.02,260762.7
+2025-04,6400,Quality Assurance and Compliance,420493.64,447919.63
+2025-05,4000,Vaccine Sales Revenue,254968.56,993018.9
+2025-05,4010,Cold-Chain Service Revenue,455097.33,3669281.75
+2025-05,5000,Cost of Vaccines Sold,2129913.51,319500.38
+2025-05,5010,Cold-Chain Logistics Cost,1002719.09,173195.03
+2025-05,6100,Salaries and Wages,1026356.81,334507.36
+2025-05,6200,Utilities,321568.55,338103.75
+2025-05,6300,Distribution Fuel and Transport,637573.5,71995.46
+2025-05,6400,Quality Assurance and Compliance,260810.29,167251.09
+2025-06,4000,Vaccine Sales Revenue,420586.72,2711054.01
+2025-06,4010,Cold-Chain Service Revenue,381804.52,2641645.97
+2025-06,5000,Cost of Vaccines Sold,944611.09,173549.46
+2025-06,5010,Cold-Chain Logistics Cost,1362532.63,103847.34
+2025-06,6100,Salaries and Wages,608222.05,371681.66
+2025-06,6200,Utilities,646255.89,112126.0
+2025-06,6300,Distribution Fuel and Transport,1103249.82,296760.84
+2025-06,6400,Quality Assurance and Compliance,196764.06,265842.78
+2025-07,4000,Vaccine Sales Revenue,207097.73,1373803.57
+2025-07,4010,Cold-Chain Service Revenue,274526.0,2928871.62
+2025-07,5000,Cost of Vaccines Sold,1229241.33,210804.6
+2025-07,5010,Cold-Chain Logistics Cost,2161616.86,114828.05
+2025-07,6100,Salaries and Wages,1174147.58,95718.14
+2025-07,6200,Utilities,716580.63,262784.52
+2025-07,6300,Distribution Fuel and Transport,1188098.12,280577.74
+2025-07,6400,Quality Assurance and Compliance,578262.81,248651.33
+2025-08,4000,Vaccine Sales Revenue,348841.48,4137430.09
+2025-08,4010,Cold-Chain Service Revenue,211314.09,953599.36
+2025-08,5000,Cost of Vaccines Sold,2434744.04,189992.72
+2025-08,5010,Cold-Chain Logistics Cost,2312470.25,272194.52
+2025-08,6100,Salaries and Wages,966931.4,349371.05
+2025-08,6200,Utilities,519168.98,86847.56
+2025-08,6300,Distribution Fuel and Transport,736934.02,379133.37
+2025-08,6400,Quality Assurance and Compliance,358590.91,366074.19
+2025-09,4000,Vaccine Sales Revenue,287264.24,3194784.53
+2025-09,4010,Cold-Chain Service Revenue,347424.91,3577942.35
+2025-09,5000,Cost of Vaccines Sold,838821.18,315095.22
+2025-09,5010,Cold-Chain Logistics Cost,1706895.07,175098.35
+2025-09,6100,Salaries and Wages,224682.4,145798.54
+2025-09,6200,Utilities,222744.06,424680.97
+2025-09,6300,Distribution Fuel and Transport,705691.26,445866.63
+2025-09,6400,Quality Assurance and Compliance,733891.31,166259.23
+2025-10,4000,Vaccine Sales Revenue,488980.91,1913301.65
+2025-10,4010,Cold-Chain Service Revenue,310638.38,4345971.46
+2025-10,5000,Cost of Vaccines Sold,3255945.26,232822.7
+2025-10,5010,Cold-Chain Logistics Cost,1217306.27,245906.95
+2025-10,6100,Salaries and Wages,1087276.25,352456.93
+2025-10,6200,Utilities,1092530.24,216925.01
+2025-10,6300,Distribution Fuel and Transport,1173198.06,258557.23
+2025-10,6400,Quality Assurance and Compliance,687473.86,421237.98
+2025-11,4000,Vaccine Sales Revenue,383674.13,4429735.86
+2025-11,4010,Cold-Chain Service Revenue,477186.6,1450573.9
+2025-11,5000,Cost of Vaccines Sold,2531746.57,410598.71
+2025-11,5010,Cold-Chain Logistics Cost,2375054.59,228939.14
+2025-11,6100,Salaries and Wages,261670.29,321149.3
+2025-11,6200,Utilities,492625.77,298996.22
+2025-11,6300,Distribution Fuel and Transport,614638.39,332110.63
+2025-11,6400,Quality Assurance and Compliance,538577.92,86094.96
+2025-12,4000,Vaccine Sales Revenue,433213.38,2063445.72
+2025-12,4010,Cold-Chain Service Revenue,479334.22,1806032.69
+2025-12,5000,Cost of Vaccines Sold,2856060.01,364892.27
+2025-12,5010,Cold-Chain Logistics Cost,865090.56,274878.64
+2025-12,6100,Salaries and Wages,550577.35,374416.47
+2025-12,6200,Utilities,872998.82,432059.97
+2025-12,6300,Distribution Fuel and Transport,325635.06,300877.7
+2025-12,6400,Quality Assurance and Compliance,976938.21,83223.61
+2026-01,4000,Vaccine Sales Revenue,144204.01,3469100.73
+2026-01,4010,Cold-Chain Service Revenue,251878.25,2163419.53
+2026-01,5000,Cost of Vaccines Sold,1947938.21,265477.5
+2026-01,5010,Cold-Chain Logistics Cost,2193936.53,365158.82
+2026-01,6100,Salaries and Wages,559453.65,359972.1
+2026-01,6200,Utilities,765400.21,271194.75
+2026-01,6300,Distribution Fuel and Transport,585994.73,316833.08
+2026-01,6400,Quality Assurance and Compliance,434603.89,113110.47
+2026-02,4000,Vaccine Sales Revenue,384842.95,2546845.07
+2026-02,4010,Cold-Chain Service Revenue,259315.46,2753519.95
+2026-02,5000,Cost of Vaccines Sold,1275908.69,165484.03
+2026-02,5010,Cold-Chain Logistics Cost,1681800.85,378945.88
+2026-02,6100,Salaries and Wages,471288.42,418261.99
+2026-02,6200,Utilities,681024.2,116602.22
+2026-02,6300,Distribution Fuel and Transport,1049882.82,241776.22
+2026-02,6400,Quality Assurance and Compliance,1096652.61,239142.25

@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run backend tests",
+      "type": "shell",
+      "command": "pytest",
+      "args": ["-q", "backend"],
+      "group": "test"
+    },
+    {
+      "label": "Run backend app",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "uvicorn", "app:app", "--reload"],
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      }
+    }
+  ]
+}
