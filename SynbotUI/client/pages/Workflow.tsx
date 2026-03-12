@@ -18,6 +18,9 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 const Workflow = () => {
   const [selectedIntent, setSelectedIntent] = useState<string | null>(null);
@@ -28,6 +31,15 @@ const Workflow = () => {
   );
 
   const queryClient = useQueryClient();
+
+  useRealtimeChannel("workflow_updates", (message) => {
+    const evt = message?.event;
+    if (!evt) return;
+    if (["batch_locked", "batch_unlocked", "batch_approved", "task_created", "subscriber_joined"].includes(evt)) {
+      queryClient.invalidateQueries({ queryKey: ["workflow-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    }
+  });
 
   const {
     data: fetchedIntents,
@@ -176,31 +188,36 @@ const Workflow = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "approved":
-        return "bg-green-100 text-green-800";
+        return "bg-success/15 text-success";
       case "rejected":
-        return "bg-red-100 text-red-800";
+        return "bg-destructive/10 text-destructive";
       case "pending":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-warning/15 text-warning";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "high":
-        return "bg-red-50 border-red-200 text-red-700";
+        return "bg-destructive/10 border-destructive/30 text-destructive";
       case "medium":
-        return "bg-yellow-50 border-yellow-200 text-yellow-700";
+        return "bg-warning/15 border-warning/30 text-warning";
       case "low":
-        return "bg-blue-50 border-blue-200 text-blue-700";
+        return "bg-info/15 border-info/30 text-info";
       default:
         return "";
     }
   };
 
   return (
-    <div className="p-8 space-y-8">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="space-y-8"
+    >
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">Workflow</h1>
@@ -244,8 +261,8 @@ const Workflow = () => {
                   onClick={() => setSelectedIntent(intent.id)}
                   className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${
                     selectedIntent === intent.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 bg-card"
+                      ? "border-primary bg-primary/10"
+                      : "border-border/60 hover:border-primary/50 bg-background/70"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
@@ -255,10 +272,10 @@ const Workflow = () => {
                     <span
                       className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
                         intent.priority === "high"
-                          ? "bg-red-100 text-red-800"
+                          ? "bg-destructive/10 text-destructive"
                           : intent.priority === "medium"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-blue-100 text-blue-800"
+                            ? "bg-warning/15 text-warning"
+                            : "bg-info/15 text-info"
                       }`}
                     >
                       {intent.priority.charAt(0).toUpperCase() +
@@ -277,7 +294,7 @@ const Workflow = () => {
 
             {/* Detail Panel */}
             {activeIntent && (
-              <div className="lg:col-span-2 bg-card border border-border rounded-lg p-6 space-y-6">
+              <div className="lg:col-span-2 pw-surface-interactive p-6 space-y-6">
                 {/* Header */}
                 <div className="border-b border-border pb-4">
                   <div className="flex items-start justify-between mb-3">
@@ -319,14 +336,14 @@ const Workflow = () => {
                 </div>
 
                 {/* Recommendation */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="rounded-xl border border-info/30 bg-info/15 p-4">
                   <div className="flex gap-3">
-                    <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-blue-900 text-sm">
+                      <p className="font-semibold text-info text-sm">
                         Recommendation
                       </p>
-                      <p className="text-sm text-blue-800 mt-1">
+                      <p className="text-sm text-info mt-1">
                         {activeIntent.recommendation}
                       </p>
                     </div>
@@ -421,7 +438,7 @@ const Workflow = () => {
                 </p>
               )}
               {auditTrail.map((entry) => (
-                <div key={entry.id} className="border border-border rounded-lg p-4">
+                <div key={entry.id} className="pw-surface-base rounded-xl p-4">
                   <div className="flex items-start gap-4">
                     <div className="mt-1">{getStatusIcon(entry.status)}</div>
                     <div className="flex-1">
@@ -464,7 +481,7 @@ const Workflow = () => {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
+    </motion.div>
   );
 };
 

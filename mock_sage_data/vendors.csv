@@ -1,0 +1,11 @@
+vendor_id,vendor_name,contact_name,phone,email,address,payment_terms,tax_id,bank_details,current_balance,created_date,status
+VND-001,Pfizer Nigeria Ltd,Emeka Okonkwo,+234-1-4612400,nigeria.supply@pfizer.com,"15 Keffi Street, Ikoyi, Lagos",Net 60,20345678-0001,GTBank — 0211456789,12450000.00,2018-03-15,active
+VND-002,Johnson & Johnson Healthcare,Aisha Bello,+234-9-4621100,supply.ng@jnj.com,"Plot 9 Adeola Odeku, Victoria Island, Lagos",Net 45,20345678-0002,Zenith Bank — 1013456789,8750000.00,2018-06-01,active
+VND-003,GlaxoSmithKline Nigeria Plc,Chukwuemeka Eze,+234-1-2800300,procurement.ng@gsk.com,"1 Industrial Avenue, Agidingbi, Ikeja, Lagos",Net 60,20345678-0003,First Bank — 3011567890,6200000.00,2019-01-10,active
+VND-004,MSD (Merck) Nigeria,Fatima Nuhu,+234-9-9012345,ng.supply@merck.com,"Abuja Technology Village, Cen Business District, Abuja",Net 45,20345678-0004,UBA — 2041567890,4100000.00,2019-05-20,active
+VND-005,LogiCold Pharma Logistics,Tunde Adeyemi,+234-803-456-7890,ops@logicold.ng,"Km 12 Apapa-Oshodi Expressway, Apapa, Lagos",Net 30,20345678-0005,Access Bank — 0051234567,1850000.00,2020-02-14,active
+VND-006,AstraZeneca Nigeria,Ngozi Okafor,+234-1-4600200,supply.ng@astrazeneca.com,"Marina Business Hub, 38 Marina, Lagos Island",Net 60,20345678-0006,GTBank — 0215678901,9300000.00,2019-08-22,active
+VND-007,Emzor Pharmaceutical Industries,Ibrahim Musa,+234-1-5930100,procurement@emzor.ng,"28 Segun Irefin Street, Isolo Industrial Estate, Lagos",Net 30,20345678-0007,Zenith Bank — 1019876543,3200000.00,2020-07-05,active
+VND-008,May & Baker Nigeria Plc,Adaeze Nwosu,+234-1-5932500,supply@maybaker.ng,"3-5 Sapara Street, Isolo Industrial Estate, Lagos",Net 30,20345678-0008,First Bank — 3016543210,2750000.00,2020-09-18,active
+VND-009,DHL Supply Chain Nigeria,Oluwaseun Bakare,+234-700-DHLNIGERIA,pharma@dhl.ng,"DHL Hub, Murtala Muhammed International Airport, Lagos",Net 15,20345678-0009,Access Bank — 0054321876,680000.00,2021-01-30,active
+VND-010,ColdEx Freight Solutions,Patience Amadi,+234-805-234-5678,ops@coldexfreight.ng,"5 Transloader Road, Port Harcourt, Rivers State",Net 15,20345678-0010,UBA — 2049876543,420000.00,2021-04-12,active

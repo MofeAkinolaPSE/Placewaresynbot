@@ -62,6 +62,28 @@ class BaseAgent(abc.ABC):
 
     def run(self) -> Insight:
         start = datetime.utcnow()
+        actor_id = self.context.get("actor_id")
+        actor_role = self.context.get("actor_role")
+
+        try:
+            from src.db import audit_event
+            audit_event(
+                "agent_execution_start",
+                {
+                    "agent": self.name,
+                    "required_role": self.required_role,
+                },
+                actor_id=actor_id,
+                actor_role=actor_role,
+                event_class="agent",
+                action="run",
+                outcome="started",
+                subject_type="agent",
+                subject_id=self.name,
+            )
+        except Exception:
+            pass
+
         data = self.collect_data()
         analysis = self.analyze(data)
         insight = self.generate_insights(analysis)
@@ -72,4 +94,28 @@ class BaseAgent(abc.ABC):
             insight.execution_metadata.setdefault("cache_write_error", True)
         latency = int((datetime.utcnow() - start).total_seconds() * 1000)
         insight.execution_metadata.setdefault("latency_ms", latency)
+
+        try:
+            from src.db import audit_event
+            audit_event(
+                "agent_execution_complete",
+                {
+                    "agent": self.name,
+                    "latency_ms": latency,
+                    "confidence_score": insight.confidence_score,
+                    "finding_count": len(insight.findings),
+                    "risk_count": len(insight.risks),
+                    "recommendation_count": len(insight.recommendations),
+                },
+                actor_id=actor_id,
+                actor_role=actor_role,
+                event_class="agent",
+                action="run",
+                outcome="success",
+                subject_type="agent",
+                subject_id=self.name,
+            )
+        except Exception:
+            pass
+
         return insight

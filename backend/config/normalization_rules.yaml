@@ -1,0 +1,734 @@
+# Normalization Rules Configuration
+# Config-driven field mappings for enterprise data pipeline
+# All domain-specific behavior is defined here - no hardcoding in code
+
+# =============================================================================
+# Sage 50 Dataset Configurations
+# =============================================================================
+
+sage_customers:
+  dataset_name: customers
+  description: "Customer master data from Sage 50"
+  
+  field_mappings:
+    customer_id:
+      sources: ["customer_id", "CustomerID", "ID", "Customer ID", "Cust ID"]
+      required: true
+      
+    name:
+      sources: ["name", "Name", "CustomerName", "customer_name", "Company Name"]
+      required: true
+      
+    email:
+      sources: ["email", "Email", "EmailAddress", "E-mail"]
+      transform: lowercase
+      
+    phone:
+      sources: ["phone", "Phone", "PhoneNumber", "phone_number", "Telephone"]
+      
+    status:
+      sources: ["status", "Status", "CustomerStatus", "Active"]
+      default: "active"
+      
+    address:
+      sources: ["address", "Address", "Street Address", "Address1"]
+      
+    city:
+      sources: ["city", "City"]
+      
+    state:
+      sources: ["state", "State", "Province"]
+      
+    postal_code:
+      sources: ["postal_code", "PostalCode", "Zip", "ZIP Code"]
+      
+    country:
+      sources: ["country", "Country"]
+      default: "NG"
+  
+  enum_mappings:
+    status:
+      "active": "active"
+      "inactive": "inactive"
+      "pending": "pending"
+      "suspended": "suspended"
+      "1": "active"
+      "0": "inactive"
+      "true": "active"
+      "false": "inactive"
+      "yes": "active"
+      "no": "inactive"
+
+sage_ar:
+  dataset_name: ar
+  description: "Accounts Receivable from Sage 50"
+  
+  field_mappings:
+    customer_id:
+      sources: ["customer_id", "CustomerID", "Customer ID"]
+      required: true
+      
+    invoice_id:
+      sources: ["invoice_id", "InvoiceID", "Invoice Number", "InvoiceNo"]
+      
+    amount:
+      sources: ["amount", "Amount", "Total", "Invoice Amount", "Balance"]
+      transform: decimal
+      required: true
+      
+    due_date:
+      sources: ["due_date", "DueDate", "Due Date", "Due"]
+      transform: timestamp
+      
+    invoice_date:
+      sources: ["invoice_date", "InvoiceDate", "Invoice Date", "Date"]
+      transform: timestamp
+      
+    status:
+      sources: ["status", "Status", "Payment Status"]
+      default: "open"
+  
+  enum_mappings:
+    status:
+      "open": "open"
+      "paid": "paid"
+      "overdue": "overdue"
+      "partial": "partial"
+      "outstanding": "open"
+      "fully paid": "paid"
+      "partially paid": "partial"
+
+sage_ap:
+  dataset_name: ap
+  description: "Accounts Payable from Sage 50"
+  
+  field_mappings:
+    vendor_id:
+      sources: ["vendor_id", "VendorID", "Vendor ID", "SupplierID"]
+      required: true
+      
+    invoice_id:
+      sources: ["invoice_id", "InvoiceID", "Invoice Number", "Bill Number"]
+      
+    amount:
+      sources: ["amount", "Amount", "Total", "Bill Amount", "Balance"]
+      transform: decimal
+      required: true
+      
+    due_date:
+      sources: ["due_date", "DueDate", "Due Date"]
+      transform: timestamp
+      
+    status:
+      sources: ["status", "Status", "Payment Status"]
+      default: "open"
+  
+  enum_mappings:
+    status:
+      "open": "open"
+      "paid": "paid"
+      "overdue": "overdue"
+      "partial": "partial"
+
+sage_gl:
+  dataset_name: gl
+  description: "General Ledger from Sage 50"
+  
+  field_mappings:
+    account_code:
+      sources: ["account_code", "AccountCode", "Account Code", "Account No", "Acct"]
+      required: true
+      
+    account_name:
+      sources: ["account_name", "AccountName", "Account Name", "Description"]
+      
+    debit:
+      sources: ["debit", "Debit", "Debit Amount"]
+      transform: decimal
+      
+    credit:
+      sources: ["credit", "Credit", "Credit Amount"]
+      transform: decimal
+      
+    balance:
+      sources: ["balance", "Balance", "Net"]
+      transform: decimal
+      
+    transaction_date:
+      sources: ["transaction_date", "TransactionDate", "Date", "Trans Date"]
+      transform: timestamp
+
+sage_inventory:
+  dataset_name: inventory
+  description: "Inventory items from Sage 50"
+  
+  field_mappings:
+    sku:
+      sources: ["sku", "SKU", "ProductCode", "ItemCode", "Item Code", "Product ID"]
+      required: true
+      
+    name:
+      sources: ["name", "Name", "Description", "ProductName", "Item Description"]
+      required: true
+      
+    quantity:
+      sources: ["quantity", "Quantity", "qty", "Qty", "on_hand", "On Hand", "Stock"]
+      transform: integer
+      
+    price:
+      sources: ["price", "Price", "UnitPrice", "unit_price", "Selling Price"]
+      transform: decimal
+      
+    cost:
+      sources: ["cost", "Cost", "UnitCost", "unit_cost", "Purchase Price"]
+      transform: decimal
+      
+    category:
+      sources: ["category", "Category", "Product Category", "Type"]
+      
+    reorder_level:
+      sources: ["reorder_level", "ReorderLevel", "Min Stock", "Minimum"]
+      transform: integer
+
+sage_staff:
+  dataset_name: staff
+  description: "Staff/Employee master data from Sage 50"
+  
+  field_mappings:
+    staff_id:
+      sources: ["staff_id", "StaffID", "employee_id", "EmployeeID", "ID"]
+      required: true
+      
+    name:
+      sources: ["name", "Name", "FullName", "full_name", "Employee Name"]
+      required: true
+      
+    email:
+      sources: ["email", "Email", "EmailAddress"]
+      transform: lowercase
+      
+    department:
+      sources: ["department", "Department", "Dept"]
+      
+    role:
+      sources: ["role", "Role", "Position", "Title", "Job Title"]
+      
+    status:
+      sources: ["status", "Status", "Employment Status"]
+      default: "active"
+  
+  enum_mappings:
+    status:
+      "active": "active"
+      "inactive": "inactive"
+      "terminated": "terminated"
+      "on_leave": "on_leave"
+      "1": "active"
+      "0": "inactive"
+
+# ---------------------------------------------------------------------------
+# Extended Sage CSV snapshot types (migration 063)
+# ---------------------------------------------------------------------------
+
+sage_chart_of_accounts:
+  dataset_name: chart_of_accounts
+  description: "Full account code hierarchy from Sage 50"
+
+  field_mappings:
+    account_id:
+      sources: ["account_id", "AccountID", "Account ID", "ID"]
+      required: true
+
+    account_code:
+      sources: ["account_code", "AccountCode", "Account Code", "Code", "Acct Code"]
+      required: true
+
+    account_name:
+      sources: ["account_name", "AccountName", "Account Name", "Name", "Description"]
+      required: true
+
+    account_type:
+      sources: ["account_type", "AccountType", "Account Type", "Type", "Category"]
+
+    parent_account_id:
+      sources: ["parent_account_id", "ParentAccountID", "Parent ID", "ParentID"]
+
+    description:
+      sources: ["description", "Description", "Notes", "Remarks"]
+
+    is_active:
+      sources: ["is_active", "IsActive", "Active", "Status"]
+      default: "true"
+
+sage_vendors:
+  dataset_name: vendors
+  description: "Supplier master list from Sage 50"
+
+  field_mappings:
+    vendor_id:
+      sources: ["vendor_id", "VendorID", "Vendor ID", "SupplierID", "Supplier ID", "ID"]
+      required: true
+
+    vendor_name:
+      sources: ["vendor_name", "VendorName", "Vendor Name", "Supplier", "Name"]
+      required: true
+
+    contact_name:
+      sources: ["contact_name", "ContactName", "Contact", "Contact Person"]
+
+    email:
+      sources: ["email", "Email", "EmailAddress", "E-mail"]
+      transform: lowercase
+
+    phone:
+      sources: ["phone", "Phone", "PhoneNumber", "Telephone"]
+
+    address:
+      sources: ["address", "Address", "Street"]
+
+    city:
+      sources: ["city", "City"]
+
+    state:
+      sources: ["state", "State", "Province"]
+
+    country:
+      sources: ["country", "Country"]
+      default: "NG"
+
+    payment_terms:
+      sources: ["payment_terms", "PaymentTerms", "Payment Terms", "Terms"]
+
+    tax_id:
+      sources: ["tax_id", "TaxID", "Tax ID", "TIN", "VAT Number"]
+
+    status:
+      sources: ["status", "Status", "VendorStatus"]
+      default: "active"
+
+  enum_mappings:
+    status:
+      "active": "active"
+      "inactive": "inactive"
+      "suspended": "suspended"
+      "1": "active"
+      "0": "inactive"
+
+sage_items:
+  dataset_name: items
+  description: "Product / SKU catalogue from Sage 50"
+
+  field_mappings:
+    item_id:
+      sources: ["item_id", "ItemID", "Item ID", "ProductID", "Product ID", "SKU", "Code"]
+      required: true
+
+    item_name:
+      sources: ["item_name", "ItemName", "Item Name", "ProductName", "Product Name", "Description"]
+      required: true
+
+    category:
+      sources: ["category", "Category", "Product Category", "Type"]
+
+    unit:
+      sources: ["unit", "Unit", "UOM", "Unit of Measure"]
+
+    cost_price:
+      sources: ["cost_price", "CostPrice", "Cost", "Purchase Price"]
+      transform: decimal
+
+    selling_price:
+      sources: ["selling_price", "SellingPrice", "Selling Price", "Price", "Unit Price"]
+      transform: decimal
+
+    vat_category:
+      sources: ["vat_category", "VATCategory", "VAT Cat", "Tax Category"]
+
+    reorder_level:
+      sources: ["reorder_level", "ReorderLevel", "Reorder Level", "Min Qty", "Minimum"]
+      transform: decimal
+
+    preferred_vendor_id:
+      sources: ["preferred_vendor_id", "PreferredVendorID", "Preferred Vendor", "Primary Supplier"]
+
+    is_active:
+      sources: ["is_active", "IsActive", "Active", "Status"]
+      default: "true"
+
+sage_purchase_orders:
+  dataset_name: purchase_orders
+  description: "Purchase order history from Sage 50"
+
+  field_mappings:
+    po_id:
+      sources: ["po_id", "POID", "PO ID", "ID"]
+      required: true
+
+    po_number:
+      sources: ["po_number", "PONumber", "PO Number", "PO No", "Order Number"]
+      required: true
+
+    vendor_id:
+      sources: ["vendor_id", "VendorID", "Vendor ID", "SupplierID"]
+
+    order_date:
+      sources: ["order_date", "OrderDate", "Order Date", "Date"]
+      transform: timestamp
+
+    expected_delivery_date:
+      sources: ["expected_delivery_date", "ExpectedDeliveryDate", "Delivery Date", "Due Date"]
+      transform: timestamp
+
+    total_amount:
+      sources: ["total_amount", "TotalAmount", "Total", "Gross Amount"]
+      transform: decimal
+
+    tax_amount:
+      sources: ["tax_amount", "TaxAmount", "Tax", "VAT Amount"]
+      transform: decimal
+
+    discount_amount:
+      sources: ["discount_amount", "DiscountAmount", "Discount"]
+      transform: decimal
+
+    net_amount:
+      sources: ["net_amount", "NetAmount", "Net Total", "Amount"]
+      transform: decimal
+
+    status:
+      sources: ["status", "Status", "PO Status"]
+      default: "open"
+
+    warehouse_id:
+      sources: ["warehouse_id", "WarehouseID", "Warehouse", "Ship To"]
+
+    created_by:
+      sources: ["created_by", "CreatedBy", "Created By", "Buyer"]
+
+  enum_mappings:
+    status:
+      "open": "open"
+      "approved": "approved"
+      "received": "received"
+      "partial": "partial"
+      "cancelled": "cancelled"
+      "closed": "closed"
+
+sage_sales_invoice_lines:
+  dataset_name: sales_invoice_lines
+  description: "Per-line sales invoice detail from Sage 50"
+
+  field_mappings:
+    line_id:
+      sources: ["line_id", "LineID", "Line ID", "Line No", "ID"]
+      required: true
+
+    invoice_id:
+      sources: ["invoice_id", "InvoiceID", "Invoice ID", "Invoice Number", "InvoiceNo"]
+      required: true
+
+    item_id:
+      sources: ["item_id", "ItemID", "Item ID", "ProductID", "SKU", "Code"]
+
+    quantity:
+      sources: ["quantity", "Quantity", "Qty"]
+      transform: decimal
+
+    unit_price:
+      sources: ["unit_price", "UnitPrice", "Unit Price", "Price"]
+      transform: decimal
+
+    discount:
+      sources: ["discount", "Discount", "Discount %", "Discount Amount"]
+      transform: decimal
+
+    line_total:
+      sources: ["line_total", "LineTotal", "Line Total", "Amount", "Nett"]
+      transform: decimal
+
+    cost_at_sale:
+      sources: ["cost_at_sale", "CostAtSale", "Cost at Sale", "COGS"]
+      transform: decimal
+
+    gross_profit:
+      sources: ["gross_profit", "GrossProfit", "Gross Profit", "GP"]
+      transform: decimal
+
+sage_inventory_transactions:
+  dataset_name: inventory_transactions
+  description: "Stock movement ledger from Sage 50"
+
+  field_mappings:
+    transaction_id:
+      sources: ["transaction_id", "TransactionID", "Transaction ID", "Txn ID", "ID"]
+      required: true
+
+    item_id:
+      sources: ["item_id", "ItemID", "Item ID", "SKU", "Product Code"]
+
+    warehouse_id:
+      sources: ["warehouse_id", "WarehouseID", "Warehouse", "Location"]
+
+    transaction_type:
+      sources: ["transaction_type", "TransactionType", "Type", "Movement Type"]
+
+    quantity_in:
+      sources: ["quantity_in", "QuantityIn", "Qty In", "Received"]
+      transform: decimal
+
+    quantity_out:
+      sources: ["quantity_out", "QuantityOut", "Qty Out", "Issued"]
+      transform: decimal
+
+    unit_cost:
+      sources: ["unit_cost", "UnitCost", "Unit Cost", "Cost"]
+      transform: decimal
+
+    reference_number:
+      sources: ["reference_number", "ReferenceNumber", "Reference", "Ref No", "Ref"]
+
+    transaction_date:
+      sources: ["transaction_date", "TransactionDate", "Transaction Date", "Date"]
+      transform: timestamp
+
+    posted_by:
+      sources: ["posted_by", "PostedBy", "Posted By", "User"]
+
+  enum_mappings:
+    transaction_type:
+      "purchase": "purchase"
+      "sale": "sale"
+      "transfer": "transfer"
+      "adjustment": "adjustment"
+      "return": "return"
+      "write_off": "write_off"
+
+# =============================================================================
+# HR Dataset Configurations
+# =============================================================================
+
+hr_payroll:
+  dataset_name: payroll
+  description: "Payroll data"
+  
+  field_mappings:
+    employee_id:
+      sources: ["employee_id", "EmployeeID", "Staff ID"]
+      required: true
+      
+    salary:
+      sources: ["salary", "Salary", "Basic Salary", "Base Pay"]
+      transform: decimal
+      
+    overtime_hours:
+      sources: ["overtime_hours", "OvertimeHours", "OT Hours"]
+      transform: decimal
+      
+    overtime_rate:
+      sources: ["overtime_rate", "OvertimeRate", "OT Rate"]
+      transform: decimal
+      
+    pay_period:
+      sources: ["pay_period", "PayPeriod", "Period"]
+      
+    pay_date:
+      sources: ["pay_date", "PayDate", "Date"]
+      transform: timestamp
+
+hr_absences:
+  dataset_name: absences
+  description: "Employee absences and leave"
+  
+  field_mappings:
+    employee_id:
+      sources: ["employee_id", "EmployeeID", "Staff ID"]
+      required: true
+      
+    date:
+      sources: ["date", "Date", "AbsenceDate"]
+      transform: timestamp
+      required: true
+      
+    hours:
+      sources: ["hours", "Hours"]
+      transform: decimal
+      
+    type:
+      sources: ["type", "Type", "Leave Type", "Absence Type"]
+      default: "unpaid"
+  
+  enum_mappings:
+    type:
+      "annual": "annual"
+      "sick": "sick"
+      "unpaid": "unpaid"
+      "maternity": "maternity"
+      "paternity": "paternity"
+      "bereavement": "bereavement"
+
+# =============================================================================
+# Operations Dataset Configurations
+# =============================================================================
+
+ops_orders:
+  dataset_name: orders
+  description: "Customer orders"
+  
+  field_mappings:
+    order_id:
+      sources: ["order_id", "OrderID", "Order No", "Order Number"]
+      required: true
+      
+    customer_id:
+      sources: ["customer_id", "CustomerID"]
+      
+    created_at:
+      sources: ["created_at", "CreatedAt", "Order Date", "Date"]
+      transform: timestamp
+      
+    fulfilled_at:
+      sources: ["fulfilled_at", "FulfilledAt", "Ship Date", "Delivery Date"]
+      transform: timestamp
+      
+    sku:
+      sources: ["sku", "SKU", "Product Code"]
+      
+    quantity:
+      sources: ["quantity", "Quantity", "Qty"]
+      transform: integer
+      
+    status:
+      sources: ["status", "Status", "Order Status"]
+      default: "pending"
+  
+  enum_mappings:
+    status:
+      "pending": "pending"
+      "processing": "processing"
+      "shipped": "shipped"
+      "delivered": "delivered"
+      "cancelled": "cancelled"
+
+ops_downtime:
+  dataset_name: downtime
+  description: "Machine/equipment downtime logs"
+  
+  field_mappings:
+    machine_id:
+      sources: ["machine_id", "MachineID", "Equipment ID"]
+      required: true
+      
+    started_at:
+      sources: ["started_at", "StartedAt", "Start Time", "From"]
+      transform: timestamp
+      required: true
+      
+    ended_at:
+      sources: ["ended_at", "EndedAt", "End Time", "To"]
+      transform: timestamp
+      
+    minutes:
+      sources: ["minutes", "Minutes", "Duration"]
+      transform: integer
+      
+    reason:
+      sources: ["reason", "Reason", "Cause"]
+
+# =============================================================================
+# CRM Dataset Configurations
+# =============================================================================
+
+crm_pipeline:
+  dataset_name: pipeline
+  description: "Sales pipeline opportunities"
+  
+  field_mappings:
+    opportunity_id:
+      sources: ["opportunity_id", "OpportunityID", "Opp ID"]
+      required: true
+      
+    customer_id:
+      sources: ["customer_id", "CustomerID", "Account ID"]
+      
+    amount:
+      sources: ["amount", "Amount", "Value", "Deal Size"]
+      transform: decimal
+      
+    stage:
+      sources: ["stage", "Stage", "Pipeline Stage"]
+      default: "prospect"
+      
+    status:
+      sources: ["status", "Status"]
+      default: "active"
+      
+    close_date:
+      sources: ["close_date", "CloseDate", "Expected Close"]
+      transform: timestamp
+      
+    probability:
+      sources: ["probability", "Probability", "Win Rate"]
+      transform: decimal
+  
+  enum_mappings:
+    stage:
+      "prospect": "prospect"
+      "qualified": "qualified"
+      "proposal": "proposal"
+      "negotiation": "negotiation"
+      "closed_won": "closed_won"
+      "closed_lost": "closed_lost"
+    status:
+      "active": "active"
+      "inactive": "inactive"
+      "won": "won"
+      "lost": "lost"
+
+# =============================================================================
+# Transform Definitions (referenced in field_mappings)
+# =============================================================================
+
+transforms:
+  lowercase:
+    type: "string"
+    function: "str.lower()"
+    
+  decimal:
+    type: "numeric"
+    function: "parse_decimal"
+    strip_chars: ["$", ",", "₦"]
+    
+  integer:
+    type: "numeric"
+    function: "int(float())"
+    
+  timestamp:
+    type: "date"
+    formats:
+      - "%Y-%m-%d"
+      - "%Y-%m-%dT%H:%M:%S"
+      - "%Y-%m-%dT%H:%M:%SZ"
+      - "%Y-%m-%dT%H:%M:%S.%f"
+      - "%d/%m/%Y"
+      - "%m/%d/%Y"
+      - "%Y%m%d"
+      - "%d-%m-%Y"
+      - "%d %b %Y"
+    output_format: "ISO8601"
+
+# =============================================================================
+# Global Settings
+# =============================================================================
+
+settings:
+  # Default timestamp output format
+  timestamp_output: "ISO8601Z"
+  
+  # Missing value handling
+  null_values: ["", "null", "NULL", "N/A", "n/a", "-", "None", "NONE"]
+  
+  # Case sensitivity for enum matching
+  enum_case_insensitive: true
+  
+  # Enable strict validation (fail on unknown fields)
+  strict_mode: false

@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiUrl } from "@/lib/api-base";
 import { authClient } from "@/lib/auth-client";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 const AskSynbot = () => {
   const [conversations, setConversations] = useState([
@@ -130,9 +132,14 @@ const AskSynbot = () => {
   const activeConversation = conversations.find((c) => c.id === activeConvId);
 
   return (
-    <div className="flex h-screen bg-background">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="pw-page-surface flex min-h-[calc(100vh-8rem)]"
+    >
       {/* Sidebar - Conversations */}
-      <div className="w-64 border-r border-border flex flex-col bg-card">
+      <div className="z-10 flex w-64 flex-col border-r border-border/70 bg-card/80 backdrop-blur-md">
         <div className="p-4 border-b border-border">
           <Button
             className="w-full"
@@ -196,16 +203,16 @@ const AskSynbot = () => {
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t border-border text-xs text-muted-foreground">
-          <p>Synbot-BVE v1.0</p>
-          <p>Powered by AI</p>
+        <div className="border-t border-border/70 p-4 text-xs text-muted-foreground">
+          <p>PlacewareBot v1.0</p>
+          <p>Powered by Placeware AI</p>
         </div>
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="z-10 flex flex-1 flex-col">
         {/* Header */}
-        <div className="border-b border-border p-6 bg-card">
+        <div className="border-b border-border/70 bg-card/80 p-6 backdrop-blur-md">
           <h1 className="text-2xl font-bold text-foreground">
             {activeConversation?.title}
           </h1>
@@ -226,7 +233,7 @@ const AskSynbot = () => {
               >
                 {msg.type === "bot" && (
                   <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-semibold text-sm flex-shrink-0">
-                    S
+                    P
                   </div>
                 )}
 
@@ -281,11 +288,11 @@ const AskSynbot = () => {
         </ScrollArea>
 
         {/* Disclaimer */}
-        <div className="border-t border-border p-4 bg-yellow-50 border-l-4 border-l-yellow-500 mx-6 mb-4 rounded">
+        <div className="mx-6 mb-4 rounded-xl border border-warning/30 bg-warning/15 p-4">
           <div className="flex gap-3">
-            <AlertCircle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-yellow-800">
-              <strong>Pharma Compliance Notice:</strong> Synbot analysis is for business intelligence only. 
+            <AlertCircle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-warning">
+              <strong>Pharma Compliance Notice:</strong> PlacewareBot analysis is for business intelligence only. 
               For regulated decisions (formulary inclusions, pricing), consult subject matter experts and 
               regulatory compliance team.
             </p>
@@ -304,7 +311,7 @@ const AskSynbot = () => {
                   handleSendMessage();
                 }
               }}
-              placeholder="Ask Synbot a question about your business..."
+              placeholder="Ask PlacewareBot a question about your business..."
               className="flex-1"
             />
             <Button onClick={handleSendMessage} size="icon" disabled={isSending}>
@@ -313,7 +320,7 @@ const AskSynbot = () => {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

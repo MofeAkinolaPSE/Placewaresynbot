@@ -3,7 +3,25 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar 
 } from "recharts";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
+
+function toNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function describeDashboardError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.kind === "permission") return "You do not have permission to view this financial dataset.";
+    if (err.kind === "session") return "Your session has expired. Please sign in again.";
+    if (err.kind === "transport") return "Network issue while loading finance data. Check connection and retry.";
+    if (err.kind === "validation") return "Finance request was rejected due to invalid input.";
+    if (err.kind === "server") return "Finance service is temporarily unavailable.";
+    return err.message || fallback;
+  }
+  if (err instanceof Error) return err.message || fallback;
+  return fallback;
+}
 
 export function FinancialDashboard() {
   const { data: financeData, isLoading: kpiLoading, error } = useQuery({
@@ -27,29 +45,40 @@ export function FinancialDashboard() {
 
   const financeValid =
     !!payload &&
-    typeof payload.ar?.total_amount === "number" &&
-    typeof payload.ar?.total_balance === "number" &&
-    typeof payload.ar?.overdue_count === "number" &&
-    typeof payload.ap?.total_amount === "number" &&
-    typeof payload.ap?.total_balance === "number" &&
-    typeof payload.ap?.overdue_count === "number";
+    payload.ar &&
+    payload.ap &&
+    payload.ar.total_amount !== undefined &&
+    payload.ar.total_balance !== undefined &&
+    payload.ar.overdue_count !== undefined &&
+    payload.ap.total_amount !== undefined &&
+    payload.ap.total_balance !== undefined &&
+    payload.ap.overdue_count !== undefined;
 
   const trendValid = !!trendData && Array.isArray((trendData as any).periods);
   const txValid = Array.isArray(txData);
 
   const ar = financeValid
-    ? payload.ar
+    ? {
+        total_amount: toNumber(payload.ar.total_amount),
+        total_balance: toNumber(payload.ar.total_balance),
+        overdue_count: toNumber(payload.ar.overdue_count),
+      }
     : { total_amount: 0, total_balance: 0, overdue_count: 0 };
   const ap = financeValid
-    ? payload.ap
+    ? {
+        total_amount: toNumber(payload.ap.total_amount),
+        total_balance: toNumber(payload.ap.total_balance),
+        overdue_count: toNumber(payload.ap.overdue_count),
+      }
     : { total_amount: 0, total_balance: 0, overdue_count: 0 };
 
   // Process Trend Data
-  const cashflowData = trendValid ? ((trendData as any).periods as any[]).map((p: any) => ({
+    const cashflowData = trendValid ? ((trendData as any).periods as any[]).map((p: any) => ({
       month: p.period,
-      inflow: p.amount / 1000000, 
-      outflow: 0 
-  })).sort((a: any, b: any) => a.month.localeCompare(b.month)) : [];
+      inflow: Number(p.inflow ?? p.amount ?? 0) / 1000000,
+      outflow: Number(p.outflow ?? 0) / 1000000,
+      net: Number(p.net ?? (Number(p.inflow ?? p.amount ?? 0) - Number(p.outflow ?? 0))) / 1000000,
+    })).sort((a: any, b: any) => a.month.localeCompare(b.month)) : [];
 
   const recentTx = txValid ? txData : [];
 
@@ -57,7 +86,7 @@ export function FinancialDashboard() {
     <div className="space-y-6">
       {error && (
         <div className="text-sm text-destructive">
-          Data error: {(error as Error).message || "Failed to load financial KPIs."}
+          Data error: {describeDashboardError(error, "Failed to load financial KPIs.")}
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -111,7 +140,7 @@ export function FinancialDashboard() {
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle>Cash Flow Overview</CardTitle>
-            <CardDescription>Monthly inflow vs outflow</CardDescription>
+            <CardDescription>Monthly inflow vs outflow from latest GL snapshot</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             {trendValid && cashflowData.length > 0 ? (
@@ -126,9 +155,9 @@ export function FinancialDashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-sm text-destructive p-4">Data error: cashflow trend payload unavailable.</p>
+              <p className="text-sm text-destructive p-4">Data error: {describeDashboardError(trendError, "cashflow trend payload unavailable.")}</p>
             )}
-            {trendError && <p className="text-xs text-destructive px-4">{(trendError as Error).message}</p>}
+            {trendError && <p className="text-xs text-destructive px-4">{describeDashboardError(trendError, "Failed to load trend data.")}</p>}
           </CardContent>
         </Card>
         
@@ -145,12 +174,12 @@ export function FinancialDashboard() {
                          <p className="text-sm font-medium">{tx.description}</p>
                          <p className="text-xs text-muted-foreground">{new Date(tx.date).toLocaleDateString()}</p>
                       </div>
-                      <div className={`font-bold text-sm ${tx.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
+                       <div className={`font-bold text-sm ${tx.type === 'credit' ? 'text-success' : 'text-destructive'}`}>
                          {tx.type === 'credit' ? "+" : "-"} ₦{(tx.amount).toLocaleString()}
                       </div>
                    </div>
                 ))}
-                 {txError && <p className="text-xs text-destructive">{(txError as Error).message}</p>}
+                 {txError && <p className="text-xs text-destructive">{describeDashboardError(txError, "Failed to load transactions.")}</p>}
              </div>
           </CardContent>
         </Card>

@@ -30,6 +30,7 @@ No chaos.
 Everything audit-logged.
 
 ---
+Implement an agent group chat if we need it. only if we need it.
 
 # 1️⃣ PROCUREMENT & IMPORT → Import Intelligence Agent
 

@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 from typing import Dict, Any
-from supabase import Client
-from ..db import supabase
+from typing import Any as DBClient
+from ..db import db
 from ..cache import ttl_cache
+
+
+def _dt_to_str(val: object) -> str:
+    """Coerce psycopg2 datetime/date to ISO string; passthrough for str/None."""
+    if val is None:
+        return ""
+    if hasattr(val, 'isoformat'):
+        return val.isoformat()
+    return str(val)
 
 
 MAX_ANALYTICS_ROWS = 3000
 
 
-@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",))
-def payroll_and_absence_summary(client: Client = supabase, periods: int = 3) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",), tags=("staff", "hr_summary", "executive"))
+def payroll_and_absence_summary(client: DBClient = db, periods: int = 3) -> Dict[str, Any]:
     """Compute HR analytics with deterministic formulas.
 
     - salary_total: sum(salary)
@@ -35,7 +44,7 @@ def payroll_and_absence_summary(client: Client = supabase, periods: int = 3) -> 
     abs_rows = a.data or []
     buckets: Dict[str, float] = {}
     for r in abs_rows:
-        d = (r.get("date") or "")[:7]  # YYYY-MM
+        d = _dt_to_str(r.get("date"))[:7]  # YYYY-MM
         if not d:
             continue
         buckets[d] = buckets.get(d, 0.0) + float(r.get("hours") or 0)

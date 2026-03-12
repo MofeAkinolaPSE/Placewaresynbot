@@ -1,15 +1,82 @@
 from __future__ import annotations
 from typing import List, Set
 
+# Department-Scoped Agent Routing
+# Maps keywords to agent names per Agent_stack.md specification
 _ROUTE_MAP = {
+    # 1. Inventory Intelligence Agent
     "inventory": ["inventory_intelligence"],
     "stock": ["inventory_intelligence"],
-    "expiry": ["inventory_intelligence"],
+    "expiry": ["inventory_intelligence", "expiry_monitoring"],
+    "low stock": ["inventory_intelligence"],
+    "batch": ["inventory_intelligence", "compliance_monitoring"],
+    "restock": ["inventory_intelligence"],
+    
+    # 2. Import & Clearance Agent  
+    "import": ["import_clearance"],
+    "clearance": ["import_clearance"],
+    "shipment": ["import_clearance"],
+    "port": ["import_clearance"],
+    "supplier": ["import_clearance"],
+    "procurement": ["import_clearance"],
+    
+    # 3. Compliance Monitoring Agent
     "nafdac": ["compliance_monitoring"],
     "compliance": ["compliance_monitoring"],
+    "regulatory": ["compliance_monitoring"],
+    "approval": ["compliance_monitoring"],
+    "audit": ["compliance_monitoring"],
+    
+    # 4. Cold-Chain Integrity Agent
+    "cold chain": ["cold_chain_integrity"],
+    "temperature": ["cold_chain_integrity"],
+    "cold room": ["cold_chain_integrity", "cold_room_capacity"],
+    "vaccine storage": ["cold_chain_integrity"],
+    "cold box": ["cold_chain_integrity"],
+    
+    # 5. Cold Room Capacity Agent
+    "capacity": ["cold_room_capacity"],
+    "storage": ["cold_room_capacity"],
+    
+    # 6. Logistics Optimization Agent
+    "logistics": ["logistics_optimization"],
+    "delivery": ["logistics_optimization"],
+    "dispatch": ["logistics_optimization"],
+    "route": ["logistics_optimization"],
+    "transport": ["logistics_optimization"],
+    "sla": ["logistics_optimization"],
+    
+    # 7. Financial Analyst Agent
     "ar": ["financial_analyst"],
+    "ap": ["financial_analyst"],
     "finance": ["financial_analyst"],
-    "revenue": ["financial_analyst"],
+    "receivable": ["financial_analyst"],
+    "payable": ["financial_analyst"],
+    "margin": ["financial_analyst"],
+    "credit": ["financial_analyst"],
+    "overdue": ["financial_analyst"],
+    
+    # 8. Revenue Strategy Agent
+    "revenue": ["revenue_strategy"],
+    "sales": ["revenue_strategy"],
+    "growth": ["revenue_strategy"],
+    "forecast": ["revenue_strategy", "enterprise_risk"],
+    "target": ["revenue_strategy"],
+    "goal": ["revenue_strategy"],
+    
+    # 9. Enterprise Risk Agent
+    "risk": ["enterprise_risk"],
+    "scenario": ["enterprise_risk"],
+    "simulation": ["enterprise_risk"],
+    "contingency": ["enterprise_risk"],
+    "heatmap": ["enterprise_risk"],
+    
+    # 10. Process Optimization Agent
+    "process": ["process_optimization"],
+    "bottleneck": ["process_optimization"],
+    "efficiency": ["process_optimization"],
+    "turnaround": ["process_optimization"],
+    "cycle time": ["process_optimization"],
 }
 
 
@@ -28,9 +95,20 @@ def route_question(question: str, roles: Set[str], mode: str) -> List[str]:
                 if n not in seen:
                     agents.append(n)
                     seen.add(n)
-    # Default: for executive mode, include inventory + finance summaries
+    # Default: for executive mode, include all core department agents
     if not agents and mode == "executive":
-        for default in ["inventory_intelligence", "financial_analyst", "compliance_monitoring"]:
+        exec_defaults = [
+            "inventory_intelligence",
+            "financial_analyst", 
+            "compliance_monitoring",
+            "import_clearance",
+            "cold_chain_integrity",
+            "logistics_optimization",
+            "revenue_strategy",
+            "enterprise_risk",
+            "process_optimization",
+        ]
+        for default in exec_defaults:
             if default not in seen:
                 agents.append(default)
                 seen.add(default)

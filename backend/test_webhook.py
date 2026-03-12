@@ -63,10 +63,10 @@ def test_webhook_valid_signature_and_idempotency(monkeypatch):
     payload_with_sig = dict(payload)
     payload_with_sig["signature"] = sig
 
-    # Monkeypatch DB helpers and supabase
+    # Monkeypatch DB helpers and db client
     monkeypatch.setattr(db, "is_webhook_idempotent", lambda k: False)
     monkeypatch.setattr(db, "record_webhook_idempotency", lambda *a, **k: True)
-    monkeypatch.setattr(db, "supabase", FakeSupabase(tracking_exists=True))
+    monkeypatch.setattr(db, "db", FakeSupabase(tracking_exists=True))
 
     r = client.post("/webhook/tracking", json=payload_with_sig)
     assert r.status_code == 200
@@ -87,8 +87,8 @@ def test_webhook_invalid_signature(monkeypatch):
         "idempotency_key": "test-key-2",
         "signature": "bad-signature",
     }
-    # Ensure supabase doesn't get called by making tracking exist
-    monkeypatch.setattr(db, "supabase", FakeSupabase(tracking_exists=True))
+    # Ensure db client doesn't get called by making tracking exist
+    monkeypatch.setattr(db, "db", FakeSupabase(tracking_exists=True))
     r = client.post("/webhook/tracking", json=payload)
     assert r.status_code == 401
 

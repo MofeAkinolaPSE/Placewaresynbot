@@ -18,7 +18,7 @@ def test_leads_to_orders_endpoint(monkeypatch):
     # Monkeypatch db_helpers to return deterministic data
     def fake_conversion(days=30):
         return {"days": days, "leads": 10, "orders": 8, "orders_linked_to_leads": 6, "conversion_rate_percent": 60.0}
-    monkeypatch.setattr(db, "supabase", db.supabase)
+    monkeypatch.setattr(db, "db", db.db)
     monkeypatch.setattr("src.db_helpers.get_lead_order_conversion", lambda days=30: fake_conversion(days))
 
     r = client.get("/admin/leads-to-orders?days=30")
@@ -26,4 +26,3 @@ def test_leads_to_orders_endpoint(monkeypatch):
     data = r.json().get("data")
     assert data["days"] == 30
     assert data["leads"] == 10
-*** End Patch

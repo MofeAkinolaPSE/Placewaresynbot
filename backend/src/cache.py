@@ -16,6 +16,7 @@ class _TTLCache:
 
     def __init__(self) -> None:
         self._store: Dict[Hashable, Tuple[float, Any]] = {}
+        self._tag_index: Dict[str, set[Hashable]] = {}
         self._lock = threading.RLock()
 
     def get(self, key: Hashable) -> Any | None:
@@ -28,17 +29,51 @@ class _TTLCache:
             if expires_at < now:
                 # Expired
                 self._store.pop(key, None)
+                self._remove_key_from_tags(key)
                 return None
             return value
 
-    def set(self, key: Hashable, value: Any, ttl_seconds: int) -> None:
+    def set(self, key: Hashable, value: Any, ttl_seconds: int, tags: Iterable[str] | None = None) -> None:
         expires_at = time.time() + ttl_seconds
         with self._lock:
             self._store[key] = (expires_at, value)
+            if tags:
+                for tag in tags:
+                    normalized = (tag or "").strip()
+                    if not normalized:
+                        continue
+                    self._tag_index.setdefault(normalized, set()).add(key)
+
+    def invalidate_tags(self, tags: Iterable[str]) -> int:
+        removed = 0
+        with self._lock:
+            for tag in tags:
+                normalized = (tag or "").strip()
+                if not normalized:
+                    continue
+                keys = list(self._tag_index.get(normalized, set()))
+                for key in keys:
+                    if key in self._store:
+                        self._store.pop(key, None)
+                        removed += 1
+                    self._remove_key_from_tags(key)
+                self._tag_index.pop(normalized, None)
+        return removed
+
+    def _remove_key_from_tags(self, key: Hashable) -> None:
+        empty_tags: list[str] = []
+        for tag, keys in self._tag_index.items():
+            if key in keys:
+                keys.discard(key)
+            if not keys:
+                empty_tags.append(tag)
+        for tag in empty_tags:
+            self._tag_index.pop(tag, None)
 
     def clear(self) -> None:
         with self._lock:
             self._store.clear()
+            self._tag_index.clear()
 
 _global_cache = _TTLCache()
 
@@ -62,7 +97,11 @@ def _make_key(
     )
 
 
-def ttl_cache(ttl_seconds: int, ignore_kwargs: Iterable[str] | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def ttl_cache(
+    ttl_seconds: int,
+    ignore_kwargs: Iterable[str] | None = None,
+    tags: Iterable[str] | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to cache function results for a fixed TTL.
 
     Designed for pure/aggregate read operations (no side-effects).
@@ -79,9 +118,17 @@ def ttl_cache(ttl_seconds: int, ignore_kwargs: Iterable[str] | None = None) -> C
             if cached is not None:
                 return cached
             value = func(*args, **kwargs)
-            _global_cache.set(key, value, ttl_seconds)
+            _global_cache.set(key, value, ttl_seconds, tags=tags)
             return value
 
         return wrapper
 
     return decorator
+
+
+def invalidate_cache_tags(*tags: str) -> int:
+    return _global_cache.invalidate_tags(tags)
+
+
+def clear_cache() -> None:
+    _global_cache.clear()

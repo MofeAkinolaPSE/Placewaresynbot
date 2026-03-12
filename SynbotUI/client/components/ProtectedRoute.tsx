@@ -21,7 +21,7 @@ const ProtectedRoute = ({ children }: PropsWithChildren) => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-600">
+      <div className="pw-page-surface min-h-screen flex items-center justify-center text-muted-foreground">
         Loading…
       </div>
     );

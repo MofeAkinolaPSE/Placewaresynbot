@@ -56,11 +56,13 @@ alter table public.placeware_import_jobs enable row level security;
 alter table public.placeware_import_rejections enable row level security;
 alter table public.placeware_kpi_promotions enable row level security;
 
+drop policy if exists admin_all_import_jobs on public.placeware_import_jobs;
 create policy admin_all_import_jobs on public.placeware_import_jobs
 for all to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists admin_all_import_rejections on public.placeware_import_rejections;
 create policy admin_all_import_rejections on public.placeware_import_rejections
 for all to authenticated
 using (public.is_admin())

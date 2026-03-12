@@ -1,6 +1,5 @@
 fastapi
 uvicorn 
-supabase 
 python-dotenv 
 requests
 pyyaml
@@ -13,3 +12,5 @@ python-multipart
 bcrypt
 openpyxl
 psycopg2-binary
+pydantic[email]
+sqlalchemy

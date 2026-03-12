@@ -7,7 +7,7 @@ import csv
 import io
 import codecs
 
-from src.middleware import verify_jwt
+from src.middleware import verify_jwt, require_role
 from src.services.staff_ops import (
     create_staff_member,
     get_staff_by_department,
@@ -16,6 +16,9 @@ from src.services.staff_ops import (
     get_timesheets,
     get_latest_staff_snapshot,
 )
+from src.services.realtime import realtime_hub
+from src.cache import invalidate_cache_tags
+from src.services.oeis import process_operational_event
 
 router = APIRouter(tags=["staff_ops"])
 audit_logger = logging.getLogger("audit")
@@ -78,6 +81,30 @@ async def register_staff(
             staff.full_name, staff.email, staff.department, staff.role
         )
         audit_logger.info({"event": "staff_created", "target": staff.email, "actor": user.get("sub")})
+        await realtime_hub.broadcast("staff_updates", {
+            "event": "staff_created",
+            "staff_id": new_staff.get("staff_id"),
+            "department": new_staff.get("department"),
+            "actor": user.get("sub"),
+        })
+        invalidate_cache_tags("staff", "workforce_dashboard", "hr_summary", "executive")
+        try:
+            await process_operational_event(
+                {
+                    "department": "staff",
+                    "event_type": "staff_created",
+                    "payload": {
+                        "staff_id": new_staff.get("staff_id"),
+                        "department": new_staff.get("department"),
+                        "email": new_staff.get("email"),
+                    },
+                    "created_by": user.get("sub"),
+                    "status": "submitted",
+                },
+                actor_id=user.get("sub"),
+            )
+        except Exception:
+            pass
         return {"success": True, "data": new_staff}
     except Exception as e:
         audit_logger.error(f"Staff creation failed: {e}")
@@ -152,6 +179,32 @@ async def submit_timesheet(
             entry.department, entry.activity_note, 
             recorded_by=user.get("sub", "api")
         )
+        await realtime_hub.broadcast("staff_updates", {
+            "event": "timesheet_recorded",
+            "staff_id": entry.staff_id,
+            "department": entry.department,
+            "hours_worked": entry.hours_worked,
+            "recorded_by": user.get("sub", "api"),
+        })
+        invalidate_cache_tags("staff", "workforce_dashboard", "hr_summary", "executive")
+        try:
+            await process_operational_event(
+                {
+                    "department": "staff",
+                    "event_type": "timesheet_recorded",
+                    "payload": {
+                        "staff_id": entry.staff_id,
+                        "department": entry.department,
+                        "hours_worked": entry.hours_worked,
+                        "date": str(entry.date),
+                    },
+                    "created_by": user.get("sub", "api"),
+                    "status": "submitted",
+                },
+                actor_id=user.get("sub", "api"),
+            )
+        except Exception:
+            pass
         return {"success": True, "data": data}
     except Exception as e:
         logging.error(f"Timesheet error: {e}")

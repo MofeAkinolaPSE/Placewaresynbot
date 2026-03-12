@@ -454,6 +454,12 @@ Mandatory:
 * Structured report summarization
 
 ---
+## Milestone 6
+
+we'll add a calendar feature manager  and a task manager/to do list tracker for executives dashboards and staff, where all members can see what the companies calender looks like, majot events are tracked, meetings are schduled, yunno, like a teams features, but only the essentials.The task managers, should all for adding basic personal tasks for staff and for executive, a reminder and pop up feature - e.g a major/minor event pops ups, inventory restock, regulation meeting, the executive have the ability to add it to the list of tasks only enabled for the execuitves mode, even the executive chat mode, has the ability to call and use this new agents/ managers, when needed.
+
+## milestone 7
+Add the floating chat icon on all pages, but level of access to function tools, depending on the Rbac, designed when the admin creates a new user.
 
 # 9️⃣ Success Criteria
 

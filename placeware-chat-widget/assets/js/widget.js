@@ -14,7 +14,7 @@
   windowEl.className = 'pw-window';
   windowEl.innerHTML = `
     <div class="pw-header">
-      <span>Placeware Assistant</span>
+      <span>PlacewareBot Assistant</span>
       <span class="pw-close">×</span>
     </div>
     <div class="pw-messages" id="pw-messages">

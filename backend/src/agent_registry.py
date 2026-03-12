@@ -30,8 +30,9 @@ def get_agent(name: str, context: Optional[dict] = None) -> Optional[BaseAgent]:
     return cls(context=context)
 
 
-def list_agents() -> List[str]:
-    return list(_REGISTRY.keys())
+def list_agents() -> Dict[str, Type[BaseAgent]]:
+    """Return the full registry of agent name -> agent class."""
+    return dict(_REGISTRY)
 
 
 @dataclass

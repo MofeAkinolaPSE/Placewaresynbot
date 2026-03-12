@@ -58,13 +58,13 @@ async def webhook_tracking_update(payload: TrackingWebhookPayload):
     if new_status not in ORDER_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail=f"Invalid tracking status: {new_status}")
     # Update tracking record
-    from src.db import supabase, TABLE_TRACKING
+    from src.db import db, TABLE_TRACKING
     now_iso = payload.event_time or dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    resp = supabase.table(TABLE_TRACKING).select("id").eq("id", payload.tracking_id).limit(1).execute()
+    resp = db.table(TABLE_TRACKING).select("id").eq("id", payload.tracking_id).limit(1).execute()
     rows = resp.data or []
     if not rows:
         raise HTTPException(status_code=404, detail="Tracking record not found")
-    supabase.table(TABLE_TRACKING).update({"status": new_status, "last_update": now_iso, "eta": payload.eta or "pending"}).eq("id", payload.tracking_id).execute()
+    db.table(TABLE_TRACKING).update({"status": new_status, "last_update": now_iso, "eta": payload.eta or "pending"}).eq("id", payload.tracking_id).execute()
     # Audit event
     from src.db import audit_event
     audit_event(
@@ -96,6 +96,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Depends, BackgroundTasks
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -115,6 +117,11 @@ from src.constants import (
     JWT_SECRET,
     CORS_ALLOW_ORIGINS,
     PROJECT_STATUS_ALLOWED,
+    PROJECT_WORKFLOW_STAGES,
+    PROJECT_STAGE_TRANSITIONS,
+    PROJECT_QC_STATUS_ALLOWED,
+    PROJECT_QC_APPROVED_STATUSES,
+    PROJECT_QC_GATED_STAGES,
     SCOPE_STATUS_ALLOWED,
     COST_STATUS_ALLOWED,
     RISK_STATUS_ALLOWED,
@@ -150,8 +157,8 @@ def _is_allowed_order_transition(current_status: str, target_status: str) -> boo
 async def update_order_status(request: Request, order_id: str, payload: OrderStatusUpdateRequest):
     require_role(request, "admin")
     # Fetch current order
-    from src.db import supabase, TABLE_ORDERS, TABLE_TRACKING
-    resp = supabase.table(TABLE_ORDERS).select("id,status").eq("id", order_id).limit(1).execute()
+    from src.db import db, TABLE_ORDERS, TABLE_TRACKING
+    resp = db.table(TABLE_ORDERS).select("id,status").eq("id", order_id).limit(1).execute()
     rows = resp.data or []
     if not rows:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -162,14 +169,14 @@ async def update_order_status(request: Request, order_id: str, payload: OrderSta
     if not _is_allowed_order_transition(current_status, new_status):
         raise HTTPException(status_code=409, detail=f"Transition not allowed: {current_status} -> {new_status}")
     # Update order status
-    supabase.table(TABLE_ORDERS).update({"status": new_status}).eq("id", order_id).execute()
+    db.table(TABLE_ORDERS).update({"status": new_status}).eq("id", order_id).execute()
     # Update tracking status if exists
-    tracking_resp = supabase.table(TABLE_TRACKING).select("id").eq("order_id", order_id).limit(1).execute()
+    tracking_resp = db.table(TABLE_TRACKING).select("id").eq("order_id", order_id).limit(1).execute()
     tracking_rows = tracking_resp.data or []
     if tracking_rows:
         tracking_id = tracking_rows[0]["id"]
         now_iso = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        supabase.table(TABLE_TRACKING).update({"status": new_status, "last_update": now_iso}).eq("id", tracking_id).execute()
+        db.table(TABLE_TRACKING).update({"status": new_status, "last_update": now_iso}).eq("id", tracking_id).execute()
     # Audit event
     actor_id = request.state.user.get("sub") if hasattr(request.state, "user") else None
     audit_event(
@@ -193,7 +200,8 @@ from src.llm_client import LLMClient  # new microservice-based LLM abstraction (
 from src.middleware import verify_jwt, rate_limit, RequestTimingMiddleware
 from src.db import (
     audit_event, 
-    insert_snapshot, 
+    insert_snapshot,
+    SnapshotInsertError,
     save_intent, 
     save_approval, 
     list_pending_intents, 
@@ -228,6 +236,8 @@ from src.db import (
     get_tracking,
     create_project_record,
     list_projects,
+    get_project,
+    update_project_stage,
     create_scope_item,
     list_scope_items,
     get_scope_item,
@@ -248,8 +258,9 @@ from src.db import (
     list_audit_logs_filtered,
     _compute_signature_hash_ref,
     AuthStoreUnavailableError,
+    get_psycopg_dsn,
 )
-from src.auth import (
+from src.auth_utils import (
     create_access_token,
     create_refresh_token,
     hash_refresh_token,
@@ -333,6 +344,19 @@ import socket
 load_dotenv()
 
 app = FastAPI()
+
+
+@app.exception_handler(RequestValidationError)
+async def _log_validation_error(request: Request, exc: RequestValidationError):
+    logging.error(
+        "422 Unprocessable Entity: %s %s — errors: %s",
+        request.method,
+        request.url.path,
+        exc.errors(),
+    )
+    return await request_validation_exception_handler(request, exc)
+
+
 app.include_router(analytics.router)
 app.include_router(inventory.router)
 app.include_router(staff_ops.router)
@@ -361,7 +385,16 @@ from src.routers.logistics import router as logistics_router
 from src.routers.documents import router as documents_router
 from src.routers.threads import router as threads_router
 from src.routers.form_schemas import router as form_schemas_router
+from src.routers.crm import router as crm_router
+from src.routers.eos import router as eos_router
+from src.routers.crm_360 import router as crm_360_router
+from src.routers.calendar_tasks import router as calendar_router, tasks_router
+from src.routers.realtime_ws import router as realtime_ws_router
+from src.routers.kg_graph import router as kg_graph_router
+from src.routers.data_ingest import router as data_ingest_router
+from src.routers.sage_csv_import import router as sage_csv_import_router
 
+app.include_router(sage_csv_import_router)
 app.include_router(replenishment_router)
 app.include_router(billing_router)
 app.include_router(agents_exec_router)
@@ -377,6 +410,27 @@ app.include_router(logistics_router)
 app.include_router(documents_router)
 app.include_router(threads_router)
 app.include_router(form_schemas_router)
+app.include_router(crm_router)
+app.include_router(eos_router)
+app.include_router(crm_360_router)
+app.include_router(calendar_router)
+app.include_router(tasks_router)
+app.include_router(realtime_ws_router)
+app.include_router(kg_graph_router)
+app.include_router(data_ingest_router)
+
+
+@app.on_event("startup")
+async def _start_kpi_watchdog():
+    import os
+    import asyncio
+    if os.getenv("KPI_WATCHDOG_ENABLED", "1") not in ("0", "false", "False"):
+        try:
+            from src.services.kpi_watchdog import get_watchdog
+            watchdog = get_watchdog()
+            asyncio.create_task(watchdog.run_loop())
+        except Exception:
+            pass
 
 
 @app.on_event("startup")
@@ -422,6 +476,89 @@ async def _start_agent_subscriptions():
         start_processor(loop, interval=5)
     except Exception:
         pass
+
+
+@app.on_event("startup")
+async def _start_crm_and_metrics_agents():
+    """Start lightweight CRM and Metrics agents in background threads if available."""
+    try:
+        import threading
+        from src.agents.crm_agents import CRMEventAgent
+        from src.agents.metrics_agent import start_in_thread as start_metrics
+        # Start CRMEventAgent in a background thread
+        def _run_crm():
+            try:
+                agent = CRMEventAgent()
+                agent.run()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_run_crm, daemon=True)
+        t.start()
+        # Start MetricsAgent
+        start_metrics()
+        # Start RiskAgent and InventoryAgent
+        try:
+            from src.agents.risk_agent import start_in_thread as start_risk
+            from src.agents.inventory_agent import start_in_thread as start_inventory
+
+            # Start CRM realtime enrichment agent
+            try:
+                from src.agents.crm_realtime_agent import start_in_thread as start_crm_realtime
+                start_crm_realtime()
+            except Exception:
+                pass
+
+            start_risk()
+            start_inventory()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+async def _seed_superadmin():
+    """Auto-seed superadmin user from env vars if not exists."""
+    import os
+    try:
+        from src.db import db
+        from src.auth_utils import hash_password
+
+        admin_email = os.getenv("ADMIN_EMAIL")
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if not admin_email or not admin_password:
+            logging.info("ADMIN_EMAIL/ADMIN_PASSWORD not set; skipping admin seed.")
+            return
+
+        existing = db.table("placeware_users").select("id").eq("email", admin_email.lower()).limit(1).execute()
+        if existing.data:
+            logging.info(f"Superadmin {admin_email} already exists; skipping seed.")
+            return
+
+        hashed = hash_password(admin_password)
+        db.table("placeware_users").insert({
+            "email": admin_email.lower(),
+            "hashed_password": hashed,
+            "roles": ["admin"],
+            "is_active": True,
+        }).execute()
+        logging.info(f"Superadmin {admin_email} seeded successfully.")
+    except Exception as e:
+        logging.warning(f"Auto-seed superadmin failed: {e}")
+
+
+@app.on_event("startup")
+async def _start_workflow_automation():
+    """Start the workflow automation scheduler for low-stock, expiry, and credit risk checks."""
+    try:
+        from src.workflow.automation import start_workflow_automation
+        await start_workflow_automation()
+        logging.info("Workflow automation scheduler started")
+    except Exception as e:
+        logging.warning(f"Workflow automation startup failed: {e}")
+
+
 app.add_middleware(RequestTimingMiddleware)
 allow_credentials = CORS_ALLOW_ORIGINS != ["*"]
 app.add_middleware(
@@ -1019,11 +1156,15 @@ def _run_orchestration_plan(
         agent_insights = []
         for name in agent_names:
             try:
+                from src.routers.agents_exec import create_db_executor, _get_default_specs_for_agent, workflow_engine as _wf_engine, shared_cache as _cache
                 agent = get_agent(name, context={
-                    "db_executor": None,  # leave DB executor to agent context or import flow
-                    "query_specs": [],
-                    "cache": None,
-                    "workflow_engine": None,
+                    "db_executor": create_db_executor(),
+                    "query_specs": _get_default_specs_for_agent(name),
+                    "cache": _cache,
+                    "workflow_engine": _wf_engine,
+                    "auto_trigger_workflow": False,  # safe default in chat path
+                    "actor_id": actor_id,
+                    "actor_role": actor_role,
                 })
                 if agent is None:
                     errors.append(f"agent_not_registered:{name}")
@@ -2532,13 +2673,43 @@ async def _process_sage_import_job(
             if is_duplicate_import(import_hash):
                 raise HTTPException(status_code=409, detail="Duplicate import detected within recent window")
 
-            c_count = insert_snapshot("sage_customers_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.customers])
-            ar_count = insert_snapshot("sage_ar_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.ar])
-            ap_count = insert_snapshot("sage_ap_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.ap])
-            gl_count = insert_snapshot("sage_gl_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.gl])
-            inv_count = insert_snapshot("sage_inventory_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.inventory])
-            staff_dicts = [x.model_dump() for x in bundle.staff]
-            staff_count = insert_snapshot("sage_staff_snapshot", batch_id, imported_at, staff_dicts)
+            # Insert snapshots with proper error handling - fail fast if persistence fails
+            try:
+                c_count = insert_snapshot("sage_customers_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.customers])
+                ar_count = insert_snapshot("sage_ar_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.ar])
+                ap_count = insert_snapshot("sage_ap_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.ap])
+                gl_count = insert_snapshot("sage_gl_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.gl])
+                inv_count = insert_snapshot("sage_inventory_snapshot", batch_id, imported_at, [x.model_dump() for x in bundle.inventory])
+                staff_dicts = [x.model_dump() for x in bundle.staff]
+                staff_count = insert_snapshot("sage_staff_snapshot", batch_id, imported_at, staff_dicts)
+            except SnapshotInsertError as e:
+                logging.error(f"Sage import failed during snapshot insert: {e}")
+                update_import_job(job_id, status="failed", metadata={"error": str(e), "table": e.table})
+                raise HTTPException(status_code=500, detail=f"Database insert failed for {e.table}: {e.original_error}")
+
+            # Validate insert counts match expected
+            expected_counts = {
+                "customers": len(bundle.customers),
+                "ar": len(bundle.ar),
+                "ap": len(bundle.ap),
+                "gl": len(bundle.gl),
+                "inventory": len(bundle.inventory),
+                "staff": len(bundle.staff),
+            }
+            actual_counts = {
+                "customers": c_count,
+                "ar": ar_count,
+                "ap": ap_count,
+                "gl": gl_count,
+                "inventory": inv_count,
+                "staff": staff_count,
+            }
+            mismatches = {k: {"expected": expected_counts[k], "actual": actual_counts[k]} 
+                         for k in expected_counts if expected_counts[k] != actual_counts[k]}
+            if mismatches:
+                logging.error(f"Insert count mismatch detected: {mismatches}")
+                update_import_job(job_id, status="failed", metadata={"error": "count_mismatch", "mismatches": mismatches})
+                raise HTTPException(status_code=500, detail=f"Insert count mismatch: {mismatches}")
 
             synced_count = 0
             if staff_dicts:
@@ -2679,10 +2850,15 @@ async def _process_hr_import_job(
                 ALIASES_HR_ABSENCES,
             ) if "absences" in datasets else ([], {"provided": False, "rows": 0})
 
-            from src.db import insert_snapshot as _ins
+            from src.db import insert_snapshot as _ins, SnapshotInsertError
 
-            pc = _ins("hr_payroll_snapshot", batch_id, imported_at, payroll_rows)
-            ac = _ins("hr_absence_snapshot", batch_id, imported_at, abs_rows)
+            try:
+                pc = _ins("hr_payroll_snapshot", batch_id, imported_at, payroll_rows)
+                ac = _ins("hr_absence_snapshot", batch_id, imported_at, abs_rows)
+            except SnapshotInsertError as e:
+                logging.error(f"HR import failed during snapshot insert: {e}")
+                update_import_job(job_id, status="failed", metadata={"error": str(e), "table": e.table})
+                raise HTTPException(status_code=500, detail=f"Database insert failed for {e.table}: {e.original_error}")
             lineage = {"payroll": payroll_diag, "absences": abs_diag}
             payroll_warnings = _payroll_baseline_lineage_warnings(payroll_rows, abs_rows)
             if payroll_warnings:
@@ -2763,10 +2939,15 @@ async def _process_ops_import_job(
                 ["machine_id", "started_at", "ended_at", "minutes"],
                 ALIASES_OPS_DOWNTIME,
             ) if "downtime" in datasets else ([], {"provided": False, "rows": 0})
-            from src.db import insert_snapshot as _ins
+            from src.db import insert_snapshot as _ins, SnapshotInsertError
 
-            oc = _ins("ops_orders_snapshot", batch_id, imported_at, ord_rows)
-            dc = _ins("ops_downtime_snapshot", batch_id, imported_at, down_rows)
+            try:
+                oc = _ins("ops_orders_snapshot", batch_id, imported_at, ord_rows)
+                dc = _ins("ops_downtime_snapshot", batch_id, imported_at, down_rows)
+            except SnapshotInsertError as e:
+                logging.error(f"OPS import failed during snapshot insert: {e}")
+                update_import_job(job_id, status="failed", metadata={"error": str(e), "table": e.table})
+                raise HTTPException(status_code=500, detail=f"Database insert failed for {e.table}: {e.original_error}")
             lineage = {"orders": orders_diag, "downtime": downtime_diag}
             final_status, gate = _quality_gate_status(lineage=lineage, rejected_count=0)
             attempts.append({"attempt": attempt, "status": "succeeded"})
@@ -2815,9 +2996,14 @@ async def _process_crm_import_job(
                 ["opportunity_id", "customer_id", "amount", "stage", "status", "close_date"],
                 ALIASES_CRM_PIPELINE,
             ) if "pipeline" in datasets else ([], {"provided": False, "rows": 0})
-            from src.db import insert_snapshot as _ins
+            from src.db import insert_snapshot as _ins, SnapshotInsertError
 
-            pc = _ins("crm_pipeline_snapshot", batch_id, imported_at, pl_rows)
+            try:
+                pc = _ins("crm_pipeline_snapshot", batch_id, imported_at, pl_rows)
+            except SnapshotInsertError as e:
+                logging.error(f"CRM import failed during snapshot insert: {e}")
+                update_import_job(job_id, status="failed", metadata={"error": str(e), "table": e.table})
+                raise HTTPException(status_code=500, detail=f"Database insert failed for {e.table}: {e.original_error}")
             lineage = {"pipeline": pipeline_diag}
             final_status, gate = _quality_gate_status(lineage=lineage, rejected_count=0)
             attempts.append({"attempt": attempt, "status": "succeeded"})
@@ -2964,6 +3150,9 @@ async def _start_background_monitors():
 async def _log_auth_store_resolution_status():
     """Log a clearer diagnostic for auth-store DNS connectivity issues."""
     try:
+        # If a local `DATABASE_URL` is configured, prefer that and skip Supabase host check.
+        if os.getenv("DATABASE_URL"):
+            return
         from src.constants import ENV_SUPABASE_URL
         supabase_url = os.getenv(ENV_SUPABASE_URL, "")
         host = urlparse(supabase_url).hostname
@@ -3192,6 +3381,15 @@ class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
     status: str = "active"
+    activity_type: str | None = None
+    supplier_name: str | None = None
+    assigned_staff_id: str | None = None
+    workflow_stage: str | None = None
+    po_reference: str | None = None
+    temperature_profile: str | None = None
+    nafdac_sampling_status: str | None = None
+    quality_check_status: str | None = "pending"
+    quality_notes: str | None = None
 
 
 class ScopeItemCreate(BaseModel):
@@ -3242,6 +3440,14 @@ class ChangeDecisionRequest(BaseModel):
 class StatusUpdateRequest(BaseModel):
     status: str
     reason_code: str | None = None
+
+
+class ProjectStageUpdateRequest(BaseModel):
+    workflow_stage: str
+    reason_code: str | None = None
+    nafdac_sampling_status: str | None = None
+    quality_check_status: str | None = None
+    quality_notes: str | None = None
 
 
 class ImportPolicyPreviewRequest(BaseModel):
@@ -3323,6 +3529,104 @@ async def ai_tools_catalog(request: Request, mode: str | None = None):
 @app.get("/")
 def read_root():
     return {"message": "Chat API is running. Use /chat endpoint."}
+
+
+@app.get("/health")
+def health_check():
+    """Structured health check for EOS and monitoring systems.
+
+    Returns DB connectivity, latest Sage import timestamp, row counts for
+    the two primary snapshot tables, and a stale_pipeline_alert flag that
+    fires when no import has run in PIPELINE_STALE_HOURS hours.
+    """
+    from src.constants import PIPELINE_STALE_HOURS
+    import datetime
+
+    db_connected = False
+    last_sage_import: str | None = None
+    sage_ar_row_count = 0
+    sage_gl_row_count = 0
+    stale_pipeline_alert = True
+
+    try:
+        from src.db import db as _db
+        # Lightweight connectivity probe
+        probe = _db.table("placeware_alerts").select("id", count="exact").limit(1).execute()
+        db_connected = True
+
+        # Most recent successful import timestamp
+        try:
+            from src.db import get_latest_successful_import_batch
+            batch_id = get_latest_successful_import_batch("sage")
+            if batch_id:
+                import_row = (
+                    _db.table("placeware_import_jobs")
+                    .select("completed_at")
+                    .eq("batch_id", batch_id)
+                    .order("completed_at", desc=True)
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+                if import_row:
+                    last_sage_import = import_row[0].get("completed_at")
+        except Exception:
+            pass
+
+        # AR snapshot row count
+        try:
+            ar_resp = _db.table("sage_ar_snapshot").select("id", count="exact").limit(1).execute()
+            sage_ar_row_count = ar_resp.count or 0
+        except Exception:
+            pass
+
+        # GL snapshot row count
+        try:
+            gl_resp = _db.table("sage_gl_snapshot").select("id", count="exact").limit(1).execute()
+            sage_gl_row_count = gl_resp.count or 0
+        except Exception:
+            pass
+
+        # Staleness check
+        if last_sage_import:
+            try:
+                ts = datetime.datetime.fromisoformat(last_sage_import.replace("Z", "+00:00"))
+                age_hours = (datetime.datetime.now(datetime.timezone.utc) - ts).total_seconds() / 3600
+                stale_pipeline_alert = age_hours > PIPELINE_STALE_HOURS
+            except Exception:
+                stale_pipeline_alert = True
+        else:
+            stale_pipeline_alert = sage_ar_row_count == 0
+
+        # Upsert a heartbeat row in agent_registry so EOS can query DB directly
+        try:
+            _db.table("agent_registry").upsert(
+                {
+                    "agent_name": "system",
+                    "description": "Backend health heartbeat",
+                    "last_heartbeat": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "enabled": True,
+                },
+                on_conflict="agent_name",
+            ).execute()
+        except Exception:
+            pass
+
+    except Exception as exc:
+        logging.error(f"/health DB probe failed: {exc}")
+
+    status = "ok" if db_connected and not stale_pipeline_alert else ("degraded" if db_connected else "error")
+
+    return {
+        "status": status,
+        "db_connected": db_connected,
+        "last_sage_import": last_sage_import,
+        "sage_ar_row_count": sage_ar_row_count,
+        "sage_gl_row_count": sage_gl_row_count,
+        "stale_pipeline_alert": stale_pipeline_alert,
+        "pipeline_stale_threshold_hours": PIPELINE_STALE_HOURS,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request):  # RAG + LLM answer with disclaimer
@@ -3535,7 +3839,7 @@ async def inventory_expiring(request: Request, thresholds: Optional[str] = None)
 
 @app.get("/analytics/ar_trends")
 async def analytics_ar_trends(request: Request, periods: int = 3):
-    require_role(request, "admin")
+    require_roles(request, ["admin", "finance", "management"])
     if periods < 1:
         periods = 1
     if periods > 12:
@@ -3689,14 +3993,23 @@ async def workflow_pending(request: Request, limit: int = 50):
 
 @app.post("/controls/projects")
 async def controls_create_project(request: Request, payload: ProjectCreate):
-    require_role(request, "admin")
+    require_roles(request, ["admin", "ops", "management"])
     if payload.status not in PROJECT_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid project status")
     created = create_project_record(
         name=payload.name,
         description=payload.description,
-        owner_id=request.state.user.get("sub"),
+        owner_id=payload.assigned_staff_id or request.state.user.get("sub"),
         status=payload.status,
+        activity_type=payload.activity_type,
+        supplier_name=payload.supplier_name,
+        assigned_staff_id=payload.assigned_staff_id,
+        workflow_stage=payload.workflow_stage,
+        po_reference=payload.po_reference,
+        temperature_profile=payload.temperature_profile,
+        nafdac_sampling_status=payload.nafdac_sampling_status,
+        quality_check_status=payload.quality_check_status,
+        quality_notes=payload.quality_notes,
     )
     if not created:
         raise HTTPException(status_code=500, detail="Failed to create project")
@@ -3715,8 +4028,153 @@ async def controls_create_project(request: Request, payload: ProjectCreate):
 
 @app.get("/controls/projects")
 async def controls_list_projects(request: Request, limit: int = 50, status: str | None = None):
-    require_role(request, "admin")
+    require_roles(request, ["admin", "ops", "management"])
     return {"data": list_projects(limit=max(1, min(limit, 200)), status=status)}
+
+
+@app.get("/controls/readiness")
+async def controls_readiness(request: Request):
+    require_roles(request, ["admin", "ops", "management"])
+    checks: dict[str, bool] = {
+        "table_placeware_projects": False,
+        "col_workflow_stage": False,
+        "col_nafdac_sampling_status": False,
+        "col_quality_check_status": False,
+        "col_quality_notes": False,
+        "col_quality_checked_by": False,
+        "col_quality_checked_at": False,
+    }
+    try:
+        import psycopg2
+
+        dsn = get_psycopg_dsn()
+        conn = psycopg2.connect(dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("select to_regclass('public.placeware_projects')")
+                checks["table_placeware_projects"] = cur.fetchone()[0] is not None
+                if checks["table_placeware_projects"]:
+                    cur.execute(
+                        """
+                        select column_name
+                        from information_schema.columns
+                        where table_schema = 'public' and table_name = 'placeware_projects'
+                        """
+                    )
+                    cols = {str(row[0]) for row in (cur.fetchall() or [])}
+                    checks["col_workflow_stage"] = "workflow_stage" in cols
+                    checks["col_nafdac_sampling_status"] = "nafdac_sampling_status" in cols
+                    checks["col_quality_check_status"] = "quality_check_status" in cols
+                    checks["col_quality_notes"] = "quality_notes" in cols
+                    checks["col_quality_checked_by"] = "quality_checked_by" in cols
+                    checks["col_quality_checked_at"] = "quality_checked_at" in cols
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {
+            "ready": False,
+            "checks": checks,
+            "reason": f"readiness_check_failed: {exc}",
+        }
+
+    ready = all(checks.values())
+    return {
+        "ready": ready,
+        "checks": checks,
+        "reason": None if ready else "project workflow schema not fully applied",
+    }
+
+
+@app.post("/controls/projects/{project_id}/stage")
+async def controls_update_project_stage(request: Request, project_id: str, payload: ProjectStageUpdateRequest):
+    require_roles(request, ["admin", "ops", "management"])
+
+    current = get_project(project_id)
+    if not current:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    current_stage = str(current.get("workflow_stage") or "port_clearing").strip().lower()
+    target_stage = payload.workflow_stage.strip().lower()
+    if target_stage not in PROJECT_WORKFLOW_STAGES:
+        raise HTTPException(status_code=400, detail=f"Invalid workflow stage: {target_stage}")
+
+    actor_id = request.state.user.get("sub")
+    if not _is_allowed_transition(current_stage, target_stage, PROJECT_STAGE_TRANSITIONS):
+        _audit_transition_denied(
+            actor_id=actor_id,
+            subject_type="project",
+            subject_id=project_id,
+            current_status=current_stage,
+            target_status=target_stage,
+            policy_code="project_stage_transition_not_allowed",
+            rejection_reason="Requested project stage transition violates workflow policy graph",
+        )
+        raise HTTPException(status_code=409, detail=f"Transition not allowed: {current_stage} -> {target_stage}")
+
+    qc_status = str(payload.quality_check_status or current.get("quality_check_status") or "pending").strip().lower()
+    if qc_status not in PROJECT_QC_STATUS_ALLOWED:
+        raise HTTPException(status_code=400, detail=f"Invalid quality_check_status: {qc_status}")
+
+    nafdac_status = str(payload.nafdac_sampling_status or current.get("nafdac_sampling_status") or "pending").strip().lower()
+
+    if target_stage in PROJECT_QC_GATED_STAGES and qc_status not in PROJECT_QC_APPROVED_STATUSES:
+        _audit_transition_denied(
+            actor_id=actor_id,
+            subject_type="project",
+            subject_id=project_id,
+            current_status=current_stage,
+            target_status=target_stage,
+            policy_code="qc_gate_not_satisfied",
+            rejection_reason="Quality Control sign-off is required before entering this stage",
+        )
+        raise HTTPException(status_code=409, detail="Quality Control must approve before this stage transition")
+
+    if target_stage == "released_for_issuing" and nafdac_status != "released":
+        _audit_transition_denied(
+            actor_id=actor_id,
+            subject_type="project",
+            subject_id=project_id,
+            current_status=current_stage,
+            target_status=target_stage,
+            policy_code="nafdac_release_required",
+            rejection_reason="NAFDAC release is required before issuing",
+        )
+        raise HTTPException(status_code=409, detail="NAFDAC status must be released before moving to issuing")
+
+    quality_checked_by = actor_id if qc_status in PROJECT_QC_APPROVED_STATUSES else None
+    quality_checked_at = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z" if quality_checked_by else None
+
+    updated = update_project_stage(
+        project_id,
+        workflow_stage=target_stage,
+        nafdac_sampling_status=nafdac_status,
+        quality_check_status=qc_status,
+        quality_notes=payload.quality_notes,
+        quality_checked_by=quality_checked_by,
+        quality_checked_at=quality_checked_at,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update workflow stage")
+
+    audit_event(
+        "controls_project_stage_updated",
+        {
+            "project_id": project_id,
+            "from": current_stage,
+            "to": target_stage,
+            "reason_code": payload.reason_code,
+            "quality_check_status": qc_status,
+            "nafdac_sampling_status": nafdac_status,
+        },
+        actor_id=actor_id,
+        event_class="project_controls",
+        action="update_project_stage",
+        outcome="success",
+        reason_code=payload.reason_code or target_stage,
+        subject_type="project",
+        subject_id=project_id,
+    )
+    return updated
 
 
 @app.post("/controls/scope")
@@ -4822,31 +5280,56 @@ async def import_inventory(
 async def sage_import_history(
     request: Request,
     limit: int = 50,
-    admin_ok: bool = Depends(require_admin_token)
 ):
-    """Retrieve history of Sage imports from audit logs."""
-    logs = get_audit_logs(limit=limit)
-    
+    """Retrieve history of Sage imports from import jobs with audit fallback."""
+    require_roles(request, ["admin", "finance", "management", "ops"])
+    limit = max(1, min(limit, 200))
+
+    jobs = list_import_jobs(limit=limit, domain="sage")
     history = []
+
+    for job in jobs:
+        counts = job.get("counts") or {}
+        if not isinstance(counts, dict):
+            counts = {}
+        count_parts = [f"{str(k).upper()}: {v}" for k, v in counts.items() if v and str(v) != "0"]
+        count_str = ", ".join(count_parts) if count_parts else "No records"
+
+        status = str(job.get("status") or "unknown").lower()
+        history.append(
+            {
+                "id": job.get("id"),
+                "date": job.get("created_at") or job.get("imported_at"),
+                "user": (job.get("metadata") or {}).get("actor_id", "System") if isinstance(job.get("metadata"), dict) else "System",
+                "action": f"Import {str(job.get('batch_id') or 'unknown')[:8]}...",
+                "status": "success" if status in {"succeeded", "partial_success"} else "error",
+                "details": count_str,
+            }
+        )
+
+    if history:
+        return {"data": history}
+
+    logs = get_audit_logs(limit=limit)
     for log in logs:
         evt_type = log.get("event_type")
         if not evt_type or "sage_import" not in evt_type:
-             continue
-             
+            continue
         details = log.get("details") or {}
-        counts = details.get("counts", {})
+        counts = details.get("counts", {}) if isinstance(details, dict) else {}
         count_parts = [f"{k.upper()}: {v}" for k, v in counts.items() if v and int(v) > 0]
         count_str = ", ".join(count_parts) if count_parts else "No records"
-             
-        history.append({
-            "id": log.get("id"),
-            "date": log.get("created_at"),
-            "user": details.get("user", "System"),
-            "action": f"Import {details.get('batch_id', 'unknown')[:8]}...",
-            "status": "success" if "validated" in evt_type or "success" in evt_type else "error",
-            "details": count_str
-        })
-    
+        history.append(
+            {
+                "id": log.get("id"),
+                "date": log.get("created_at"),
+                "user": details.get("user", "System") if isinstance(details, dict) else "System",
+                "action": f"Import {str((details or {}).get('batch_id', 'unknown'))[:8]}...",
+                "status": "success" if "validated" in evt_type or "success" in evt_type else "error",
+                "details": count_str,
+            }
+        )
+
     return {"data": history}
 
 
@@ -5966,7 +6449,7 @@ async def hr_import(
 
 @app.get("/hr/analytics/summary")
 async def hr_analytics_summary(request: Request, periods: int = 3):
-    require_roles(request, ["hr", "admin"])
+    require_roles(request, ["hr", "admin", "management"])
     res = payroll_and_absence_summary(periods=periods)
     abs_trend = res.get("absenteeism_trend", [])
     trend_info = {}
@@ -6041,7 +6524,7 @@ async def ops_import(
 
 @app.get("/ops/kpis")
 async def ops_kpis_endpoint(request: Request):
-    require_roles(request, ["ops", "admin"])
+    require_roles(request, ["ops", "admin", "management"])
     res = ops_kpis()
     series = stock_turnover_series(periods=6).get("series", [])
     trend_info = {}
@@ -6062,12 +6545,17 @@ async def intelligence_executive_summary(request: Request):
 
     Roles: admin only.
     """
-    require_role(request, "admin")
+    require_roles(request, ["admin", "management", "finance"])
     try:
         return executive_summary()
     except Exception as e:
         logging.error(f"/intelligence/executive_summary error: {e}")
-        return {"status": "Stable", "key_findings": [], "recommended_focus": []}
+        return {
+            "status": "Degraded",
+            "key_findings": ["Data pipeline error — check server logs for details."],
+            "recommended_focus": ["Engineering"],
+            "error": str(e),
+        }
 
 
 @app.get("/intelligence/risk_signals")
@@ -6076,7 +6564,7 @@ async def intelligence_risk_signals(request: Request):
 
     Roles: admin only.
     """
-    require_role(request, "admin")
+    require_roles(request, ["admin", "management", "finance", "ops"])
     try:
         signals = risk_signals()
         opportunities = opportunities_from_risks(signals.get("risks", []))
@@ -6092,7 +6580,7 @@ async def intelligence_recommendations(request: Request):
 
     Roles: admin only.
     """
-    require_role(request, "admin")
+    require_roles(request, ["admin", "management", "finance", "ops"])
     try:
         return recommendations()
     except Exception as e:
@@ -6103,7 +6591,7 @@ async def intelligence_recommendations(request: Request):
 @app.get("/intelligence/anomalies")
 async def intelligence_anomalies(request: Request):
     """Optional lightweight anomaly detection (z-score based)."""
-    require_role(request, "admin")
+    require_roles(request, ["admin", "management", "finance", "ops"])
     try:
         return anomaly_signals()
     except Exception as e:
@@ -6199,12 +6687,12 @@ if __name__ == "__main__":
 async def admin_leads(request: Request, limit: int = 50, offset: int = 0):
     """Admin endpoint: return recent leads with pagination (admin only)."""
     require_role(request, "admin")
-    from src.db import supabase, audit_event
+    from src.db import db, audit_event
     from src.constants import TABLE_LEADS
     try:
         start = int(offset)
         end = int(offset) + int(limit) - 1
-        resp = supabase.table(TABLE_LEADS).select("*").order("created_at", desc=True).range(start, end).execute()
+        resp = db.table(TABLE_LEADS).select("*").order("created_at", desc=True).range(start, end).execute()
         leads = resp.data or []
         audit_event("admin_list_leads", {"count": len(leads)}, event_class="admin", actor_id=getattr(request.state, "user", None), subject_type="leads")
         return {"data": leads, "count": len(leads)}
@@ -6219,12 +6707,12 @@ async def admin_leads(request: Request, limit: int = 50, offset: int = 0):
 async def admin_leads(request: Request, limit: int = 50, offset: int = 0):
     """Admin endpoint: return recent leads with pagination (admin only)."""
     require_role(request, "admin")
-    from src.db import supabase, audit_event
+    from src.db import db, audit_event
     from src.constants import TABLE_LEADS
     try:
         start = int(offset)
         end = int(offset) + int(limit) - 1
-        resp = supabase.table(TABLE_LEADS).select("*").order("created_at", desc=True).range(start, end).execute()
+        resp = db.table(TABLE_LEADS).select("*").order("created_at", desc=True).range(start, end).execute()
         leads = resp.data or []
         audit_event("admin_list_leads", {"count": len(leads)}, event_class="admin", actor_id=getattr(request.state, "user", None), subject_type="leads")
         return {"data": leads, "count": len(leads)}

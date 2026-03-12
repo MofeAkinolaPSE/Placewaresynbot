@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
-from src.middleware import verify_jwt
-from src.db import supabase, audit_event
+from src.middleware import verify_jwt, require_role
+from src.db import db, audit_event
 from src.schemas.documents import DocumentCreate, AttachRequest, ApprovalRequest
 import os, uuid, hashlib
 import datetime as dt
@@ -20,7 +20,7 @@ FILES_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'documen
 async def list_documents(request: Request):
     verify_jwt(request)
     try:
-        resp = supabase.table('documents').select('*').order('created_at', desc=True).execute()
+        resp = db.table('documents').select('*').order('created_at', desc=True).execute()
         docs = resp.data or []
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to list documents')
@@ -38,7 +38,7 @@ async def create_document(request: Request, payload: DocumentCreate):
     doc = payload.dict()
     doc_record = {**doc, 'created_by': getattr(request.state, 'user', {}).get('sub') if getattr(request.state, 'user', None) else None}
     try:
-        resp = supabase.table('documents').insert(doc_record).execute()
+        resp = db.table('documents').insert(doc_record).execute()
         created = resp.data[0] if resp.data else doc_record
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to create document')
@@ -81,8 +81,8 @@ async def upload_version(request: Request, document_id: str, file: UploadFile = 
 
     try:
         # insert metadata into DB (file bytes already written locally)
-        supabase.table('document_versions').insert(version_record).execute()
-        supabase.table('documents').update({'current_version': version_id}).eq('id', document_id).execute()
+        db.table('document_versions').insert(version_record).execute()
+        db.table('documents').update({'current_version': version_id}).eq('id', document_id).execute()
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to store document version')
 
@@ -136,8 +136,8 @@ async def proxy_upload(request: Request, token: str, file: UploadFile = File(...
     bucket = os.getenv('SUPABASE_STORAGE_BUCKET', 'documents')
     # attempt upload to Supabase Storage
     try:
-        # supabase.storage.from_(bucket).upload expects a file path or bytes-like object
-        supabase.storage.from_(bucket).upload(storage_path, contents)
+        # db.storage.from_(bucket).upload expects a file path or bytes-like object
+        db.storage.from_(bucket).upload(storage_path, contents)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to upload to storage: {e}')
 
@@ -154,8 +154,8 @@ async def proxy_upload(request: Request, token: str, file: UploadFile = File(...
         'checksum': checksum,
     }
     try:
-        supabase.table('document_versions').insert(version_record).execute()
-        supabase.table('documents').update({'current_version': version_id}).eq('id', document_id).execute()
+        db.table('document_versions').insert(version_record).execute()
+        db.table('documents').update({'current_version': version_id}).eq('id', document_id).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to store document version metadata: {e}')
 
@@ -180,7 +180,7 @@ async def attach_document(request: Request, document_id: str, payload: AttachReq
     attach = payload.dict()
     attach_record = {**attach, 'document_id': document_id, 'attached_by': getattr(request.state, 'user', {}).get('sub') if getattr(request.state, 'user', None) else None, 'attached_at': dt.datetime.utcnow().isoformat() + 'Z'}
     try:
-        supabase.table('document_attachments').insert(attach_record).execute()
+        db.table('document_attachments').insert(attach_record).execute()
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to attach document')
     try:
@@ -198,7 +198,7 @@ async def approve_document(request: Request, document_id: str, payload: Approval
     now = dt.datetime.utcnow().isoformat() + 'Z'
     update = {'approval_status': req.get('approval_status'), 'approved_by': getattr(request.state, 'user', {}).get('sub') if getattr(request.state, 'user', None) else None, 'approved_at': now}
     try:
-        supabase.table('documents').update(update).eq('id', document_id).execute()
+        db.table('documents').update(update).eq('id', document_id).execute()
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to update document approval')
     try:

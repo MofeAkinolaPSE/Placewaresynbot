@@ -1,6 +1,22 @@
-import { useState, useRef } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, File, CheckCircle, AlertCircle, Clock, Users } from "lucide-react";
+import {
+  Upload,
+  File,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Package,
+  ShoppingCart,
+  BarChart3,
+  FileText,
+  Warehouse,
+  Users,
+  UserCheck,
+  BookOpen,
+  Truck,
+  RefreshCw,
+} from "lucide-react";
 import {
   Table,
   TableBody,
@@ -14,323 +30,692 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { authClient } from "@/lib/auth-client";
 import { format } from "date-fns";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
+
+// ---------------------------------------------------------------------------
+// Types — slugs must match backend _REGISTRY exactly
+// ---------------------------------------------------------------------------
+
+type SageFileType =
+  | "chart_of_accounts"
+  | "vendors"
+  | "customers"
+  | "items"
+  | "stock_on_hand"
+  | "purchase_orders"
+  | "sales_invoices"
+  | "sales_invoice_lines"
+  | "inventory_transactions"
+  | "gl_journal_entries"
+  | "staff";
+
+type CardStatus = "idle" | "uploading" | "success" | "error";
+
+interface CardResult {
+  rows_inserted: number;
+  batch_id: string;
+  validation_error_count: number;
+  validation_errors: string[];
+  status: string;
+}
+
+// ---------------------------------------------------------------------------
+// Dataset registry — 10 supported document types
+// ---------------------------------------------------------------------------
+
+const DATASETS: {
+  id: SageFileType;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+}[] = [
+  {
+    id: "chart_of_accounts",
+    label: "Chart of Accounts",
+    description: "Account code hierarchy (COA)",
+    icon: BookOpen,
+  },
+  {
+    id: "vendors",
+    label: "Vendors",
+    description: "Supplier master list",
+    icon: Truck,
+  },
+  {
+    id: "customers",
+    label: "Customers",
+    description: "Customer master list",
+    icon: Users,
+  },
+  {
+    id: "items",
+    label: "Product Items",
+    description: "SKU / product catalogue",
+    icon: Package,
+  },
+  {
+    id: "stock_on_hand",
+    label: "Stock on Hand",
+    description: "Warehouse inventory balances",
+    icon: Warehouse,
+  },
+  {
+    id: "purchase_orders",
+    label: "Purchase Orders",
+    description: "Supplier PO history",
+    icon: ShoppingCart,
+  },
+  {
+    id: "sales_invoices",
+    label: "Sales Invoices",
+    description: "AR invoice register",
+    icon: FileText,
+  },
+  {
+    id: "sales_invoice_lines",
+    label: "Invoice Line Items",
+    description: "Per-line revenue & margin detail",
+    icon: BarChart3,
+  },
+  {
+    id: "inventory_transactions",
+    label: "Inventory Transactions",
+    description: "Stock movement ledger",
+    icon: Warehouse,
+  },
+  {
+    id: "gl_journal_entries",
+    label: "GL Journal Entries",
+    description: "General Ledger double-entry journal",
+    icon: BookOpen,
+  },
+  {
+    id: "staff",
+    label: "Staff Registry",
+    description: "Employee / staff master list",
+    icon: Users,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 const SageImport = () => {
-  const [uploadedFiles, setUploadedFiles] = useState<
-    {
-      name: string;
-      status: "pending" | "uploaded";
-      rows: number;
-    }[]
-  >([]);
-  const [fileMap, setFileMap] = useState<Record<string, File>>({});
-  const [importInProgress, setImportInProgress] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    batchId: string;
-    timestamp: string;
-    files: { name: string; rows: number }[];
-  } | null>(null);
+  const [fileMap, setFileMap] = useState<Partial<Record<SageFileType, File>>>({});
+  const [cardStatus, setCardStatus] = useState<Partial<Record<SageFileType, CardStatus>>>({});
+  const [cardResult, setCardResult] = useState<Partial<Record<SageFileType, CardResult>>>({});
+  const [uploadingAll, setUploadingAll] = useState(false);
 
-  const { data: historyData, refetch: refetchHistory } = useQuery({
-    queryKey: ["sage-history"],
-    queryFn: () => api.sage.history(),
+  // ── HR import state ──────────────────────────────────────────────────────
+  const [hrFiles, setHrFiles] = useState<{ payroll: File | null; absences: File | null }>({
+    payroll: null,
+    absences: null,
   });
-  
-  const auditLogs = historyData || [];
+  const [hrStatus, setHrStatus] = useState<CardStatus>("idle");
+  const [hrResult, setHrResult] = useState<{ counts?: { payroll?: number; absences?: number }; batch_id?: string } | null>(null);
 
-  const datasets = [
-    { id: "customers", label: "Customers", icon: File },
-    { id: "ar", label: "Accounts Receivable (AR)", icon: File },
-    { id: "ap", label: "Accounts Payable (AP)", icon: File },
-    { id: "gl", label: "General Ledger (GL)", icon: File },
-    { id: "inventory", label: "Inventory", icon: File },
-    { id: "staff", label: "Staff Registry", icon: Users },
-  ];
+  const {
+    data: historyData,
+    refetch: refetchHistory,
+    isFetching: historyFetching,
+  } = useQuery({
+    queryKey: ["sage-import-jobs"],
+    queryFn: () => api.sage.importJobs(30),
+    refetchInterval: 30_000,
+  });
 
-  const handleFileChange = (datasetId: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const f = e.target.files[0];
-      setFileMap((prev) => ({ ...prev, [datasetId]: f }));
-      
-      // Update UI state
-      setUploadedFiles((prev) => {
-        const filtered = prev.filter((p) => !p.name.startsWith(datasetId));
-        return [
-          ...filtered,
-          {
-            name: `${datasetId}_${f.name}`,
-            status: "uploaded",
-            rows: 0, // Will be updated after import
-          },
-        ];
+  const jobs = historyData?.jobs ?? [];
+
+  // ── File selection ────────────────────────────────────────────────────────
+
+  const handleFileChange = useCallback(
+    (fileType: SageFileType, e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      if (!f.name.toLowerCase().endsWith(".csv")) {
+        toast.error("Only .csv files are accepted");
+        return;
+      }
+      setFileMap((prev) => ({ ...prev, [fileType]: f }));
+      // Reset card state when a new file is chosen
+      setCardStatus((prev) => ({ ...prev, [fileType]: "idle" }));
+      setCardResult((prev) => {
+        const next = { ...prev };
+        delete next[fileType];
+        return next;
       });
-      toast.success(`${datasetId.toUpperCase()} file selected`);
-    }
-  };
+      toast.success(`${f.name} ready for ${fileType}`);
+    },
+    [],
+  );
 
-  const handleImport = async () => {
-    if (Object.keys(fileMap).length === 0) {
-      toast.error("Please upload at least one file");
-      return;
-    }
+  // ── Individual card upload ────────────────────────────────────────────────
 
-    setImportInProgress(true);
-
-    try {
-      const formData = new FormData();
-      Object.entries(fileMap).forEach(([key, file]) => {
-         formData.append(key, file);
-      });
-
-      const refreshed = await authClient.refresh();
-      if (!refreshed && !authClient.getAccessToken()) {
-        throw new Error("Session expired. Please sign in again.");
+  const uploadCard = useCallback(
+    async (fileType: SageFileType): Promise<boolean> => {
+      const file = fileMap[fileType];
+      if (!file) {
+        toast.error(`No file selected for ${fileType}`);
+        return false;
       }
 
-      const data = await api.imports.sage(formData, false);
+      setCardStatus((prev) => ({ ...prev, [fileType]: "uploading" }));
 
-      const responseBatchId =
-        (typeof data?.batch_id === "string" && data.batch_id) ||
-        (typeof data?.batchId === "string" && data.batchId) ||
-        "";
-      const responseImportedAt =
-        (typeof data?.imported_at === "string" && data.imported_at) ||
-        (typeof data?.timestamp === "string" && data.timestamp) ||
-        "";
-      const responseCounts = typeof data?.counts === "object" && data?.counts ? data.counts : {};
+      try {
+        const refreshed = await authClient.refresh();
+        if (!refreshed && !authClient.getAccessToken()) {
+          throw new Error("Session expired. Please sign in again.");
+        }
 
-      if (!responseBatchId || !responseImportedAt) {
-        throw new Error("Import response is missing required fields (batch_id/imported_at)");
-      }
+        const result = await api.imports.importCsv(fileType, file);
 
-      setImportResult({
-        batchId: responseBatchId,
-        timestamp: responseImportedAt,
-        files: Object.entries(responseCounts).map(([k, v]) => ({
-            name: k.toUpperCase(),
-            rows: v as number
-        })),
-      });
-      
-      toast.success("Import completed successfully");
-      setFileMap({});
-      setUploadedFiles([]);
-      refetchHistory();
+        setCardStatus((prev) => ({ ...prev, [fileType]: "success" }));
+        setCardResult((prev) => ({ ...prev, [fileType]: result }));
 
-    } catch (e: any) {
+        const note =
+          result.validation_error_count > 0
+            ? ` (${result.validation_error_count} validation warning${result.validation_error_count > 1 ? "s" : ""})`
+            : "";
+        toast.success(`${result.rows_inserted} rows imported — ${fileType}${note}`);
+        return true;
+      } catch (e: any) {
         const message =
           typeof e?.message === "string" && e.message.trim()
             ? e.message
             : "Unknown import error";
-        console.error("Sage import failed", {
-          message,
-          error: e,
-        });
-        toast.error(`Import failed: ${message}`);
-    } finally {
-        setImportInProgress(false);
+        setCardStatus((prev) => ({ ...prev, [fileType]: "error" }));
+        console.error("Sage CSV import failed", { fileType, message, error: e });
+        toast.error(`${fileType}: ${message}`);
+        return false;
+      }
+    },
+    [fileMap],
+  );
+
+  // ── HR file selection ──────────────────────────────────────────────────────
+
+  const handleHrFileChange = useCallback(
+    (field: "payroll" | "absences", e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      if (!f.name.toLowerCase().endsWith(".csv")) {
+        toast.error("Only .csv files are accepted");
+        return;
+      }
+      setHrFiles((prev) => ({ ...prev, [field]: f }));
+      if (hrStatus === "success" || hrStatus === "error") {
+        setHrStatus("idle");
+        setHrResult(null);
+      }
+      toast.success(`${f.name} ready for HR ${field}`);
+    },
+    [hrStatus],
+  );
+
+  // ── HR upload ─────────────────────────────────────────────────────────────
+
+  const uploadHr = useCallback(async () => {
+    if (!hrFiles.payroll && !hrFiles.absences) {
+      toast.error("Select at least one HR CSV file");
+      return;
+    }
+    setHrStatus("uploading");
+    try {
+      const refreshed = await authClient.refresh();
+      if (!refreshed && !authClient.getAccessToken()) {
+        throw new Error("Session expired. Please sign in again.");
+      }
+      const fd = new FormData();
+      if (hrFiles.payroll) fd.append("payroll", hrFiles.payroll);
+      if (hrFiles.absences) fd.append("absences", hrFiles.absences);
+      const result = await api.imports.hr(fd);
+      setHrStatus("success");
+      setHrResult(result);
+      const parts: string[] = [];
+      if (result?.counts?.payroll != null) parts.push(`${result.counts.payroll} payroll rows`);
+      if (result?.counts?.absences != null) parts.push(`${result.counts.absences} absence rows`);
+      toast.success(`HR import complete — ${parts.join(", ") || "data uploaded"}`);
+      refetchHistory();
+    } catch (e: any) {
+      setHrStatus("error");
+      const message =
+        typeof e?.message === "string" && e.message.trim() ? e.message : "Unknown HR import error";
+      toast.error(`HR import: ${message}`);
+    }
+  }, [hrFiles, hrStatus, refetchHistory]);
+
+  // ── Batch upload all ready cards ─────────────────────────────────────────
+
+  const handleUploadAll = async () => {
+    const pending = DATASETS.map((d) => d.id).filter(
+      (id) => fileMap[id] && cardStatus[id] !== "success",
+    );
+    if (pending.length === 0) {
+      toast.error("No files selected (or all already uploaded)");
+      return;
+    }
+    setUploadingAll(true);
+    for (const fileType of pending) {
+      await uploadCard(fileType);
+    }
+    setUploadingAll(false);
+    refetchHistory();
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  const getCardStatusIcon = (status: CardStatus) => {
+    switch (status) {
+      case "success":
+        return <CheckCircle className="w-4 h-4 text-success" />;
+      case "error":
+        return <AlertCircle className="w-4 h-4 text-destructive" />;
+      case "uploading":
+        return (
+          <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+        );
+      default:
+        return null;
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    if (status === "success") {
+  const getJobStatusIcon = (status: string) => {
+    if (status === "succeeded" || status === "success")
       return <CheckCircle className="w-4 h-4 text-success" />;
-    } else if (status === "error") {
+    if (status === "failed" || status === "error")
       return <AlertCircle className="w-4 h-4 text-destructive" />;
-    }
     return <Clock className="w-4 h-4 text-muted-foreground" />;
   };
 
+  const readyCount = DATASETS.filter(
+    (d) => fileMap[d.id] && cardStatus[d.id] !== "success",
+  ).length;
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="p-8 space-y-8">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="pw-page-surface space-y-8 p-8"
+    >
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Sage Import</h1>
+        <h1 className="text-3xl font-bold text-foreground">Sage CSV Import</h1>
         <p className="text-muted-foreground mt-2">
-          Import ERP data from Sage into Synbot-BVE
+          Import ERP data from Sage 50 into PlacewareBot — all 10 document types supported.
         </p>
       </div>
 
-      {/* Upload Cards */}
+      {/* Batch upload bar */}
+      {readyCount > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-info/30 bg-info/15 p-4">
+          <p className="text-sm font-medium text-info">
+            {readyCount} file{readyCount > 1 ? "s" : ""} ready to import
+          </p>
+          <Button
+            onClick={handleUploadAll}
+            disabled={uploadingAll}
+            size="sm"
+          >
+            {uploadingAll ? (
+              <>
+                <div className="animate-spin mr-2 h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                Uploading all…
+              </>
+            ) : (
+              <>
+                <Upload className="w-3 h-3 mr-2" />
+                Upload All Ready
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* Upload Cards — all 10 document types */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">Step 1: Select Files to Import</h2>
+        <h2 className="text-lg font-semibold text-foreground">Document Types</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {datasets.map((dataset) => {
-            const isUploaded = uploadedFiles.some((f) =>
-              f.name.includes(dataset.id)
-            );
+          {DATASETS.map((dataset) => {
+            const file = fileMap[dataset.id];
+            const status = cardStatus[dataset.id] ?? "idle";
+            const result = cardResult[dataset.id];
             const Icon = dataset.icon;
+
             return (
               <div
                 key={dataset.id}
-                className="bg-card border border-border rounded-lg p-6 hover:shadow-lg transition-shadow"
+                className={`pw-surface-interactive rounded-xl p-5 flex flex-col gap-3 transition-colors ${
+                  status === "success"
+                    ? "border border-success/30"
+                    : status === "error"
+                    ? "border border-destructive/30"
+                    : ""
+                }`}
               >
                 <input
-                    type="file"
-                    id={`file-${dataset.id}`}
-                    className="hidden"
-                  accept=".csv,.json,.xlsx"
-                    onChange={(e) => handleFileChange(dataset.id, e)}
+                  type="file"
+                  id={`file-${dataset.id}`}
+                  className="hidden"
+                  accept=".csv"
+                  onChange={(e) => handleFileChange(dataset.id, e)}
                 />
-                <Icon className="w-8 h-8 text-muted-foreground mb-3" />
-                <h3 className="font-semibold text-foreground mb-2">
-                  {dataset.label}
-                </h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {isUploaded ? "File ready for import" : "Click to select file"}
-                </p>
-                <Button
-                  onClick={() => document.getElementById(`file-${dataset.id}`)?.click()}
-                  variant={isUploaded ? "secondary" : "default"}
-                  className="w-full"
-                >
-                  {isUploaded ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Ready
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Select
-                    </>
-                  )}
-                </Button>
+
+                {/* Card header */}
+                <div className="flex items-start justify-between">
+                  <Icon className="w-6 h-6 text-muted-foreground" />
+                  {getCardStatusIcon(status)}
+                </div>
+
+                {/* Title + description */}
+                <div>
+                  <h3 className="font-semibold text-foreground text-sm">
+                    {dataset.label}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">{dataset.description}</p>
+                </div>
+
+                {/* Selected filename */}
+                {file && (
+                  <p
+                    className="text-xs text-muted-foreground truncate"
+                    title={file.name}
+                  >
+                    📎 {file.name}
+                  </p>
+                )}
+
+                {/* Per-card import result */}
+                {result && (
+                  <div className="text-xs space-y-0.5">
+                    <p className="text-success font-medium">
+                      {result.rows_inserted.toLocaleString()} rows inserted
+                    </p>
+                    {result.validation_error_count > 0 && (
+                      <p className="text-yellow-500">
+                        ⚠ {result.validation_error_count} validation warning
+                        {result.validation_error_count > 1 ? "s" : ""}
+                      </p>
+                    )}
+                    <p className="font-mono text-muted-foreground truncate">
+                      {result.batch_id.slice(0, 8)}…
+                    </p>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2 mt-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    onClick={() =>
+                      document.getElementById(`file-${dataset.id}`)?.click()
+                    }
+                    disabled={status === "uploading"}
+                  >
+                    <File className="w-3 h-3 mr-1" />
+                    {file ? "Change" : "Choose CSV"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={status === "success" ? "secondary" : "default"}
+                    className="flex-1 text-xs"
+                    onClick={() => uploadCard(dataset.id)}
+                    disabled={!file || status === "uploading" || status === "success"}
+                  >
+                    {status === "uploading" ? (
+                      <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                    ) : status === "success" ? (
+                      <>
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Done
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3 h-3 mr-1" />
+                        Upload
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Uploaded Files Summary */}
-      {uploadedFiles.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+      {/* HR Data Import */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">HR Data Import</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Upload payroll and absence records to power HR analytics, absenteeism trends, and overtime KPIs.
+          </p>
+        </div>
+        <div
+          className={`pw-surface-interactive rounded-xl p-6 transition-colors ${
+            hrStatus === "success"
+              ? "border border-success/30"
+              : hrStatus === "error"
+              ? "border border-destructive/30"
+              : ""
+          }`}
+        >
+          {/* Card header */}
+          <div className="flex items-center gap-3 mb-6">
+            <UserCheck className="w-6 h-6 text-muted-foreground" />
             <div>
-              <p className="font-medium text-blue-900">
-                {uploadedFiles.length} file(s) ready for import
+              <h3 className="font-semibold text-foreground">Payroll &amp; Absences</h3>
+              <p className="text-xs text-muted-foreground">
+                Two separate CSV files — submit together or individually
               </p>
-              <div className="mt-2 space-y-1">
-                {uploadedFiles.map((file, idx) => (
-                  <p key={idx} className="text-sm text-blue-700">
-                    • {file.name.split("_")[0].toUpperCase()} -{" "}
-                    {file.rows.toLocaleString()} rows
-                  </p>
-                ))}
-              </div>
+            </div>
+            {hrStatus !== "idle" && (
+              <div className="ml-auto">{getCardStatusIcon(hrStatus)}</div>
+            )}
+          </div>
+
+          {/* File pickers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Payroll */}
+            <div
+              className={`rounded-lg border p-4 ${
+                hrFiles.payroll ? "border-info/40 bg-info/5" : "border-border"
+              }`}
+            >
+              <p className="text-sm font-medium text-foreground mb-1">Payroll CSV</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Columns: <span className="font-mono">employee_id, salary, overtime_hours, overtime_rate</span>
+              </p>
+              {hrFiles.payroll && (
+                <p
+                  className="text-xs text-muted-foreground truncate mb-3"
+                  title={hrFiles.payroll.name}
+                >
+                  📎 {hrFiles.payroll.name}
+                </p>
+              )}
+              <input
+                type="file"
+                id="hr-payroll-file"
+                className="hidden"
+                accept=".csv"
+                onChange={(e) => handleHrFileChange("payroll", e)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => document.getElementById("hr-payroll-file")?.click()}
+                disabled={hrStatus === "uploading"}
+              >
+                <File className="w-3 h-3 mr-1" />
+                {hrFiles.payroll ? "Change Payroll CSV" : "Choose Payroll CSV"}
+              </Button>
+            </div>
+
+            {/* Absences */}
+            <div
+              className={`rounded-lg border p-4 ${
+                hrFiles.absences ? "border-info/40 bg-info/5" : "border-border"
+              }`}
+            >
+              <p className="text-sm font-medium text-foreground mb-1">Absences CSV</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Columns: <span className="font-mono">employee_id, date, hours, reason</span>
+              </p>
+              {hrFiles.absences && (
+                <p
+                  className="text-xs text-muted-foreground truncate mb-3"
+                  title={hrFiles.absences.name}
+                >
+                  📎 {hrFiles.absences.name}
+                </p>
+              )}
+              <input
+                type="file"
+                id="hr-absences-file"
+                className="hidden"
+                accept=".csv"
+                onChange={(e) => handleHrFileChange("absences", e)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => document.getElementById("hr-absences-file")?.click()}
+                disabled={hrStatus === "uploading"}
+              >
+                <File className="w-3 h-3 mr-1" />
+                {hrFiles.absences ? "Change Absences CSV" : "Choose Absences CSV"}
+              </Button>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Import Button */}
-      <div className="flex gap-3">
-        <Button
-          onClick={handleImport}
-          disabled={importInProgress || uploadedFiles.length === 0}
-          size="lg"
-          className="min-w-48"
-        >
-          {importInProgress ? (
-            <>
-              <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-              Importing...
-            </>
-          ) : (
-            <>
-              <Upload className="w-4 h-4 mr-2" />
-              Start Import
-            </>
+          {/* Import result */}
+          {hrResult && hrStatus === "success" && (
+            <div className="text-sm space-y-1 mb-4 p-3 rounded-lg bg-success/10 border border-success/30">
+              {hrResult.counts?.payroll != null && (
+                <p className="text-success font-medium">
+                  ✓ {hrResult.counts.payroll.toLocaleString()} payroll records imported
+                </p>
+              )}
+              {hrResult.counts?.absences != null && (
+                <p className="text-success font-medium">
+                  ✓ {hrResult.counts.absences.toLocaleString()} absence records imported
+                </p>
+              )}
+              {hrResult.batch_id && (
+                <p className="text-xs font-mono text-muted-foreground">
+                  batch: {hrResult.batch_id.slice(0, 8)}…
+                </p>
+              )}
+            </div>
           )}
-        </Button>
+
+          {/* Submit */}
+          <Button
+            onClick={uploadHr}
+            disabled={
+              (!hrFiles.payroll && !hrFiles.absences) ||
+              hrStatus === "uploading" ||
+              hrStatus === "success"
+            }
+            className="w-full"
+            variant={hrStatus === "success" ? "secondary" : "default"}
+          >
+            {hrStatus === "uploading" ? (
+              <>
+                <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                Uploading HR data…
+              </>
+            ) : hrStatus === "success" ? (
+              <>
+                <CheckCircle className="w-4 h-4 mr-2" />
+                HR Data Imported
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                Upload HR Data
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* Import Result */}
-      {importResult && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-          <div className="flex gap-4">
-            <CheckCircle className="w-6 h-6 text-success flex-shrink-0" />
-            <div>
-              <h3 className="font-semibold text-green-900 mb-3">
-                Import Completed Successfully
-              </h3>
-              <div className="space-y-2 text-sm text-green-800">
-                <p>
-                  <span className="font-medium">Batch ID:</span>{" "}
-                  <code className="bg-white px-2 py-1 rounded font-mono">
-                    {importResult.batchId}
-                  </code>
-                </p>
-                <p>
-                  <span className="font-medium">Timestamp:</span>{" "}
-                  {importResult.timestamp}
-                </p>
-                <div className="mt-3 pt-3 border-t border-green-200">
-                  <p className="font-medium mb-2">Imported Datasets:</p>
-                  <ul className="space-y-1">
-                    {importResult.files.map((file, idx) => (
-                      <li key={idx}>
-                        • {file.name}: {file.rows.toLocaleString()} rows
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Import Jobs History */}
+      <div className="pw-surface-interactive rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-foreground">Import History</h2>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => refetchHistory()}
+            disabled={historyFetching}
+            aria-label="Refresh import history"
+          >
+            <RefreshCw className={`w-4 h-4 ${historyFetching ? "animate-spin" : ""}`} />
+          </Button>
         </div>
-      )}
-
-      {/* Audit Log */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">
-          Import History
-        </h2>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date & Time</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Action</TableHead>
+                <TableHead>Imported At</TableHead>
+                <TableHead>Document Type</TableHead>
+                <TableHead>Rows</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Details</TableHead>
+                <TableHead>Batch ID</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {auditLogs.length === 0 && (
+              {jobs.length === 0 && (
                 <TableRow>
-                   <TableCell colSpan={5} className="text-center text-muted-foreground h-24">
-                     No import history found.
-                   </TableCell>
+                  <TableCell
+                    colSpan={5}
+                    className="text-center text-muted-foreground h-24"
+                  >
+                    No import history found.
+                  </TableCell>
                 </TableRow>
               )}
-              {auditLogs.map((log: any) => (
-                <TableRow key={log.id}>
+              {jobs.map((job: any) => (
+                <TableRow key={job.id ?? job.batch_id}>
                   <TableCell className="font-mono text-sm">
-                    {log.date ? format(new Date(log.date), "yyyy-MM-dd HH:mm") : "-"}
+                    {job.imported_at
+                      ? format(new Date(job.imported_at), "yyyy-MM-dd HH:mm")
+                      : "-"}
                   </TableCell>
-                  <TableCell className="text-sm">{log.user}</TableCell>
                   <TableCell className="text-sm font-medium">
-                    {log.action}
+                    {job.metadata?.file_type ?? job.domain ?? "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {job.row_count != null ? job.row_count.toLocaleString() : "-"}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {getStatusIcon(log.status)}
+                      {getJobStatusIcon(job.status)}
                       <span
-                        className={`text-sm font-medium ${
-                          log.status === "success"
+                        className={`text-xs font-medium capitalize ${
+                          job.status === "succeeded" || job.status === "success"
                             ? "text-success"
-                            : "text-destructive"
+                            : job.status === "failed" || job.status === "error"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
                         }`}
                       >
-                        {log.status.charAt(0).toUpperCase() + log.status.slice(1)}
+                        {job.status}
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {log.details}
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {job.batch_id ? `${job.batch_id.slice(0, 8)}…` : "-"}
                   </TableCell>
                 </TableRow>
               ))}
@@ -338,7 +723,7 @@ const SageImport = () => {
           </Table>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

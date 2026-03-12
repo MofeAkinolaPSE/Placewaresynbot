@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, validator
 from typing import Dict, Any, List, Optional
-from src.middleware import verify_jwt
+from src.middleware import verify_jwt, require_role
 from src.services.inventory import (
     record_inventory_event, 
     get_realtime_stock, 

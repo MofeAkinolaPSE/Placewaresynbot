@@ -1,8 +1,11 @@
 from fastapi import APIRouter, HTTPException, Request
 from src.schemas.inventory import InventoryItem, StockLevel, InventoryMovement, InventoryRequest
-from src.middleware import verify_jwt
-from src.db import supabase, audit_event
+from src.middleware import verify_jwt, require_role
+from src.db import db, audit_event
 from src.services.inventory import record_inventory_event
+from src.services.realtime import realtime_hub
+from src.cache import invalidate_cache_tags
+from src.services.oeis import process_operational_event
 from src.constants import TABLE_INVENTORY_EVENTS
 import os, json, hashlib
 import datetime as dt
@@ -35,7 +38,7 @@ def _append_ledger_event(event: dict):
 
 
 def _get_item_by_id(item_id: str):
-    resp = supabase.table(TABLE_INV_ITEMS).select("*").eq("id", item_id).limit(1).execute()
+    resp = db.table(TABLE_INV_ITEMS).select("*").eq("id", item_id).limit(1).execute()
     rows = resp.data or []
     return rows[0] if rows else None
 
@@ -43,7 +46,7 @@ def _get_item_by_id(item_id: str):
 @router.get('/inventory/items')
 async def list_items(request: Request):
     verify_jwt(request)
-    resp = supabase.table(TABLE_INV_ITEMS).select("*").order("created_at", desc=False).execute()
+    resp = db.table(TABLE_INV_ITEMS).select("*").order("created_at", desc=False).execute()
     data = resp.data or []
     try:
         actor = getattr(request.state, 'user', None)
@@ -58,7 +61,7 @@ async def create_item(request: Request, payload: InventoryItem):
     verify_jwt(request, required_role='ops')
     item = payload.dict()
     try:
-        resp = supabase.table(TABLE_INV_ITEMS).insert(item).execute()
+        resp = db.table(TABLE_INV_ITEMS).insert(item).execute()
         created = resp.data[0] if resp.data else item
         try:
             actor = getattr(request.state, 'user', None)
@@ -73,7 +76,7 @@ async def create_item(request: Request, payload: InventoryItem):
 @router.get('/inventory/stock')
 async def list_stock(request: Request):
     verify_jwt(request)
-    resp = supabase.table(TABLE_STOCK).select("*").execute()
+    resp = db.table(TABLE_STOCK).select("*").execute()
     data = resp.data or []
     try:
         actor = getattr(request.state, 'user', None)
@@ -87,7 +90,7 @@ async def list_stock(request: Request):
 async def inventory_summary(request: Request):
     verify_jwt(request)
     # totals
-    stock_resp = supabase.table(TABLE_STOCK).select("item_id,quantity").execute()
+    stock_resp = db.table(TABLE_STOCK).select("item_id,quantity").execute()
     stock = stock_resp.data or []
     totals = {}
     for s in stock:
@@ -97,7 +100,7 @@ async def inventory_summary(request: Request):
 
     # movements last 30 days counts
     now = dt.datetime.utcnow()
-    moves_resp = supabase.table(TABLE_MOVES).select("change,created_at").order("created_at", desc=True).limit(1000).execute()
+    moves_resp = db.table(TABLE_MOVES).select("change,created_at").order("created_at", desc=True).limit(1000).execute()
     moves = moves_resp.data or []
     incoming = 0
     outgoing = 0
@@ -118,12 +121,12 @@ async def inventory_summary(request: Request):
                 elif ch < 0:
                     outgoing += 1
 
-    reqs_resp = supabase.table(TABLE_REQUESTS).select("status").execute()
+    reqs_resp = db.table(TABLE_REQUESTS).select("status").execute()
     reqs = reqs_resp.data or []
     pending_requests = len([r for r in reqs if r.get('status') == 'pending'])
 
     # map item metadata
-    items_resp = supabase.table(TABLE_INV_ITEMS).select("id,sku,name").execute()
+    items_resp = db.table(TABLE_INV_ITEMS).select("id,sku,name").execute()
     items = items_resp.data or []
     item_map = {i.get('id'): i for i in items}
 
@@ -144,7 +147,7 @@ async def create_movement(request: Request, payload: InventoryMovement):
     m.setdefault('created_at', dt.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z')
     # insert movement row
     try:
-        mv_resp = supabase.table(TABLE_MOVES).insert(m).execute()
+        mv_resp = db.table(TABLE_MOVES).insert(m).execute()
         created = mv_resp.data[0] if mv_resp.data else m
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -157,13 +160,13 @@ async def create_movement(request: Request, payload: InventoryMovement):
 
     def _upsert_stock(item_id, location, delta):
         try:
-            sel = supabase.table(TABLE_STOCK).select("id,quantity").eq("item_id", item_id).eq("location", location).limit(1).execute()
+            sel = db.table(TABLE_STOCK).select("id,quantity").eq("item_id", item_id).eq("location", location).limit(1).execute()
             rows = sel.data or []
             if rows:
                 cur = float(rows[0].get('quantity') or 0) + float(delta)
-                supabase.table(TABLE_STOCK).update({"quantity": cur, "updated_at": dt.datetime.utcnow().isoformat()}).eq("id", rows[0]["id"]).execute()
+                db.table(TABLE_STOCK).update({"quantity": cur, "updated_at": dt.datetime.utcnow().isoformat()}).eq("id", rows[0]["id"]).execute()
             else:
-                supabase.table(TABLE_STOCK).insert({"item_id": item_id, "location": location, "quantity": delta}).execute()
+                db.table(TABLE_STOCK).insert({"item_id": item_id, "location": location, "quantity": delta}).execute()
         except Exception:
             pass
 
@@ -219,6 +222,65 @@ async def create_movement(request: Request, payload: InventoryMovement):
     except Exception:
         vh = None
 
+    await realtime_hub.broadcast('inventory_updates', {
+        'event': 'inventory_movement_recorded',
+        'item_id': item_id,
+        'change': change,
+        'movement_type': m.get('movement_type'),
+        'at': dt.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+    })
+    await realtime_hub.broadcast('logistics_updates', {
+        'event': 'stock_movement_changed',
+        'item_id': item_id,
+        'change': change,
+        'movement_type': m.get('movement_type'),
+        'at': dt.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+    })
+    await realtime_hub.broadcast('finance_updates', {
+        'event': 'inventory_cost_impact',
+        'item_id': item_id,
+        'change': change,
+        'movement_type': m.get('movement_type'),
+        'at': dt.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+    })
+    invalidate_cache_tags(
+        'inventory',
+        'inventory_dashboard',
+        'logistics',
+        'ops_kpis',
+        'finance',
+        'finance_kpis',
+        'finance_trend',
+        'finance_gl',
+        'executive',
+    )
+
+    try:
+        actor = None
+        try:
+            auth_payload = request.state.user
+            actor = auth_payload.get('sub') or auth_payload.get('user_id')
+        except Exception:
+            actor = m.get('created_by')
+
+        await process_operational_event(
+            {
+                "department": "inventory",
+                "event_type": "inventory_movement_recorded",
+                "payload": {
+                    "item_id": item_id,
+                    "change": change,
+                    "movement_type": m.get('movement_type'),
+                    "reference": created.get('id') if isinstance(created, dict) else None,
+                },
+                "created_by": actor,
+                "status": "submitted",
+            },
+            actor_id=actor,
+        )
+    except Exception:
+        pass
+
     return {'status': 'recorded', 'movement': created, 'version_hash': vh}
 
 
@@ -227,7 +289,7 @@ async def create_request(request: Request, payload: InventoryRequest):
     verify_jwt(request, required_role='ops')
     r = payload.dict()
     try:
-        resp = supabase.table(TABLE_REQUESTS).insert(r).execute()
+        resp = db.table(TABLE_REQUESTS).insert(r).execute()
         created = resp.data[0] if resp.data else r
         try:
             actor = getattr(request.state, 'user', None)
@@ -242,12 +304,12 @@ async def create_request(request: Request, payload: InventoryRequest):
 @router.get('/inventory/movements/incoming')
 async def list_incoming(request: Request):
     verify_jwt(request)
-    resp = supabase.table(TABLE_MOVES).select("*").gt("change", 0).order("created_at", desc=True).limit(200).execute()
+    resp = db.table(TABLE_MOVES).select("*").gt("change", 0).order("created_at", desc=True).limit(200).execute()
     return resp.data or []
 
 
 @router.get('/inventory/movements/outgoing')
 async def list_outgoing(request: Request):
     verify_jwt(request)
-    resp = supabase.table(TABLE_MOVES).select("*").lt("change", 0).order("created_at", desc=True).limit(200).execute()
+    resp = db.table(TABLE_MOVES).select("*").lt("change", 0).order("created_at", desc=True).limit(200).execute()
     return resp.data or []

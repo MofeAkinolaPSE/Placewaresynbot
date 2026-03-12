@@ -94,6 +94,37 @@ class ComplianceMonitoringAgent(BaseAgent):
             insight.recommendations.append("Quarantine non-compliant batches and initiate QC investigation.")
             insight.supporting_refs.extend(non_compliant[:10])
 
+        # Trigger batch-locking workflows for non-compliant and pending batches
+        engine = self.context.get("workflow_engine")
+        auto_trigger = bool(self.context.get("auto_trigger_workflow", True))
+        if engine and auto_trigger:
+            locked_count = 0
+            for batch in non_compliant[:20]:
+                batch_id = batch.get("batch_id") or batch.get("id")
+                if batch_id:
+                    try:
+                        engine.enqueue("compliance.lock_batch", {
+                            "batch_id": str(batch_id),
+                            "reason": "non_compliant_nafdac",
+                        })
+                        locked_count += 1
+                    except Exception:
+                        pass
+            for batch in pending[:20]:
+                batch_id = batch.get("batch_id") or batch.get("id")
+                if batch_id:
+                    try:
+                        engine.enqueue("compliance.lock_batch", {
+                            "batch_id": str(batch_id),
+                            "reason": "pending_nafdac_approval",
+                        })
+                        locked_count += 1
+                    except Exception:
+                        pass
+            if locked_count:
+                insight.execution_metadata["workflow_triggered"] = True
+                insight.execution_metadata["batches_locked"] = locked_count
+
         if errors:
             insight.risks.append("partial_data: some compliance queries failed")
             insight.supporting_refs.append({"errors": errors})

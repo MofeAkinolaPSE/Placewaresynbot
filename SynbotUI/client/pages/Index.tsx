@@ -30,29 +30,29 @@ export default function Index() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
+    <div className="pw-page-surface min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <h1 className="text-2xl font-semibold text-slate-800">
+        <h1 className="text-2xl font-semibold text-foreground">
           Placeware Frontend Runtime Status
         </h1>
         {fetchError ? (
-          <div className="mt-4 mx-auto max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-left">
-            <p className="font-medium text-red-700 flex items-center gap-2">
+          <div className="mt-4 mx-auto max-w-md rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-left">
+            <p className="flex items-center gap-2 font-medium text-destructive">
               <AlertCircle className="h-4 w-4" />
               Backend status check failed
             </p>
-            <p className="mt-1 text-sm text-red-700">{fetchError}</p>
+            <p className="mt-1 text-sm text-destructive">{fetchError}</p>
           </div>
         ) : exampleFromServer ? (
-          <div className="mt-4 mx-auto max-w-md rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-left">
-            <p className="font-medium text-emerald-700 flex items-center gap-2">
+          <div className="mt-4 mx-auto max-w-md rounded-xl border border-success/30 bg-success/10 p-4 text-left">
+            <p className="flex items-center gap-2 font-medium text-success">
               <CheckCircle className="h-4 w-4" />
               Backend status reachable
             </p>
-            <p className="mt-1 text-sm text-emerald-700">{exampleFromServer}</p>
+            <p className="mt-1 text-sm text-success">{exampleFromServer}</p>
           </div>
         ) : (
-          <p className="mt-4 text-slate-600 max-w-md">
+          <p className="mt-4 max-w-md text-muted-foreground">
             Checking backend runtime status...
           </p>
         )}

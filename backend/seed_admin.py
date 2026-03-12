@@ -1,22 +1,14 @@
-from src.auth import hash_password
+from src.auth_utils import hash_password
 
 def seed_admin():
     import os
-    from supabase import create_client
     from dotenv import load_dotenv
+    from src.db import db as client
     
     load_dotenv()
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
     
-    if not url or not key:
-        print("Missing Supabase credentials")
-        return
-
-    client = create_client(url, key)
-    
-    email = "admin@placeware.com"
-    pwd = "ChangeMe123!"
+    email = os.getenv("ADMIN_EMAIL", "admin@placeware.com")
+    pwd = os.getenv("ADMIN_PASSWORD", "pware1234")
     hashed = hash_password(pwd)
     
     print(f"Checking if {email} exists...")

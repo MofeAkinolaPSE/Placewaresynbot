@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
-from src.middleware import verify_jwt
-from src.db import supabase
-from src.auth.device_keys import validate_device_key
+from src.middleware import verify_jwt, require_role
+from src.db import db
+from src.auth_device_keys import validate_device_key
 
 router = APIRouter(prefix="/iot", tags=["iot"])
 
@@ -49,8 +49,8 @@ async def api_ingest_event(evt: SensorEvent, request: Request):
         "location": evt.location,
         "recorded_by": actor,
     }
-    supabase.table("sensor_events").insert(payload).execute()
+    db.table("sensor_events").insert(payload).execute()
     # If shipment_id present, also record in chain_of_custody for traceability
     if evt.shipment_id:
-        supabase.table("chain_of_custody_events").insert({"shipment_id": evt.shipment_id, "event_time": evt.timestamp, "temperature_c": evt.temperature_c, "location": evt.location, "recorded_by": actor}).execute()
+        db.table("chain_of_custody_events").insert({"shipment_id": evt.shipment_id, "event_time": evt.timestamp, "temperature_c": evt.temperature_c, "location": evt.location, "recorded_by": actor}).execute()
     return {"ok": True}

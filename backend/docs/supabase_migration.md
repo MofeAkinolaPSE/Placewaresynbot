@@ -66,10 +66,14 @@ $$;
 - Use `backend/src/seed_qna.py` to insert rows from `data/qna_pairs_with_embeddings.csv`.
 
 ## Env & Configuration
-- `.env` / `.env.example` keys:
-  - `SUPABASE_URL`, `SUPABASE_KEY`
-  - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`
-  - Optional: `JWT_SECRET`, `RATE_LIMIT`, `DEV_TOKEN_ENABLED`
+
+Use `DATABASE_URL` for direct Postgres connections when running against Postgres (local or managed). Only set
+`SUPABASE_URL`/`SUPABASE_KEY` if you plan to use a hosted Supabase project with its REST/Auth APIs.
+
+`.env` / `.env.example` keys (recommended):
+- `DATABASE_URL` (preferred for direct Postgres access)
+- `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`
+- Optional: `JWT_SECRET`, `RATE_LIMIT`, `DEV_TOKEN_ENABLED`
 
 ## Verification Checklist
 - [ ] `vector` extension installed

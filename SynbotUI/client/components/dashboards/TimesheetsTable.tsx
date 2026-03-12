@@ -26,7 +26,7 @@ export function TimesheetsTable() {
     typeof row.department === "string" &&
     Number.isFinite(Number(row.hours_worked))
   );
-  const malformedCount = data.length - rows.length;
+  const malformedCount = (payloadValid ? data.length : 0) - rows.length;
 
   return (
     <div className="rounded-md border bg-card">

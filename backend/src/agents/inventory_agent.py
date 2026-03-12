@@ -1,5 +1,11 @@
+"""Inventory Agent skeleton.
+
+Listens to `event_bus` and updates simple inventory KPIs such as
+`stock_events` and a naive `stock_projection` metric stored in `placeware_kpis`.
+"""
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+
+from typing import Any, Dict, List
 from src.agents.base_agent import BaseAgent, Insight
 from src.agent_registry import register_agent
 from src.utils.batch_query import batch_query

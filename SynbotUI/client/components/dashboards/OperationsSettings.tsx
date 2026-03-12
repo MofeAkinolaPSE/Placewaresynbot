@@ -6,7 +6,7 @@ export function OperationsSettings() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader>
             <CardTitle className="text-sm font-medium">Ops Data Source</CardTitle>
             <CardDescription>Orders & downtime snapshots from Sage exports.</CardDescription>
@@ -21,7 +21,7 @@ export function OperationsSettings() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader>
             <CardTitle className="text-sm font-medium">Inventory Behaviour</CardTitle>
             <CardDescription>Baseline from Sage + operational events.</CardDescription>
@@ -35,7 +35,7 @@ export function OperationsSettings() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader>
             <CardTitle className="text-sm font-medium">Access Control</CardTitle>
             <CardDescription>Who can change what.</CardDescription>
@@ -64,7 +64,7 @@ export function OperationsSettings() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex items-center justify-between">
             <div>
               <CardTitle>Ops Import (Orders & Downtime)</CardTitle>
@@ -75,19 +75,19 @@ export function OperationsSettings() {
           <CardContent className="space-y-4 text-sm text-muted-foreground">
             <div>
               <p className="font-semibold mb-1">Endpoint</p>
-              <p className="font-mono text-xs bg-muted px-2 py-1 rounded">
+              <p className="rounded bg-muted px-2 py-1 font-mono text-xs">
                 POST /ops/import (multipart/form-data)
               </p>
             </div>
             <div>
               <p className="font-semibold mb-1">Orders CSV (required columns)</p>
-              <p className="font-mono text-xs bg-muted px-2 py-1 rounded break-all">
+              <p className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
                 order_id, created_at, fulfilled_at, sku, quantity
               </p>
             </div>
             <div>
               <p className="font-semibold mb-1">Downtime CSV (required columns)</p>
-              <p className="font-mono text-xs bg-muted px-2 py-1 rounded break-all">
+              <p className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
                 machine_id, started_at, ended_at, minutes
               </p>
             </div>
@@ -98,7 +98,7 @@ export function OperationsSettings() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex items-center justify-between">
             <div>
               <CardTitle>Inventory Alerts & Thresholds</CardTitle>
@@ -126,9 +126,9 @@ export function OperationsSettings() {
         </Card>
       </div>
 
-      <Card className="border-amber-200 bg-amber-50/60">
+      <Card className="border-warning/30 bg-warning/15">
         <CardHeader className="flex items-center gap-2">
-          <AlertCircle className="h-5 w-5 text-amber-600" />
+          <AlertCircle className="h-5 w-5 text-warning" />
           <div>
             <CardTitle className="text-sm">Operational Safety Note</CardTitle>
             <CardDescription>
@@ -136,7 +136,7 @@ export function OperationsSettings() {
             </CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="text-sm text-amber-800 space-y-1">
+        <CardContent className="space-y-1 text-sm text-warning">
           <p>
             - Always validate CSV headers before importing into /ops/import to avoid corrupting
             historical trend lines.

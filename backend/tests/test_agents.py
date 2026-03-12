@@ -1,3 +1,65 @@
+import types
+import pytest
+
+
+def make_supabase_stub():
+    class TableStub:
+        def __init__(self, name):
+            self.name = name
+            self._payload = None
+
+        def select(self, *args, **kwargs):
+            return self
+
+        def eq(self, *args, **kwargs):
+            return self
+
+        def limit(self, *args, **kwargs):
+            return self
+
+        def upsert(self, payload):
+            self._payload = payload
+            return self
+
+        def update(self, payload):
+            self._payload = payload
+            return self
+
+        def execute(self):
+            if self.name == 'placeware_kpis':
+                return types.SimpleNamespace(data=[{'metric':'pipeline.value','value':10000},{'metric':'revenue.last_90d','value':8000}])
+            if self.name == 'customers':
+                return types.SimpleNamespace(data=[{'id': 1}, {'id': 2}])
+            return types.SimpleNamespace(data=[])
+
+    class SupabaseStub:
+        def table(self, name):
+            return TableStub(name)
+
+    return SupabaseStub()
+
+
+@pytest.fixture(autouse=True)
+def mock_supabase(monkeypatch):
+    import src.db as db
+    monkeypatch.setattr(db, 'db', make_supabase_stub())
+    yield
+
+
+def test_financial_agent_compute_forecast():
+    from src.agents.financial_agent import FinancialAgent
+    a = FinancialAgent()
+    kpis = [{'metric':'pipeline.value','value':10000},{'metric':'revenue.last_90d','value':8000}]
+    f = a.compute_forecast(kpis)
+    assert 'metric' in f and f['metric'] == 'financial.forecast'
+    assert f['value'] > 0
+
+
+def test_crm_scoring_agent_compute_score():
+    from src.agents.crm_scoring_agent import CRMScoringAgent
+    a = CRMScoringAgent()
+    score = a.compute_score(1, [{'type':'activity'},{'type':'activity'}], [{'metric':'risk.customer.1','value':5}])
+    assert 0 <= score <= 100
 from src.imports.sage_import import make_inmemory_executor
 from src.utils.ttl_cache import SimpleTTLCache
 from src.workflow.engine import WorkflowEngine

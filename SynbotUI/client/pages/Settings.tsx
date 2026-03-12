@@ -7,6 +7,8 @@ import { CheckCircle, AlertCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { getSynbotConfig } from "@/lib/wp-config";
 import { authClient } from "@/lib/auth-client";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 type SettingsPayload = {
   apiUrl: string;
@@ -109,7 +111,12 @@ const Settings = () => {
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-4xl">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="pw-page-surface max-w-4xl space-y-8 p-8"
+    >
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">Settings</h1>
@@ -119,11 +126,11 @@ const Settings = () => {
       </div>
 
       {(!hasConfigApi || !hasSessionToken) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="flex gap-3 rounded-xl border border-warning/30 bg-warning/15 p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" />
           <div>
-            <p className="font-medium text-amber-900">Runtime configuration warning</p>
-            <p className="text-sm text-amber-700 mt-1">
+            <p className="font-medium text-warning">Runtime configuration warning</p>
+            <p className="mt-1 text-sm text-warning">
               {!hasConfigApi && "API base URL is not provided by runtime config. "}
               {!hasSessionToken && "No active authenticated session token is available."}
             </p>
@@ -132,7 +139,7 @@ const Settings = () => {
       )}
 
       {/* API Configuration */}
-      <div className="bg-card border border-border rounded-lg p-6 space-y-6">
+      <div className="pw-surface-interactive space-y-6 rounded-xl p-6">
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-6">
             API Configuration
@@ -195,7 +202,7 @@ const Settings = () => {
       </div>
 
       {/* Feature Toggles */}
-      <div className="bg-card border border-border rounded-lg p-6 space-y-6">
+      <div className="pw-surface-interactive space-y-6 rounded-xl p-6">
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-6">
             Feature Toggles
@@ -203,7 +210,7 @@ const Settings = () => {
 
           <div className="space-y-4">
             {/* Enable Forecasting */}
-            <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30">
+            <div className="pw-surface-base flex items-center justify-between rounded-xl p-4">
               <div>
                 <p className="font-medium text-foreground">
                   Enable Forecasting
@@ -219,7 +226,7 @@ const Settings = () => {
             </div>
 
             {/* Enable Workflow Engine */}
-            <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30">
+            <div className="pw-surface-base flex items-center justify-between rounded-xl p-4">
               <div>
                 <p className="font-medium text-foreground">
                   Enable Workflow Engine
@@ -235,7 +242,7 @@ const Settings = () => {
             </div>
 
             {/* Enable CRM Risk Scoring */}
-            <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30">
+            <div className="pw-surface-base flex items-center justify-between rounded-xl p-4">
               <div>
                 <p className="font-medium text-foreground">
                   Enable CRM Risk Scoring
@@ -254,11 +261,11 @@ const Settings = () => {
       </div>
 
       {/* Security Notice */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex gap-3">
-        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+      <div className="flex gap-3 rounded-xl border border-info/30 bg-info/15 p-4">
+        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-info" />
         <div>
-          <p className="font-medium text-blue-900">Security Notice</p>
-          <p className="text-sm text-blue-700 mt-1">
+          <p className="font-medium text-info">Security Notice</p>
+          <p className="mt-1 text-sm text-info">
             This page stores only client-side preferences. Critical platform configuration,
             access controls, and auditable policy changes remain server-managed.
           </p>
@@ -295,7 +302,7 @@ const Settings = () => {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 

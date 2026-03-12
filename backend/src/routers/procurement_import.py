@@ -22,7 +22,7 @@ from src.db import (
     send_procurement_escalation_email,
     update_procurement_shipment,
 )
-from src.middleware import verify_jwt, decode_jwt_token
+from src.middleware import verify_jwt, require_role, decode_jwt_token
 from src.services.intelligence import create_alert
 from src.services.procurement_import import (
     run_clearance_analysis,

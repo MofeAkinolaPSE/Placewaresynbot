@@ -1,11 +1,11 @@
 import csv
 import os
 import logging
-from .db import supabase
+from .db import db
 from .constants import TABLE_QNA, EMBEDDING_DIM
 
 """
-Seed Q&A pairs with embeddings from data/qna_pairs_with_embeddings.csv into Supabase.
+Seed Q&A pairs with embeddings from data/qna_pairs_with_embeddings.csv into db.
 CSV must have headers: question,answer,embedding (JSON array of length EMBEDDING_DIM).
 """
 
@@ -46,7 +46,7 @@ def seed(path: str):
         logging.info('No valid rows to seed.')
         return 0
     try:
-        supabase.table(TABLE_QNA).insert(rows).execute()
+        db.table(TABLE_QNA).insert(rows).execute()
         logging.info(f'Seeded {len(rows)} rows into {TABLE_QNA}.')
         return len(rows)
     except Exception as e:

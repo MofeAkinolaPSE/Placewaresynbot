@@ -1,0 +1,272 @@
+journal_id,entry_number,posting_date,account_id,description,debit_amount,credit_amount,reference_type,reference_id,cost_center,created_by
+GLE-0001,JE-2025-01-01,2025-01-31,ACC-1100,Revenue recognition Jan - Vaccines (DR AR),9258000.00,0.00,monthly_close,MC-2025-01,VACCINES,Finance Controller
+GLE-0002,JE-2025-01-01,2025-01-31,ACC-4001,Revenue recognition Jan - Vaccines (CR Revenue),0.00,9258000.00,monthly_close,MC-2025-01,VACCINES,Finance Controller
+GLE-0003,JE-2025-01-02,2025-01-31,ACC-1100,Revenue recognition Jan - Pharma (DR AR),6172000.00,0.00,monthly_close,MC-2025-01,PHARMA,Finance Controller
+GLE-0004,JE-2025-01-02,2025-01-31,ACC-4000,Revenue recognition Jan - Pharma (CR Revenue),0.00,6172000.00,monthly_close,MC-2025-01,PHARMA,Finance Controller
+GLE-0005,JE-2025-01-03,2025-01-31,ACC-5000,COGS Jan (DR COGS),10030000.00,0.00,monthly_close,MC-2025-01,WAREHOUSE,Finance Controller
+GLE-0006,JE-2025-01-03,2025-01-31,ACC-1200,COGS Jan (CR Inventory),0.00,10030000.00,monthly_close,MC-2025-01,WAREHOUSE,Finance Controller
+GLE-0007,JE-2025-01-04,2025-01-31,ACC-1000,Customer receipts Jan (DR Cash),15430000.00,0.00,monthly_close,MC-2025-01,TREASURY,Finance Controller
+GLE-0008,JE-2025-01-04,2025-01-31,ACC-1100,Customer receipts Jan (CR AR),0.00,15430000.00,monthly_close,MC-2025-01,TREASURY,Finance Controller
+GLE-0009,JE-2025-01-05,2025-01-31,ACC-2000,Supplier payment Jan (DR AP),8500000.00,0.00,monthly_close,MC-2025-01,PROCUREMENT,Finance Controller
+GLE-0010,JE-2025-01-05,2025-01-31,ACC-1001,Supplier payment Jan (CR Bank),0.00,8500000.00,monthly_close,MC-2025-01,PROCUREMENT,Finance Controller
+GLE-0011,JE-2025-01-06,2025-01-31,ACC-6000,Salaries Jan - Management (DR),800000.00,0.00,monthly_close,MC-2025-01,MANAGEMENT,Finance Controller
+GLE-0012,JE-2025-01-06,2025-01-31,ACC-6001,Salaries Jan - Sales (DR),1200000.00,0.00,monthly_close,MC-2025-01,SALES,Finance Controller
+GLE-0013,JE-2025-01-06,2025-01-31,ACC-6002,Salaries Jan - Operations (DR),600000.00,0.00,monthly_close,MC-2025-01,OPERATIONS,Finance Controller
+GLE-0014,JE-2025-01-06,2025-01-31,ACC-1000,Salaries Jan - Total (CR Cash),0.00,2600000.00,monthly_close,MC-2025-01,PAYROLL,Finance Controller
+GLE-0015,JE-2025-01-07,2025-01-31,ACC-6100,Admin expenses Jan (DR),600000.00,0.00,monthly_close,MC-2025-01,ADMIN,Finance Controller
+GLE-0016,JE-2025-01-07,2025-01-31,ACC-6300,Rent Jan (DR),500000.00,0.00,monthly_close,MC-2025-01,ADMIN,Finance Controller
+GLE-0017,JE-2025-01-07,2025-01-31,ACC-6200,Marketing Jan (DR),400000.00,0.00,monthly_close,MC-2025-01,MARKETING,Finance Controller
+GLE-0018,JE-2025-01-07,2025-01-31,ACC-1000,Opex Jan (CR Cash),0.00,1500000.00,monthly_close,MC-2025-01,ADMIN,Finance Controller
+GLE-0019,JE-2025-02-01,2025-02-28,ACC-1100,Revenue recognition Feb - Vaccines (DR AR),9606000.00,0.00,monthly_close,MC-2025-02,VACCINES,Finance Controller
+GLE-0020,JE-2025-02-01,2025-02-28,ACC-4001,Revenue recognition Feb - Vaccines (CR Revenue),0.00,9606000.00,monthly_close,MC-2025-02,VACCINES,Finance Controller
+GLE-0021,JE-2025-02-02,2025-02-28,ACC-1100,Revenue recognition Feb - Pharma (DR AR),6404000.00,0.00,monthly_close,MC-2025-02,PHARMA,Finance Controller
+GLE-0022,JE-2025-02-02,2025-02-28,ACC-4000,Revenue recognition Feb - Pharma (CR Revenue),0.00,6404000.00,monthly_close,MC-2025-02,PHARMA,Finance Controller
+GLE-0023,JE-2025-02-03,2025-02-28,ACC-5000,COGS Feb (DR COGS),10407000.00,0.00,monthly_close,MC-2025-02,WAREHOUSE,Finance Controller
+GLE-0024,JE-2025-02-03,2025-02-28,ACC-1200,COGS Feb (CR Inventory),0.00,10407000.00,monthly_close,MC-2025-02,WAREHOUSE,Finance Controller
+GLE-0025,JE-2025-02-04,2025-02-28,ACC-1000,Customer receipts Feb (DR Cash),16010000.00,0.00,monthly_close,MC-2025-02,TREASURY,Finance Controller
+GLE-0026,JE-2025-02-04,2025-02-28,ACC-1100,Customer receipts Feb (CR AR),0.00,16010000.00,monthly_close,MC-2025-02,TREASURY,Finance Controller
+GLE-0027,JE-2025-02-05,2025-02-28,ACC-2000,Supplier payment Feb (DR AP),9200000.00,0.00,monthly_close,MC-2025-02,PROCUREMENT,Finance Controller
+GLE-0028,JE-2025-02-05,2025-02-28,ACC-1001,Supplier payment Feb (CR Bank),0.00,9200000.00,monthly_close,MC-2025-02,PROCUREMENT,Finance Controller
+GLE-0029,JE-2025-02-06,2025-02-28,ACC-6000,Salaries Feb - Mgmt (DR),800000.00,0.00,monthly_close,MC-2025-02,MANAGEMENT,Finance Controller
+GLE-0030,JE-2025-02-06,2025-02-28,ACC-6001,Salaries Feb - Sales (DR),1200000.00,0.00,monthly_close,MC-2025-02,SALES,Finance Controller
+GLE-0031,JE-2025-02-06,2025-02-28,ACC-6002,Salaries Feb - Ops (DR),600000.00,0.00,monthly_close,MC-2025-02,OPERATIONS,Finance Controller
+GLE-0032,JE-2025-02-06,2025-02-28,ACC-1000,Salaries Feb - Total (CR Cash),0.00,2600000.00,monthly_close,MC-2025-02,PAYROLL,Finance Controller
+GLE-0033,JE-2025-02-07,2025-02-28,ACC-6100,Admin Feb (DR),600000.00,0.00,monthly_close,MC-2025-02,ADMIN,Finance Controller
+GLE-0034,JE-2025-02-07,2025-02-28,ACC-6300,Rent Feb (DR),500000.00,0.00,monthly_close,MC-2025-02,ADMIN,Finance Controller
+GLE-0035,JE-2025-02-07,2025-02-28,ACC-6200,Marketing Feb (DR),400000.00,0.00,monthly_close,MC-2025-02,MARKETING,Finance Controller
+GLE-0036,JE-2025-02-07,2025-02-28,ACC-1000,Opex Feb (CR Cash),0.00,1500000.00,monthly_close,MC-2025-02,ADMIN,Finance Controller
+GLE-0037,JE-2025-03-01,2025-03-31,ACC-1100,Revenue recognition Mar - Vaccines (DR AR),11298000.00,0.00,monthly_close,MC-2025-03,VACCINES,Finance Controller
+GLE-0038,JE-2025-03-01,2025-03-31,ACC-4001,Revenue recognition Mar - Vaccines (CR Revenue),0.00,11298000.00,monthly_close,MC-2025-03,VACCINES,Finance Controller
+GLE-0039,JE-2025-03-02,2025-03-31,ACC-1100,Revenue recognition Mar - Pharma (DR AR),7532000.00,0.00,monthly_close,MC-2025-03,PHARMA,Finance Controller
+GLE-0040,JE-2025-03-02,2025-03-31,ACC-4000,Revenue recognition Mar - Pharma (CR Revenue),0.00,7532000.00,monthly_close,MC-2025-03,PHARMA,Finance Controller
+GLE-0041,JE-2025-03-03,2025-03-31,ACC-5000,COGS Mar (DR COGS),12240000.00,0.00,monthly_close,MC-2025-03,WAREHOUSE,Finance Controller
+GLE-0042,JE-2025-03-03,2025-03-31,ACC-1200,COGS Mar (CR Inventory),0.00,12240000.00,monthly_close,MC-2025-03,WAREHOUSE,Finance Controller
+GLE-0043,JE-2025-03-04,2025-03-31,ACC-1000,Customer receipts Mar (DR Cash),18830000.00,0.00,monthly_close,MC-2025-03,TREASURY,Finance Controller
+GLE-0044,JE-2025-03-04,2025-03-31,ACC-1100,Customer receipts Mar (CR AR),0.00,18830000.00,monthly_close,MC-2025-03,TREASURY,Finance Controller
+GLE-0045,JE-2025-03-05,2025-03-31,ACC-2000,Supplier payment Mar (DR AP),11500000.00,0.00,monthly_close,MC-2025-03,PROCUREMENT,Finance Controller
+GLE-0046,JE-2025-03-05,2025-03-31,ACC-1001,Supplier payment Mar (CR Bank),0.00,11500000.00,monthly_close,MC-2025-03,PROCUREMENT,Finance Controller
+GLE-0047,JE-2025-03-06,2025-03-31,ACC-6000,Salaries Mar - Mgmt (DR),800000.00,0.00,monthly_close,MC-2025-03,MANAGEMENT,Finance Controller
+GLE-0048,JE-2025-03-06,2025-03-31,ACC-6001,Salaries Mar - Sales (DR),1200000.00,0.00,monthly_close,MC-2025-03,SALES,Finance Controller
+GLE-0049,JE-2025-03-06,2025-03-31,ACC-6002,Salaries Mar - Ops (DR),600000.00,0.00,monthly_close,MC-2025-03,OPERATIONS,Finance Controller
+GLE-0050,JE-2025-03-06,2025-03-31,ACC-1000,Salaries Mar - Total (CR Cash),0.00,2600000.00,monthly_close,MC-2025-03,PAYROLL,Finance Controller
+GLE-0051,JE-2025-03-07,2025-03-31,ACC-6100,Admin Mar (DR),650000.00,0.00,monthly_close,MC-2025-03,ADMIN,Finance Controller
+GLE-0052,JE-2025-03-07,2025-03-31,ACC-6300,Rent Mar (DR),500000.00,0.00,monthly_close,MC-2025-03,ADMIN,Finance Controller
+GLE-0053,JE-2025-03-07,2025-03-31,ACC-6200,Marketing Mar (DR),450000.00,0.00,monthly_close,MC-2025-03,MARKETING,Finance Controller
+GLE-0054,JE-2025-03-07,2025-03-31,ACC-1000,Opex Mar (CR Cash),0.00,1600000.00,monthly_close,MC-2025-03,ADMIN,Finance Controller
+GLE-0055,JE-2025-04-01,2025-04-30,ACC-1100,Revenue recognition Apr - Vaccines (DR AR),9792000.00,0.00,monthly_close,MC-2025-04,VACCINES,Finance Controller
+GLE-0056,JE-2025-04-01,2025-04-30,ACC-4001,Revenue recognition Apr - Vaccines (CR Revenue),0.00,9792000.00,monthly_close,MC-2025-04,VACCINES,Finance Controller
+GLE-0057,JE-2025-04-02,2025-04-30,ACC-1100,Revenue recognition Apr - Pharma (DR AR),6528000.00,0.00,monthly_close,MC-2025-04,PHARMA,Finance Controller
+GLE-0058,JE-2025-04-02,2025-04-30,ACC-4000,Revenue recognition Apr - Pharma (CR Revenue),0.00,6528000.00,monthly_close,MC-2025-04,PHARMA,Finance Controller
+GLE-0059,JE-2025-04-03,2025-04-30,ACC-5000,COGS Apr (DR COGS),10609000.00,0.00,monthly_close,MC-2025-04,WAREHOUSE,Finance Controller
+GLE-0060,JE-2025-04-03,2025-04-30,ACC-1200,COGS Apr (CR Inventory),0.00,10609000.00,monthly_close,MC-2025-04,WAREHOUSE,Finance Controller
+GLE-0061,JE-2025-04-04,2025-04-30,ACC-1000,Customer receipts Apr (DR Cash),16320000.00,0.00,monthly_close,MC-2025-04,TREASURY,Finance Controller
+GLE-0062,JE-2025-04-04,2025-04-30,ACC-1100,Customer receipts Apr (CR AR),0.00,16320000.00,monthly_close,MC-2025-04,TREASURY,Finance Controller
+GLE-0063,JE-2025-04-05,2025-04-30,ACC-2000,Supplier payment Apr (DR AP),10000000.00,0.00,monthly_close,MC-2025-04,PROCUREMENT,Finance Controller
+GLE-0064,JE-2025-04-05,2025-04-30,ACC-1001,Supplier payment Apr (CR Bank),0.00,10000000.00,monthly_close,MC-2025-04,PROCUREMENT,Finance Controller
+GLE-0065,JE-2025-04-06,2025-04-30,ACC-6000,Salaries Apr - Mgmt (DR),800000.00,0.00,monthly_close,MC-2025-04,MANAGEMENT,Finance Controller
+GLE-0066,JE-2025-04-06,2025-04-30,ACC-6001,Salaries Apr - Sales (DR),1200000.00,0.00,monthly_close,MC-2025-04,SALES,Finance Controller
+GLE-0067,JE-2025-04-06,2025-04-30,ACC-6002,Salaries Apr - Ops (DR),600000.00,0.00,monthly_close,MC-2025-04,OPERATIONS,Finance Controller
+GLE-0068,JE-2025-04-06,2025-04-30,ACC-1000,Salaries Apr (CR Cash),0.00,2600000.00,monthly_close,MC-2025-04,PAYROLL,Finance Controller
+GLE-0069,JE-2025-04-07,2025-04-30,ACC-6100,Admin Apr (DR),600000.00,0.00,monthly_close,MC-2025-04,ADMIN,Finance Controller
+GLE-0070,JE-2025-04-07,2025-04-30,ACC-6300,Rent Apr (DR),500000.00,0.00,monthly_close,MC-2025-04,ADMIN,Finance Controller
+GLE-0071,JE-2025-04-07,2025-04-30,ACC-6200,Marketing Apr (DR),400000.00,0.00,monthly_close,MC-2025-04,MARKETING,Finance Controller
+GLE-0072,JE-2025-04-07,2025-04-30,ACC-1000,Opex Apr (CR Cash),0.00,1500000.00,monthly_close,MC-2025-04,ADMIN,Finance Controller
+GLE-0073,JE-2025-05-01,2025-05-31,ACC-1100,Revenue recognition May - Vaccines (DR AR),12246000.00,0.00,monthly_close,MC-2025-05,VACCINES,Finance Controller
+GLE-0074,JE-2025-05-01,2025-05-31,ACC-4001,Revenue recognition May - Vaccines (CR Revenue),0.00,12246000.00,monthly_close,MC-2025-05,VACCINES,Finance Controller
+GLE-0075,JE-2025-05-02,2025-05-31,ACC-1100,Revenue recognition May - Pharma (DR AR),8164000.00,0.00,monthly_close,MC-2025-05,PHARMA,Finance Controller
+GLE-0076,JE-2025-05-02,2025-05-31,ACC-4000,Revenue recognition May - Pharma (CR Revenue),0.00,8164000.00,monthly_close,MC-2025-05,PHARMA,Finance Controller
+GLE-0077,JE-2025-05-03,2025-05-31,ACC-5000,COGS May (DR COGS),13267000.00,0.00,monthly_close,MC-2025-05,WAREHOUSE,Finance Controller
+GLE-0078,JE-2025-05-03,2025-05-31,ACC-1200,COGS May (CR Inventory),0.00,13267000.00,monthly_close,MC-2025-05,WAREHOUSE,Finance Controller
+GLE-0079,JE-2025-05-04,2025-05-31,ACC-1000,Customer receipts May (DR Cash),20410000.00,0.00,monthly_close,MC-2025-05,TREASURY,Finance Controller
+GLE-0080,JE-2025-05-04,2025-05-31,ACC-1100,Customer receipts May (CR AR),0.00,20410000.00,monthly_close,MC-2025-05,TREASURY,Finance Controller
+GLE-0081,JE-2025-05-05,2025-05-31,ACC-2000,Supplier payment May (DR AP),12000000.00,0.00,monthly_close,MC-2025-05,PROCUREMENT,Finance Controller
+GLE-0082,JE-2025-05-05,2025-05-31,ACC-1001,Supplier payment May (CR Bank),0.00,12000000.00,monthly_close,MC-2025-05,PROCUREMENT,Finance Controller
+GLE-0083,JE-2025-05-06,2025-05-31,ACC-6000,Salaries May - Mgmt (DR),800000.00,0.00,monthly_close,MC-2025-05,MANAGEMENT,Finance Controller
+GLE-0084,JE-2025-05-06,2025-05-31,ACC-6001,Salaries May - Sales (DR),1200000.00,0.00,monthly_close,MC-2025-05,SALES,Finance Controller
+GLE-0085,JE-2025-05-06,2025-05-31,ACC-6002,Salaries May - Ops (DR),600000.00,0.00,monthly_close,MC-2025-05,OPERATIONS,Finance Controller
+GLE-0086,JE-2025-05-06,2025-05-31,ACC-1000,Salaries May (CR Cash),0.00,2600000.00,monthly_close,MC-2025-05,PAYROLL,Finance Controller
+GLE-0087,JE-2025-05-07,2025-05-31,ACC-6100,Admin May (DR),700000.00,0.00,monthly_close,MC-2025-05,ADMIN,Finance Controller
+GLE-0088,JE-2025-05-07,2025-05-31,ACC-6300,Rent May (DR),500000.00,0.00,monthly_close,MC-2025-05,ADMIN,Finance Controller
+GLE-0089,JE-2025-05-07,2025-05-31,ACC-6200,Marketing May (DR),450000.00,0.00,monthly_close,MC-2025-05,MARKETING,Finance Controller
+GLE-0090,JE-2025-05-07,2025-05-31,ACC-1000,Opex May (CR Cash),0.00,1650000.00,monthly_close,MC-2025-05,ADMIN,Finance Controller
+GLE-0091,JE-2025-06-01,2025-06-30,ACC-1100,Revenue recognition Jun - Vaccines (DR AR),10218000.00,0.00,monthly_close,MC-2025-06,VACCINES,Finance Controller
+GLE-0092,JE-2025-06-01,2025-06-30,ACC-4001,Revenue recognition Jun - Vaccines (CR Revenue),0.00,10218000.00,monthly_close,MC-2025-06,VACCINES,Finance Controller
+GLE-0093,JE-2025-06-02,2025-06-30,ACC-1100,Revenue recognition Jun - Pharma (DR AR),6812000.00,0.00,monthly_close,MC-2025-06,PHARMA,Finance Controller
+GLE-0094,JE-2025-06-02,2025-06-30,ACC-4000,Revenue recognition Jun - Pharma (CR Revenue),0.00,6812000.00,monthly_close,MC-2025-06,PHARMA,Finance Controller
+GLE-0095,JE-2025-06-03,2025-06-30,ACC-5000,COGS Jun (DR COGS),11070000.00,0.00,monthly_close,MC-2025-06,WAREHOUSE,Finance Controller
+GLE-0096,JE-2025-06-03,2025-06-30,ACC-1200,COGS Jun (CR Inventory),0.00,11070000.00,monthly_close,MC-2025-06,WAREHOUSE,Finance Controller
+GLE-0097,JE-2025-06-04,2025-06-30,ACC-1000,Customer receipts Jun (DR Cash),17030000.00,0.00,monthly_close,MC-2025-06,TREASURY,Finance Controller
+GLE-0098,JE-2025-06-04,2025-06-30,ACC-1100,Customer receipts Jun (CR AR),0.00,17030000.00,monthly_close,MC-2025-06,TREASURY,Finance Controller
+GLE-0099,JE-2025-06-05,2025-06-30,ACC-2000,Supplier payment Jun (DR AP),10500000.00,0.00,monthly_close,MC-2025-06,PROCUREMENT,Finance Controller
+GLE-0100,JE-2025-06-05,2025-06-30,ACC-1001,Supplier payment Jun (CR Bank),0.00,10500000.00,monthly_close,MC-2025-06,PROCUREMENT,Finance Controller
+GLE-0101,JE-2025-06-06,2025-06-30,ACC-6000,Salaries Jun - Mgmt (DR),800000.00,0.00,monthly_close,MC-2025-06,MANAGEMENT,Finance Controller
+GLE-0102,JE-2025-06-06,2025-06-30,ACC-6001,Salaries Jun - Sales (DR),1200000.00,0.00,monthly_close,MC-2025-06,SALES,Finance Controller
+GLE-0103,JE-2025-06-06,2025-06-30,ACC-6002,Salaries Jun - Ops (DR),600000.00,0.00,monthly_close,MC-2025-06,OPERATIONS,Finance Controller
+GLE-0104,JE-2025-06-06,2025-06-30,ACC-1000,Salaries Jun (CR Cash),0.00,2600000.00,monthly_close,MC-2025-06,PAYROLL,Finance Controller
+GLE-0105,JE-2025-06-07,2025-06-30,ACC-6100,Admin Jun (DR),600000.00,0.00,monthly_close,MC-2025-06,ADMIN,Finance Controller
+GLE-0106,JE-2025-06-07,2025-06-30,ACC-6300,Rent Jun (DR),500000.00,0.00,monthly_close,MC-2025-06,ADMIN,Finance Controller
+GLE-0107,JE-2025-06-07,2025-06-30,ACC-6200,Marketing Jun (DR),450000.00,0.00,monthly_close,MC-2025-06,MARKETING,Finance Controller
+GLE-0108,JE-2025-06-07,2025-06-30,ACC-1000,Opex Jun (CR Cash),0.00,1550000.00,monthly_close,MC-2025-06,ADMIN,Finance Controller
+GLE-0109,JE-2025-07-01,2025-07-31,ACC-1100,Revenue recognition Jul - Vaccines (DR AR),13260000.00,0.00,monthly_close,MC-2025-07,VACCINES,Finance Controller
+GLE-0110,JE-2025-07-01,2025-07-31,ACC-4001,Revenue recognition Jul - Vaccines (CR Revenue),0.00,13260000.00,monthly_close,MC-2025-07,VACCINES,Finance Controller
+GLE-0111,JE-2025-07-02,2025-07-31,ACC-1100,Revenue recognition Jul - Pharma (DR AR),8840000.00,0.00,monthly_close,MC-2025-07,PHARMA,Finance Controller
+GLE-0112,JE-2025-07-02,2025-07-31,ACC-4000,Revenue recognition Jul - Pharma (CR Revenue),0.00,8840000.00,monthly_close,MC-2025-07,PHARMA,Finance Controller
+GLE-0113,JE-2025-07-03,2025-07-31,ACC-5000,COGS Jul (DR COGS),14366000.00,0.00,monthly_close,MC-2025-07,WAREHOUSE,Finance Controller
+GLE-0114,JE-2025-07-03,2025-07-31,ACC-1200,COGS Jul (CR Inventory),0.00,14366000.00,monthly_close,MC-2025-07,WAREHOUSE,Finance Controller
+GLE-0115,JE-2025-07-04,2025-07-31,ACC-1000,Customer receipts Jul (DR Cash),22100000.00,0.00,monthly_close,MC-2025-07,TREASURY,Finance Controller
+GLE-0116,JE-2025-07-04,2025-07-31,ACC-1100,Customer receipts Jul (CR AR),0.00,22100000.00,monthly_close,MC-2025-07,TREASURY,Finance Controller
+GLE-0117,JE-2025-07-05,2025-07-31,ACC-2000,Supplier payment Jul (DR AP),13500000.00,0.00,monthly_close,MC-2025-07,PROCUREMENT,Finance Controller
+GLE-0118,JE-2025-07-05,2025-07-31,ACC-1001,Supplier payment Jul (CR Bank),0.00,13500000.00,monthly_close,MC-2025-07,PROCUREMENT,Finance Controller
+GLE-0119,JE-2025-07-06,2025-07-31,ACC-6000,Salaries Jul - Mgmt (DR),850000.00,0.00,monthly_close,MC-2025-07,MANAGEMENT,Finance Controller
+GLE-0120,JE-2025-07-06,2025-07-31,ACC-6001,Salaries Jul - Sales (DR),1300000.00,0.00,monthly_close,MC-2025-07,SALES,Finance Controller
+GLE-0121,JE-2025-07-06,2025-07-31,ACC-6002,Salaries Jul - Ops (DR),650000.00,0.00,monthly_close,MC-2025-07,OPERATIONS,Finance Controller
+GLE-0122,JE-2025-07-06,2025-07-31,ACC-1000,Salaries Jul (CR Cash),0.00,2800000.00,monthly_close,MC-2025-07,PAYROLL,Finance Controller
+GLE-0123,JE-2025-07-07,2025-07-31,ACC-6100,Admin Jul (DR),700000.00,0.00,monthly_close,MC-2025-07,ADMIN,Finance Controller
+GLE-0124,JE-2025-07-07,2025-07-31,ACC-6300,Rent Jul (DR),500000.00,0.00,monthly_close,MC-2025-07,ADMIN,Finance Controller
+GLE-0125,JE-2025-07-07,2025-07-31,ACC-6200,Marketing Jul (DR),500000.00,0.00,monthly_close,MC-2025-07,MARKETING,Finance Controller
+GLE-0126,JE-2025-07-07,2025-07-31,ACC-1000,Opex Jul (CR Cash),0.00,1700000.00,monthly_close,MC-2025-07,ADMIN,Finance Controller
+GLE-0127,JE-2025-08-01,2025-08-31,ACC-1100,Revenue recognition Aug - Vaccines (DR AR),13686000.00,0.00,monthly_close,MC-2025-08,VACCINES,Finance Controller
+GLE-0128,JE-2025-08-01,2025-08-31,ACC-4001,Revenue recognition Aug - Vaccines (CR Revenue),0.00,13686000.00,monthly_close,MC-2025-08,VACCINES,Finance Controller
+GLE-0129,JE-2025-08-02,2025-08-31,ACC-1100,Revenue recognition Aug - Pharma (DR AR),9124000.00,0.00,monthly_close,MC-2025-08,PHARMA,Finance Controller
+GLE-0130,JE-2025-08-02,2025-08-31,ACC-4000,Revenue recognition Aug - Pharma (CR Revenue),0.00,9124000.00,monthly_close,MC-2025-08,PHARMA,Finance Controller
+GLE-0131,JE-2025-08-03,2025-08-31,ACC-5000,COGS Aug (DR COGS),14827000.00,0.00,monthly_close,MC-2025-08,WAREHOUSE,Finance Controller
+GLE-0132,JE-2025-08-03,2025-08-31,ACC-1200,COGS Aug (CR Inventory),0.00,14827000.00,monthly_close,MC-2025-08,WAREHOUSE,Finance Controller
+GLE-0133,JE-2025-08-04,2025-08-31,ACC-1000,Customer receipts Aug (DR Cash),22810000.00,0.00,monthly_close,MC-2025-08,TREASURY,Finance Controller
+GLE-0134,JE-2025-08-04,2025-08-31,ACC-1100,Customer receipts Aug (CR AR),0.00,22810000.00,monthly_close,MC-2025-08,TREASURY,Finance Controller
+GLE-0135,JE-2025-08-05,2025-08-31,ACC-2000,Supplier payment Aug (DR AP),14000000.00,0.00,monthly_close,MC-2025-08,PROCUREMENT,Finance Controller
+GLE-0136,JE-2025-08-05,2025-08-31,ACC-1001,Supplier payment Aug (CR Bank),0.00,14000000.00,monthly_close,MC-2025-08,PROCUREMENT,Finance Controller
+GLE-0137,JE-2025-08-06,2025-08-31,ACC-6000,Salaries Aug - Mgmt (DR),850000.00,0.00,monthly_close,MC-2025-08,MANAGEMENT,Finance Controller
+GLE-0138,JE-2025-08-06,2025-08-31,ACC-6001,Salaries Aug - Sales (DR),1300000.00,0.00,monthly_close,MC-2025-08,SALES,Finance Controller
+GLE-0139,JE-2025-08-06,2025-08-31,ACC-6002,Salaries Aug - Ops (DR),650000.00,0.00,monthly_close,MC-2025-08,OPERATIONS,Finance Controller
+GLE-0140,JE-2025-08-06,2025-08-31,ACC-1000,Salaries Aug (CR Cash),0.00,2800000.00,monthly_close,MC-2025-08,PAYROLL,Finance Controller
+GLE-0141,JE-2025-08-07,2025-08-31,ACC-6100,Admin Aug (DR),700000.00,0.00,monthly_close,MC-2025-08,ADMIN,Finance Controller
+GLE-0142,JE-2025-08-07,2025-08-31,ACC-6300,Rent Aug (DR),500000.00,0.00,monthly_close,MC-2025-08,ADMIN,Finance Controller
+GLE-0143,JE-2025-08-07,2025-08-31,ACC-6200,Marketing Aug (DR),500000.00,0.00,monthly_close,MC-2025-08,MARKETING,Finance Controller
+GLE-0144,JE-2025-08-07,2025-08-31,ACC-1000,Opex Aug (CR Cash),0.00,1700000.00,monthly_close,MC-2025-08,ADMIN,Finance Controller
+GLE-0145,JE-2025-09-01,2025-09-30,ACC-1100,Revenue recognition Sep - Vaccines (DR AR),11406000.00,0.00,monthly_close,MC-2025-09,VACCINES,Finance Controller
+GLE-0146,JE-2025-09-01,2025-09-30,ACC-4001,Revenue recognition Sep - Vaccines (CR Revenue),0.00,11406000.00,monthly_close,MC-2025-09,VACCINES,Finance Controller
+GLE-0147,JE-2025-09-02,2025-09-30,ACC-1100,Revenue recognition Sep - Pharma (DR AR),7604000.00,0.00,monthly_close,MC-2025-09,PHARMA,Finance Controller
+GLE-0148,JE-2025-09-02,2025-09-30,ACC-4000,Revenue recognition Sep - Pharma (CR Revenue),0.00,7604000.00,monthly_close,MC-2025-09,PHARMA,Finance Controller
+GLE-0149,JE-2025-09-03,2025-09-30,ACC-5000,COGS Sep (DR COGS),12357000.00,0.00,monthly_close,MC-2025-09,WAREHOUSE,Finance Controller
+GLE-0150,JE-2025-09-03,2025-09-30,ACC-1200,COGS Sep (CR Inventory),0.00,12357000.00,monthly_close,MC-2025-09,WAREHOUSE,Finance Controller
+GLE-0151,JE-2025-09-04,2025-09-30,ACC-1000,Customer receipts Sep (DR Cash),19010000.00,0.00,monthly_close,MC-2025-09,TREASURY,Finance Controller
+GLE-0152,JE-2025-09-04,2025-09-30,ACC-1100,Customer receipts Sep (CR AR),0.00,19010000.00,monthly_close,MC-2025-09,TREASURY,Finance Controller
+GLE-0153,JE-2025-09-05,2025-09-30,ACC-2000,Supplier payment Sep (DR AP),12000000.00,0.00,monthly_close,MC-2025-09,PROCUREMENT,Finance Controller
+GLE-0154,JE-2025-09-05,2025-09-30,ACC-1001,Supplier payment Sep (CR Bank),0.00,12000000.00,monthly_close,MC-2025-09,PROCUREMENT,Finance Controller
+GLE-0155,JE-2025-09-06,2025-09-30,ACC-6000,Salaries Sep - Mgmt (DR),850000.00,0.00,monthly_close,MC-2025-09,MANAGEMENT,Finance Controller
+GLE-0156,JE-2025-09-06,2025-09-30,ACC-6001,Salaries Sep - Sales (DR),1300000.00,0.00,monthly_close,MC-2025-09,SALES,Finance Controller
+GLE-0157,JE-2025-09-06,2025-09-30,ACC-6002,Salaries Sep - Ops (DR),650000.00,0.00,monthly_close,MC-2025-09,OPERATIONS,Finance Controller
+GLE-0158,JE-2025-09-06,2025-09-30,ACC-1000,Salaries Sep (CR Cash),0.00,2800000.00,monthly_close,MC-2025-09,PAYROLL,Finance Controller
+GLE-0159,JE-2025-09-07,2025-09-30,ACC-6100,Admin Sep (DR),650000.00,0.00,monthly_close,MC-2025-09,ADMIN,Finance Controller
+GLE-0160,JE-2025-09-07,2025-09-30,ACC-6300,Rent Sep (DR),500000.00,0.00,monthly_close,MC-2025-09,ADMIN,Finance Controller
+GLE-0161,JE-2025-09-07,2025-09-30,ACC-6200,Marketing Sep (DR),450000.00,0.00,monthly_close,MC-2025-09,MARKETING,Finance Controller
+GLE-0162,JE-2025-09-07,2025-09-30,ACC-1000,Opex Sep (CR Cash),0.00,1600000.00,monthly_close,MC-2025-09,ADMIN,Finance Controller
+GLE-0163,JE-2025-10-01,2025-10-31,ACC-1100,Revenue recognition Oct - Vaccines (DR AR),14478000.00,0.00,monthly_close,MC-2025-10,VACCINES,Finance Controller
+GLE-0164,JE-2025-10-01,2025-10-31,ACC-4001,Revenue recognition Oct - Vaccines (CR Revenue),0.00,14478000.00,monthly_close,MC-2025-10,VACCINES,Finance Controller
+GLE-0165,JE-2025-10-02,2025-10-31,ACC-1100,Revenue recognition Oct - Pharma (DR AR),9652000.00,0.00,monthly_close,MC-2025-10,PHARMA,Finance Controller
+GLE-0166,JE-2025-10-02,2025-10-31,ACC-4000,Revenue recognition Oct - Pharma (CR Revenue),0.00,9652000.00,monthly_close,MC-2025-10,PHARMA,Finance Controller
+GLE-0167,JE-2025-10-03,2025-10-31,ACC-5000,COGS Oct (DR COGS),15685000.00,0.00,monthly_close,MC-2025-10,WAREHOUSE,Finance Controller
+GLE-0168,JE-2025-10-03,2025-10-31,ACC-1200,COGS Oct (CR Inventory),0.00,15685000.00,monthly_close,MC-2025-10,WAREHOUSE,Finance Controller
+GLE-0169,JE-2025-10-04,2025-10-31,ACC-1000,Customer receipts Oct (DR Cash),15200000.00,0.00,monthly_close,MC-2025-10,TREASURY,Finance Controller
+GLE-0170,JE-2025-10-04,2025-10-31,ACC-1100,Customer receipts Oct (CR AR),0.00,15200000.00,monthly_close,MC-2025-10,TREASURY,Finance Controller
+GLE-0171,JE-2025-10-05,2025-10-31,ACC-2000,Supplier payment Oct (DR AP),14500000.00,0.00,monthly_close,MC-2025-10,PROCUREMENT,Finance Controller
+GLE-0172,JE-2025-10-05,2025-10-31,ACC-1001,Supplier payment Oct (CR Bank),0.00,14500000.00,monthly_close,MC-2025-10,PROCUREMENT,Finance Controller
+GLE-0173,JE-2025-10-06,2025-10-31,ACC-6000,Salaries Oct - Mgmt (DR),850000.00,0.00,monthly_close,MC-2025-10,MANAGEMENT,Finance Controller
+GLE-0174,JE-2025-10-06,2025-10-31,ACC-6001,Salaries Oct - Sales (DR),1300000.00,0.00,monthly_close,MC-2025-10,SALES,Finance Controller
+GLE-0175,JE-2025-10-06,2025-10-31,ACC-6002,Salaries Oct - Ops (DR),650000.00,0.00,monthly_close,MC-2025-10,OPERATIONS,Finance Controller
+GLE-0176,JE-2025-10-06,2025-10-31,ACC-1000,Salaries Oct (CR Cash),0.00,2800000.00,monthly_close,MC-2025-10,PAYROLL,Finance Controller
+GLE-0177,JE-2025-10-07,2025-10-31,ACC-6100,Admin Oct (DR),750000.00,0.00,monthly_close,MC-2025-10,ADMIN,Finance Controller
+GLE-0178,JE-2025-10-07,2025-10-31,ACC-6300,Rent Oct (DR),500000.00,0.00,monthly_close,MC-2025-10,ADMIN,Finance Controller
+GLE-0179,JE-2025-10-07,2025-10-31,ACC-6200,Marketing Oct (DR),500000.00,0.00,monthly_close,MC-2025-10,MARKETING,Finance Controller
+GLE-0180,JE-2025-10-07,2025-10-31,ACC-1000,Opex Oct (CR Cash),0.00,1750000.00,monthly_close,MC-2025-10,ADMIN,Finance Controller
+GLE-0181,JE-2025-11-01,2025-11-30,ACC-1100,Revenue recognition Nov - Vaccines (DR AR),14130000.00,0.00,monthly_close,MC-2025-11,VACCINES,Finance Controller
+GLE-0182,JE-2025-11-01,2025-11-30,ACC-4001,Revenue recognition Nov - Vaccines (CR Revenue),0.00,14130000.00,monthly_close,MC-2025-11,VACCINES,Finance Controller
+GLE-0183,JE-2025-11-02,2025-11-30,ACC-1100,Revenue recognition Nov - Pharma (DR AR),9420000.00,0.00,monthly_close,MC-2025-11,PHARMA,Finance Controller
+GLE-0184,JE-2025-11-02,2025-11-30,ACC-4000,Revenue recognition Nov - Pharma (CR Revenue),0.00,9420000.00,monthly_close,MC-2025-11,PHARMA,Finance Controller
+GLE-0185,JE-2025-11-03,2025-11-30,ACC-5000,COGS Nov (DR COGS),15308000.00,0.00,monthly_close,MC-2025-11,WAREHOUSE,Finance Controller
+GLE-0186,JE-2025-11-03,2025-11-30,ACC-1200,COGS Nov (CR Inventory),0.00,15308000.00,monthly_close,MC-2025-11,WAREHOUSE,Finance Controller
+GLE-0187,JE-2025-11-04,2025-11-30,ACC-1000,Customer receipts Nov (DR Cash),9500000.00,0.00,monthly_close,MC-2025-11,TREASURY,Finance Controller
+GLE-0188,JE-2025-11-04,2025-11-30,ACC-1100,Customer receipts Nov (CR AR),0.00,9500000.00,monthly_close,MC-2025-11,TREASURY,Finance Controller
+GLE-0189,JE-2025-11-05,2025-11-30,ACC-2000,Supplier payment Nov (DR AP),14000000.00,0.00,monthly_close,MC-2025-11,PROCUREMENT,Finance Controller
+GLE-0190,JE-2025-11-05,2025-11-30,ACC-1001,Supplier payment Nov (CR Bank),0.00,14000000.00,monthly_close,MC-2025-11,PROCUREMENT,Finance Controller
+GLE-0191,JE-2025-11-06,2025-11-30,ACC-6000,Salaries Nov - Mgmt (DR),900000.00,0.00,monthly_close,MC-2025-11,MANAGEMENT,Finance Controller
+GLE-0192,JE-2025-11-06,2025-11-30,ACC-6001,Salaries Nov - Sales (DR),1400000.00,0.00,monthly_close,MC-2025-11,SALES,Finance Controller
+GLE-0193,JE-2025-11-06,2025-11-30,ACC-6002,Salaries Nov - Ops (DR),700000.00,0.00,monthly_close,MC-2025-11,OPERATIONS,Finance Controller
+GLE-0194,JE-2025-11-06,2025-11-30,ACC-1000,Salaries Nov (CR Cash),0.00,3000000.00,monthly_close,MC-2025-11,PAYROLL,Finance Controller
+GLE-0195,JE-2025-11-07,2025-11-30,ACC-6100,Admin Nov (DR),750000.00,0.00,monthly_close,MC-2025-11,ADMIN,Finance Controller
+GLE-0196,JE-2025-11-07,2025-11-30,ACC-6300,Rent Nov (DR),500000.00,0.00,monthly_close,MC-2025-11,ADMIN,Finance Controller
+GLE-0197,JE-2025-11-07,2025-11-30,ACC-6200,Marketing Nov (DR),500000.00,0.00,monthly_close,MC-2025-11,MARKETING,Finance Controller
+GLE-0198,JE-2025-11-07,2025-11-30,ACC-1000,Opex Nov (CR Cash),0.00,1750000.00,monthly_close,MC-2025-11,ADMIN,Finance Controller
+GLE-0199,JE-2025-12-01,2025-12-31,ACC-1100,Revenue recognition Dec - Vaccines (DR AR),15972000.00,0.00,monthly_close,MC-2025-12,VACCINES,Finance Controller
+GLE-0200,JE-2025-12-01,2025-12-31,ACC-4001,Revenue recognition Dec - Vaccines (CR Revenue),0.00,15972000.00,monthly_close,MC-2025-12,VACCINES,Finance Controller
+GLE-0201,JE-2025-12-02,2025-12-31,ACC-1100,Revenue recognition Dec - Pharma (DR AR),10648000.00,0.00,monthly_close,MC-2025-12,PHARMA,Finance Controller
+GLE-0202,JE-2025-12-02,2025-12-31,ACC-4000,Revenue recognition Dec - Pharma (CR Revenue),0.00,10648000.00,monthly_close,MC-2025-12,PHARMA,Finance Controller
+GLE-0203,JE-2025-12-03,2025-12-31,ACC-5000,COGS Dec (DR COGS),17304000.00,0.00,monthly_close,MC-2025-12,WAREHOUSE,Finance Controller
+GLE-0204,JE-2025-12-03,2025-12-31,ACC-1200,COGS Dec (CR Inventory),0.00,17304000.00,monthly_close,MC-2025-12,WAREHOUSE,Finance Controller
+GLE-0205,JE-2025-12-04,2025-12-31,ACC-1000,Customer receipts Dec (DR Cash),7800000.00,0.00,monthly_close,MC-2025-12,TREASURY,Finance Controller
+GLE-0206,JE-2025-12-04,2025-12-31,ACC-1100,Customer receipts Dec (CR AR),0.00,7800000.00,monthly_close,MC-2025-12,TREASURY,Finance Controller
+GLE-0207,JE-2025-12-05,2025-12-31,ACC-2000,Supplier payment Dec (DR AP),15500000.00,0.00,monthly_close,MC-2025-12,PROCUREMENT,Finance Controller
+GLE-0208,JE-2025-12-05,2025-12-31,ACC-1001,Supplier payment Dec (CR Bank),0.00,15500000.00,monthly_close,MC-2025-12,PROCUREMENT,Finance Controller
+GLE-0209,JE-2025-12-06,2025-12-31,ACC-6000,Salaries Dec - Mgmt (DR),900000.00,0.00,monthly_close,MC-2025-12,MANAGEMENT,Finance Controller
+GLE-0210,JE-2025-12-06,2025-12-31,ACC-6001,Salaries Dec - Sales (DR),1400000.00,0.00,monthly_close,MC-2025-12,SALES,Finance Controller
+GLE-0211,JE-2025-12-06,2025-12-31,ACC-6002,Salaries Dec - Ops (DR),700000.00,0.00,monthly_close,MC-2025-12,OPERATIONS,Finance Controller
+GLE-0212,JE-2025-12-06,2025-12-31,ACC-1000,Salaries Dec (CR Cash),0.00,3000000.00,monthly_close,MC-2025-12,PAYROLL,Finance Controller
+GLE-0213,JE-2025-12-07,2025-12-31,ACC-6100,Admin Dec (DR),800000.00,0.00,monthly_close,MC-2025-12,ADMIN,Finance Controller
+GLE-0214,JE-2025-12-07,2025-12-31,ACC-6300,Rent Dec (DR),500000.00,0.00,monthly_close,MC-2025-12,ADMIN,Finance Controller
+GLE-0215,JE-2025-12-07,2025-12-31,ACC-6200,Marketing Dec (DR),600000.00,0.00,monthly_close,MC-2025-12,MARKETING,Finance Controller
+GLE-0216,JE-2025-12-07,2025-12-31,ACC-6400,QA/Compliance Dec (DR),350000.00,0.00,monthly_close,MC-2025-12,COMPLIANCE,Finance Controller
+GLE-0217,JE-2025-12-07,2025-12-31,ACC-1000,Opex Dec (CR Cash),0.00,2250000.00,monthly_close,MC-2025-12,ADMIN,Finance Controller
+GLE-0218,JE-2026-01-01,2026-01-31,ACC-1100,Revenue recognition Jan 2026 - Vaccines (DR AR),10500000.00,0.00,monthly_close,MC-2026-01,VACCINES,Finance Controller
+GLE-0219,JE-2026-01-01,2026-01-31,ACC-4001,Revenue recognition Jan 2026 - Vaccines (CR Revenue),0.00,10500000.00,monthly_close,MC-2026-01,VACCINES,Finance Controller
+GLE-0220,JE-2026-01-02,2026-01-31,ACC-1100,Revenue recognition Jan 2026 - Pharma (DR AR),7000000.00,0.00,monthly_close,MC-2026-01,PHARMA,Finance Controller
+GLE-0221,JE-2026-01-02,2026-01-31,ACC-4000,Revenue recognition Jan 2026 - Pharma (CR Revenue),0.00,7000000.00,monthly_close,MC-2026-01,PHARMA,Finance Controller
+GLE-0222,JE-2026-01-03,2026-01-31,ACC-5000,COGS Jan 2026 (DR COGS),11375000.00,0.00,monthly_close,MC-2026-01,WAREHOUSE,Finance Controller
+GLE-0223,JE-2026-01-03,2026-01-31,ACC-1200,COGS Jan 2026 (CR Inventory),0.00,11375000.00,monthly_close,MC-2026-01,WAREHOUSE,Finance Controller
+GLE-0224,JE-2026-01-04,2026-01-31,ACC-1000,Customer receipts Jan 2026 (DR Cash),3200000.00,0.00,monthly_close,MC-2026-01,TREASURY,Finance Controller
+GLE-0225,JE-2026-01-04,2026-01-31,ACC-1100,Customer receipts Jan 2026 (CR AR),0.00,3200000.00,monthly_close,MC-2026-01,TREASURY,Finance Controller
+GLE-0226,JE-2026-01-05,2026-01-31,ACC-2000,Supplier payment Jan 2026 (DR AP),13000000.00,0.00,monthly_close,MC-2026-01,PROCUREMENT,Finance Controller
+GLE-0227,JE-2026-01-05,2026-01-31,ACC-1001,Supplier payment Jan 2026 (CR Bank),0.00,13000000.00,monthly_close,MC-2026-01,PROCUREMENT,Finance Controller
+GLE-0228,JE-2026-01-06,2026-01-31,ACC-6000,Salaries Jan 2026 - Mgmt (DR),900000.00,0.00,monthly_close,MC-2026-01,MANAGEMENT,Finance Controller
+GLE-0229,JE-2026-01-06,2026-01-31,ACC-6001,Salaries Jan 2026 - Sales (DR),1400000.00,0.00,monthly_close,MC-2026-01,SALES,Finance Controller
+GLE-0230,JE-2026-01-06,2026-01-31,ACC-6002,Salaries Jan 2026 - Ops (DR),700000.00,0.00,monthly_close,MC-2026-01,OPERATIONS,Finance Controller
+GLE-0231,JE-2026-01-06,2026-01-31,ACC-1000,Salaries Jan 2026 (CR Cash),0.00,3000000.00,monthly_close,MC-2026-01,PAYROLL,Finance Controller
+GLE-0232,JE-2026-01-07,2026-01-31,ACC-6100,Admin Jan 2026 (DR),750000.00,0.00,monthly_close,MC-2026-01,ADMIN,Finance Controller
+GLE-0233,JE-2026-01-07,2026-01-31,ACC-6300,Rent Jan 2026 (DR),500000.00,0.00,monthly_close,MC-2026-01,ADMIN,Finance Controller
+GLE-0234,JE-2026-01-07,2026-01-31,ACC-6200,Marketing Jan 2026 (DR),500000.00,0.00,monthly_close,MC-2026-01,MARKETING,Finance Controller
+GLE-0235,JE-2026-01-07,2026-01-31,ACC-1000,Opex Jan 2026 (CR Cash),0.00,1750000.00,monthly_close,MC-2026-01,ADMIN,Finance Controller
+GLE-0236,JE-2026-02-01,2026-02-28,ACC-1100,Revenue recognition Feb 2026 - Vaccines (DR AR),6768000.00,0.00,monthly_close,MC-2026-02,VACCINES,Finance Controller
+GLE-0237,JE-2026-02-01,2026-02-28,ACC-4001,Revenue recognition Feb 2026 - Vaccines (CR Revenue),0.00,6768000.00,monthly_close,MC-2026-02,VACCINES,Finance Controller
+GLE-0238,JE-2026-02-02,2026-02-28,ACC-1100,Revenue recognition Feb 2026 - Pharma (DR AR),4512000.00,0.00,monthly_close,MC-2026-02,PHARMA,Finance Controller
+GLE-0239,JE-2026-02-02,2026-02-28,ACC-4000,Revenue recognition Feb 2026 - Pharma (CR Revenue),0.00,4512000.00,monthly_close,MC-2026-02,PHARMA,Finance Controller
+GLE-0240,JE-2026-02-03,2026-02-28,ACC-5000,COGS Feb 2026 (DR COGS),7332000.00,0.00,monthly_close,MC-2026-02,WAREHOUSE,Finance Controller
+GLE-0241,JE-2026-02-03,2026-02-28,ACC-1200,COGS Feb 2026 (CR Inventory),0.00,7332000.00,monthly_close,MC-2026-02,WAREHOUSE,Finance Controller
+GLE-0242,JE-2026-02-04,2026-02-28,ACC-1000,Customer receipts Feb 2026 (DR Cash),1500000.00,0.00,monthly_close,MC-2026-02,TREASURY,Finance Controller
+GLE-0243,JE-2026-02-04,2026-02-28,ACC-1100,Customer receipts Feb 2026 (CR AR),0.00,1500000.00,monthly_close,MC-2026-02,TREASURY,Finance Controller
+GLE-0244,JE-2026-02-05,2026-02-28,ACC-2000,Supplier payment Feb 2026 (DR AP),9000000.00,0.00,monthly_close,MC-2026-02,PROCUREMENT,Finance Controller
+GLE-0245,JE-2026-02-05,2026-02-28,ACC-1001,Supplier payment Feb 2026 (CR Bank),0.00,9000000.00,monthly_close,MC-2026-02,PROCUREMENT,Finance Controller
+GLE-0246,JE-2026-02-06,2026-02-28,ACC-6000,Salaries Feb 2026 - Mgmt (DR),900000.00,0.00,monthly_close,MC-2026-02,MANAGEMENT,Finance Controller
+GLE-0247,JE-2026-02-06,2026-02-28,ACC-6001,Salaries Feb 2026 - Sales (DR),1400000.00,0.00,monthly_close,MC-2026-02,SALES,Finance Controller
+GLE-0248,JE-2026-02-06,2026-02-28,ACC-6002,Salaries Feb 2026 - Ops (DR),700000.00,0.00,monthly_close,MC-2026-02,OPERATIONS,Finance Controller
+GLE-0249,JE-2026-02-06,2026-02-28,ACC-1000,Salaries Feb 2026 (CR Cash),0.00,3000000.00,monthly_close,MC-2026-02,PAYROLL,Finance Controller
+GLE-0250,JE-2026-02-07,2026-02-28,ACC-6100,Admin Feb 2026 (DR),700000.00,0.00,monthly_close,MC-2026-02,ADMIN,Finance Controller
+GLE-0251,JE-2026-02-07,2026-02-28,ACC-6300,Rent Feb 2026 (DR),500000.00,0.00,monthly_close,MC-2026-02,ADMIN,Finance Controller
+GLE-0252,JE-2026-02-07,2026-02-28,ACC-6200,Marketing Feb 2026 (DR),450000.00,0.00,monthly_close,MC-2026-02,MARKETING,Finance Controller
+GLE-0253,JE-2026-02-07,2026-02-28,ACC-1000,Opex Feb 2026 (CR Cash),0.00,1650000.00,monthly_close,MC-2026-02,ADMIN,Finance Controller
+GLE-0254,JE-2026-03-01,2026-03-31,ACC-1100,Revenue recognition Mar 2026 - Vaccines (DR AR),8200000.00,0.00,monthly_close,MC-2026-03,VACCINES,Finance Controller
+GLE-0255,JE-2026-03-01,2026-03-31,ACC-4001,Revenue recognition Mar 2026 - Vaccines (CR Revenue),0.00,8200000.00,monthly_close,MC-2026-03,VACCINES,Finance Controller
+GLE-0256,JE-2026-03-02,2026-03-31,ACC-1100,Revenue recognition Mar 2026 - Pharma (DR AR),5480000.00,0.00,monthly_close,MC-2026-03,PHARMA,Finance Controller
+GLE-0257,JE-2026-03-02,2026-03-31,ACC-4000,Revenue recognition Mar 2026 - Pharma (CR Revenue),0.00,5480000.00,monthly_close,MC-2026-03,PHARMA,Finance Controller
+GLE-0258,JE-2026-03-03,2026-03-31,ACC-5000,COGS Mar 2026 (DR COGS),9108000.00,0.00,monthly_close,MC-2026-03,WAREHOUSE,Finance Controller
+GLE-0259,JE-2026-03-03,2026-03-31,ACC-1200,COGS Mar 2026 (CR Inventory),0.00,9108000.00,monthly_close,MC-2026-03,WAREHOUSE,Finance Controller
+GLE-0260,JE-2026-03-04,2026-03-31,ACC-1000,Customer receipts Mar 2026 (DR Cash),2800000.00,0.00,monthly_close,MC-2026-03,TREASURY,Finance Controller
+GLE-0261,JE-2026-03-04,2026-03-31,ACC-1100,Customer receipts Mar 2026 (CR AR),0.00,2800000.00,monthly_close,MC-2026-03,TREASURY,Finance Controller
+GLE-0262,JE-2026-03-05,2026-03-31,ACC-2000,Supplier payment Mar 2026 (DR AP),10500000.00,0.00,monthly_close,MC-2026-03,PROCUREMENT,Finance Controller
+GLE-0263,JE-2026-03-05,2026-03-31,ACC-1001,Supplier payment Mar 2026 (CR Bank),0.00,10500000.00,monthly_close,MC-2026-03,PROCUREMENT,Finance Controller
+GLE-0264,JE-2026-03-06,2026-03-31,ACC-6000,Salaries Mar 2026 - Mgmt (DR),900000.00,0.00,monthly_close,MC-2026-03,MANAGEMENT,Finance Controller
+GLE-0265,JE-2026-03-06,2026-03-31,ACC-6001,Salaries Mar 2026 - Sales (DR),1400000.00,0.00,monthly_close,MC-2026-03,SALES,Finance Controller
+GLE-0266,JE-2026-03-06,2026-03-31,ACC-6002,Salaries Mar 2026 - Ops (DR),700000.00,0.00,monthly_close,MC-2026-03,OPERATIONS,Finance Controller
+GLE-0267,JE-2026-03-06,2026-03-31,ACC-1000,Salaries Mar 2026 (CR Cash),0.00,3000000.00,monthly_close,MC-2026-03,PAYROLL,Finance Controller
+GLE-0268,JE-2026-03-07,2026-03-31,ACC-6100,Admin Mar 2026 (DR),700000.00,0.00,monthly_close,MC-2026-03,ADMIN,Finance Controller
+GLE-0269,JE-2026-03-07,2026-03-31,ACC-6300,Rent Mar 2026 (DR),500000.00,0.00,monthly_close,MC-2026-03,ADMIN,Finance Controller
+GLE-0270,JE-2026-03-07,2026-03-31,ACC-6200,Marketing Mar 2026 (DR),450000.00,0.00,monthly_close,MC-2026-03,MARKETING,Finance Controller
+GLE-0271,JE-2026-03-07,2026-03-31,ACC-1000,Opex Mar 2026 (CR Cash),0.00,1650000.00,monthly_close,MC-2026-03,ADMIN,Finance Controller

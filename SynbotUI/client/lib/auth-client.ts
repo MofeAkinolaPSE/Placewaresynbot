@@ -32,6 +32,19 @@ class AuthClient {
     return this.lastAuthError;
   }
 
+  getSubject(): string | null {
+    if (!this.accessToken) return null;
+    try {
+      const parts = this.accessToken.split(".");
+      if (parts.length < 2) return null;
+      const payloadJson = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+      const payload = JSON.parse(payloadJson) as { sub?: string; user_id?: string };
+      return payload.sub || payload.user_id || null;
+    } catch {
+      return null;
+    }
+  }
+
   async login(email: string, password: string): Promise<void> {
     const body = new URLSearchParams();
     body.set("username", email);

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
-from src.middleware import verify_jwt
+from typing import List
+from src.middleware import verify_jwt, require_role
 from src.workflow.credit_risk import is_customer_flagged, apply_credit_action
+from src.workflow.batch_locking import enforce_no_locked_batches
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -9,10 +11,14 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 class InvoiceCreate(BaseModel):
     customer_id: str
     amount: float
+    batch_ids: List[str] = []
 
 
 @router.post("/create_invoice")
-async def api_create_invoice(payload: InvoiceCreate, request: Request, user=Depends(lambda r: verify_jwt(r))):
+async def api_create_invoice(payload: InvoiceCreate, request: Request, user=Depends(verify_jwt)):
+    # Compliance lock enforcement
+    enforce_no_locked_batches(payload.batch_ids)
+
     # Check credit flags
     if is_customer_flagged(payload.customer_id):
         # record attempted invoice creation

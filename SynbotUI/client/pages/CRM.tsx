@@ -1,4 +1,5 @@
 import { TrendingUp, AlertTriangle } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   LineChart,
   Line,
@@ -20,10 +21,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 const CRM = () => {
+  const queryClient = useQueryClient();
+
+  useRealtimeChannel("workflow_updates", () => {
+    void queryClient.invalidateQueries({ queryKey: ["crm-dashboard"] });
+    void queryClient.invalidateQueries({ queryKey: ["crm-risk-scores"] });
+  });
+
+  useRealtimeChannel("alerts_updates", () => {
+    void queryClient.invalidateQueries({ queryKey: ["crm-risk-scores"] });
+  });
+
+  useRealtimeChannel("crm_updates", () => {
+    void queryClient.invalidateQueries({ queryKey: ["crm-dashboard"] });
+    void queryClient.invalidateQueries({ queryKey: ["crm-risk-scores"] });
+  });
+
   const { data: fetchedData, isLoading, isError, error } = useQuery({
     queryKey: ["crm-dashboard"],
     queryFn: () => api.dashboard.crm(),
@@ -123,26 +143,31 @@ const CRM = () => {
   const getRiskColor = (risk: string) => {
     switch (risk) {
       case "high":
-        return "bg-red-100 text-red-800";
+        return "bg-destructive/10 text-destructive";
       case "medium":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-warning/15 text-warning";
       case "low":
-        return "bg-green-100 text-green-800";
+        return "bg-success/15 text-success";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
   const getARStatusColor = (status: string) => {
     return status === "overdue"
-      ? "bg-red-50 text-red-700"
-      : "bg-green-50 text-green-700";
+      ? "bg-destructive/10 text-destructive"
+      : "bg-success/15 text-success";
   };
 
   const totalPipeline = data.pipeline_value;
 
   return (
-    <div className="p-8 space-y-8">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="space-y-8"
+    >
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">CRM</h1>
@@ -164,48 +189,50 @@ const CRM = () => {
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((kpi, idx) => (
-          <div
-            key={idx}
-            className="bg-card border border-border rounded-lg p-6 hover:shadow-lg transition-shadow"
-          >
-            <p className="text-sm font-medium text-muted-foreground mb-1">
+          <Card key={idx}>
+            <CardHeader className="pb-2">
+              <CardDescription className="text-sm font-medium text-muted-foreground mb-1">
               {kpi.label}
-            </p>
-            <h3 className="text-2xl font-bold text-foreground mb-3">
+              </CardDescription>
+              <CardTitle className="text-2xl font-bold text-foreground mb-1">
               {dataValid ? kpi.value : (isLoading ? "Loading..." : "-")}
-            </h3>
-            <div className="flex items-center gap-2 mb-2">
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-2 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-warning" />
               <span className="text-sm font-medium text-warning">
                 {kpi.change}
               </span>
-            </div>
-            <p className="text-xs text-muted-foreground">{kpi.sublabel}</p>
-          </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{kpi.sublabel}</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pipeline Trend */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">
+        <Card>
+          <CardHeader className="mb-2">
+            <CardTitle className="text-lg font-semibold text-foreground">
               Pipeline Trend
-            </h2>
-            <p className="text-sm text-muted-foreground">
+            </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
               Monthly sales pipeline value (₦M)
-            </p>
-          </div>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={pipelineTrendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="month" stroke="#6b7280" angle={-45} height={80} />
-              <YAxis stroke="#6b7280" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" angle={-45} height={80} />
+              <YAxis stroke="hsl(var(--muted-foreground))" />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e5e7eb",
+                  backgroundColor: "hsl(var(--background))",
+                  border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
               />
@@ -213,7 +240,7 @@ const CRM = () => {
               <Line
                 type="monotone"
                 dataKey="value"
-                stroke="#0064cc"
+                stroke="hsl(var(--primary))"
                 strokeWidth={2}
                 name="Pipeline"
                 dot={{ r: 4 }}
@@ -221,49 +248,54 @@ const CRM = () => {
               />
             </LineChart>
           </ResponsiveContainer>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Win/Loss Ratio */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">
+        <Card>
+          <CardHeader className="mb-2">
+            <CardTitle className="text-lg font-semibold text-foreground">
               Win/Loss Ratio
-            </h2>
-            <p className="text-sm text-muted-foreground">
+            </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
               Closed opportunities by outcome
-            </p>
-          </div>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={winLossData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="month" stroke="#6b7280" angle={-45} height={80} />
-              <YAxis stroke="#6b7280" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" angle={-45} height={80} />
+              <YAxis stroke="hsl(var(--muted-foreground))" />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e5e7eb",
+                  backgroundColor: "hsl(var(--background))",
+                  border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
               />
               <Legend />
-              <Bar dataKey="won" fill="#219653" name="Won" />
-              <Bar dataKey="lost" fill="#ef4444" name="Lost" />
+              <Bar dataKey="won" fill="hsl(var(--success))" name="Won" />
+              <Bar dataKey="lost" fill="hsl(var(--destructive))" name="Lost" />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Opportunities Table */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-foreground">
+      <Card>
+        <CardHeader className="mb-2">
+          <CardTitle className="text-lg font-semibold text-foreground">
             Active Opportunities
-          </h2>
-          <p className="text-sm text-muted-foreground">
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
             {opportunitiesData.length} open opportunities worth ₦
             {(totalPipeline / 1000000).toFixed(1)}M
-          </p>
-        </div>
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
 
         <div className="overflow-x-auto">
           <Table>
@@ -285,14 +317,14 @@ const CRM = () => {
                     {(opp.value / 1000000).toFixed(1)}M
                   </TableCell>
                   <TableCell>
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                    <span className="rounded px-2 py-1 text-xs font-medium bg-info/15 text-info">
                       {opp.stage}
                     </span>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {opp.riskFlag === "high" && (
-                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                        <AlertTriangle className="w-4 h-4 text-destructive" />
                       )}
                       <span
                         className={`px-2 py-1 rounded text-xs font-medium inline-block ${getRiskColor(
@@ -332,14 +364,14 @@ const CRM = () => {
 
         {/* Risk Summary */}
         <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="bg-red-50 rounded-lg p-4">
-            <p className="text-xs font-semibold text-red-800 uppercase">
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4">
+            <p className="text-xs font-semibold text-destructive uppercase">
               High Risk
             </p>
-            <p className="text-lg font-bold text-red-900 mt-2">
+            <p className="text-lg font-bold text-destructive mt-2">
               {opportunitiesData.filter((o) => o.riskFlag === "high").length}
             </p>
-            <p className="text-xs text-red-700 mt-1">
+            <p className="text-xs text-destructive mt-1">
               ₦
               {(
                 opportunitiesData
@@ -349,14 +381,14 @@ const CRM = () => {
               M at risk
             </p>
           </div>
-          <div className="bg-yellow-50 rounded-lg p-4">
-            <p className="text-xs font-semibold text-yellow-800 uppercase">
+          <div className="rounded-xl border border-warning/30 bg-warning/15 p-4">
+            <p className="text-xs font-semibold text-warning uppercase">
               Medium Risk
             </p>
-            <p className="text-lg font-bold text-yellow-900 mt-2">
+            <p className="text-lg font-bold text-warning mt-2">
               {opportunitiesData.filter((o) => o.riskFlag === "medium").length}
             </p>
-            <p className="text-xs text-yellow-700 mt-1">
+            <p className="text-xs text-warning mt-1">
               ₦
               {(
                 opportunitiesData
@@ -366,14 +398,14 @@ const CRM = () => {
               M at risk
             </p>
           </div>
-          <div className="bg-green-50 rounded-lg p-4">
-            <p className="text-xs font-semibold text-green-800 uppercase">
+          <div className="rounded-xl border border-success/30 bg-success/15 p-4">
+            <p className="text-xs font-semibold text-success uppercase">
               Low Risk
             </p>
-            <p className="text-lg font-bold text-green-900 mt-2">
+            <p className="text-lg font-bold text-success mt-2">
               {opportunitiesData.filter((o) => o.riskFlag === "low").length}
             </p>
-            <p className="text-xs text-green-700 mt-1">
+            <p className="text-xs text-success mt-1">
               ₦
               {(
                 opportunitiesData
@@ -384,8 +416,9 @@ const CRM = () => {
             </p>
           </div>
         </div>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 };
 

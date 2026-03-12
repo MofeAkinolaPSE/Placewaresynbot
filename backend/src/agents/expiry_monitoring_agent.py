@@ -90,12 +90,18 @@ class ExpiryMonitoringAgent(BaseAgent):
                 engine = self.context.get("workflow_engine")
                 for p in promotion_recs[:20]:
                     try:
-                        engine.enqueue("sales.create_promotion", {"sku": p.get("sku"), "batch_id": p.get("batch_id"), "qty": p.get("qty")})
+                        engine.enqueue("inventory.expiry_promotion", {
+                            "sku": p.get("sku"),
+                            "batch_id": p.get("batch_id"),
+                            "qty": p.get("qty"),
+                            "days_to_expiry": p.get("days_to_expiry", 60),
+                            "discount_pct": 15.0,
+                        })
                     except Exception:
-                        pass
+                        continue
 
         if reallocation_recs:
-            insight.findings.append(f"{len(reallocation_recs)} batch(es) are candidates for reallocation to high-demand regions.")
+            insight.findings.append(f"{len(reallocation_recs)} batch(es) recommended for reallocation.")
             insight.recommendations.append("Consider internal transfers to nearby warehouses with higher velocity.")
             insight.supporting_refs.extend(reallocation_recs[:10])
 

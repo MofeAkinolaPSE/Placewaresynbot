@@ -13,11 +13,19 @@ import {
   ShoppingCart,
   Zap,
   Shield,
+  CalendarDays,
+  Bot,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
-const Sidebar = () => {
+type SidebarProps = {
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+};
+
+const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
   const location = useLocation();
   const { roles } = useAuth();
 
@@ -55,6 +63,15 @@ const Sidebar = () => {
       roles: ["admin", "hr"],
     },
     {
+      label: "Staff Dashboard",
+      icon: ClipboardList,
+      roles: ["admin", "hr", "ops", "management"],
+      children: [
+        { label: "Dashboard", href: "/staff/dashboard" },
+        { label: "Collaboration", href: "/staff/collaboration" },
+      ],
+    },
+    {
       label: "Operations",
       icon: Factory,
       roles: ["admin", "ops", "operations"],
@@ -62,13 +79,18 @@ const Sidebar = () => {
       children: [
         { label: "Overview", href: "/operations" },
         { label: "Project Controls", href: "/operations/project-controls" },
+        { label: "Suppliers", href: "/operations/suppliers" },
       ],
     },
     {
       label: "CRM",
       icon: ShoppingCart,
-      href: "/crm",
       roles: ["admin", "crm", "sales"],
+      children: [
+        { label: "Overview", href: "/crm" },
+        { label: "Lead Finder", href: "/crm/lead-finder" },
+        { label: "Leads", href: "/admin/leads" },
+      ],
     },
     {
       label: "Workflow",
@@ -83,10 +105,22 @@ const Sidebar = () => {
       roles: ["admin"],
     },
     {
-      label: "Ask Synbot",
+      label: "Ask PlacewareBot",
       icon: MessageSquare,
       href: "/synbot",
       badge: "AI",
+    },
+    {
+      label: "Calendar & Tasks",
+      icon: CalendarDays,
+      href: "/calendar",
+    },
+    {
+      label: "Agent Stack",
+      icon: Bot,
+      href: "/agents",
+      badge: "AI",
+      roles: ["admin", "management"],
     },
     {
       label: "Settings",
@@ -104,22 +138,36 @@ const Sidebar = () => {
   const visibleNavItems = navItems.filter((item) => canView((item as any).roles));
 
   return (
-    <div className="fixed left-0 top-0 h-screen w-64 bg-primary text-primary-foreground flex flex-col">
+    <>
+      <div
+        className={cn(
+          "fixed inset-0 z-20 bg-black/40 transition-opacity lg:hidden",
+          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        onClick={onMobileClose}
+      />
+      <div
+        className={cn(
+          "fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-sidebar-border/70 bg-sidebar/95 text-sidebar-foreground backdrop-blur-lg transition-transform duration-300",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          "lg:translate-x-0",
+        )}
+      >
       {/* Logo/Header */}
-      <div className="p-6 border-b border-sidebar-border">
+      <div className="border-b border-sidebar-border/80 p-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-primary shadow-elevation-2">
             <Zap className="w-6 h-6 text-accent-foreground" />
           </div>
           <div>
-            <h1 className="font-bold text-lg">Synbot</h1>
-            <p className="text-xs opacity-75">BVE</p>
+            <h1 className="text-lg font-bold">PlacewareBot</h1>
+            <p className="text-xs opacity-70">Enterprise Intelligence</p>
           </div>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
         {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const hasChildren = "children" in item;
@@ -131,7 +179,7 @@ const Sidebar = () => {
             <div key={item.label}>
               {hasChildren ? (
                 <div className="mb-2">
-                  <div className="text-xs font-semibold uppercase opacity-50 px-3 py-2">
+                  <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide opacity-55">
                     {item.label}
                   </div>
                   <div className="space-y-1">
@@ -139,11 +187,12 @@ const Sidebar = () => {
                       <Link
                         key={child.href}
                         to={child.href}
+                        onClick={onMobileClose}
                         className={cn(
-                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                          "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-smooth",
                           isActive(child.href)
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                            : "text-primary-foreground hover:bg-sidebar-accent hover:bg-opacity-20"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-elevation-1"
+                            : "text-sidebar-foreground/90 hover:bg-sidebar-accent/60"
                         )}
                       >
                         <div className="w-1 h-1 rounded-full" />
@@ -155,17 +204,18 @@ const Sidebar = () => {
               ) : (
                 <Link
                   to={item.href || "/"}
+                  onClick={onMobileClose}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors mb-1",
+                    "mb-1 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-smooth",
                     itemActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-primary-foreground hover:bg-sidebar-accent hover:bg-opacity-20"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-elevation-1"
+                      : "text-sidebar-foreground/90 hover:bg-sidebar-accent/60"
                   )}
                 >
                   <Icon className="w-4 h-4" />
                   <span className="flex-1">{item.label}</span>
                   {item.badge && (
-                    <span className="px-2 py-0.5 bg-accent text-accent-foreground text-xs rounded-full font-semibold">
+                    <span className="rounded-full bg-gradient-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
                       {item.badge}
                     </span>
                   )}
@@ -177,11 +227,12 @@ const Sidebar = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border text-xs opacity-60">
+      <div className="border-t border-sidebar-border/80 p-4 text-xs opacity-60">
         <p>Placeware Nigeria</p>
-        <p>Enterprise Admin</p>
+        <p>Enterprise Console</p>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

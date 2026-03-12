@@ -40,8 +40,7 @@ Purpose: production deployment checklist for hosting app services on a DigitalOc
 ## 4) Application Configuration (Env Contract)
 
 ## Required Runtime Variables (current codebase)
-- `SUPABASE_URL`
-- `SUPABASE_KEY`
+- `DATABASE_URL` (preferred when running against Postgres directly)
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_MODEL`
 - `EMAIL_FROM`
@@ -50,6 +49,8 @@ Purpose: production deployment checklist for hosting app services on a DigitalOc
 - `RATE_LIMIT`
 - `CORS_ALLOW_ORIGINS`
 - `WIDGET_SITE_KEYS`
+
+Note: `SUPABASE_URL` / `SUPABASE_KEY` are optional and only required if you intend to run against a hosted Supabase project (REST/Auth APIs). The codebase supports direct Postgres via `DATABASE_URL` and the `LocalDBClient` compatibility layer.
 
 ## Additional Production Variables (recommended)
 - `PYTHONUNBUFFERED=1`

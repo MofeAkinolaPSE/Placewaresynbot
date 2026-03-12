@@ -57,6 +57,28 @@ TABLE_WEBHOOK_IDEMPOTENCY = "placeware_webhook_idempotency"
 
 # Stage 3 project-controls governance
 PROJECT_STATUS_ALLOWED = {"active", "on_hold", "completed", "cancelled"}
+PROJECT_WORKFLOW_STAGES = {
+    "port_clearing",
+    "anti_room_received",
+    "cold_room_stacked",
+    "nafdac_sampling",
+    "released_for_issuing",
+    "packaging_for_delivery",
+    "delivered_to_end_users",
+}
+PROJECT_QC_STATUS_ALLOWED = {"pending", "in_review", "passed", "failed", "waived"}
+PROJECT_QC_APPROVED_STATUSES = {"passed", "waived"}
+PROJECT_QC_GATED_STAGES = {"cold_room_stacked", "released_for_issuing"}
+
+PROJECT_STAGE_TRANSITIONS = {
+    "port_clearing": {"anti_room_received"},
+    "anti_room_received": {"cold_room_stacked", "port_clearing"},
+    "cold_room_stacked": {"nafdac_sampling", "anti_room_received"},
+    "nafdac_sampling": {"released_for_issuing", "cold_room_stacked"},
+    "released_for_issuing": {"packaging_for_delivery", "nafdac_sampling"},
+    "packaging_for_delivery": {"delivered_to_end_users", "released_for_issuing"},
+    "delivered_to_end_users": set(),
+}
 SCOPE_STATUS_ALLOWED = {"planned", "in_progress", "done", "deferred", "cancelled"}
 COST_STATUS_ALLOWED = {"planned", "approved", "committed", "actual", "cancelled"}
 RISK_STATUS_ALLOWED = {"open", "monitoring", "mitigating", "accepted", "closed"}
@@ -158,6 +180,26 @@ ENV_HF_API_KEY = "HF_API_KEY"
 
 # Webhook shared secret (HMAC) for provider callbacks
 ENV_WEBHOOK_SECRET = "WEBHOOK_SECRET"
+
+# --- Financial Data Pipeline Config ---
+# GL account code that holds the cash/bank balance (used by kpis() to derive cash position).
+# Change this to match the account code in the customer's Sage chart of accounts.
+CASH_GL_ACCOUNT_CODE: str = os.getenv("CASH_GL_ACCOUNT_CODE", "1000")
+
+# Revenue accounts: any GL account_code cast to int in this range is treated as revenue (credit side).
+REVENUE_GL_ACCOUNT_MIN: int = 4000
+REVENUE_GL_ACCOUNT_MAX: int = 4999
+
+# Cost/expense accounts: debit-side rows in this range feed total_cost.
+COST_GL_ACCOUNT_MIN: int = 5000
+COST_GL_ACCOUNT_MAX: int = 6999
+
+# How many hours before a missing/unchanged Sage import triggers stale_pipeline_alert on /health.
+PIPELINE_STALE_HOURS: int = int(os.getenv("PIPELINE_STALE_HOURS", "48"))
+
+# --- Executive Summary Thresholds ---
+# AR overdue count above this threshold triggers a key_finding. Set to 0 so any overdue invoice fires.
+EXEC_SUMMARY_AR_OVERDUE_THRESHOLD: int = int(os.getenv("EXEC_SUMMARY_AR_OVERDUE_THRESHOLD", "0"))
 
 # Defaults / Derived
 LLM_PROVIDER = os.getenv(ENV_LLM_PROVIDER, "deepseek").lower()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Any
 from src.utils.ttl_cache import SimpleTTLCache
-from src.middleware import verify_jwt
+from src.middleware import verify_jwt, require_role
 
 # Minimal in-memory shared cache instance used by agents at runtime.
 _shared_cache = SimpleTTLCache()
@@ -14,18 +14,18 @@ def get_shared_cache() -> SimpleTTLCache:
 
 
 @router.get("/get/{key}")
-async def api_cache_get(key: str, _u=Depends(lambda r: verify_jwt(r))):
+async def api_cache_get(key: str, _u=Depends(verify_jwt)):
     v = _shared_cache.get(key)
     return {"key": key, "value": v}
 
 
 @router.get("/ttl/{key}")
-async def api_cache_ttl(key: str, _u=Depends(lambda r: verify_jwt(r))):
+async def api_cache_ttl(key: str, _u=Depends(verify_jwt)):
     ttl = _shared_cache.ttl(key)
     return {"key": key, "ttl_seconds": ttl}
 
 
 @router.post("/clear")
-async def api_cache_clear(_u=Depends(lambda r: verify_jwt(r, required_role="admin"))):
+async def api_cache_clear(_u=Depends(require_role("admin"))):
     _shared_cache.clear()
     return {"ok": True}

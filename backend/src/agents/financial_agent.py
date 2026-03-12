@@ -1,9 +1,12 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
-from decimal import Decimal
+import logging
+from typing import Any, Dict, List
 from src.agents.base_agent import BaseAgent, Insight
 from src.agent_registry import register_agent
 from src.utils.batch_query import batch_query
+from src.services.margin_analysis import margin_driver_report
+
+logger = logging.getLogger(__name__)
 
 
 @register_agent
@@ -25,6 +28,7 @@ class FinancialAnalystAgent(BaseAgent):
         product_stats: Dict[str, Dict[str, float]] = {}
         total_revenue = 0.0
         total_cost = 0.0
+        overdue_customers_90plus: List[Dict[str, Any]] = []
         errors: List[str] = []
 
         for spec, res in results:
@@ -50,6 +54,14 @@ class FinancialAnalystAgent(BaseAgent):
                             ar_buckets["61-90"] += amt
                         else:
                             ar_buckets["90+"] += amt
+                            # Track customers for workflow trigger
+                            cust_id = row.get("customer_id") or row.get("customer_code")
+                            if cust_id:
+                                overdue_customers_90plus.append({
+                                    "customer_id": cust_id,
+                                    "days_overdue": due,
+                                    "amount": amt,
+                                })
 
                     # Sales / product profitability rows
                     if "product_id" in row and ("revenue" in row or "cost" in row):
@@ -86,10 +98,29 @@ class FinancialAnalystAgent(BaseAgent):
             "compressed_product_count": len(compressed_products),
         }
 
+        exposure = sum(float(v or 0) for v in ar_buckets.values())
+        currency_delta_pct = float(self.context.get("currency_delta_pct", 5.0))
+        currency_impact_amount = exposure * (currency_delta_pct / 100.0)
+        metrics["currency_delta_pct"] = round(currency_delta_pct, 2)
+        metrics["currency_exposure"] = round(exposure, 2)
+        metrics["currency_impact_amount"] = round(currency_impact_amount, 2)
+
+        # Schema-drift guard: if rows were returned but exposure is still zero,
+        # the executor normalisation may have changed the 'days_overdue' key name.
+        total_rows = sum(len(res or []) for _, res in results if isinstance(res, list))
+        if exposure == 0.0 and total_rows > 0:
+            logger.warning(
+                "financial_analyst: currency_exposure is 0 despite %d data rows. "
+                "Check that the AR executor emits a 'days_overdue' key.",
+                total_rows,
+            )
+            metrics["_data_rows_received"] = total_rows
+
         return {
             "metrics": metrics,
             "product_stats": product_stats,
             "compressed_products": compressed_products,
+            "overdue_customers_90plus": overdue_customers_90plus,
             "errors": errors,
         }
 
@@ -104,19 +135,65 @@ class FinancialAnalystAgent(BaseAgent):
 
         # AR findings
         ar = metrics.get("ar_buckets", {})
+        overdue_customers = analysis.get("overdue_customers_90plus", [])
         if ar and ar.get("90+", 0) > 0:
             insight.findings.append(f"High overdue AR: {round(ar.get('90+',0),2)} in 90+ days bucket")
             insight.recommendations.append("Review credit terms for customers in 90+ AR bucket and escalate collections.")
+
+            # Trigger credit risk workflow for 90+ overdue customers
+            engine = self.context.get("workflow_engine")
+            auto_trigger = bool(self.context.get("auto_trigger_workflow", True))
+            if engine and auto_trigger and overdue_customers:
+                flagged = 0
+                for cust in overdue_customers[:20]:
+                    try:
+                        engine.enqueue("finance.flag_credit_risk", {
+                            "customer_id": str(cust.get("customer_id") or cust.get("id") or ""),
+                            "days_overdue": int(cust.get("days_overdue", 90)),
+                            "amount_overdue": float(cust.get("amount", 0)),
+                        })
+                        flagged += 1
+                    except Exception:
+                        pass
+                if flagged:
+                    insight.execution_metadata["workflow_triggered"] = True
+                    insight.execution_metadata["customers_flagged"] = flagged
 
         # Margin findings
         overall_margin = metrics.get("overall_margin_pct", 0.0)
         if overall_margin < 15:
             insight.risks.append("overall_margin_compression")
             insight.recommendations.append("Investigate pricing and supplier costs; consider repricing or promotional adjustments.")
+            # Enrich with named cost-driver decomposition
+            try:
+                driver_report = margin_driver_report()
+                top_drivers = driver_report.get("top_drivers", [])
+                for drv in top_drivers[:3]:
+                    name = drv.get("name", "Unknown")
+                    mom = drv.get("mom_change_pct", 0.0)
+                    pct_rev = drv.get("pct_of_revenue", 0.0)
+                    trend = drv.get("trend", "stable")
+                    insight.findings.append(
+                        f"{name} cost is {pct_rev:.1f}% of revenue"
+                        + (f", {mom:+.1f}% MoM — {trend}" if mom else "")
+                        + " (top margin compressor)."
+                    )
+            except Exception as _drv_exc:
+                logger.warning(f"margin_driver_report unavailable in financial_agent: {_drv_exc}")
 
         if compressed:
             insight.findings.append(f"{len(compressed)} products with margin < 10%")
             insight.supporting_refs.extend([{"product_id": p, **product_stats.get(p, {})} for p in compressed[:10]])
+
+        currency_delta = metrics.get("currency_delta_pct", 0)
+        currency_impact = metrics.get("currency_impact_amount", 0)
+        if currency_delta:
+            insight.findings.append(
+                f"Currency simulation: {currency_delta:+.1f}% FX move changes current AR exposure by approximately {currency_impact:,.2f}."
+            )
+            insight.recommendations.append(
+                "Review FX-sensitive receivables and consider hedging or shorter settlement terms for foreign-currency exposure."
+            )
 
         if errors:
             insight.risks.append("partial_data: some finance queries failed")

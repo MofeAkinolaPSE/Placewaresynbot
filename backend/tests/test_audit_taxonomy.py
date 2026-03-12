@@ -40,7 +40,7 @@ def test_audit_event_inserts_taxonomy_payload(monkeypatch):
         def table(self, _name):
             return FakeTable()
 
-    monkeypatch.setattr(db_module, "supabase", FakeSupabase())
+    monkeypatch.setattr(db_module, "db", FakeSupabase())
     db_module.audit_event(
         "auth_refresh_failed",
         {"reason": "expired", "user_id": "u-1"},
@@ -95,7 +95,7 @@ def test_audit_event_includes_esignature_fields(monkeypatch):
         def table(self, _name):
             return FakeTable()
 
-    monkeypatch.setattr(db_module, "supabase", FakeSupabase())
+    monkeypatch.setattr(db_module, "db", FakeSupabase())
     db_module.audit_event(
         "intent_approval",
         {"intent_id": "intent-9", "approved": True},

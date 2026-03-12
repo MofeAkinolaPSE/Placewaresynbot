@@ -13,6 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 type UserRecord = {
   id: string;
@@ -140,7 +142,12 @@ const AdminUsers = () => {
     createAttestation.trim().length > 0;
 
   return (
-    <div className="p-8 space-y-8">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="pw-page-surface space-y-8 p-8"
+    >
       <div>
         <h1 className="text-3xl font-bold text-foreground">User Access Management</h1>
         <p className="text-muted-foreground mt-2">
@@ -148,7 +155,7 @@ const AdminUsers = () => {
         </p>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+      <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
         <h2 className="text-lg font-semibold text-foreground">Create User</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
@@ -191,7 +198,7 @@ const AdminUsers = () => {
         </Button>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+      <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
         <h2 className="text-lg font-semibold text-foreground">Current Users</h2>
 
         {usersQuery.isError && (
@@ -244,7 +251,7 @@ const AdminUsers = () => {
       </div>
 
       {selectedUserId && (
-        <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Confirm Status Change</h2>
           <Input
             value={statusReason}
@@ -282,7 +289,7 @@ const AdminUsers = () => {
       )}
 
       {passwordUserId && (
-        <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Reset User Password</h2>
           <Input
             type="password"
@@ -324,7 +331,7 @@ const AdminUsers = () => {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 

@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Synbot UI Cards</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      .cards { display: flex; gap: 12px; }
+      .card { border: 1px solid #ddd; padding: 12px; width: 200px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+      .value { font-size: 24px; font-weight: bold; }
+      .label { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h2>Synbot — Quick Overview</h2>
+    <div class="cards" id="cards"></div>
+
+    <script>
+      async function load() {
+        try {
+          const res = await fetch('/ui/metrics/summary');
+          const data = await res.json();
+          const cards = document.getElementById('cards');
+          const mapping = [
+            ['Total Leads', data.total_leads],
+            ['Pipeline Value', data.pipeline_value],
+            ['Forecast', data.forecast],
+            ['Pending Routes', data.pending_routes],
+          ];
+          mapping.forEach(([label, val]) => {
+            const el = document.createElement('div');
+            el.className = 'card';
+            el.innerHTML = `<div class='value'>${val}</div><div class='label'>${label}</div>`;
+            cards.appendChild(el);
+          });
+        } catch (e) {
+          document.body.append('Failed loading metrics: ' + e.message);
+        }
+      }
+      load();
+    </script>
+  </body>
+</html>

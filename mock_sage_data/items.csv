@@ -1,0 +1,81 @@
+item_id,item_name,category,subcategory,unit_of_measure,standard_cost,selling_price,reorder_level,reorder_quantity,preferred_vendor_id,tax_code,created_date,status
+ITM-001,Hepatitis B Vaccine (1ml/vial),Vaccines,Viral Vaccines,Vial,1850.00,3200.00,200,1000,VND-001,VAT7.5,2019-01-10,active
+ITM-002,COVID-19 Vaccine — mRNA (0.3ml/dose),Vaccines,Viral Vaccines,Dose,4200.00,7500.00,500,2000,VND-006,VAT7.5,2021-03-01,active
+ITM-003,Yellow Fever Vaccine (0.5ml/vial),Vaccines,Viral Vaccines,Vial,3100.00,5800.00,100,500,VND-003,VAT7.5,2019-01-10,active
+ITM-004,Rabies Vaccine (1ml/vial),Vaccines,Viral Vaccines,Vial,8500.00,14500.00,50,200,VND-001,VAT7.5,2019-06-15,active
+ITM-005,Oral Polio Vaccine — OPV (10-dose vial),Vaccines,Viral Vaccines,Vial,980.00,1800.00,300,2000,VND-004,VAT7.5,2019-01-10,active
+ITM-006,Measles-Mumps-Rubella Vaccine — MMR,Vaccines,Viral Vaccines,Vial,2200.00,4100.00,200,1000,VND-003,VAT7.5,2019-01-10,active
+ITM-007,Pneumococcal Conjugate — PCV13,Vaccines,Bacterial Vaccines,Vial,6800.00,11500.00,150,700,VND-001,VAT7.5,2020-02-20,active
+ITM-008,Rotavirus Vaccine (RVV),Vaccines,Viral Vaccines,Vial,4500.00,8200.00,100,500,VND-003,VAT7.5,2020-04-10,active
+ITM-009,Meningococcal MenAfriVac,Vaccines,Bacterial Vaccines,Vial,3800.00,6900.00,100,500,VND-004,VAT7.5,2020-05-18,active
+ITM-010,Tetanus Toxoid (TT) Vaccine,Vaccines,Bacterial Vaccines,Vial,850.00,1600.00,400,2000,VND-004,VAT7.5,2019-01-10,active
+ITM-011,HPV Vaccine — Gardasil 9 (0.5ml),Vaccines,Viral Vaccines,Vial,9500.00,16800.00,50,250,VND-001,VAT7.5,2021-07-15,active
+ITM-012,Typhoid Vi Vaccine (0.5ml/vial),Vaccines,Bacterial Vaccines,Vial,2400.00,4500.00,150,700,VND-003,VAT7.5,2019-01-10,active
+ITM-013,Haemophilus influenzae type b — Hib,Vaccines,Bacterial Vaccines,Vial,3200.00,5900.00,100,500,VND-001,VAT7.5,2019-08-22,active
+ITM-014,Varicella (Chickenpox) Vaccine,Vaccines,Viral Vaccines,Vial,5600.00,9800.00,75,300,VND-003,VAT7.5,2020-09-10,active
+ITM-015,Influenza Vaccine — Quadrivalent,Vaccines,Viral Vaccines,Vial,3500.00,6200.00,200,800,VND-001,VAT7.5,2020-11-01,active
+ITM-016,Hepatitis A Vaccine (1ml/vial),Vaccines,Viral Vaccines,Vial,4800.00,8500.00,100,400,VND-003,VAT7.5,2021-01-20,active
+ITM-017,DTP-HepB-Hib Combined (Pentavalent),Vaccines,Combination Vaccines,Vial,5200.00,9200.00,200,800,VND-004,VAT7.5,2019-01-10,active
+ITM-018,BCG Vaccine (10-dose vial),Vaccines,Bacterial Vaccines,Vial,750.00,1400.00,300,1500,VND-004,VAT7.5,2019-01-10,active
+ITM-019,Japanese Encephalitis Vaccine,Vaccines,Viral Vaccines,Vial,7200.00,12800.00,30,150,VND-006,VAT7.5,2022-03-15,active
+ITM-020,Cholera Oral Vaccine — Shanchol,Vaccines,Bacterial Vaccines,Dose,1800.00,3400.00,100,500,VND-004,VAT7.5,2021-06-10,active
+ITM-021,Amoxicillin 500mg Capsules (10s),Pharmaceuticals,Antibiotics,Pack,420.00,850.00,500,3000,VND-007,VAT7.5,2019-01-10,active
+ITM-022,Amoxicillin-Clavulanate 625mg (6s),Pharmaceuticals,Antibiotics,Pack,1800.00,3200.00,300,1500,VND-007,VAT7.5,2019-06-01,active
+ITM-023,Azithromycin 250mg Capsules (6s),Pharmaceuticals,Antibiotics,Pack,1200.00,2200.00,400,2000,VND-008,VAT7.5,2019-01-10,active
+ITM-024,Ciprofloxacin 500mg Tablets (10s),Pharmaceuticals,Antibiotics,Pack,680.00,1250.00,500,2500,VND-007,VAT7.5,2019-01-10,active
+ITM-025,Metronidazole 400mg Tablets (21s),Pharmaceuticals,Antibiotics,Pack,380.00,720.00,600,3000,VND-008,VAT7.5,2019-01-10,active
+ITM-026,Artemether-Lumefantrine 20/120mg (24s) — AL,Pharmaceuticals,Antimalarials,Pack,1650.00,2950.00,800,4000,VND-007,VAT7.5,2019-01-10,active
+ITM-027,Artesunate Injection 60mg/vial,Pharmaceuticals,Antimalarials,Vial,2800.00,5200.00,200,800,VND-008,VAT7.5,2020-03-18,active
+ITM-028,Dihydroartemisinin + Piperaquine 320mg (3s),Pharmaceuticals,Antimalarials,Pack,2200.00,4000.00,300,1500,VND-007,VAT7.5,2020-07-22,active
+ITM-029,Chloroquine Phosphate 250mg Tablets (5s),Pharmaceuticals,Antimalarials,Pack,180.00,350.00,400,2000,VND-008,VAT7.5,2019-01-10,active
+ITM-030,Sulphadoxine-Pyrimethamine SP (3s),Pharmaceuticals,Antimalarials,Pack,220.00,420.00,500,2500,VND-007,VAT7.5,2019-01-10,active
+ITM-031,Tenofovir/Lamivudine/Dolutegravir TLD (30s),Pharmaceuticals,ARVs,Pack,4200.00,7800.00,400,1500,VND-004,VAT7.5,2020-01-15,active
+ITM-032,Abacavir/Lamivudine 600/300mg (30s),Pharmaceuticals,ARVs,Pack,5800.00,10500.00,200,800,VND-004,VAT7.5,2020-01-15,active
+ITM-033,Lopinavir/Ritonavir 200/50mg (120s),Pharmaceuticals,ARVs,Pack,8400.00,15200.00,100,400,VND-004,VAT7.5,2020-01-15,active
+ITM-034,Efavirenz 600mg Tablets (30s),Pharmaceuticals,ARVs,Pack,3600.00,6500.00,300,1200,VND-004,VAT7.5,2020-01-15,active
+ITM-035,Nevirapine 200mg Tablets (60s),Pharmaceuticals,ARVs,Pack,2900.00,5200.00,200,800,VND-004,VAT7.5,2020-01-15,active
+ITM-036,Metformin 500mg Tablets (50s),Pharmaceuticals,Diabetes,Pack,650.00,1200.00,400,2000,VND-008,VAT7.5,2019-01-10,active
+ITM-037,Insulin Glargine 100IU/ml (5-pen pack),Pharmaceuticals,Diabetes,Pack,14500.00,26000.00,100,300,VND-001,VAT7.5,2019-03-20,active
+ITM-038,Metoprolol Succinate 50mg (28s),Pharmaceuticals,Cardiovascular,Pack,1800.00,3200.00,200,1000,VND-003,VAT7.5,2019-06-15,active
+ITM-039,Amlodipine 5mg Tablets (30s),Pharmaceuticals,Cardiovascular,Pack,620.00,1150.00,400,2000,VND-008,VAT7.5,2019-01-10,active
+ITM-040,Losartan Potassium 50mg (28s),Pharmaceuticals,Cardiovascular,Pack,1400.00,2600.00,300,1500,VND-007,VAT7.5,2020-02-10,active
+ITM-041,Atorvastatin 20mg Tablets (30s),Pharmaceuticals,Cardiovascular,Pack,2200.00,4000.00,300,1500,VND-003,VAT7.5,2020-04-15,active
+ITM-042,Omeprazole 20mg Capsules (28s),Pharmaceuticals,GI / Gastro,Pack,680.00,1280.00,500,2500,VND-008,VAT7.5,2019-01-10,active
+ITM-043,Ranitidine 150mg Tablets (12s),Pharmaceuticals,GI / Gastro,Pack,280.00,520.00,400,2000,VND-007,VAT7.5,2019-01-10,active
+ITM-044,Ibuprofen 400mg Tablets (15s),Pharmaceuticals,Analgesics,Pack,220.00,420.00,800,4000,VND-008,VAT7.5,2019-01-10,active
+ITM-045,Paracetamol 500mg Tablets (20s),Pharmaceuticals,Analgesics,Pack,180.00,350.00,1000,5000,VND-007,VAT7.5,2019-01-10,active
+ITM-046,Tramadol 100mg Capsules (10s),Pharmaceuticals,Analgesics,Pack,580.00,1050.00,500,2000,VND-008,VAT7.5,2019-01-10,active
+ITM-047,Morphine Sulfate Injection 10mg/ml,Pharmaceuticals,Analgesics,Vial,1200.00,2200.00,200,800,VND-003,VAT7.5,2020-06-01,active
+ITM-048,Diazepam 10mg/2ml Injection,Pharmaceuticals,Neuro / CNS,Vial,680.00,1280.00,300,1200,VND-008,VAT7.5,2019-01-10,active
+ITM-049,Phenobarbitone 30mg Tablets (50s),Pharmaceuticals,Neuro / CNS,Pack,420.00,820.00,400,1500,VND-007,VAT7.5,2019-01-10,active
+ITM-050,Ceftriaxone 1g Powder Injection,Pharmaceuticals,Antibiotics,Vial,1400.00,2600.00,400,2000,VND-008,VAT7.5,2019-01-10,active
+ITM-051,Vancomycin 500mg Injection,Pharmaceuticals,Antibiotics,Vial,4200.00,7800.00,100,400,VND-003,VAT7.5,2020-08-14,active
+ITM-052,Fluconazole 150mg Capsules (1s),Pharmaceuticals,Antifungals,Pack,380.00,720.00,500,2000,VND-007,VAT7.5,2019-01-10,active
+ITM-053,Lisinopril 10mg Tablets (28s),Pharmaceuticals,Cardiovascular,Pack,980.00,1800.00,400,1500,VND-008,VAT7.5,2021-01-12,active
+ITM-054,Doxycycline 100mg Capsules (10s),Pharmaceuticals,Antibiotics,Pack,480.00,900.00,500,2000,VND-007,VAT7.5,2019-01-10,active
+ITM-055,ORS Sachets — Oral Rehydration Salts (5s),Pharmaceuticals,GI / Gastro,Pack,120.00,240.00,1000,5000,VND-008,VAT7.5,2019-01-10,active
+ITM-056,Zinc Sulphate Dispersible 20mg (10s),Pharmaceuticals,Micronutrients,Pack,280.00,520.00,600,2500,VND-007,VAT7.5,2020-10-20,active
+ITM-057,Vitamin D3 1000IU Capsules (30s),Pharmaceuticals,Micronutrients,Pack,850.00,1600.00,400,1500,VND-008,VAT7.5,2021-03-15,active
+ITM-058,Iron + Folic Acid Tablets (30s),Pharmaceuticals,Micronutrients,Pack,320.00,620.00,600,2500,VND-007,VAT7.5,2019-01-10,active
+ITM-059,Misoprostol 200mcg Tablets (4s),Pharmaceuticals,Maternal Health,Pack,1800.00,3400.00,200,800,VND-004,VAT7.5,2020-11-10,active
+ITM-060,Oxytocin 10IU/ml Injection,Pharmaceuticals,Maternal Health,Vial,680.00,1300.00,300,1200,VND-008,VAT7.5,2020-11-10,active
+ITM-061,2.8L Vaccine Carrier Box,Cold-Chain Consumables,Carriers,Unit,12500.00,22000.00,50,200,VND-005,VAT7.5,2019-01-10,active
+ITM-062,Cold Box 12.1L (WHO-certified),Cold-Chain Consumables,Carriers,Unit,45000.00,78000.00,20,80,VND-005,VAT7.5,2019-01-10,active
+ITM-063,Ice Pack 0.4L (set of 4),Cold-Chain Consumables,Accessories,Set,2800.00,5200.00,200,800,VND-005,VAT7.5,2019-01-10,active
+ITM-064,Gelatin Ice Packs (400ml) (set of 6),Cold-Chain Consumables,Accessories,Set,3800.00,6900.00,150,600,VND-005,VAT7.5,2020-03-10,active
+ITM-065,Freeze-indicator — Fridge-Tag 2L,Cold-Chain Consumables,Monitoring,Unit,28000.00,48000.00,30,100,VND-005,VAT7.5,2020-05-20,active
+ITM-066,Vaccine Vial Monitor — VVM (100s),Cold-Chain Consumables,Monitoring,Pack,4500.00,8200.00,100,400,VND-005,VAT7.5,2019-01-10,active
+ITM-067,Digital Thermometer — Dual Probe,Cold-Chain Consumables,Monitoring,Unit,8500.00,15000.00,20,80,VND-005,VAT7.5,2019-01-10,active
+ITM-068,Safety Syringes 0.5ml (auto-disable) (100s),Cold-Chain Consumables,Accessories,Pack,1800.00,3200.00,300,1200,VND-008,VAT7.5,2019-01-10,active
+ITM-069,Sharps Container 5L,Cold-Chain Consumables,Waste Management,Unit,1200.00,2200.00,200,800,VND-008,VAT7.5,2019-01-10,active
+ITM-070,Nitrile Examination Gloves M (100s),Cold-Chain Consumables,PPE,Pack,2800.00,5000.00,400,1600,VND-009,VAT7.5,2019-01-10,active
+ITM-071,Surgical Mask Type IIR (50s),Cold-Chain Consumables,PPE,Pack,1500.00,2800.00,500,2000,VND-009,VAT7.5,2019-01-10,active
+ITM-072,Hydrocortisone 100mg/2ml Injection,Pharmaceuticals,Steroids,Vial,1600.00,3000.00,200,800,VND-003,VAT7.5,2020-07-14,active
+ITM-073,Dexamethasone 8mg/2ml Injection,Pharmaceuticals,Steroids,Vial,1200.00,2200.00,300,1200,VND-008,VAT7.5,2020-07-14,active
+ITM-074,Salbutamol 100mcg Inhaler (200 doses),Pharmaceuticals,Respiratory,Unit,2400.00,4400.00,300,1200,VND-003,VAT7.5,2019-01-10,active
+ITM-075,Beclometasone 100mcg Inhaler (200 doses),Pharmaceuticals,Respiratory,Unit,3200.00,5800.00,200,800,VND-003,VAT7.5,2020-08-01,active
+ITM-076,Calcium Gluconate 10% Injection 10ml,Pharmaceuticals,IV Fluids,Vial,680.00,1250.00,300,1200,VND-008,VAT7.5,2019-01-10,active
+ITM-077,Normal Saline 0.9% 500ml IV Bag,Pharmaceuticals,IV Fluids,Bag,480.00,900.00,600,2400,VND-008,VAT7.5,2019-01-10,active
+ITM-078,Ringer's Lactate 500ml IV Bag,Pharmaceuticals,IV Fluids,Bag,520.00,980.00,600,2400,VND-008,VAT7.5,2019-01-10,active
+ITM-079,Dextrose 5% in Water 500ml IV Bag,Pharmaceuticals,IV Fluids,Bag,450.00,850.00,600,2400,VND-008,VAT7.5,2019-01-10,active
+ITM-080,Erythromycin 250mg Tablets (20s),Pharmaceuticals,Antibiotics,Pack,580.00,1080.00,300,1500,VND-007,VAT7.5,2019-01-10,active

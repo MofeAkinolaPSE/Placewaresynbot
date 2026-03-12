@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from typing import Dict, Any, List
-from src.middleware import verify_jwt
+from src.middleware import verify_jwt, require_role
 from src.services.intelligence import (
     get_inventory_dashboard,
     get_workforce_dashboard,

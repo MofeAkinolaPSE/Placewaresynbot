@@ -44,7 +44,7 @@ export function LogisticsDashboard() {
   const forecastValid = !!forecast && Array.isArray(forecast.series) && Array.isArray(forecast.rolling);
 
   if (!kpisValid && !forecastValid) {
-    return <div className="p-10 text-center text-red-500">Data error: logistics payloads are unavailable or malformed.</div>;
+    return <div className="p-10 text-center text-destructive">Data error: logistics payloads are unavailable or malformed.</div>;
   }
 
   const series = forecastValid ? forecast.series : [];
@@ -65,7 +65,7 @@ export function LogisticsDashboard() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Avg Fulfillment Time</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
@@ -78,10 +78,10 @@ export function LogisticsDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Downtime</CardTitle>
-            <Activity className="h-4 w-4 text-red-500" />
+            <Activity className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{kpisValid ? `${kpis.downtime_minutes_total.toFixed(0)} min` : "Data error"}</div>
@@ -89,7 +89,7 @@ export function LogisticsDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Stock Turnover</CardTitle>
             <Truck className="h-4 w-4 text-muted-foreground" />
@@ -102,7 +102,7 @@ export function LogisticsDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="md:col-span-2">
+        <Card className="pw-surface-interactive md:col-span-2">
           <CardHeader>
             <CardTitle>Stock Turnover Trend</CardTitle>
             <CardDescription>Historical turnover with rolling average from ops orders and inventory snapshots.</CardDescription>
@@ -112,12 +112,12 @@ export function LogisticsDashboard() {
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="period" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="period" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="turnover" name="Turnover" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="rolling" name="Rolling Avg" stroke="#16a34a" strokeWidth={2} dot={{ r: 2 }} />
+                  <Line type="monotone" dataKey="turnover" name="Turnover" stroke="hsl(var(--info))" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="rolling" name="Rolling Avg" stroke="hsl(var(--success))" strokeWidth={2} dot={{ r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -126,7 +126,7 @@ export function LogisticsDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader>
             <CardTitle>Data Sources</CardTitle>
             <CardDescription>How these logistics metrics are computed.</CardDescription>

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from src.schemas.supplier import Supplier, SupplierDelivery
-from src.middleware import verify_jwt
-from src.db import audit_event, supabase
+from src.middleware import verify_jwt, require_role
+from src.db import audit_event, db
 import statistics
 import datetime as dt
 from src.services.supplier_intel import compute_supplier_metrics
@@ -15,7 +15,7 @@ router = APIRouter()
 async def list_suppliers(request: Request):
     verify_jwt(request)
     try:
-        resp = supabase.table('suppliers').select('*').order('created_at', desc=True).execute()
+        resp = db.table('suppliers').select('*').order('created_at', desc=True).execute()
         data = resp.data or []
     except Exception as e:
         raise HTTPException(status_code=500, detail='Failed to load suppliers from DB')
@@ -33,7 +33,7 @@ async def create_supplier(request: Request, payload: Supplier):
     s = payload.dict()
     s['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
     try:
-        resp = supabase.table('suppliers').insert(s).execute()
+        resp = db.table('suppliers').insert(s).execute()
         created = resp.data[0] if resp.data else s
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to create supplier')
@@ -52,7 +52,7 @@ async def record_delivery(request: Request, supplier_name: str, payload: Supplie
     d['supplier_name'] = supplier_name
     d['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
     try:
-        resp = supabase.table('supplier_deliveries').insert(d).execute()
+        resp = db.table('supplier_deliveries').insert(d).execute()
         created = resp.data[0] if resp.data else d
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to record supplier delivery')
@@ -68,7 +68,7 @@ async def record_delivery(request: Request, supplier_name: str, payload: Supplie
 async def supplier_metrics(request: Request, supplier_name: str):
     verify_jwt(request)
     try:
-        resp = supabase.table('supplier_deliveries').select('*').eq('supplier_name', supplier_name).execute()
+        resp = db.table('supplier_deliveries').select('*').eq('supplier_name', supplier_name).execute()
         deliveries = resp.data or []
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to fetch deliveries')

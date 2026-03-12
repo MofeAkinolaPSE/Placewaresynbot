@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from src.services.schema_registry_service import list_schemas as list_registry_schemas, to_json_schema
 
 router = APIRouter()
 
@@ -56,14 +57,31 @@ AVAILABLE = {
 }
 
 
+def _registry_available() -> dict[str, dict]:
+    dynamic: dict[str, dict] = {}
+    try:
+        for schema in list_registry_schemas():
+            dept = str(schema.get("department") or "").strip().lower()
+            ev = str(schema.get("event_type") or "").strip().lower()
+            if not dept or not ev:
+                continue
+            key = f"{dept}_{ev}"
+            dynamic[key] = to_json_schema(schema)
+    except Exception:
+        return {}
+    return dynamic
+
+
 @router.get('/schemas')
 async def list_schemas():
-    return {"available": list(AVAILABLE.keys())}
+    merged = {**AVAILABLE, **_registry_available()}
+    return {"available": list(merged.keys())}
 
 
 @router.get('/schemas/{name}')
 async def get_schema(name: str):
-    schema = AVAILABLE.get(name)
+    merged = {**AVAILABLE, **_registry_available()}
+    schema = merged.get(name)
     if not schema:
         raise HTTPException(status_code=404, detail='Schema not found')
     return schema

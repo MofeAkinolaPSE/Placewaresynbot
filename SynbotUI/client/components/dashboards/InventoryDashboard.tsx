@@ -40,7 +40,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
       )}
       {/* KPI Row */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Active SKUs</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
@@ -53,10 +53,10 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Low Stock Alerts</CardTitle>
-            <AlertCircle className="h-4 w-4 text-yellow-500" />
+            <AlertCircle className="h-4 w-4 text-warning" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{dataValid ? summary.low_stock_count : (isLoading ? "..." : "-")}</div>
@@ -64,20 +64,20 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="pw-surface-interactive">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Out of Stock</CardTitle>
-            <AlertCircle className="h-4 w-4 text-red-500" />
+            <AlertCircle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-500">{dataValid ? summary.out_of_stock_count : (isLoading ? "..." : "-")}</div>
+            <div className="text-2xl font-bold text-destructive">{dataValid ? summary.out_of_stock_count : (isLoading ? "..." : "-")}</div>
             <p className="text-xs text-muted-foreground">Requires immediate attention</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Critical Items Table */}
-      <Card>
+      <Card className="pw-surface-interactive">
         <CardHeader>
           <CardTitle>Critical Inventory Items</CardTitle>
         </CardHeader>
@@ -99,7 +99,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
                   <TableCell className="font-medium">{item.sku}</TableCell>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>{item.baseline.quantity}</TableCell>
-                  <TableCell className={item.events.net_change < 0 ? "text-red-500" : "text-green-500"}>
+                  <TableCell className={item.events.net_change < 0 ? "text-destructive" : "text-success"}>
                     {item.events.net_change}
                   </TableCell>
                   <TableCell className="font-bold">{item.current_stock}</TableCell>
@@ -123,7 +123,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
       </Card>
 
       {/* Recent Movements */}
-      <Card>
+      <Card className="pw-surface-interactive">
         <CardHeader>
           <CardTitle>Recent Inventory Movements</CardTitle>
         </CardHeader>
@@ -146,7 +146,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
                   <TableRow key={idx}>
                     <TableCell>{mv.created_at ? new Date(mv.created_at).toLocaleString() : "-"}</TableCell>
                     <TableCell>{mv.sku}</TableCell>
-                    <TableCell className={mv.change < 0 ? "text-red-500" : "text-green-600"}>
+                    <TableCell className={mv.change < 0 ? "text-destructive" : "text-success"}>
                       {mv.change}
                     </TableCell>
                     <TableCell>{mv.event_type}</TableCell>

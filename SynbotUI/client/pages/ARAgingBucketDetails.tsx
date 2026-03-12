@@ -77,17 +77,17 @@ const ARAgingBucketDetails = () => {
 
       {isLoading && <div className="p-8 text-center">Loading customer aging details...</div>}
       {error && (
-        <div className="p-8 text-center text-red-500">
+        <div className="p-8 text-center text-destructive">
           Data error: {((error as Error)?.message) || "Failed to load customer aging details."}
         </div>
       )}
 
       {!isLoading && !error && !displayLabel && (
-        <div className="p-8 text-center text-red-500">Data error: invalid bucket parameter.</div>
+        <div className="p-8 text-center text-destructive">Data error: invalid bucket parameter.</div>
       )}
 
       {!isLoading && !error && !!displayLabel && (
-        <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
           {malformedCount > 0 && (
             <p className="text-sm text-destructive">
               Data error: {malformedCount} customer record(s) were malformed and excluded.

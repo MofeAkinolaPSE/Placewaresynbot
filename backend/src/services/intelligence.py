@@ -2,12 +2,14 @@ from __future__ import annotations
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from supabase import Client
+from typing import Any as DBClient
 import json
 
-from ..db import supabase
-from ..constants import TABLE_ALERTS, TABLE_BRIEFINGS
-from ..cache import ttl_cache
+from ..db import db
+from ..constants import TABLE_ALERTS, TABLE_BRIEFINGS, EXEC_SUMMARY_AR_OVERDUE_THRESHOLD
+from ..cache import ttl_cache, invalidate_cache_tags
+from .realtime import realtime_hub
+import asyncio
 from .sage_adapter.service import kpis as finance_kpis, ar_trend_summary, ar_aging_buckets
 from .inventory import get_inventory_summary, get_latest_batch_sku_count, get_recent_inventory_movements
 from .ops import kpis as ops_kpis, stock_turnover_series
@@ -17,6 +19,16 @@ from .staff_ops import get_timesheets
 from .sage_adapter.service import get_sage_kpi_batch_id
 
 logger = logging.getLogger("intelligence")
+
+
+def _dt_to_str(val: object) -> str:
+    """Coerce psycopg2 datetime/date to ISO string; passthrough for str/None."""
+    if val is None:
+        return ""
+    if hasattr(val, 'isoformat'):
+        return val.isoformat()
+    return str(val)
+
 
 MAX_ANALYTICS_ROWS = 3000
 
@@ -35,8 +47,8 @@ def trend_label(change_pct: float, positive_is_good: bool = True, flat_threshold
 
 # --- Dashboard Aggregators ---
 
-@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",))
-def get_inventory_dashboard(limit: int = 50, client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",), tags=("inventory", "inventory_dashboard", "executive"))
+def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str, Any]:
     """
     Inventory Health Check:
     - Low stock items
@@ -61,8 +73,8 @@ def get_inventory_dashboard(limit: int = 50, client: Client = supabase) -> Dict[
         "recent_movements": recent_movements,
     }
 
-@ttl_cache(ttl_seconds=600, ignore_kwargs=("client",))
-def get_workforce_dashboard(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=600, ignore_kwargs=("client",), tags=("staff", "workforce_dashboard", "executive", "hr_summary"))
+def get_workforce_dashboard(client: DBClient = db) -> Dict[str, Any]:
     """
     Workforce Pulse:
     - Hours logged this week
@@ -130,7 +142,7 @@ def create_alert(
     severity: str,
     category: str,
     metadata: Optional[Dict] = None,
-    client: Client = supabase
+    client: DBClient = db
 ):
     """Event-driven notification log."""
     payload = {
@@ -142,9 +154,27 @@ def create_alert(
         "status": "unread"
     }
     client.table(TABLE_ALERTS).insert(payload).execute()
+    invalidate_cache_tags("alerts", "executive", "risk_signals", "recommendations", "anomalies")
 
-@ttl_cache(ttl_seconds=30, ignore_kwargs=("client",))
-def get_active_alerts(client: Client = supabase) -> List[Dict[str, Any]]:
+    # Best-effort realtime notification (non-blocking)
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(
+            realtime_hub.broadcast(
+                "alerts_updates",
+                {
+                    "event": "alert_created",
+                    "severity": severity,
+                    "category": category,
+                    "title": title,
+                },
+            )
+        )
+    except RuntimeError:
+        pass
+
+@ttl_cache(ttl_seconds=30, ignore_kwargs=("client",), tags=("alerts", "executive"))
+def get_active_alerts(client: DBClient = db) -> List[Dict[str, Any]]:
     return client.table(TABLE_ALERTS)\
         .select("*")\
         .eq("status", "unread")\
@@ -154,8 +184,8 @@ def get_active_alerts(client: Client = supabase) -> List[Dict[str, Any]]:
 
 # --- Executive Briefing Engine ---
 
-@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",))
-def generate_executive_briefing(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",), tags=("executive", "executive_briefing"))
+def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
     """
     Holistic Business Summary.
     Combines Finance, Inventory, and Ops into a single JSON report.
@@ -214,8 +244,8 @@ def _last_two(series: list[dict], key: str) -> tuple[float, float] | None:
     return curr, prev
 
 
-@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",))
-def executive_summary(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",), tags=("executive", "executive_summary"))
+def executive_summary(client: DBClient = db) -> Dict[str, Any]:
     """Executive business health summary using existing analytics and deterministic rules."""
     findings: list[str] = []
     focus: list[str] = []
@@ -233,9 +263,16 @@ def executive_summary(client: Client = supabase) -> Dict[str, Any]:
             findings.append("AR balance is rising, increasing cashflow pressure.")
             focus.append("Collections")
             risk_count += 1
-    if finance.get("ar", {}).get("overdue_count", 0) > 5:
-        findings.append("Overdue AR invoices are elevated.")
+    ar_overdue_count = finance.get("ar", {}).get("overdue_count", 0)
+    if ar_overdue_count > EXEC_SUMMARY_AR_OVERDUE_THRESHOLD:
+        findings.append(f"{ar_overdue_count} overdue AR invoice(s) require attention.")
         focus.append("Collections")
+        risk_count += 1
+
+    # Liquidity blind spot: surface when GL cash data is unavailable
+    if finance.get("cash") is None:
+        findings.append("Cash position unavailable — GL import required to assess liquidity.")
+        focus.append("Finance")
         risk_count += 1
 
     # Operations
@@ -255,7 +292,7 @@ def executive_summary(client: Client = supabase) -> Dict[str, Any]:
     downtime_rows = client.table("ops_downtime_snapshot").select("minutes,imported_at").order("imported_at", desc=True).limit(MAX_ANALYTICS_ROWS).execute().data or []
     buckets: dict[str, float] = {}
     for r in downtime_rows:
-        k = (r.get("imported_at") or "")[:7]
+        k = _dt_to_str(r.get("imported_at"))[:7]
         if not k:
             continue
         buckets[k] = buckets.get(k, 0.0) + float(r.get("minutes") or 0)
@@ -294,16 +331,30 @@ def executive_summary(client: Client = supabase) -> Dict[str, Any]:
     # Deduplicate focus list
     focus = list(dict.fromkeys(focus))
 
+    # Data freshness: timestamp of most recent AR snapshot row so EOS can detect stale pipelines
+    data_freshness: str | None = None
+    try:
+        batch_id = get_sage_kpi_batch_id()
+        q = db.table("sage_ar_snapshot").select("imported_at").order("imported_at", desc=True).limit(1)
+        if batch_id:
+            q = q.eq("batch_id", batch_id)
+        freshness_row = q.execute().data
+        if freshness_row:
+            data_freshness = _dt_to_str(freshness_row[0].get("imported_at"))
+    except Exception:
+        pass
+
     return {
         "status": status,
         "key_findings": findings,
         "recommended_focus": focus,
+        "data_freshness": data_freshness,
         "sources": ["analytics/kpis", "analytics/ar_trends", "ops/kpis", "hr/analytics/summary", "inventory"],
     }
 
 
-@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",))
-def risk_signals(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",), tags=("executive", "risk_signals"))
+def risk_signals(client: DBClient = db) -> Dict[str, Any]:
     """Unified risk signals across Finance, CRM, Inventory, Ops, and HR."""
     risks: list[dict] = []
 
@@ -467,8 +518,8 @@ def opportunities_from_risks(risks: list[dict]) -> list[dict]:
     return out
 
 
-@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",))
-def recommendations(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",), tags=("executive", "recommendations"))
+def recommendations(client: DBClient = db) -> Dict[str, Any]:
     """Rule-based recommendations derived from existing analytics."""
     recs: list[dict] = []
 
@@ -564,8 +615,8 @@ def _zscore(values: list[float]) -> list[float]:
     return [(v - mean) / std for v in values]
 
 
-@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",))
-def anomaly_signals(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",), tags=("executive", "anomalies"))
+def anomaly_signals(client: DBClient = db) -> Dict[str, Any]:
     """Explainable anomaly detection using z-scores on existing series."""
     anomalies: list[dict] = []
 
@@ -600,7 +651,7 @@ def anomaly_signals(client: Client = supabase) -> Dict[str, Any]:
     downtime_rows = client.table("ops_downtime_snapshot").select("minutes,imported_at").order("imported_at", desc=True).limit(MAX_ANALYTICS_ROWS).execute().data or []
     buckets: dict[str, float] = {}
     for r in downtime_rows:
-        k = (r.get("imported_at") or "")[:7]
+        k = _dt_to_str(r.get("imported_at"))[:7]
         if not k:
             continue
         buckets[k] = buckets.get(k, 0.0) + float(r.get("minutes") or 0)

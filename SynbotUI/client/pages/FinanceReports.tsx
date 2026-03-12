@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 const FinanceReports = () => {
   const navigate = useNavigate();
@@ -146,8 +148,25 @@ const FinanceReports = () => {
     "90+ days": arAgingData.find((a) => a.bucket === "90+ days")?.amount,
   };
 
+  const getArBucketClass = (bucket: string) => {
+    if (bucket === "0-30 days") return "bg-success/15 text-success";
+    if (bucket === "90+ days") return "bg-destructive/10 text-destructive";
+    return "bg-warning/15 text-warning";
+  };
+
+  const getInventoryStatusClass = (status: string) => {
+    if (status === "optimal") return "bg-success/15 text-success";
+    if (status === "low") return "bg-warning/15 text-warning";
+    return "bg-destructive/10 text-destructive";
+  };
+
   return (
-    <div className="p-8 space-y-8">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="space-y-8"
+    >
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">Finance Reports</h1>
@@ -164,7 +183,7 @@ const FinanceReports = () => {
 
         {/* AR Aging Tab */}
         <TabsContent value="ar" className="space-y-4">
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+          <div className="pw-surface-interactive p-6 space-y-4">
             {arError && <p className="text-sm text-destructive">Data error: {(arError as Error).message || "Failed to load AR aging."}</p>}
             {arPayloadInvalid && <p className="text-sm text-destructive">Data error: malformed AR aging payload.</p>}
             {/* Summary Buckets */}
@@ -172,7 +191,7 @@ const FinanceReports = () => {
               {Object.entries(arBuckets).map(([bucket, amount]) => (
                 <div
                   key={bucket}
-                  className="bg-muted/30 rounded-lg p-3 text-center"
+                  className="rounded-xl border border-border/50 bg-muted/30 p-3 text-center"
                 >
                   <p className="text-xs font-semibold text-muted-foreground uppercase">
                     {bucket}
@@ -235,13 +254,7 @@ const FinanceReports = () => {
                         </TableCell>
                         <TableCell>
                           <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              item.bucket === "0-30 days"
-                                ? "bg-green-100 text-green-800"
-                                : item.bucket === "90+ days"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-yellow-100 text-yellow-800"
-                            }`}
+                            className={`rounded px-2 py-1 text-xs font-medium ${getArBucketClass(item.bucket)}`}
                           >
                             {item.bucket}
                           </span>
@@ -273,40 +286,40 @@ const FinanceReports = () => {
 
         {/* Inventory Tab */}
         <TabsContent value="inventory" className="space-y-4">
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+          <div className="pw-surface-interactive p-6 space-y-4">
             {invError && <p className="text-sm text-destructive">Data error: {(invError as Error).message || "Failed to load inventory."}</p>}
             {inventoryPayloadInvalid && <p className="text-sm text-destructive">Data error: malformed inventory payload.</p>}
             {/* Status Summary */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <div className="bg-green-50 rounded-lg p-3">
-                <p className="text-xs font-semibold text-green-800 uppercase">
+              <div className="rounded-xl border border-success/30 bg-success/15 p-3">
+                <p className="text-xs font-semibold text-success uppercase">
                   Optimal Stock
                 </p>
-                <p className="text-lg font-bold text-green-900 mt-1">
+                <p className="text-lg font-bold text-success mt-1">
                   {inventoryData.filter((i) => i.status === "optimal").length}
                 </p>
               </div>
-              <div className="bg-yellow-50 rounded-lg p-3">
-                <p className="text-xs font-semibold text-yellow-800 uppercase">
+              <div className="rounded-xl border border-warning/30 bg-warning/15 p-3">
+                <p className="text-xs font-semibold text-warning uppercase">
                   Low Stock
                 </p>
-                <p className="text-lg font-bold text-yellow-900 mt-1">
+                <p className="text-lg font-bold text-warning mt-1">
                   {inventoryData.filter((i) => i.status === "low").length}
                 </p>
               </div>
-              <div className="bg-blue-50 rounded-lg p-3">
-                <p className="text-xs font-semibold text-blue-800 uppercase">
+              <div className="rounded-xl border border-info/30 bg-info/15 p-3">
+                <p className="text-xs font-semibold text-info uppercase">
                   Total SKUs
                 </p>
-                <p className="text-lg font-bold text-blue-900 mt-1">
+                <p className="text-lg font-bold text-info mt-1">
                   {inventoryData.length}
                 </p>
               </div>
-              <div className="bg-purple-50 rounded-lg p-3">
-                <p className="text-xs font-semibold text-purple-800 uppercase">
+              <div className="rounded-xl border border-secondary/30 bg-secondary/15 p-3">
+                <p className="text-xs font-semibold text-secondary uppercase">
                   Total Value
                 </p>
-                <p className="text-lg font-bold text-purple-900 mt-1">
+                <p className="text-lg font-bold text-secondary mt-1">
                   ₦
                   {(
                     inventoryData.reduce((sum, i) => sum + i.valuation, 0) /
@@ -369,13 +382,7 @@ const FinanceReports = () => {
                         </TableCell>
                         <TableCell>
                           <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              item.status === "optimal"
-                                ? "bg-green-100 text-green-800"
-                                : item.status === "low"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : "bg-red-100 text-red-800"
-                            }`}
+                            className={`rounded px-2 py-1 text-xs font-medium ${getInventoryStatusClass(item.status)}`}
                           >
                             {item.status === "optimal"
                               ? "Optimal"
@@ -406,7 +413,7 @@ const FinanceReports = () => {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
+    </motion.div>
   );
 };
 

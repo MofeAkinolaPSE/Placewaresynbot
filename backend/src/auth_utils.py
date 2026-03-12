@@ -11,7 +11,7 @@ try:
 except Exception:  # pragma: no cover - environment-specific dependency fallback
     bcrypt = None
 
-from .constants import JWT_SECRET, JWT_AUDIENCE, ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_DAYS
+from src.constants import JWT_SECRET, JWT_AUDIENCE, ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_DAYS
 
 
 def hash_password(password: str) -> str:

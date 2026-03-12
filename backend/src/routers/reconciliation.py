@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException
-from src.middleware import verify_jwt
+from src.middleware import verify_jwt, require_role
 import os, json, time
 
 router = APIRouter()

@@ -45,6 +45,18 @@ function buildSuggestedActions(brief: ExecutiveBriefing): string[] {
    return actions.slice(0, 3);
 }
 
+function summaryStatusClass(status?: string) {
+   if (status === "Healthy") return "bg-success/15 text-success border border-success/30";
+   if (status === "At Risk") return "bg-destructive/15 text-destructive border border-destructive/30";
+   return "bg-warning/15 text-warning border border-warning/30";
+}
+
+function severityClass(severity?: string) {
+   if (severity === "High") return "bg-destructive/15 text-destructive border border-destructive/30";
+   if (severity === "Medium") return "bg-warning/15 text-warning border border-warning/30";
+   return "bg-success/15 text-success border border-success/30";
+}
+
 export function ExecutiveDashboard() {
    const { data, isLoading, isError } = useQuery<ExecutiveBriefing>({
       queryKey: ["executive-briefing"],
@@ -113,7 +125,7 @@ export function ExecutiveDashboard() {
          case "customer":
             return "/crm";
          default:
-            return "/synbot";
+            return "/executive/summary";
       }
    };
 
@@ -128,7 +140,7 @@ export function ExecutiveDashboard() {
          </div>
 
          {!briefing && (
-            <Card className="bg-slate-50">
+            <Card className="pw-surface-base">
                <CardHeader>
                   <CardTitle>Executive Briefing</CardTitle>
                   <CardDescription>
@@ -141,11 +153,11 @@ export function ExecutiveDashboard() {
          )}
 
          {/* Executive Summary Card */}
-         <Link to="/synbot" className="block">
-            <Card className="bg-white border-l-4 border-l-emerald-600 hover:bg-slate-50 transition-colors cursor-pointer">
+         <Link to="/executive/summary" className="block">
+            <Card className="pw-surface-interactive cursor-pointer border-l-4 border-l-success transition-colors hover:border-l-success/70">
                <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                     <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                     <ShieldCheck className="h-5 w-5 text-success" />
                      Executive Business Health Summary
                   </CardTitle>
                   <CardDescription>
@@ -157,14 +169,14 @@ export function ExecutiveDashboard() {
                      <div className="flex items-center gap-2">
                         <span className="font-semibold">Status:</span>
                         {typeof summaryStatus === "string" ? (
-                           <span className={`px-2 py-1 rounded-full text-xs font-bold ${summaryStatus === "Healthy" ? "bg-green-100 text-green-800" : summaryStatus === "At Risk" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}>
+                           <span className={`rounded-full px-2 py-1 text-xs font-bold ${summaryStatusClass(summaryStatus)}`}>
                               {summaryStatus}
                            </span>
                         ) : (
                            <span className="text-xs text-destructive">Data error: summary status unavailable.</span>
                         )}
                      </div>
-                     <div className="text-sm text-slate-700">
+                     <div className="text-sm text-muted-foreground">
                         {summaryFindings.length > 0 ? (
                            <ul className="list-disc pl-5 space-y-1">
                               {summaryFindings.map((finding, i) => (
@@ -178,7 +190,7 @@ export function ExecutiveDashboard() {
                      {summaryFocus.length > 0 && (
                         <div className="text-sm">
                            <span className="font-semibold">Recommended Focus:</span>
-                           <span className="ml-2 text-slate-700">{summaryFocus.join(", ")}</span>
+                           <span className="ml-2 text-muted-foreground">{summaryFocus.join(", ")}</span>
                         </div>
                      )}
                   </div>
@@ -189,7 +201,7 @@ export function ExecutiveDashboard() {
          {/* Trend Flags */}
          <div className="grid gap-4 md:grid-cols-3">
             <Link to="/finance/analytics" className="block">
-               <Card className="h-full hover:bg-slate-50 transition-colors cursor-pointer">
+               <Card className="pw-surface-interactive h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-elevation-xl">
                   <CardHeader>
                      <CardTitle className="text-base">AR Balance Trend</CardTitle>
                   </CardHeader>
@@ -198,17 +210,17 @@ export function ExecutiveDashboard() {
                                  <>
                                     <div className="text-2xl font-bold">{arTrend.trend}</div>
                                     <p className="text-xs text-muted-foreground">
-                                       Change: {typeof arTrend.change_pct === "number" ? `${(arTrend.change_pct * 100).toFixed(1)}%` : "Data error"}
+                                       Change: {typeof arTrend.change_pct === "number" ? `${(arTrend.change_pct * 100).toFixed(1)}%` : "Insufficient data"}
                                     </p>
                                  </>
                               ) : (
-                                 <p className="text-sm text-destructive">Data error: AR trend unavailable.</p>
+                                 <p className="text-sm text-muted-foreground">Insufficient data for AR trend.</p>
                               )}
                   </CardContent>
                </Card>
             </Link>
             <Link to="/operations" className="block">
-               <Card className="h-full hover:bg-slate-50 transition-colors cursor-pointer">
+               <Card className="pw-surface-interactive h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-elevation-xl">
                   <CardHeader>
                      <CardTitle className="text-base">Stock Turnover Trend</CardTitle>
                   </CardHeader>
@@ -217,17 +229,17 @@ export function ExecutiveDashboard() {
                                  <>
                                     <div className="text-2xl font-bold">{opsTrend.trend}</div>
                                     <p className="text-xs text-muted-foreground">
-                                       Change: {typeof opsTrend.change_pct === "number" ? `${(opsTrend.change_pct * 100).toFixed(1)}%` : "Data error"}
+                                       Change: {typeof opsTrend.change_pct === "number" ? `${(opsTrend.change_pct * 100).toFixed(1)}%` : "Insufficient data"}
                                     </p>
                                  </>
                               ) : (
-                                 <p className="text-sm text-destructive">Data error: ops trend unavailable.</p>
+                                 <p className="text-sm text-muted-foreground">Insufficient data for stock turnover trend.</p>
                               )}
                   </CardContent>
                </Card>
             </Link>
             <Link to="/hr" className="block">
-               <Card className="h-full hover:bg-slate-50 transition-colors cursor-pointer">
+               <Card className="pw-surface-interactive h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-elevation-xl">
                   <CardHeader>
                      <CardTitle className="text-base">Absence Trend</CardTitle>
                   </CardHeader>
@@ -236,11 +248,11 @@ export function ExecutiveDashboard() {
                                  <>
                                     <div className="text-2xl font-bold">{hrTrend.trend}</div>
                                     <p className="text-xs text-muted-foreground">
-                                       Change: {typeof hrTrend.change_pct === "number" ? `${(hrTrend.change_pct * 100).toFixed(1)}%` : "Data error"}
+                                       Change: {typeof hrTrend.change_pct === "number" ? `${(hrTrend.change_pct * 100).toFixed(1)}%` : "Insufficient data"}
                                     </p>
                                  </>
                               ) : (
-                                 <p className="text-sm text-destructive">Data error: absence trend unavailable.</p>
+                                 <p className="text-sm text-muted-foreground">Insufficient data for absence trend.</p>
                               )}
                   </CardContent>
                </Card>
@@ -249,10 +261,10 @@ export function ExecutiveDashboard() {
 
          {/* AI Summary Card */}
       <Link to="/finance/reports" className="block">
-         <Card className="bg-slate-50 border-l-4 border-l-blue-600 hover:bg-slate-100 transition-colors cursor-pointer">
+             <Card className="pw-surface-interactive cursor-pointer border-l-4 border-l-info transition-colors hover:border-l-info/70">
            <CardHeader>
              <CardTitle className="flex items-center gap-2">
-               <Activity className="h-5 w-5 text-blue-600" />
+                      <Activity className="h-5 w-5 text-info" />
                AI Business Summary
              </CardTitle>
              <CardDescription>
@@ -264,11 +276,11 @@ export function ExecutiveDashboard() {
               <div className="space-y-4">
                  <div className="flex items-center gap-2">
                     <span className="font-semibold">Health Score:</span>
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${briefingHealth === 'Stable' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${briefingHealth === 'Stable' ? 'bg-success/15 text-success border border-success/30' : 'bg-warning/15 text-warning border border-warning/30'}`}>
                        {briefingHealth}
                     </span>
                  </div>
-                 <p className="text-sm text-slate-700">
+                 <p className="text-sm text-muted-foreground">
                     The business currently requires focus on <strong>{briefingFocus}</strong>. {" "}
                     {riskCount > 0 ? (
                       <>
@@ -285,7 +297,7 @@ export function ExecutiveDashboard() {
                  </p>
                  <div className="text-sm">
                     <span className="font-semibold">Key Metrics:</span>
-                    <ul className="list-disc pl-5 mt-1 space-y-1 text-slate-700">
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
                        <li>Cash Outstanding: ₦{cashOutstanding.toLocaleString()}</li>
                        <li>Cash Payable: ₦{cashPayable.toLocaleString()}</li>
                        <li>Inventory Alerts: {lowStockAlerts} items need reordering</li>
@@ -298,7 +310,7 @@ export function ExecutiveDashboard() {
       </Link>
 
          {/* Risk Signals */}
-         <Card>
+         <Card className="pw-surface-interactive">
             <CardHeader>
                <CardTitle className="text-base">Risk Signals</CardTitle>
                <CardDescription>Early warnings by domain, severity, and source.</CardDescription>
@@ -309,14 +321,14 @@ export function ExecutiveDashboard() {
                ) : (
                   <div className="space-y-3">
                      {riskSignals.risks.map((r, i) => (
-                        <Link to={getRiskLink(r.domain)} key={`${r.domain}-${i}`} className="block hover:bg-slate-50 rounded-md transition-colors">
-                           <div className="flex items-start justify-between gap-3 rounded-md border p-3 hover:border-blue-400">
+                        <Link to={getRiskLink(r.domain)} key={`${r.domain}-${i}`} className="block rounded-md transition-colors hover:bg-card/40">
+                           <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 bg-card/40 p-3 hover:border-primary/40">
                               <div>
                                  <div className="text-sm font-semibold">{r.domain}: {r.risk_type}</div>
                                  <div className="text-xs text-muted-foreground">{r.signal}</div>
                                  <div className="text-xs text-muted-foreground">Source: {r.data_source}</div>
                               </div>
-                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${r.severity === "High" ? "bg-red-100 text-red-800" : r.severity === "Medium" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}`}>
+                              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${severityClass(r.severity)}`}>
                                  {r.severity}
                               </span>
                            </div>
@@ -328,7 +340,7 @@ export function ExecutiveDashboard() {
          </Card>
 
          {/* Opportunities */}
-         <Card>
+         <Card className="pw-surface-interactive">
             <CardHeader>
                <CardTitle className="text-base">Risk → Opportunity Insights</CardTitle>
                <CardDescription>Strategic options paired to the current risks.</CardDescription>
@@ -339,8 +351,8 @@ export function ExecutiveDashboard() {
                ) : (
                   <div className="space-y-3">
                      {riskSignals.opportunities.map((o, i) => (
-                        <Link to="/synbot" key={`${o.risk}-${i}`} className="block hover:bg-slate-50 rounded-md transition-colors">
-                           <div className="rounded-md border p-3 hover:border-blue-400">
+                        <Link to="/executive/summary" key={`${o.risk}-${i}`} className="block rounded-md transition-all hover:bg-card/40">
+                           <div className="rounded-xl border border-border/70 bg-card/40 p-3 hover:shadow-elevation-lg">
                               <div className="text-sm font-semibold">Risk: {o.risk}</div>
                               <div className="text-xs text-muted-foreground">Opportunity: {o.opportunity}</div>
                               <div className="text-xs text-muted-foreground">Confidence: {o.confidence}</div>
@@ -353,7 +365,7 @@ export function ExecutiveDashboard() {
          </Card>
 
          {/* Recommendations */}
-         <Card>
+         <Card className="pw-surface-interactive">
             <CardHeader>
                <CardTitle className="text-base">Recommended Actions</CardTitle>
                <CardDescription>Explainable, data-backed actions.</CardDescription>
@@ -364,8 +376,8 @@ export function ExecutiveDashboard() {
                ) : (
                   <div className="space-y-3">
                      {recommendations.recommendations.map((rec, i) => (
-                        <Link to="/synbot" key={`${rec.action}-${i}`} className="block hover:bg-slate-50 rounded-md transition-colors">
-                           <div className="rounded-md border p-3 hover:border-blue-400">
+                        <Link to="/executive/summary" key={`${rec.action}-${i}`} className="block rounded-md transition-all hover:bg-card/40">
+                           <div className="rounded-xl border border-border/70 bg-card/40 p-3 hover:shadow-elevation-lg">
                               <div className="text-sm font-semibold">{rec.action}</div>
                               <div className="text-xs text-muted-foreground">{rec.reason}</div>
                               <div className="text-xs text-muted-foreground">Source: {rec.data_source} · Confidence: {rec.confidence}</div>
@@ -378,7 +390,7 @@ export function ExecutiveDashboard() {
          </Card>
 
          {/* Anomalies */}
-         <Card>
+         <Card className="pw-surface-interactive">
             <CardHeader>
                <CardTitle className="text-base">Anomaly Signals</CardTitle>
                <CardDescription>Lightweight anomaly detection (z-score).</CardDescription>
@@ -389,8 +401,8 @@ export function ExecutiveDashboard() {
                ) : (
                   <div className="space-y-3">
                      {anomalies.anomalies.map((a, i) => (
-                        <Link to={getRiskLink(a.domain)} key={`${a.domain}-${i}`} className="block hover:bg-slate-50 rounded-md transition-colors">
-                           <div className="rounded-md border p-3 hover:border-blue-400">
+                        <Link to={getRiskLink(a.domain)} key={`${a.domain}-${i}`} className="block rounded-md transition-all hover:bg-card/40">
+                           <div className="rounded-xl border border-border/70 bg-card/40 p-3 hover:shadow-elevation-lg">
                               <div className="text-sm font-semibold">{a.domain}: {a.signal}</div>
                               <div className="text-xs text-muted-foreground">{a.detail}</div>
                               <div className="text-xs text-muted-foreground">Z-score: {a.zscore.toFixed(2)} · Source: {a.data_source}</div>
@@ -404,7 +416,7 @@ export function ExecutiveDashboard() {
 
       {/* Domain Shortcuts */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+            <Card className="pw-surface-interactive">
            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                  <TrendingUp className="h-4 w-4" /> Finance
@@ -419,14 +431,14 @@ export function ExecutiveDashboard() {
            </CardContent>
         </Card>
 
-        <Card>
+      <Card className="pw-surface-interactive">
            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                  <Archive className="h-4 w-4" /> Inventory
               </CardTitle>
            </CardHeader>
            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{lowStockAlerts}</div>
+              <div className="text-2xl font-bold text-warning">{lowStockAlerts}</div>
               <p className="text-xs text-muted-foreground mb-4">Low Stock Alerts</p>
               <Link to="/operations">
                  <Button variant="outline" size="sm" className="w-full">Manage Stock <ArrowRight className="ml-2 h-3 w-3"/></Button>
@@ -434,7 +446,7 @@ export function ExecutiveDashboard() {
            </CardContent>
         </Card>
 
-        <Card>
+      <Card className="pw-surface-interactive">
            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                  <Users className="h-4 w-4" /> Workforce
@@ -451,7 +463,7 @@ export function ExecutiveDashboard() {
       </div>
 
          {/* Suggested Actions */}
-         <Card>
+         <Card className="pw-surface-interactive">
             <CardHeader>
                <CardTitle className="text-base">Suggested Executive Actions</CardTitle>
                <CardDescription>
@@ -459,7 +471,7 @@ export function ExecutiveDashboard() {
                </CardDescription>
             </CardHeader>
             <CardContent>
-               <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">
+               <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                   {suggestedActions.map((action, index) => (
                      <li key={index}>{action}</li>
                   ))}
@@ -470,7 +482,7 @@ export function ExecutiveDashboard() {
       {/* Live Alerts Feed */}
       <div className="space-y-4">
          <h3 className="text-lg font-semibold">Live Intelligence Feed</h3>
-         {latestAlerts.length === 0 ? <p className="text-muted text-sm">No active intelligence alerts from finance, inventory, or workforce at this time.</p> : latestAlerts.map((alert, i) => (
+         {latestAlerts.length === 0 ? <p className="text-sm text-muted-foreground">No active intelligence alerts from finance, inventory, or workforce at this time.</p> : latestAlerts.map((alert, i) => (
             <Alert key={i} variant={alert.includes("Low stock") ? "default" : "destructive"}>
                <AlertTriangle className="h-4 w-4" />
                <AlertTitle>{alert.includes("Low stock") ? "Inventory Warning" : "Critical Risk"}</AlertTitle>

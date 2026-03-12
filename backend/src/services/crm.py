@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from typing import Dict, Any, List
-from supabase import Client
-from ..db import supabase
+from typing import Any as DBClient
+from ..db import db
 from ..cache import ttl_cache
 from .sage_adapter.service import get_sage_kpi_batch_id
 
@@ -10,8 +10,8 @@ from .sage_adapter.service import get_sage_kpi_batch_id
 MAX_ANALYTICS_ROWS = 3000
 
 
-@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",))
-def risk_scores(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=180, ignore_kwargs=("client",), tags=("crm", "crm_risk_scores", "executive"))
+def risk_scores(client: DBClient = db) -> Dict[str, Any]:
     """Compute CRM pipeline risk scores, combining pipeline with overdue AR.
 
     Deterministic formula:
@@ -84,8 +84,8 @@ def risk_scores(client: Client = supabase) -> Dict[str, Any]:
         })
     return {"customers": out}
 
-@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",))
-def get_crm_stats(client: Client = supabase) -> Dict[str, Any]:
+@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",), tags=("crm", "crm_dashboard", "executive"))
+def get_crm_stats(client: DBClient = db) -> Dict[str, Any]:
     """
     High-level CRM Stats for Dashboard.
     """

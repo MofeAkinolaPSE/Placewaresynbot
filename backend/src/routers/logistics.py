@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from src.schemas.logistics import Rider, Delivery, Route
-from src.middleware import verify_jwt
-from src.db import audit_event, supabase
+from src.middleware import verify_jwt, require_role
+from src.db import audit_event, db
 import datetime as dt
 import uuid
 import os
@@ -18,7 +18,7 @@ async def create_rider(request: Request, payload: Rider):
     r['active'] = True
     r['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
     try:
-        resp = supabase.table('riders').insert(r).execute()
+        resp = db.table('riders').insert(r).execute()
         created = resp.data[0] if resp.data else r
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to create rider')
@@ -38,7 +38,7 @@ async def create_delivery(request: Request, payload: Delivery):
     d['status'] = 'unassigned'
     d['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
     try:
-        resp = supabase.table('deliveries').insert(d).execute()
+        resp = db.table('deliveries').insert(d).execute()
         created = resp.data[0] if resp.data else d
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to create delivery')
@@ -55,9 +55,9 @@ async def assign_routes(request: Request):
     # simple round-robin assigner
     verify_jwt(request, required_role='ops')
     try:
-        resp = supabase.table('deliveries').select('*').eq('status', 'unassigned').execute()
+        resp = db.table('deliveries').select('*').eq('status', 'unassigned').execute()
         deliveries = resp.data or []
-        resp2 = supabase.table('riders').select('*').eq('active', True).execute()
+        resp2 = db.table('riders').select('*').eq('active', True).execute()
         riders = resp2.data or []
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to fetch deliveries or riders')
@@ -69,21 +69,21 @@ async def assign_routes(request: Request):
         rider = riders[idx % len(riders)]
         assigned_rider = rider.get('id')
         try:
-            supabase.table('deliveries').update({'assigned_rider': assigned_rider, 'status': 'assigned'}).eq('id', d.get('id')).execute()
+            db.table('deliveries').update({'assigned_rider': assigned_rider, 'status': 'assigned'}).eq('id', d.get('id')).execute()
         except Exception:
             idx += 1
             continue
         try:
-            rresp = supabase.table('routes').select('*').eq('rider_id', assigned_rider).execute()
+            rresp = db.table('routes').select('*').eq('rider_id', assigned_rider).execute()
             routes = rresp.data or []
             if routes:
                 route = routes[0]
                 deliveries_list = route.get('deliveries', [])
                 deliveries_list.append(d.get('id'))
-                supabase.table('routes').update({'deliveries': deliveries_list}).eq('id', route.get('id')).execute()
+                db.table('routes').update({'deliveries': deliveries_list}).eq('id', route.get('id')).execute()
             else:
                 route = {'id': str(uuid.uuid4()), 'rider_id': assigned_rider, 'deliveries': [d.get('id')], 'route_meta': {}, 'created_at': dt.datetime.utcnow().isoformat() + 'Z'}
-                supabase.table('routes').insert(route).execute()
+                db.table('routes').insert(route).execute()
         except Exception:
             pass
         idx += 1
@@ -100,7 +100,7 @@ async def assign_routes(request: Request):
 async def get_rider_route(request: Request, rider_id: str):
     verify_jwt(request)
     try:
-        rresp = supabase.table('routes').select('*').eq('rider_id', rider_id).execute()
+        rresp = db.table('routes').select('*').eq('rider_id', rider_id).execute()
         routes = rresp.data or []
         route = routes[0] if routes else None
     except Exception:
@@ -108,7 +108,7 @@ async def get_rider_route(request: Request, rider_id: str):
     if not route:
         return {'deliveries': []}
     try:
-        dresp = supabase.table('deliveries').select('*').in_('id', route.get('deliveries', [])).execute()
+        dresp = db.table('deliveries').select('*').in_('id', route.get('deliveries', [])).execute()
         items = dresp.data or []
     except Exception:
         items = []
@@ -126,7 +126,7 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
     try:
         update = {'status': payload.get('status')}
         update['last_update'] = dt.datetime.utcnow().isoformat() + 'Z'
-        resp = supabase.table('deliveries').update(update).eq('id', delivery_id).execute()
+        resp = db.table('deliveries').update(update).eq('id', delivery_id).execute()
         updated = resp.data[0] if resp.data else None
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to update delivery')

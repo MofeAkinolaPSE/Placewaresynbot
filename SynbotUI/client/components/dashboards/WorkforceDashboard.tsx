@@ -7,7 +7,7 @@ import { api } from "@/lib/api-client";
 
 export function WorkforceDashboard({ data: initialData }: { data?: WorkforceDashboardData }) {
   const { data: fetchedData, isLoading, error } = useQuery({
-    queryKey: ["workforce-dashboard"],
+    queryKey: ["dashboard-workforce"],
     queryFn: () => api.dashboard.workforce(),
     enabled: !initialData
   });

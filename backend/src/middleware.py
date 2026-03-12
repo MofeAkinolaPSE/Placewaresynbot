@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import logging
+from functools import partial
 from typing import Dict
 from fastapi import Request, HTTPException
 import jwt
@@ -81,6 +82,11 @@ def verify_jwt(request: Request, required_role: str | None = None) -> dict:
     except Exception:
         pass
     return payload
+
+
+def require_role(role: str):
+    """Return a FastAPI-compatible dependency that verifies JWT and enforces *role*."""
+    return partial(verify_jwt, required_role=role)
 
 
 def rate_limit(request: Request, key: str | None = None, limit: int | None = None) -> None:

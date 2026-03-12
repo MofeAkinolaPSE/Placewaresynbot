@@ -9,7 +9,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { format } from "date-fns";
-import { Badge } from "@/components/ui/badge";
 
 export function GeneralLedgerTable() {
   const { data: rows, isLoading, error } = useQuery({
@@ -20,7 +19,7 @@ export function GeneralLedgerTable() {
   const data = rows || [];
 
   return (
-    <div className="rounded-md border bg-white">
+    <div className="pw-surface-interactive rounded-xl">
       <Table>
         <TableHeader>
           <TableRow>
@@ -62,7 +61,7 @@ export function GeneralLedgerTable() {
           ))}
         </TableBody>
       </Table>
-      <div className="p-4 border-t text-xs text-muted-foreground bg-slate-50">
+      <div className="border-t bg-muted/40 p-4 text-xs text-muted-foreground">
          Showing latest snapshot entries.
       </div>
     </div>

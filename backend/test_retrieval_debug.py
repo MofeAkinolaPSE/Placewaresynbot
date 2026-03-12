@@ -1,26 +1,16 @@
 import os
 import asyncio
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from src.db import db
 from fastembed import TextEmbedding
 
 # Load environment variables
 load_dotenv()
 
-# Setup Supabase
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Error: SUPABASE_URL or SUPABASE_KEY not found in .env")
-    exit(1)
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 # Check table count
 try:
     print("Checking 'qna' table row count...")
-    result = supabase.table("qna").select("*", count="exact").execute()
+    result = db.table("qna").select("*", count="exact").execute()
     # Depending on supabase client version, result.count might be int or None
     total = result.count
     if total is None:
@@ -68,10 +58,10 @@ def test_retrieval():
         "match_count": match_count,
     }
 
-    print(f"\nCalling supabase.rpc('match_documents', threshold={match_threshold}, count={match_count})...")
+    print(f"\nCalling db.rpc('match_documents', threshold={match_threshold}, count={match_count})...")
     
     try:
-        response = supabase.rpc("match_documents", payload).execute()
+        response = db.rpc("match_documents", payload).execute()
         rows = response.data
         if not rows:
              print("No rows returned from match_documents even with negative threshold.")

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
-from supabase import Client
-from ..db import supabase
+from typing import Any as DBClient
+from ..db import db
 from .sage_adapter.service import get_sage_kpi_batch_id
 
 
@@ -17,7 +17,7 @@ def rolling_average(values: List[float], window: int = 3) -> List[float]:
     return out
 
 
-def ar_balance_series(client: Client = supabase, max_points: int = 12) -> List[Dict[str, Any]]:
+def ar_balance_series(client: DBClient = db, max_points: int = 12) -> List[Dict[str, Any]]:
     batch_id = get_sage_kpi_batch_id()
     q = client.table("sage_ar_snapshot").select("date,balance")
     if batch_id:
@@ -35,7 +35,7 @@ def ar_balance_series(client: Client = supabase, max_points: int = 12) -> List[D
     return points
 
 
-def forecast_ar_balance(client: Client = supabase, window: int = 3, horizon: int = 3) -> Dict[str, Any]:
+def forecast_ar_balance(client: DBClient = db, window: int = 3, horizon: int = 3) -> Dict[str, Any]:
     series = ar_balance_series(client=client, max_points=12)
     balances = [p["balance"] for p in series]
     if not balances:

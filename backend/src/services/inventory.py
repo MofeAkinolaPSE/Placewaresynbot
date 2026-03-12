@@ -2,8 +2,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from supabase import Client
-from ..db import supabase
+from typing import Any as DBClient
+from ..db import db
 from ..constants import TABLE_INVENTORY_EVENTS
 from .sage_adapter.service import get_sage_kpi_batch_id
 
@@ -18,7 +18,7 @@ def record_inventory_event(
     event_type: str,
     reference: str | None,
     user_id: str,
-    client: Client = supabase
+    client: DBClient = db
 ) -> Dict[str, Any]:
     """
     Record an append-only inventory movement event.
@@ -45,7 +45,7 @@ def record_inventory_event(
         logger.error(f"Failed to record inventory event: {e}")
         raise e
 
-def get_realtime_stock(sku: str, client: Client = supabase) -> Dict[str, Any]:
+def get_realtime_stock(sku: str, client: DBClient = db) -> Dict[str, Any]:
     """
     Calculate current stock deterministically:
     Current = Last Sage Snapshot + Sum(Events since Snapshot)
@@ -102,7 +102,7 @@ def get_realtime_stock(sku: str, client: Client = supabase) -> Dict[str, Any]:
         "status": "In Stock" if current_qty > 0 else "Out of Stock"
     }
 
-def get_inventory_summary(limit: int = 50, client: Client = supabase) -> List[Dict[str, Any]]:
+def get_inventory_summary(limit: int = 50, client: DBClient = db) -> List[Dict[str, Any]]:
     """
     Get aggregated view of recently active items.
     Note: For a full system, this would need a dedicated materialized view.
@@ -134,7 +134,7 @@ def get_inventory_summary(limit: int = 50, client: Client = supabase) -> List[Di
     return results
 
 
-def get_recent_inventory_movements(limit: int = 20, client: Client = supabase) -> List[Dict[str, Any]]:
+def get_recent_inventory_movements(limit: int = 20, client: DBClient = db) -> List[Dict[str, Any]]:
     """Fetch recent inventory movement events for dashboards."""
     try:
         resp = (
@@ -161,7 +161,7 @@ def get_recent_inventory_movements(limit: int = 20, client: Client = supabase) -
         logger.error(f"get_recent_inventory_movements failed: {e}")
         return []
 
-def get_latest_batch_sku_count(client: Client = supabase) -> int:
+def get_latest_batch_sku_count(client: DBClient = db) -> int:
     """
     Get the count of SKUs in the most recent import batch.
     """
@@ -182,8 +182,9 @@ def get_latest_batch_sku_count(client: Client = supabase) -> int:
     
     # 2. Count rows in that batch
     count_resp = client.table(TABLE_SAGE_SNAPSHOT)\
-        .select("*", count="exact", head=True)\
+        .select("*", count="exact")\
         .eq("batch_id", batch_id)\
+        .limit(1)\
         .execute()
         
     return count_resp.count or 0
@@ -202,7 +203,7 @@ def _parse_date(value: Optional[str]) -> Optional[datetime]:
             return None
 
 
-def get_expiring_inventory(thresholds: List[int] | None = None, client: Client = supabase) -> Dict[str, Any]:
+def get_expiring_inventory(thresholds: List[int] | None = None, client: DBClient = db) -> Dict[str, Any]:
     """Compute expiring inventory tiers from the latest batch snapshot.
 
     thresholds: list of days [90, 60, 30] mapping to tiers medium/high/critical.
@@ -281,7 +282,7 @@ def get_expiring_inventory(thresholds: List[int] | None = None, client: Client =
     return {"items": items, "summary": summary}
 
 
-def scan_and_alert_expiring(thresholds: List[int] | None = None, client: Client = supabase) -> Dict[str, Any]:
+def scan_and_alert_expiring(thresholds: List[int] | None = None, client: DBClient = db) -> Dict[str, Any]:
     """Run expiring inventory scan and emit alerts for flagged items."""
     from .intelligence import create_alert
     res = get_expiring_inventory(thresholds=thresholds, client=client)

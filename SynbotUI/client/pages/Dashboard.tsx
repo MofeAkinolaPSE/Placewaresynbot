@@ -25,31 +25,61 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { motion } from "framer-motion";
+import { motionTransitions } from "@/lib/motion";
 
 const Dashboard = () => {
-  const { data: financeData, error: financeError, isError: financeIsError } = useQuery({
+  const queryClient = useQueryClient();
+
+  useRealtimeChannel("alerts_updates", () => {
+    queryClient.invalidateQueries({ queryKey: ["dashboard-alerts"] });
+  });
+
+  useRealtimeChannel("inventory_updates", () => {
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stock"] });
+  });
+
+  useRealtimeChannel("workflow_updates", (message) => {
+    const evt = message?.event;
+    if (["batch_locked", "batch_approved"].includes(evt)) {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-alerts"] });
+    }
+  });
+
+  useRealtimeChannel("finance_updates", () => {
+    queryClient.invalidateQueries({ queryKey: ["dashboard-revenue"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-trend"] });
+  });
+
+  useRealtimeChannel("logistics_updates", () => {
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stock"] });
+  });
+
+  const { data: financeData, isError: financeIsError } = useQuery({
         queryKey: ["dashboard-revenue"],
         queryFn: api.dashboard.finance,
     });
 
     // New: Fetch financial trends (Cashflow)
-    const { data: trendData, error: trendError, isError: trendIsError } = useQuery({
+    const { data: trendData, isError: trendIsError } = useQuery({
         queryKey: ["dashboard-trend"],
         queryFn: () => api.finance.trend(),
     });
 
-    const { data: stockData, error: stockError, isError: stockIsError } = useQuery({
+    const { data: stockData, isError: stockIsError } = useQuery({
         queryKey: ["dashboard-stock"],
         queryFn: () => api.inventory.stock(), // This calls /stock which returns {"stock": [...]}
     });
 
-    const { data: workforceData, error: workforceError, isError: workforceIsError } = useQuery({
+    const { data: workforceData, isError: workforceIsError } = useQuery({
         queryKey: ["dashboard-workforce"],
         queryFn: () => api.dashboard.workforce(),
     });
 
-    const { data: alertsData, error: alertsError, isError: alertsIsError } = useQuery({
+    const { data: alertsData, isError: alertsIsError } = useQuery({
          queryKey: ["dashboard-alerts"],
          queryFn: () => api.dashboard.alerts(),
     });
@@ -72,8 +102,8 @@ const Dashboard = () => {
     // Process Trend Data
     const cashflowData = trendValid ? ((trendData as any).periods as any[]).map((p: any) => ({
         month: p.period,
-        inflow: p.amount / 1000000, // Convert to Millions
-        outflow: 0 // We don't have AP Trend yet, so keep 0 or map if available
+      inflow: Number(p.inflow ?? p.amount ?? 0) / 1000000,
+      outflow: Number(p.outflow ?? 0) / 1000000,
     })).sort((a: any, b: any) => a.month.localeCompare(b.month)) : []; // Ensure chronological order
 
     // Process inventory for Critical Items (Low Stock)
@@ -98,7 +128,12 @@ const Dashboard = () => {
     const alerts = alertsValid ? alertsData : [];
 
   return (
-    <div className="p-6 space-y-8">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionTransitions.standard}
+      className="space-y-8"
+    >
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -107,7 +142,7 @@ const Dashboard = () => {
         </div>
         <div className="flex gap-2">
            <Link to="/executive">
-             <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
+             <Button variant="default">
                <Activity className="mr-2 h-4 w-4" />
                Executive Briefing
              </Button>
@@ -127,9 +162,9 @@ const Dashboard = () => {
             {financeValid ? (
               <div className="text-2xl font-bold">₦{(revenue as number).toLocaleString()}</div>
             ) : (
-              <div className="text-sm text-destructive">Data error: finance KPI payload unavailable.</div>
+              <div className="text-sm text-muted-foreground">Temporarily unavailable</div>
             )}
-            <p className="text-xs text-green-600 font-medium">Real-time from Sage</p>
+            <p className="text-xs text-success font-medium">Real-time from Sage</p>
           </CardContent>
         </Card>
 
@@ -142,7 +177,7 @@ const Dashboard = () => {
             {stockValid ? (
               <div className="text-2xl font-bold">{lowStockCount}</div>
             ) : (
-              <div className="text-sm text-destructive">Data error: stock payload unavailable.</div>
+              <div className="text-sm text-muted-foreground">Temporarily unavailable</div>
             )}
             <p className="text-xs text-muted-foreground">Low stock items</p>
           </CardContent>
@@ -160,7 +195,7 @@ const Dashboard = () => {
                 <p className="text-xs text-muted-foreground">{lowStockCount} Alerts</p>
               </>
             ) : (
-              <p className="text-sm text-destructive">Data error: inventory overview unavailable.</p>
+              <p className="text-sm text-muted-foreground">Temporarily unavailable</p>
             )}
           </CardContent>
         </Card>
@@ -174,7 +209,7 @@ const Dashboard = () => {
             {workforceValid ? (
               <div className="text-2xl font-bold">{activeWorkforce}</div>
             ) : (
-              <div className="text-sm text-destructive">Data error: workforce payload unavailable.</div>
+              <div className="text-sm text-muted-foreground">Temporarily unavailable</div>
             )}
             <p className="text-xs text-muted-foreground">Staff members online</p>
           </CardContent>
@@ -195,14 +230,14 @@ const Dashboard = () => {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={cashflowData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₦${value}M`} />
+                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₦${value}M`} />
                   <Tooltip formatter={(value: number) => `₦${value.toFixed(2)}M`} />
-                  <Bar dataKey="inflow" name="Invoiced (AR)" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="inflow" name="Invoiced (AR)" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-sm text-destructive px-4 py-8">Data error: trend payload unavailable.</p>
+              <p className="text-sm text-muted-foreground px-4 py-8">Trend data is temporarily unavailable.</p>
             )}
              <div className="flex justify-end p-4">
                 <Link to="/finance/analytics">
@@ -230,8 +265,8 @@ const Dashboard = () => {
                <TableBody>
                   {!stockValid ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-destructive p-4">
-                        Data error: stock payload unavailable.
+                      <TableCell colSpan={3} className="text-center text-muted-foreground p-4">
+                        Stock data is temporarily unavailable.
                       </TableCell>
                     </TableRow>
                   ) : criticalItems.length > 0 ? (
@@ -243,7 +278,7 @@ const Dashboard = () => {
                             </TableCell>
                             <TableCell>{item.stock}</TableCell>
                             <TableCell className="text-right">
-                               <Badge variant={item.stock === 0 ? "destructive" : "outline"} className={item.stock > 0 ? "text-yellow-600 border-yellow-600" : ""}>
+                               <Badge variant={item.stock === 0 ? "destructive" : "outline"} className={item.stock > 0 ? "text-warning border-warning/70" : ""}>
                                   {item.status}
                                </Badge>
                             </TableCell>
@@ -253,7 +288,7 @@ const Dashboard = () => {
                       <TableRow>
                           <TableCell colSpan={3} className="text-center text-muted-foreground p-4">
                               <div className="flex flex-col items-center gap-2">
-                                <CheckCircle2 className="h-8 w-8 text-green-500" />
+                                <CheckCircle2 className="h-8 w-8 text-success" />
                                 <p>All items within healthy stock levels</p>
                               </div>
                           </TableCell>
@@ -285,11 +320,11 @@ const Dashboard = () => {
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" width={80} tickLine={false} axisLine={false} style={{fontSize: '11px'}} />
                         <Tooltip />
-                        <Bar dataKey="hours" name="Staff Count" fill="#334155" radius={[0, 4, 4, 0]} barSize={20} />
+                        <Bar dataKey="hours" name="Staff Count" fill="hsl(var(--secondary))" radius={[0, 8, 8, 0]} barSize={20} />
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="text-sm text-destructive py-4">Data error: department breakdown unavailable.</div>
+                    <div className="text-sm text-muted-foreground py-4">Department breakdown is temporarily unavailable.</div>
                   )}
                </div>
                <div className="flex justify-end">
@@ -300,49 +335,47 @@ const Dashboard = () => {
             </CardContent>
          </Card>
          
-         <Card className="col-span-2 bg-slate-50 border-dashed">
+        <Card className="col-span-2 border-border/50 bg-muted/30">
             <CardHeader>
                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-blue-600" />
+              <Activity className="h-5 w-5 text-primary" />
                   System Notifications
                </CardTitle>
             </CardHeader>
             <CardContent>
                <div className="space-y-4">
                 {!alertsValid ? (
-                  <div className="text-sm text-destructive">Data error: alerts payload unavailable.</div>
+                  <div className="text-sm text-muted-foreground">Alerts are temporarily unavailable.</div>
                 ) : alerts.length > 0 ? (
                      alerts.map((alert: any, idx: number) => (
-                        <div key={idx} className="flex items-start gap-4 p-3 bg-white rounded border">
+                      <div key={idx} className="pw-surface-base flex items-start gap-4 rounded-xl p-3">
                            {alert.severity === 'critical' ? (
-                               <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
+                           <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
                            ) : (
-                               <TrendingUp className="h-5 w-5 text-blue-500 mt-0.5" />
+                           <TrendingUp className="h-5 w-5 text-primary mt-0.5" />
                            )}
                            <div>
                               <p className="text-sm font-medium">{alert.title}</p>
                               <p className="text-sm text-muted-foreground">{alert.message}</p>
-                              <p className="text-xs text-slate-400 mt-1">{new Date(alert.created_at).toLocaleTimeString()}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{new Date(alert.created_at).toLocaleTimeString()}</p>
                            </div>
                         </div>
                      ))
                   ) : (
                      <div className="flex flex-col items-center justify-center p-8 text-muted-foreground">
-                        <CheckCircle2 className="h-8 w-8 text-slate-300 mb-2" />
+                      <CheckCircle2 className="mb-2 h-8 w-8 text-success/70" />
                         <p>No new system alerts</p>
                      </div>
                   )}
                </div>
-                {financeIsError && <p className="text-xs text-destructive">Finance error: {(financeError as Error)?.message}</p>}
-                {trendIsError && <p className="text-xs text-destructive">Trend error: {(trendError as Error)?.message}</p>}
-                {stockIsError && <p className="text-xs text-destructive">Stock error: {(stockError as Error)?.message}</p>}
-                {workforceIsError && <p className="text-xs text-destructive">Workforce error: {(workforceError as Error)?.message}</p>}
-                {alertsIsError && <p className="text-xs text-destructive">Alerts error: {(alertsError as Error)?.message}</p>}
+                {financeIsError || trendIsError || stockIsError || workforceIsError || alertsIsError ? (
+                  <p className="text-xs text-muted-foreground">Some cards are showing fallback values while data refresh completes.</p>
+                ) : null}
             </CardContent>
          </Card>
       </div>
 
-    </div>
+    </motion.div>
   );
 };
 

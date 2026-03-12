@@ -33,6 +33,17 @@ class KPIWidget(BaseModel):
     label: str
     value: Any
 
+class AssignedProjectItem(BaseModel):
+    project_id: str
+    name: str
+    status: str
+    workflow_stage: Optional[str]
+    activity_type: Optional[str]
+    supplier_name: Optional[str]
+    quality_check_status: Optional[str]
+    nafdac_sampling_status: Optional[str]
+    updated_at: Optional[str]
+
 
 class Badge(BaseModel):
     id: str
@@ -45,5 +56,6 @@ class StaffDashboard(BaseModel):
     activities: List[ActivityItem] = []
     pending_approvals: List[PendingApproval] = []
     tasks: List[TaskItem] = []
+    assigned_projects: List[AssignedProjectItem] = []
     kpis: List[KPIWidget] = []
     badges: List[Badge] = []

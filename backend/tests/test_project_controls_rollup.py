@@ -31,7 +31,7 @@ def test_get_controls_rollup_prefers_rpc(monkeypatch):
                 "change": {"status_counts": {}, "total": 0, "pending_approvals": 0},
             })
 
-    monkeypatch.setattr(db_module, "supabase", FakeSupabase())
+    monkeypatch.setattr(db_module, "db", FakeSupabase())
     out = db_module.get_controls_rollup()
     assert out["scope"]["total"] == 1
     assert out["project_id"] is None
@@ -69,7 +69,7 @@ def test_get_controls_rollup_falls_back_when_rpc_fails(monkeypatch):
                 return TableQuery([{"status": "proposed"}, {"status": "under_review"}, {"status": "approved"}])
             return TableQuery([])
 
-    monkeypatch.setattr(db_module, "supabase", FakeSupabase())
+    monkeypatch.setattr(db_module, "db", FakeSupabase())
     out = db_module.get_controls_rollup(project_id="p-1")
     assert out["project_id"] == "p-1"
     assert out["scope"]["total"] == 2

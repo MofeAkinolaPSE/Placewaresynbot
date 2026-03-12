@@ -11,6 +11,40 @@ create extension if not exists pgcrypto;
 create extension if not exists vector;
 
 -- ---------------------------------------------------------------------------
+-- Local dev: create minimal roles and auth stubs
+-- These are no-ops if the roles/schema/functions already exist and
+-- make the file safe to run on a plain Postgres instance (not only Supabase).
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated;
+  END IF;
+END
+$$;
+
+CREATE SCHEMA IF NOT EXISTS auth;
+
+CREATE OR REPLACE FUNCTION auth.jwt()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT '{}'::jsonb;
+$$;
+
+CREATE OR REPLACE FUNCTION auth.uid()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULL::text;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Core/Public Tables
 -- ---------------------------------------------------------------------------
 create table if not exists public.placeware_leads (

@@ -1,4 +1,27 @@
+
 services:
+  db:
+    build:
+      context: ./db
+    image: placeware-postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres   
+      POSTGRES_PASSWORD: admin1234
+      POSTGRES_DB: synbot_demo
+    init: true
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d synbot_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Adminer removed: use pgAdmin, TablePlus, or DO DB Management for DB administration
+
   backend:
     container_name: chat-backend.v1
     build: .
@@ -7,3 +30,10 @@ services:
     env_file:
       - .env
     command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:
+    name: placeware_db_data

@@ -493,6 +493,21 @@ Produce:
 Weighted revenue forecast.
 
 ---
+## Section D
+--
+D1. add websockets between FE/BE? to ensure live interaction and display on all cards  currently some card still display errors does that mean its not hitting the right endpoint 
+"Cash Flow Overview
+Monthly inflow vs outflow
+
+Data error: cashflow trend payload unavailable." - lets make sure all chart, cards, are accurately displaying the rightinformation and not error signals 
+- there delay when i switch pages/tabs, all the cards take some time to load, like they are calling the db everytime we explore the application, we need to make sure there is adequate caching in place, so all KPI and metrics are store through out the session, so they load once when the client signs in and then they stay in cache until they needed, all the api calls are making the for massive latency.
+
+D2. add a staff group chat feature/ similar to slack setup
+
+
+D3. we need a feature that puts Placeware on the map, like a revenue officer, that finds leads
+
+D4. where is the staff dashboard location i cant seem to find it on the side bar or any navigation, lets make sure there arent any pages/chart/card, they are present without adequate navigation.
 
 # KNOWLEDGE GRAPH REQUIREMENT
 

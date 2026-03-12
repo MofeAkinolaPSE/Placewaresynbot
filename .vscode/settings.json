@@ -10,5 +10,7 @@
   "python.testing.autoTestDiscoverOnSaveEnabled": true,
   "python.analysis.extraPaths": [
     "backend"
-  ]
+  ],
+  "python.terminal.useEnvFile": true,
+  "python.envFile": "${workspaceFolder}/backend/.env"
 }

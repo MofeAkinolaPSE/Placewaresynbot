@@ -1,16 +1,10 @@
 import os
 import asyncio
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from src.db import db
 
 # Load environment variables
 load_dotenv()
-
-# Setup Supabase
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # try to drop index
 try:
@@ -30,7 +24,7 @@ except Exception as e:
 
 # Let's try to match with threshold -1.0 ONE MORE TIME but checking if ANY embedding is NULL
 try:
-    res = supabase.table("qna").select("embedding").limit(1).execute()
+    res = db.table("qna").select("embedding").limit(1).execute()
     print(f"Embedding sample: {str(res.data[0]['embedding'])[:50]}...")
 except Exception as e:
     print(e)

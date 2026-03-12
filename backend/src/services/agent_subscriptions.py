@@ -5,7 +5,7 @@ import asyncio
 import uuid
 import datetime as dt
 from typing import Set
-from src.db import supabase, audit_event
+from src.db import db, audit_event
 
 LEDGER_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'event_ledger.jsonl')
 
@@ -79,7 +79,7 @@ class AgentSubscriptionProcessor:
                                 'created_at': dt.datetime.utcnow().isoformat() + 'Z',
                                 'last_activity_at': dt.datetime.utcnow().isoformat() + 'Z'
                             }
-                            supabase.table('threads').insert(thread_record).execute()
+                            db.table('threads').insert(thread_record).execute()
                             # initial message
                             msg = {
                                 'id': str(uuid.uuid4()),
@@ -89,7 +89,7 @@ class AgentSubscriptionProcessor:
                                 'created_at': dt.datetime.utcnow().isoformat() + 'Z',
                                 'metadata': {'event_id': ev_id}
                             }
-                            supabase.table('thread_messages').insert(msg).execute()
+                            db.table('thread_messages').insert(msg).execute()
                             audit_event('agent_thread_created', {'event_id': ev_id, 'thread_id': thread_id}, actor_id=None, event_class='agents', action='create_thread', subject_type='thread', subject_id=thread_id)
                         except Exception:
                             pass

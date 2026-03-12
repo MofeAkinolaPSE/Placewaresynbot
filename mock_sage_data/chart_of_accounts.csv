@@ -1,0 +1,48 @@
+account_id,account_number,account_name,account_type,account_subtype,parent_account_id,normal_balance,is_active
+ACC-1000,1000,Cash at Bank — GTBank Main,asset,cash,,debit,TRUE
+ACC-1001,1001,Cash at Bank — Zenith Operations,asset,cash,,debit,TRUE
+ACC-1002,1002,Petty Cash,asset,cash,,debit,TRUE
+ACC-1100,1100,Accounts Receivable — Trade,asset,receivable,,debit,TRUE
+ACC-1101,1101,Accounts Receivable — Intercompany,asset,receivable,ACC-1100,debit,TRUE
+ACC-1200,1200,Inventory — Vaccines (Cold-Chain),asset,inventory,,debit,TRUE
+ACC-1201,1201,Inventory — Pharmaceuticals,asset,inventory,ACC-1200,debit,TRUE
+ACC-1202,1202,Inventory — Cold-Chain Consumables,asset,inventory,ACC-1200,debit,TRUE
+ACC-1300,1300,Prepaid Rent,asset,prepaid,,debit,TRUE
+ACC-1301,1301,Prepaid Insurance,asset,prepaid,ACC-1300,debit,TRUE
+ACC-1400,1400,VAT Input Credit,asset,tax_receivable,,debit,TRUE
+ACC-1500,1500,Furniture & Equipment (Net),asset,fixed_asset,,debit,TRUE
+ACC-1501,1501,Cold-Room & Freezer Equipment (Net),asset,fixed_asset,ACC-1500,debit,TRUE
+ACC-1502,1502,Motor Vehicles (Net),asset,fixed_asset,ACC-1500,debit,TRUE
+ACC-2000,2000,Accounts Payable — Trade,liability,payable,,credit,TRUE
+ACC-2001,2001,Accounts Payable — Import Duties,liability,payable,ACC-2000,credit,TRUE
+ACC-2100,2100,Short-Term Bank Loan — GTBank,liability,short_term_loan,,credit,TRUE
+ACC-2200,2200,VAT Output Payable,liability,tax_payable,,credit,TRUE
+ACC-2300,2300,PAYE Tax Payable,liability,tax_payable,,credit,TRUE
+ACC-2400,2400,Accrued Salaries,liability,accrued_expense,,credit,TRUE
+ACC-2500,2500,Long-Term Loan — UBA,liability,long_term_loan,,credit,TRUE
+ACC-3000,3000,Share Capital,equity,share_capital,,credit,TRUE
+ACC-3100,3100,Retained Earnings,equity,retained_earnings,,credit,TRUE
+ACC-3200,3200,Current Year Profit / (Loss),equity,current_earnings,,credit,TRUE
+ACC-4000,4000,Product Sales Revenue — Vaccines,revenue,product_sales,,credit,TRUE
+ACC-4001,4001,Product Sales Revenue — Pharmaceuticals,revenue,product_sales,ACC-4000,credit,TRUE
+ACC-4002,4002,Product Sales Revenue — Consumables,revenue,product_sales,ACC-4000,credit,TRUE
+ACC-4100,4100,Distribution & Handling Revenue,revenue,service_revenue,,credit,TRUE
+ACC-4200,4200,Tender & Contract Revenue,revenue,service_revenue,,credit,TRUE
+ACC-5000,5000,Cost of Goods Sold — Vaccines,expense,COGS,,debit,TRUE
+ACC-5001,5001,Cost of Goods Sold — Pharmaceuticals,expense,COGS,ACC-5000,debit,TRUE
+ACC-5002,5002,Cost of Goods Sold — Consumables,expense,COGS,ACC-5000,debit,TRUE
+ACC-5100,5100,Cold-Chain Logistics & Freight,expense,cold_chain_logistics,,debit,TRUE
+ACC-5200,5200,Import Duties & Customs Clearance,expense,import_duty,,debit,TRUE
+ACC-5300,5300,Warehouse Storage & Handling,expense,warehouse,,debit,TRUE
+ACC-6000,6000,Salaries & Wages — Operations,expense,salaries,,debit,TRUE
+ACC-6001,6001,Salaries & Wages — Sales,expense,salaries,ACC-6000,debit,TRUE
+ACC-6002,6002,Salaries & Wages — Finance & Admin,expense,salaries,ACC-6000,debit,TRUE
+ACC-6100,6100,Office & Administrative Expenses,expense,operating_expense,,debit,TRUE
+ACC-6200,6200,Marketing & Sales Promotion,expense,operating_expense,,debit,TRUE
+ACC-6300,6300,Rent & Facility Costs,expense,operating_expense,,debit,TRUE
+ACC-6400,6400,QA & Regulatory Compliance (NAFDAC),expense,compliance,,debit,TRUE
+ACC-6500,6500,Depreciation — Equipment,expense,depreciation,,debit,TRUE
+ACC-6600,6600,Bank Charges & Loan Interest,expense,finance_cost,,debit,TRUE
+ACC-6700,6700,Insurance Premium,expense,operating_expense,,debit,TRUE
+ACC-6800,6800,IT & Software Subscriptions,expense,operating_expense,,debit,TRUE
+ACC-6900,6900,Miscellaneous Expenses,expense,operating_expense,,debit,TRUE

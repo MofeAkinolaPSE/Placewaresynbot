@@ -1,4 +1,4 @@
-from supabase import create_client, Client
+from .local_db import LocalDBClient
 import smtplib
 from email.mime.text import MIMEText
 import os
@@ -51,7 +51,31 @@ SUPABASE_KEY = os.getenv(ENV_SUPABASE_KEY)
 EMAIL_FROM = os.getenv(ENV_EMAIL_FROM)
 EMAIL_PASS = os.getenv(ENV_EMAIL_PASS)
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Local DB client for PostgreSQL access
+db = LocalDBClient(os.getenv('DATABASE_URL'))
+
+
+def get_psycopg_dsn() -> str:
+    """Return a psycopg-compatible DSN string.
+
+    Preference order:
+    1. `DATABASE_URL` environment variable
+    2. Build from `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PORT`
+    3. Fall back to Supabase URL if present (not recommended)
+    """
+    # Prefer explicit DATABASE_URL
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        return db_url
+
+    user = os.getenv("POSTGRES_USER") or os.getenv("PGUSER") or "postgres"
+    password = os.getenv("POSTGRES_PASSWORD") or os.getenv("PGPASSWORD") or ""
+    db = os.getenv("POSTGRES_DB") or os.getenv("PGDATABASE") or "postgres"
+    host = os.getenv("POSTGRES_HOST") or os.getenv("PGHOST") or "localhost"
+    port = os.getenv("POSTGRES_PORT") or os.getenv("PGPORT") or "5432"
+    if password:
+        return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    return f"postgresql://{user}@{host}:{port}/{db}"
 
 
 class AuthStoreUnavailableError(RuntimeError):
@@ -85,7 +109,7 @@ def send_email_background(msg: MIMEText, recipient: str, max_retries: int = 3, b
                 logging.info(f"Email sent to %s; subject=%s", to_addr, message.get("Subject"))
                 # record success in email events table
                 try:
-                    supabase.table("placeware_email_events").insert({
+                    db.table("placeware_email_events").insert({
                         "msg_subject": message.get("Subject"),
                         "recipient": to_addr,
                         "status": "sent",
@@ -100,7 +124,7 @@ def send_email_background(msg: MIMEText, recipient: str, max_retries: int = 3, b
                 logging.warning("Email send attempt %d failed for %s: %s", tries, to_addr, e)
                 # record attempt/failure
                 try:
-                    supabase.table("placeware_email_events").insert({
+                    db.table("placeware_email_events").insert({
                         "msg_subject": message.get("Subject"),
                         "recipient": to_addr,
                         "status": "failed",
@@ -114,7 +138,7 @@ def send_email_background(msg: MIMEText, recipient: str, max_retries: int = 3, b
                 time.sleep(sleep_seconds)
         logging.error("Failed to send email to %s after %d attempts", to_addr, max_retries)
         try:
-            supabase.table("placeware_email_events").insert({
+            db.table("placeware_email_events").insert({
                 "msg_subject": message.get("Subject"),
                 "recipient": to_addr,
                 "status": "failed",
@@ -168,7 +192,7 @@ def store_lead(lead_data):
     """
     try:
         enc = _encrypt_sensitive_fields(lead_data)
-        result = supabase.table(TABLE_LEADS).insert(enc).execute()
+        result = db.table(TABLE_LEADS).insert(enc).execute()
         lead_id = result.data[0]["id"]
         try:
             service = str(lead_data.get("service") or "marketing").lower().strip()
@@ -280,9 +304,9 @@ def store_order(order_data: dict) -> dict | None:
         }
 
         try:
-            supabase.table(TABLE_ORDERS).insert(extended_payload).execute()
+            db.table(TABLE_ORDERS).insert(extended_payload).execute()
         except Exception:
-            supabase.table(TABLE_ORDERS).insert(core_payload).execute()
+            db.table(TABLE_ORDERS).insert(core_payload).execute()
 
         tracking_payload = {
             "id": tracking_id,
@@ -291,7 +315,7 @@ def store_order(order_data: dict) -> dict | None:
             "last_update": now_iso,
             "eta": order_data.get("eta") or "pending",
         }
-        supabase.table(TABLE_TRACKING).insert(tracking_payload).execute()
+        db.table(TABLE_TRACKING).insert(tracking_payload).execute()
 
         out = {
             "order_id": order_id,
@@ -317,7 +341,7 @@ def store_order(order_data: dict) -> dict | None:
 def get_tracking(tracking_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_TRACKING)
+            db.table(TABLE_TRACKING)
             .select("id,order_id,status,last_update,eta")
             .eq("id", tracking_id)
             .limit(1)
@@ -336,7 +360,7 @@ def is_webhook_idempotent(idempotency_key: str) -> bool:
         if not idempotency_key:
             return False
         resp = (
-            supabase.table(TABLE_WEBHOOK_IDEMPOTENCY)
+            db.table(TABLE_WEBHOOK_IDEMPOTENCY)
             .select("id")
             .eq("idempotency_key", idempotency_key)
             .limit(1)
@@ -362,7 +386,7 @@ def record_webhook_idempotency(idempotency_key: str, tracking_id: str | None, pr
             "provider": provider,
             "payload": payload or {},
         }
-        supabase.table(TABLE_WEBHOOK_IDEMPOTENCY).upsert(row).execute()
+        db.table(TABLE_WEBHOOK_IDEMPOTENCY).upsert(row).execute()
         return True
     except Exception as e:
         logging.error(f"record_webhook_idempotency failed: {e}")
@@ -502,7 +526,7 @@ def audit_event(
             "signature_hash_ref": resolved_signature_hash,
             "details": details,
         }
-        supabase.table(TABLE_AUDIT_LOGS).insert(payload).execute()
+        db.table(TABLE_AUDIT_LOGS).insert(payload).execute()
     except Exception as e:
         logging.error(f"Audit log insert failed: {e}")
 
@@ -515,7 +539,7 @@ def upsert_stock_cache(rows: list[dict]) -> int:
     try:
         if not rows:
             return 0
-        supabase.table(TABLE_STOCK_CACHE).upsert(rows).execute()
+        db.table(TABLE_STOCK_CACHE).upsert(rows).execute()
         return len(rows)
     except Exception as e:
         logging.error(f"Stock cache upsert failed: {e}")
@@ -524,31 +548,52 @@ def upsert_stock_cache(rows: list[dict]) -> int:
 
 # ---- Snapshot persistence helpers ------------------------------------------
 
+class SnapshotInsertError(Exception):
+    """Raised when snapshot insert fails after retries."""
+    def __init__(self, table: str, row_count: int, original_error: Exception):
+        self.table = table
+        self.row_count = row_count
+        self.original_error = original_error
+        super().__init__(f"Failed to insert {row_count} rows into {table}: {original_error}")
+
+
 def insert_snapshot(table: str, batch_id: str, imported_at: str, rows: list[dict]) -> int:
     """Insert rows into a snapshot table with batch metadata.
 
     Returns number of inserted rows.
+    Raises SnapshotInsertError if insert fails after retries.
     """
     if not rows:
+        logging.debug(f"insert_snapshot: no rows to insert into {table}")
         return 0
+    
     enriched = []
     for r in rows:
         x = dict(r)
         x["batch_id"] = batch_id
         x["imported_at"] = imported_at
         enriched.append(x)
+    
+    logging.info(f"insert_snapshot: attempting to insert {len(enriched)} rows into {table}")
+    
     # Simple retry for transient failures
-    attempts = 0
+    max_attempts = 3
     last_err = None
-    while attempts < 3:
+    for attempt in range(1, max_attempts + 1):
         try:
-            supabase.table(table).insert(enriched).execute()
+            db.table(table).insert(enriched).execute()
+            logging.info(f"insert_snapshot: successfully inserted {len(enriched)} rows into {table}")
             return len(enriched)
         except Exception as e:
             last_err = e
-            attempts += 1
-    logging.error(f"Snapshot insert failed for {table} after retries: {last_err}")
-    return 0
+            logging.warning(f"insert_snapshot: attempt {attempt}/{max_attempts} failed for {table}: {e}")
+            if attempt < max_attempts:
+                import time
+                time.sleep(0.5 * attempt)  # Exponential backoff
+    
+    # All retries exhausted - raise exception instead of silently returning 0
+    logging.error(f"insert_snapshot: FAILED to insert {len(enriched)} rows into {table} after {max_attempts} attempts. Last error: {last_err}")
+    raise SnapshotInsertError(table, len(enriched), last_err)
 
 
 def create_import_job(
@@ -579,7 +624,7 @@ def create_import_job(
         if idempotency_key:
             payload["idempotency_key"] = idempotency_key
         resp = (
-            supabase.table(TABLE_IMPORT_JOBS)
+            db.table(TABLE_IMPORT_JOBS)
             .insert(payload)
             .execute()
         )
@@ -601,7 +646,7 @@ def get_import_policy(domain: str) -> dict:
     """Resolve import governance policy for a domain with DB-first + fallback defaults."""
     try:
         resp = (
-            supabase.table(TABLE_DATA_POLICIES)
+            db.table(TABLE_DATA_POLICIES)
             .select("domain,retention_days,schema_version,policy_version,controls_config")
             .eq("domain", domain)
             .eq("active", True)
@@ -675,7 +720,7 @@ def activate_import_controls_policy(
         retention_days = int(current.get("retention_days") or 1825)
 
         (
-            supabase.table(TABLE_DATA_POLICIES)
+            db.table(TABLE_DATA_POLICIES)
             .update({"active": False})
             .eq("domain", domain)
             .eq("active", True)
@@ -695,7 +740,7 @@ def activate_import_controls_policy(
             "active": True,
             "notes": notes,
         }
-        resp = supabase.table(TABLE_DATA_POLICIES).insert(payload).execute()
+        resp = db.table(TABLE_DATA_POLICIES).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -706,7 +751,7 @@ def activate_import_controls_policy(
 def list_import_policy_versions(domain: str, limit: int = 20) -> list[dict]:
     try:
         resp = (
-            supabase.table(TABLE_DATA_POLICIES)
+            db.table(TABLE_DATA_POLICIES)
             .select("id,created_at,domain,policy_version,schema_version,retention_days,controls_config,effective_from,active,approved_by,approval_reason,attestation_text,signature_hash_ref,notes")
             .eq("domain", domain)
             .order("effective_from", desc=True)
@@ -722,7 +767,7 @@ def list_import_policy_versions(domain: str, limit: int = 20) -> list[dict]:
 def get_import_policy_version(domain: str, policy_version: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_DATA_POLICIES)
+            db.table(TABLE_DATA_POLICIES)
             .select("id,created_at,domain,policy_version,schema_version,retention_days,controls_config,effective_from,active,approved_by,approval_reason,attestation_text,signature_hash_ref,notes")
             .eq("domain", domain)
             .eq("policy_version", policy_version)
@@ -767,7 +812,7 @@ def update_import_job(
             import datetime
 
             payload["finished_at"] = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        supabase.table(TABLE_IMPORT_JOBS).update(payload).eq("id", job_id).execute()
+        db.table(TABLE_IMPORT_JOBS).update(payload).eq("id", job_id).execute()
     except Exception as e:
         logging.error(f"update_import_job failed: {e}")
 
@@ -789,7 +834,7 @@ def insert_import_rejections(job_id: str | None, rejections: list[dict]) -> int:
                     "details": row.get("details") or {},
                 }
             )
-        supabase.table(TABLE_IMPORT_REJECTIONS).insert(payload).execute()
+        db.table(TABLE_IMPORT_REJECTIONS).insert(payload).execute()
         return len(payload)
     except Exception as e:
         logging.error(f"insert_import_rejections failed: {e}")
@@ -800,7 +845,7 @@ def find_import_job_by_idempotency(domain: str, idempotency_key: str) -> dict | 
     """Find latest job by domain + idempotency key."""
     try:
         resp = (
-            supabase.table(TABLE_IMPORT_JOBS)
+            db.table(TABLE_IMPORT_JOBS)
             .select("*")
             .eq("domain", domain)
             .eq("idempotency_key", idempotency_key)
@@ -818,7 +863,7 @@ def find_import_job_by_idempotency(domain: str, idempotency_key: str) -> dict | 
 def get_import_job(job_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_IMPORT_JOBS)
+            db.table(TABLE_IMPORT_JOBS)
             .select("*")
             .eq("id", job_id)
             .limit(1)
@@ -833,7 +878,7 @@ def get_import_job(job_id: str) -> dict | None:
 
 def list_import_jobs(limit: int = 50, domain: str | None = None, status: str | None = None) -> list[dict]:
     try:
-        q = supabase.table(TABLE_IMPORT_JOBS).select("*").order("created_at", desc=True).limit(limit)
+        q = db.table(TABLE_IMPORT_JOBS).select("*").order("created_at", desc=True).limit(limit)
         if domain:
             q = q.eq("domain", domain)
         if status:
@@ -867,7 +912,7 @@ def set_promoted_kpi_batch(
         if rejection_rate is not None:
             payload["rejection_rate"] = rejection_rate
 
-        supabase.table(TABLE_KPI_PROMOTIONS).upsert(payload, on_conflict="domain").execute()
+        db.table(TABLE_KPI_PROMOTIONS).upsert(payload, on_conflict="domain").execute()
     except Exception as e:
         logging.error(f"set_promoted_kpi_batch failed: {e}")
 
@@ -876,7 +921,7 @@ def get_promoted_kpi_batch(domain: str) -> dict | None:
     """Return promoted KPI batch row for a domain, if configured."""
     try:
         resp = (
-            supabase.table(TABLE_KPI_PROMOTIONS)
+            db.table(TABLE_KPI_PROMOTIONS)
             .select("domain,batch_id,job_id,promoted_at,quality_score,rejection_rate,promoted_reason")
             .eq("domain", domain)
             .limit(1)
@@ -893,7 +938,7 @@ def get_latest_successful_import_batch(domain: str) -> str | None:
     """Fallback resolver for the latest gate-passed batch from import jobs."""
     try:
         resp = (
-            supabase.table(TABLE_IMPORT_JOBS)
+            db.table(TABLE_IMPORT_JOBS)
             .select("batch_id")
             .eq("domain", domain)
             .eq("status", "succeeded")
@@ -916,7 +961,7 @@ def get_snapshot_rows(table: str, batch_id: str, limit: int = 50000) -> list[dic
     try:
         safe_limit = max(1, min(limit, 200000))
         resp = (
-            supabase.table(table)
+            db.table(table)
             .select("*")
             .eq("batch_id", batch_id)
             .limit(safe_limit)
@@ -932,7 +977,7 @@ def get_snapshot_rows(table: str, batch_id: str, limit: int = 50000) -> list[dic
 
 def save_intent(intent_id: str, intent_type: str, payload: dict, recommendation: dict) -> None:
     try:
-        supabase.table("placeware_intents").insert({
+        db.table("placeware_intents").insert({
             "id": intent_id,
             "intent_type": intent_type,
             "payload": payload,
@@ -945,20 +990,20 @@ def save_intent(intent_id: str, intent_type: str, payload: dict, recommendation:
 
 def save_approval(intent_id: str, approved: bool, approver_note: str | None) -> None:
     try:
-        supabase.table("placeware_approvals").insert({
+        db.table("placeware_approvals").insert({
             "intent_id": intent_id,
             "approved": approved,
             "approver_note": approver_note,
         }).execute()
         # Update intent status
-        supabase.table("placeware_intents").update({"status": "approved" if approved else "rejected"}).eq("id", intent_id).execute()
+        db.table("placeware_intents").update({"status": "approved" if approved else "rejected"}).eq("id", intent_id).execute()
     except Exception as e:
         logging.error(f"save_approval failed: {e}")
 
 
 def list_pending_intents(limit: int = 50) -> list[dict]:
     try:
-        resp = supabase.table("placeware_intents").select("id,intent_type,payload,recommendation,status,created_at").eq("status", "pending").order("created_at", desc=True).limit(limit).execute()
+        resp = db.table("placeware_intents").select("id,intent_type,payload,recommendation,status,created_at").eq("status", "pending").order("created_at", desc=True).limit(limit).execute()
         return resp.data or []
     except Exception as e:
         logging.error(f"list_pending_intents failed: {e}")
@@ -967,15 +1012,38 @@ def list_pending_intents(limit: int = 50) -> list[dict]:
 
 # ---- Project Controls persistence ------------------------------------------
 
-def create_project_record(name: str, description: str | None, owner_id: str | None, status: str = "active") -> dict | None:
+def create_project_record(
+    name: str,
+    description: str | None,
+    owner_id: str | None,
+    status: str = "active",
+    activity_type: str | None = None,
+    supplier_name: str | None = None,
+    assigned_staff_id: str | None = None,
+    workflow_stage: str | None = None,
+    po_reference: str | None = None,
+    temperature_profile: str | None = None,
+    nafdac_sampling_status: str | None = None,
+    quality_check_status: str | None = None,
+    quality_notes: str | None = None,
+) -> dict | None:
     try:
         payload = {
             "name": name,
             "description": description,
             "owner_id": owner_id,
             "status": status,
+            "activity_type": activity_type,
+            "supplier_name": supplier_name,
+            "assigned_staff_id": assigned_staff_id,
+            "workflow_stage": workflow_stage,
+            "po_reference": po_reference,
+            "temperature_profile": temperature_profile,
+            "nafdac_sampling_status": nafdac_sampling_status,
+            "quality_check_status": quality_check_status,
+            "quality_notes": quality_notes,
         }
-        resp = supabase.table(TABLE_PROJECTS).insert(payload).execute()
+        resp = db.table(TABLE_PROJECTS).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -985,7 +1053,7 @@ def create_project_record(name: str, description: str | None, owner_id: str | No
 
 def list_projects(limit: int = 50, status: str | None = None) -> list[dict]:
     try:
-        q = supabase.table(TABLE_PROJECTS).select("*").order("created_at", desc=True).limit(limit)
+        q = db.table(TABLE_PROJECTS).select("*").order("created_at", desc=True).limit(limit)
         if status:
             q = q.eq("status", status)
         resp = q.execute()
@@ -993,6 +1061,46 @@ def list_projects(limit: int = 50, status: str | None = None) -> list[dict]:
     except Exception as e:
         logging.error(f"list_projects failed: {e}")
         return []
+
+
+def get_project(project_id: str) -> dict | None:
+    try:
+        resp = db.table(TABLE_PROJECTS).select("*").eq("id", project_id).limit(1).execute()
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception as e:
+        logging.error(f"get_project failed: {e}")
+        return None
+
+
+def update_project_stage(
+    project_id: str,
+    *,
+    workflow_stage: str,
+    nafdac_sampling_status: str | None = None,
+    quality_check_status: str | None = None,
+    quality_notes: str | None = None,
+    quality_checked_by: str | None = None,
+    quality_checked_at: str | None = None,
+) -> dict | None:
+    try:
+        payload: dict[str, str | None] = {"workflow_stage": workflow_stage}
+        if nafdac_sampling_status is not None:
+            payload["nafdac_sampling_status"] = nafdac_sampling_status
+        if quality_check_status is not None:
+            payload["quality_check_status"] = quality_check_status
+        if quality_notes is not None:
+            payload["quality_notes"] = quality_notes
+        if quality_checked_by is not None:
+            payload["quality_checked_by"] = quality_checked_by
+        if quality_checked_at is not None:
+            payload["quality_checked_at"] = quality_checked_at
+        resp = db.table(TABLE_PROJECTS).update(payload).eq("id", project_id).execute()
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception as e:
+        logging.error(f"update_project_stage failed: {e}")
+        return None
 
 
 def create_scope_item(project_id: str, title: str, description: str | None, priority: str, status: str, created_by: str | None) -> dict | None:
@@ -1005,7 +1113,7 @@ def create_scope_item(project_id: str, title: str, description: str | None, prio
             "status": status,
             "created_by": created_by,
         }
-        resp = supabase.table(TABLE_SCOPE_ITEMS).insert(payload).execute()
+        resp = db.table(TABLE_SCOPE_ITEMS).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1016,7 +1124,7 @@ def create_scope_item(project_id: str, title: str, description: str | None, prio
 def list_scope_items(project_id: str, limit: int = 100) -> list[dict]:
     try:
         resp = (
-            supabase.table(TABLE_SCOPE_ITEMS)
+            db.table(TABLE_SCOPE_ITEMS)
             .select("*")
             .eq("project_id", project_id)
             .order("created_at", desc=True)
@@ -1032,7 +1140,7 @@ def list_scope_items(project_id: str, limit: int = 100) -> list[dict]:
 def get_scope_item(scope_item_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_SCOPE_ITEMS)
+            db.table(TABLE_SCOPE_ITEMS)
             .select("*")
             .eq("id", scope_item_id)
             .limit(1)
@@ -1048,7 +1156,7 @@ def get_scope_item(scope_item_id: str) -> dict | None:
 def update_scope_item_status(scope_item_id: str, status: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_SCOPE_ITEMS)
+            db.table(TABLE_SCOPE_ITEMS)
             .update({"status": status})
             .eq("id", scope_item_id)
             .execute()
@@ -1071,7 +1179,7 @@ def create_cost_item(project_id: str, cost_type: str, amount: float, currency: s
             "note": note,
             "created_by": created_by,
         }
-        resp = supabase.table(TABLE_COST_ITEMS).insert(payload).execute()
+        resp = db.table(TABLE_COST_ITEMS).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1082,7 +1190,7 @@ def create_cost_item(project_id: str, cost_type: str, amount: float, currency: s
 def list_cost_items(project_id: str, limit: int = 100) -> list[dict]:
     try:
         resp = (
-            supabase.table(TABLE_COST_ITEMS)
+            db.table(TABLE_COST_ITEMS)
             .select("*")
             .eq("project_id", project_id)
             .order("created_at", desc=True)
@@ -1098,7 +1206,7 @@ def list_cost_items(project_id: str, limit: int = 100) -> list[dict]:
 def get_cost_item(cost_item_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_COST_ITEMS)
+            db.table(TABLE_COST_ITEMS)
             .select("*")
             .eq("id", cost_item_id)
             .limit(1)
@@ -1114,7 +1222,7 @@ def get_cost_item(cost_item_id: str) -> dict | None:
 def update_cost_item_status(cost_item_id: str, status: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_COST_ITEMS)
+            db.table(TABLE_COST_ITEMS)
             .update({"status": status})
             .eq("id", cost_item_id)
             .execute()
@@ -1149,7 +1257,7 @@ def create_risk_item(
             "status": status,
             "created_by": created_by,
         }
-        resp = supabase.table(TABLE_RISK_REGISTER).insert(payload).execute()
+        resp = db.table(TABLE_RISK_REGISTER).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1160,7 +1268,7 @@ def create_risk_item(
 def list_risk_items(project_id: str, limit: int = 100) -> list[dict]:
     try:
         resp = (
-            supabase.table(TABLE_RISK_REGISTER)
+            db.table(TABLE_RISK_REGISTER)
             .select("*")
             .eq("project_id", project_id)
             .order("created_at", desc=True)
@@ -1176,7 +1284,7 @@ def list_risk_items(project_id: str, limit: int = 100) -> list[dict]:
 def get_risk_item(risk_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_RISK_REGISTER)
+            db.table(TABLE_RISK_REGISTER)
             .select("*")
             .eq("id", risk_id)
             .limit(1)
@@ -1192,7 +1300,7 @@ def get_risk_item(risk_id: str) -> dict | None:
 def update_risk_item_status(risk_id: str, status: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_RISK_REGISTER)
+            db.table(TABLE_RISK_REGISTER)
             .update({"status": status})
             .eq("id", risk_id)
             .execute()
@@ -1226,7 +1334,7 @@ def create_change_request(
             "impact_schedule_days": impact_schedule_days,
             "status": "proposed",
         }
-        resp = supabase.table(TABLE_CHANGE_REQUESTS).insert(payload).execute()
+        resp = db.table(TABLE_CHANGE_REQUESTS).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1237,7 +1345,7 @@ def create_change_request(
 def list_change_requests(project_id: str, limit: int = 100) -> list[dict]:
     try:
         resp = (
-            supabase.table(TABLE_CHANGE_REQUESTS)
+            db.table(TABLE_CHANGE_REQUESTS)
             .select("*")
             .eq("project_id", project_id)
             .order("created_at", desc=True)
@@ -1253,7 +1361,7 @@ def list_change_requests(project_id: str, limit: int = 100) -> list[dict]:
 def get_change_request(change_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_CHANGE_REQUESTS)
+            db.table(TABLE_CHANGE_REQUESTS)
             .select("*")
             .eq("id", change_id)
             .limit(1)
@@ -1286,7 +1394,7 @@ def decide_change_request(
         }
         if status in ("approved", "rejected"):
             payload["approved_at"] = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        resp = supabase.table(TABLE_CHANGE_REQUESTS).update(payload).eq("id", change_id).execute()
+        resp = db.table(TABLE_CHANGE_REQUESTS).update(payload).eq("id", change_id).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1297,7 +1405,7 @@ def decide_change_request(
 def get_controls_rollup(project_id: str | None = None) -> dict:
     try:
         try:
-            rpc_resp = supabase.rpc("placeware_controls_rollup", {"p_project_id": project_id}).execute()
+            rpc_resp = db.rpc("placeware_controls_rollup", {"p_project_id": project_id}).execute()
             rpc_data = rpc_resp.data
             if isinstance(rpc_data, dict):
                 return rpc_data
@@ -1313,7 +1421,7 @@ def get_controls_rollup(project_id: str | None = None) -> dict:
             logging.warning(f"placeware_controls_rollup RPC unavailable; falling back to app-side aggregation: {rpc_err}")
 
         def _status_counts(table_name: str) -> dict[str, int]:
-            q = supabase.table(table_name).select("status")
+            q = db.table(table_name).select("status")
             if project_id:
                 q = q.eq("project_id", project_id)
             rows = (q.execute().data or [])
@@ -1325,7 +1433,7 @@ def get_controls_rollup(project_id: str | None = None) -> dict:
         risk_counts = _status_counts(TABLE_RISK_REGISTER)
         change_counts = _status_counts(TABLE_CHANGE_REQUESTS)
 
-        rq = supabase.table(TABLE_RISK_REGISTER).select("status,probability,impact")
+        rq = db.table(TABLE_RISK_REGISTER).select("status,probability,impact")
         if project_id:
             rq = rq.eq("project_id", project_id)
         risk_rows = rq.execute().data or []
@@ -1375,7 +1483,7 @@ def list_audit_logs_filtered(
     event_type: str | None = None,
 ) -> list[dict]:
     try:
-        q = supabase.table(TABLE_AUDIT_LOGS).select("*").order("created_at", desc=True).limit(limit)
+        q = db.table(TABLE_AUDIT_LOGS).select("*").order("created_at", desc=True).limit(limit)
         if start_at:
             q = q.gte("created_at", start_at)
         if end_at:
@@ -1404,7 +1512,7 @@ def is_duplicate_import(import_hash: str, within_minutes: int = 1440) -> bool:
         cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=within_minutes)
         cutoff_iso = cutoff.replace(microsecond=0).isoformat() + "Z"
         resp = (
-            supabase
+            db
             .table(TABLE_AUDIT_LOGS)
             .select("details,created_at")
             .eq("event_type", "sage_import_validated")
@@ -1426,7 +1534,7 @@ def is_duplicate_import(import_hash: str, within_minutes: int = 1440) -> bool:
 def save_chat_history(user_id: str | None, question: str, answer: str, sources: list[dict]) -> None:
     from .constants import TABLE_CHAT_HISTORY
     try:
-        supabase.table(TABLE_CHAT_HISTORY).insert({
+        db.table(TABLE_CHAT_HISTORY).insert({
             "user_id": user_id,
             "question": question,
             "answer": answer,
@@ -1441,7 +1549,7 @@ def get_chat_history(user_id: str, limit: int = 30) -> list[dict]:
     safe_limit = max(1, min(limit, 200))
     try:
         resp = (
-            supabase.table(TABLE_CHAT_HISTORY)
+            db.table(TABLE_CHAT_HISTORY)
             .select("id,created_at,user_id,question,answer,sources")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
@@ -1457,7 +1565,7 @@ def get_chat_history(user_id: str, limit: int = 30) -> list[dict]:
 def get_audit_logs(limit: int = 50) -> list[dict]:
     """Fetch recent audit logs for history display."""
     try:
-        resp = supabase.table(TABLE_AUDIT_LOGS)\
+        resp = db.table(TABLE_AUDIT_LOGS)\
             .select("*")\
             .order("created_at", desc=True)\
             .limit(limit)\
@@ -1473,7 +1581,7 @@ def get_audit_logs(limit: int = 50) -> list[dict]:
 def get_user_by_email(email: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_USERS)
+            db.table(TABLE_USERS)
             .select("id,email,hashed_password,roles,is_active")
             .eq("email", email.lower())
             .limit(1)
@@ -1489,7 +1597,7 @@ def get_user_by_email(email: str) -> dict | None:
 def get_user_by_id(user_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_USERS)
+            db.table(TABLE_USERS)
             .select("id,email,roles,is_active")
             .eq("id", user_id)
             .limit(1)
@@ -1519,7 +1627,7 @@ def insert_refresh_token(
             "ip_address": ip_address,
             "replaced_by": replaced_by,
         }
-        resp = supabase.table(TABLE_REFRESH_TOKENS).insert(payload).execute()
+        resp = db.table(TABLE_REFRESH_TOKENS).insert(payload).execute()
         data = resp.data or []
         return data[0]["id"] if data else None
     except Exception as e:
@@ -1530,7 +1638,7 @@ def insert_refresh_token(
 def get_refresh_token_record(token_hash: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_REFRESH_TOKENS)
+            db.table(TABLE_REFRESH_TOKENS)
             .select("id,user_id,token_hash,expires_at,revoked_at")
             .eq("token_hash", token_hash)
             .limit(1)
@@ -1550,7 +1658,7 @@ def revoke_refresh_token(token_id: str, replaced_by: str | None = None) -> None:
         payload = {"revoked_at": now}
         if replaced_by:
             payload["replaced_by"] = replaced_by
-        supabase.table(TABLE_REFRESH_TOKENS).update(payload).eq("id", token_id).execute()
+        db.table(TABLE_REFRESH_TOKENS).update(payload).eq("id", token_id).execute()
     except Exception as e:
         logging.error(f"revoke_refresh_token failed: {e}")
 
@@ -1558,7 +1666,7 @@ def revoke_refresh_token(token_id: str, replaced_by: str | None = None) -> None:
 def list_users(limit: int = 50) -> list[dict]:
     try:
         resp = (
-            supabase.table(TABLE_USERS)
+            db.table(TABLE_USERS)
             .select("id,email,roles,is_active,created_at,updated_at")
             .order("created_at", desc=True)
             .limit(limit)
@@ -1578,7 +1686,7 @@ def create_user(email: str, hashed_password: str, roles: list[str]) -> str | Non
             "roles": roles,
             "is_active": True,
         }
-        resp = supabase.table(TABLE_USERS).insert(payload).execute()
+        resp = db.table(TABLE_USERS).insert(payload).execute()
         data = resp.data or []
         return data[0]["id"] if data else None
     except Exception as e:
@@ -1590,7 +1698,7 @@ def update_user_password(user_id: str, hashed_password: str) -> bool:
     try:
         import datetime as dt
         now = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        supabase.table(TABLE_USERS).update({
+        db.table(TABLE_USERS).update({
             "hashed_password": hashed_password,
             "updated_at": now
         }).eq("id", user_id).execute()
@@ -1604,7 +1712,7 @@ def toggle_user_active(user_id: str, is_active: bool) -> bool:
     try:
         import datetime as dt
         now = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        supabase.table(TABLE_USERS).update({
+        db.table(TABLE_USERS).update({
             "is_active": is_active,
             "updated_at": now
         }).eq("id", user_id).execute()
@@ -1616,7 +1724,7 @@ def toggle_user_active(user_id: str, is_active: bool) -> bool:
 
 def create_procurement_shipment(payload: dict) -> dict | None:
     try:
-        resp = supabase.table(TABLE_PROCUREMENT_SHIPMENTS).insert(payload).execute()
+        resp = db.table(TABLE_PROCUREMENT_SHIPMENTS).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1633,7 +1741,7 @@ def list_procurement_shipments(
     try:
         safe_limit = max(1, min(limit, 500))
         q = (
-            supabase.table(TABLE_PROCUREMENT_SHIPMENTS)
+            db.table(TABLE_PROCUREMENT_SHIPMENTS)
             .select("*")
             .order("created_at", desc=True)
             .limit(safe_limit)
@@ -1652,7 +1760,7 @@ def list_procurement_shipments(
 def get_procurement_shipment(shipment_id: str) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_PROCUREMENT_SHIPMENTS)
+            db.table(TABLE_PROCUREMENT_SHIPMENTS)
             .select("*")
             .eq("id", shipment_id)
             .limit(1)
@@ -1668,7 +1776,7 @@ def get_procurement_shipment(shipment_id: str) -> dict | None:
 def update_procurement_shipment(shipment_id: str, updates: dict) -> dict | None:
     try:
         resp = (
-            supabase.table(TABLE_PROCUREMENT_SHIPMENTS)
+            db.table(TABLE_PROCUREMENT_SHIPMENTS)
             .update(updates)
             .eq("id", shipment_id)
             .execute()
@@ -1682,7 +1790,7 @@ def update_procurement_shipment(shipment_id: str, updates: dict) -> dict | None:
 
 def create_procurement_shipment_event(payload: dict) -> dict | None:
     try:
-        resp = supabase.table(TABLE_PROCUREMENT_SHIPMENT_EVENTS).insert(payload).execute()
+        resp = db.table(TABLE_PROCUREMENT_SHIPMENT_EVENTS).insert(payload).execute()
         rows = resp.data or []
         return rows[0] if rows else None
     except Exception as e:
@@ -1697,7 +1805,7 @@ def list_procurement_events_feed(
 ) -> list[dict]:
     try:
         safe_limit = max(1, min(limit, 500))
-        q = supabase.table(TABLE_PROCUREMENT_SHIPMENT_EVENTS).select("*")
+        q = db.table(TABLE_PROCUREMENT_SHIPMENT_EVENTS).select("*")
         if since_event_id is not None:
             q = q.gt("id", int(since_event_id)).order("id", desc=False).limit(safe_limit)
         else:
@@ -1794,7 +1902,7 @@ def list_procurement_shipment_events(shipment_id: str, limit: int = 100) -> list
     try:
         safe_limit = max(1, min(limit, 500))
         resp = (
-            supabase.table(TABLE_PROCUREMENT_SHIPMENT_EVENTS)
+            db.table(TABLE_PROCUREMENT_SHIPMENT_EVENTS)
             .select("*")
             .eq("shipment_id", shipment_id)
             .order("created_at", desc=True)

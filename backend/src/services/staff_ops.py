@@ -1,9 +1,9 @@
 from __future__ import annotations
 import logging
 from typing import Dict, Any, List, Optional
+from typing import Any as DBClient
 from datetime import date
-from supabase import Client
-from ..db import supabase
+from ..db import db
 from ..constants import TABLE_STAFF, TABLE_TIMESHEETS
 from .sage_adapter.service import get_sage_kpi_batch_id
 
@@ -16,7 +16,7 @@ def create_staff_member(
     email: str,
     department: str,
     role: str,
-    client: Client = supabase
+    client: DBClient = db
 ) -> Dict[str, Any]:
     """Create a new staff record (Identity only, no authentication/user creation)."""
     payload = {
@@ -29,7 +29,7 @@ def create_staff_member(
     resp = client.table(TABLE_STAFF).insert(payload).execute()
     return resp.data[0] if resp.data else {}
 
-def get_staff_by_department(department: Optional[str] = None, client: Client = supabase) -> List[Dict[str, Any]]:
+def get_staff_by_department(department: Optional[str] = None, client: DBClient = db) -> List[Dict[str, Any]]:
     """List staff, optionally filtered by department."""
     query = client.table(TABLE_STAFF).select("*")
     if department:
@@ -37,7 +37,7 @@ def get_staff_by_department(department: Optional[str] = None, client: Client = s
     resp = query.execute()
     return resp.data or []
 
-def get_staff_by_id(staff_id: str, client: Client = supabase) -> Optional[Dict[str, Any]]:
+def get_staff_by_id(staff_id: str, client: DBClient = db) -> Optional[Dict[str, Any]]:
     resp = client.table(TABLE_STAFF).select("*").eq("staff_id", staff_id).execute()
     return resp.data[0] if resp.data else None
 
@@ -50,7 +50,7 @@ def record_timesheet_entry(
     department: str,
     note: Optional[str],
     recorded_by: str,
-    client: Client = supabase
+    client: DBClient = db
 ) -> Dict[str, Any]:
     """Record a single timesheet entry."""
     payload = {
@@ -70,11 +70,10 @@ def get_timesheets(
     department: Optional[str] = None,
     staff_id: Optional[str] = None,
     limit: int = 100,
-    client: Client = supabase
+    client: DBClient = db
 ) -> List[Dict[str, Any]]:
     """Query timesheets with flexible filters."""
-    # join with staff name for visibility
-    query = client.table(TABLE_TIMESHEETS).select("*, staff:placeware_staff(full_name)")
+    query = client.table(TABLE_TIMESHEETS).select("*")
     
     if start_date:
         query = query.gte("date", start_date.isoformat())
@@ -89,7 +88,7 @@ def get_timesheets(
     return resp.data or []
 
 
-def sync_staff_batch(staff_rows: List[Dict[str, Any]], client: Client = supabase) -> int:
+def sync_staff_batch(staff_rows: List[Dict[str, Any]], client: DBClient = db) -> int:
     """
     Syncs a batch of staff rows from Sage import to the live placeware_staff table.
     Matches strictly on 'email' to avoid duplicates.
@@ -140,7 +139,7 @@ def sync_staff_batch(staff_rows: List[Dict[str, Any]], client: Client = supabase
         return 0
 
 
-def get_latest_staff_snapshot(limit: int = 1000, client: Client = supabase) -> List[Dict[str, Any]]:
+def get_latest_staff_snapshot(limit: int = 1000, client: DBClient = db) -> List[Dict[str, Any]]:
     """Return latest staff snapshot rows (append-only) for visibility/fallback.
 
     Orders by imported_at desc then id desc; limits results. Deduplicates by email if present.

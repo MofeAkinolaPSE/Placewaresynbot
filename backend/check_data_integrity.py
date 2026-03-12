@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 load_dotenv()
 
-from src.db import supabase
+from src.db import db
 from src.constants import TABLE_QNA
 # We import seed function, but need to find where it is defined. 
 # It was in seed_qna.py, but it uses relative imports.
@@ -23,7 +23,7 @@ DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 def check_qna_table():
     try:
         logging.info(f"Checking table '{TABLE_QNA}'...")
-        res = supabase.table(TABLE_QNA).select("id", count="exact").execute()
+        res = db.table(TABLE_QNA).select("id", count="exact").execute()
         count = res.count
         logging.info(f"Existing rows: {count}")
 
@@ -46,7 +46,7 @@ def check_qna_table():
             "match_threshold": 0.5, # Lower threshold for test
             "match_count": 1
         }
-        rpc_res = supabase.rpc("match_documents", payload).execute()
+        rpc_res = db.rpc("match_documents", payload).execute()
         if not rpc_res.data:
             logging.warning("Retrieval returned 0 results despite data existing. INDEX PROBABLY BROKEN.")
             logging.warning("Please run 'backend/migrations/019_fix_vector_index.sql' in Supabase dashboard.")
@@ -83,7 +83,7 @@ def seed_data():
         chunk_size = 50
         for i in range(0, len(rows), chunk_size):
             chunk = rows[i:i+chunk_size]
-            supabase.table(TABLE_QNA).insert(chunk).execute()
+            db.table(TABLE_QNA).insert(chunk).execute()
         logging.info(f"Seeded {len(rows)} rows.")
 
 if __name__ == "__main__":
