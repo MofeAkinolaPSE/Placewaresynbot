@@ -1,10 +1,8 @@
-from pydantic import BaseModel
-from fastapi import FastAPI
+# --- Tracking Webhook Models (registered after app is created below) ---
+from pydantic import BaseModel as _BaseModel
 
-app = FastAPI()
 
-# --- Tracking Webhook Models ---
-class TrackingWebhookPayload(BaseModel):
+class TrackingWebhookPayload(_BaseModel):
     tracking_id: str
     status: str
     eta: str | None = None
@@ -43,8 +41,7 @@ def _is_idempotent(tracking_id: str, idempotency_key: str | None) -> bool:
     except Exception:
         return False
 
-# --- Webhook Endpoint ---
-@app.post("/webhook/tracking")
+# --- Webhook Endpoint (registered on real app after FastAPI() below) ---
 async def webhook_tracking_update(payload: TrackingWebhookPayload):
     # Signature verification
     if not _verify_signature(payload.dict(), payload.signature):
@@ -152,8 +149,7 @@ def _is_allowed_order_transition(current_status: str, target_status: str) -> boo
         return True
     return target_status in ORDER_STATUS_TRANSITIONS.get(current_status, set())
 
-# --- Order Status Update Endpoint ---
-@app.post("/orders/{order_id}/status")
+# --- Order Status Update Endpoint (registered on real app after FastAPI() below) ---
 async def update_order_status(request: Request, order_id: str, payload: OrderStatusUpdateRequest):
     require_role(request, "admin")
     # Fetch current order
@@ -199,6 +195,7 @@ async def update_order_status(request: Request, order_id: str, payload: OrderSta
 from src.llm_client import LLMClient  # new microservice-based LLM abstraction (to be added)
 from src.middleware import verify_jwt, rate_limit, RequestTimingMiddleware
 from src.db import (
+    db,
     audit_event, 
     insert_snapshot,
     SnapshotInsertError,
@@ -383,6 +380,7 @@ from src.routers.inventory_module import router as inventory_module_router
 from src.routers.suppliers import router as suppliers_router
 from src.routers.logistics import router as logistics_router
 from src.routers.documents import router as documents_router
+from src.routers.compliance import router as compliance_router
 from src.routers.threads import router as threads_router
 from src.routers.form_schemas import router as form_schemas_router
 from src.routers.crm import router as crm_router
@@ -393,6 +391,10 @@ from src.routers.realtime_ws import router as realtime_ws_router
 from src.routers.kg_graph import router as kg_graph_router
 from src.routers.data_ingest import router as data_ingest_router
 from src.routers.sage_csv_import import router as sage_csv_import_router
+from src.routers.knowledge_router import router as knowledge_router
+from src.routers.maintenance_tracking import router as maintenance_tracking_router
+from src.routers.digital_twin import router as digital_twin_router
+from src.routers.capability_discovery import router as capability_discovery_router
 
 app.include_router(sage_csv_import_router)
 app.include_router(replenishment_router)
@@ -408,6 +410,7 @@ app.include_router(inventory_module_router)
 app.include_router(suppliers_router)
 app.include_router(logistics_router)
 app.include_router(documents_router)
+app.include_router(compliance_router)
 app.include_router(threads_router)
 app.include_router(form_schemas_router)
 app.include_router(crm_router)
@@ -418,6 +421,14 @@ app.include_router(tasks_router)
 app.include_router(realtime_ws_router)
 app.include_router(kg_graph_router)
 app.include_router(data_ingest_router)
+app.include_router(knowledge_router)
+app.include_router(maintenance_tracking_router)
+app.include_router(digital_twin_router)
+app.include_router(capability_discovery_router)
+
+# Register tracking webhook + order status endpoints on the real app
+app.add_api_route("/webhook/tracking", webhook_tracking_update, methods=["POST"])
+app.add_api_route("/orders/{order_id}/status", update_order_status, methods=["POST"])
 
 
 @app.on_event("startup")
@@ -474,6 +485,42 @@ async def _start_agent_subscriptions():
 
         loop = asyncio.get_event_loop()
         start_processor(loop, interval=5)
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+async def _start_maintenance_monitor():
+    try:
+        import asyncio
+        from src.services.maintenance_service import MaintenanceMonitor
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(MaintenanceMonitor(interval_seconds=300).run_loop())
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+async def _start_digital_twin_engine():
+    try:
+        import asyncio
+        from src.services.digital_twin_service import DigitalTwinEngine
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(DigitalTwinEngine(interval_seconds=600).run_loop())
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+async def _start_capability_discovery_engine():
+    try:
+        import asyncio
+        from src.services.capability_engine import CapabilityDiscoveryEngine
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(CapabilityDiscoveryEngine().run_loop())
     except Exception:
         pass
 
@@ -746,8 +793,8 @@ def _build_grounded_direct_answer(question: str, tool_outputs: list[dict[str, An
             outstanding = _safe_float(ar.get("total_balance"))
             overdue = int(_safe_float(ar.get("overdue_count")))
             return (
-                f"Current AR total is ₦{total_amount:,.0f}. "
-                f"Outstanding AR balance is ₦{outstanding:,.0f} across {overdue} overdue invoices."
+                f"AR total is ₦{total_amount:,.0f} with ₦{outstanding:,.0f} outstanding "
+                f"across {overdue} overdue invoice{'s' if overdue != 1 else ''}."
             )
 
     if any(k in q for k in ["total stock", "number of stock", "how many stock", "stock units", "current stock total"]):
@@ -755,10 +802,7 @@ def _build_grounded_direct_answer(question: str, tool_outputs: list[dict[str, An
         if isinstance(inventory, list):
             total_units = sum(_safe_float(x.get("quantity")) for x in inventory if isinstance(x, dict))
             sku_count = len({str(x.get("sku") or "").strip() for x in inventory if isinstance(x, dict) and str(x.get("sku") or "").strip()})
-            return (
-                f"Current total stock is {int(total_units):,} units across {sku_count} SKUs "
-                f"from the latest inventory snapshot."
-            )
+            return f"We have {int(total_units):,} units across {sku_count} active SKUs right now."
 
     if mode == "executive" and any(k in q for k in ["focus", "this quarter", "priority", "what should we focus"]):
         recs = _tool_payload(tool_outputs, "getRecommendations")
@@ -771,34 +815,81 @@ def _build_grounded_direct_answer(question: str, tool_outputs: list[dict[str, An
                     if action:
                         top.append(f"- {action}" + (f" ({reason})" if reason else ""))
             if top:
-                return "Top focus areas this quarter based on current backend signals:\n" + "\n".join(top)
+                return "Top priorities based on current data:\n" + "\n".join(top)
 
     return None
 
 
-def _build_chat_instruction(mode: str) -> str:
+# ---------------------------------------------------------------------------
+# Intent classification — determines if a query needs a report/list or
+# just a short conversational reply.
+# ---------------------------------------------------------------------------
+_REPORT_KEYWORDS = {
+    # report triggers
+    "report", "summary", "summarize", "summarise", "breakdown", "analysis",
+    "analyze", "analyse", "overview", "dashboard", "brief", "briefing",
+    # list / table triggers
+    "list", "show me all", "show all", "give me all", "all inventory",
+    "all staff", "all orders", "all customers", "all sku", "all items",
+    "table", "enumerate", "what are all",
+    # explicit data pulls
+    "inventory report", "stock report", "ar report", "hr report",
+    "payroll report", "sales report", "finance report",
+    "top 10", "top 5", "full list",
+}
+
+
+def _classify_query_intent(question: str) -> str:
+    """Return 'report' for explicit report/list requests, else 'conversational'."""
+    q = (question or "").lower()
+    if any(kw in q for kw in _REPORT_KEYWORDS):
+        return "report"
+    return "conversational"
+
+
+def _build_chat_instruction(mode: str, question: str = "") -> str:
+    intent = _classify_query_intent(question)
+
     if mode == "customer":
         return (
             f"You are {BOT_NAME} for {BOT_BRAND} serving external customers. "
             "Only provide safe public-facing information (availability, order guidance, contact/lead support). "
             "Do not reveal internal financial, operational, HR, or strategic metrics. "
             "If asked for restricted internal data, politely refuse and offer next safe step. "
+            "Reply naturally and briefly — 1-2 sentences unless the user explicitly asks for a list or detailed breakdown. "
             "Use warm, service-oriented language suitable for clients."
         )
-    return (
-        f"You are {BOT_NAME}, an internal executive business copilot for {BOT_BRAND}. "
+
+    # Internal (executive / assistant) mode
+    base = (
+        f"You are {BOT_NAME}, an internal business copilot for {BOT_BRAND}. "
         "Use ONLY the provided backend context and tool results as source of truth. "
-        "Do not invent numbers, trends, or claims. "
-        "If a requested metric is missing from tool outputs/context, say it is unavailable and request the specific data import or endpoint. "
-        "Keep tone natural, calm, concise, and action-oriented like a trusted teammate. "
-        "Write like an analyst briefing leadership: current state, key risk exposure, and prudent next move. "
-        "Be forward-looking and risk-averse, and end with a practical internal conclusion. "
-        "Do NOT include customer support copy, ordering instructions, sales CTAs, patronage language, or contact blocks (email/phone). "
-        "Prefer internal analyst structure: current state, key risk, and recommended internal action."
+        "Do not invent numbers, trends, or claims not present in the context. "
+        "If a metric is missing, briefly say it is unavailable. "
+        "Do NOT include customer support copy, ordering instructions, sales CTAs, or contact blocks. "
+    )
+
+    if intent == "report":
+        return (
+            base
+            + "The user is asking for a structured report or list. "
+            + "Respond with a clear, well-organised answer using the available data: "
+            + "current state, key findings, notable risks, and a recommended action. "
+            + "Use bullet points or sections where it aids clarity."
+        )
+
+    # Conversational intent — the default ─────────────────────────────────────
+    return (
+        base
+        + "The user is asking a conversational question. "
+        + "Reply naturally and concisely — 1 to 2 sentences maximum unless the data genuinely "
+        + "warrants more. Do NOT produce a structured report, bullet-point breakdown, or "
+        + "analyst summary unless the user explicitly asked for one. "
+        + "Speak like a knowledgeable teammate giving a quick verbal answer."
     )
 
 
-def _enforce_mode_tone(answer: str, mode: str) -> str:
+def _enforce_mode_tone(answer: str, mode: str, question: str = "") -> str:
     text = (answer or "").strip()
     if not text or mode != "executive":
         return text
@@ -813,47 +904,49 @@ def _enforce_mode_tone(answer: str, mode: str) -> str:
         "email:",
         "phone:",
     ]
-    if not any(marker in lowered for marker in disallowed_markers):
-        return text
+    if any(marker in lowered for marker in disallowed_markers):
+        filtered_lines: list[str] = []
+        skip_line_markers = [
+            "next steps for ordering",
+            "contact for orders",
+            "orders & inquiries",
+            "place an order",
+            "thank you for your patronage",
+            "email:",
+            "phone:",
+            "contact our team",
+        ]
+        for line in text.splitlines():
+            line_lower = line.strip().lower()
+            if any(marker in line_lower for marker in skip_line_markers):
+                continue
+            filtered_lines.append(line)
+        text = "\n".join(filtered_lines).strip()
+        if not text:
+            text = "Inventory snapshot reviewed from current backend data."
 
-    filtered_lines: list[str] = []
-    skip_line_markers = [
-        "next steps for ordering",
-        "contact for orders",
-        "orders & inquiries",
-        "place an order",
-        "thank you for your patronage",
-        "email:",
-        "phone:",
-        "contact our team",
-    ]
-    for line in text.splitlines():
-        line_lower = line.strip().lower()
-        if any(marker in line_lower for marker in skip_line_markers):
-            continue
-        filtered_lines.append(line)
+    # Only append the prudent-action footer for explicit report/analytical responses.
+    # Conversational replies must stay short.
+    intent = _classify_query_intent(question)
+    if intent == "report":
+        action_markers = [
+            "recommend",
+            "should",
+            "next",
+            "action",
+            "priorit",
+            "validate",
+            "mitigat",
+            "monitor",
+        ]
+        if not any(marker in text.lower() for marker in action_markers):
+            text = (
+                f"{text}\n\n"
+                "Recommended next step: validate critical exposure, prioritise replenishment "
+                "or escalation, and monitor the next data refresh."
+            )
 
-    filtered = "\n".join(filtered_lines).strip()
-    if not filtered:
-        filtered = "Inventory snapshot reviewed from current backend data."
-
-    action_markers = [
-        "recommend",
-        "should",
-        "next",
-        "action",
-        "priorit",
-        "validate",
-        "mitigat",
-        "monitor",
-    ]
-    if not any(marker in filtered.lower() for marker in action_markers):
-        filtered = (
-            f"{filtered}\n\n"
-            "From here, the prudent move is to validate low-stock and zero-stock exposure, "
-            "prioritize replenishment risk, and monitor the next snapshot before escalating."
-        )
-    return filtered
+    return text
 
 
 def _extract_email(text: str) -> str | None:
@@ -2793,6 +2886,12 @@ async def _process_sage_import_job(
                     "lineage": lineage,
                 },
             )
+            # Bust in-process TTL caches so the dashboard reflects fresh data immediately
+            from src.cache import invalidate_cache_tags
+            invalidate_cache_tags(
+                "inventory", "inventory_dashboard",
+                "finance", "finance_kpis", "finance_trend", "finance_gl", "executive",
+            )
             return {
                 "batch_id": batch_id,
                 "job_id": job_id,
@@ -3235,7 +3334,7 @@ def _is_high_impact_change(change_row: dict | None) -> bool:
 
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-ALLOWED_ROLES = {"admin", "ops", "hr", "sales", "viewer"}
+ALLOWED_ROLES = {"admin", "ops", "hr", "sales", "viewer", "finance", "management"}
 
 
 def normalize_email(value: str) -> str:
@@ -3722,9 +3821,20 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         logging.info(f"Embedding OK. Querying Supabase…")
         results = retriever.retrieve(embedding, k=DEFAULT_TOP_K)
         retrieved_context = "\n\n".join(filter(None, [r[1] for r in results])) if results else ""
-        
-        # Combine Retrieved Docs + Live Data
-        context = f"{retrieved_context}\n\n{live_context_str}".strip()
+
+        # ── Knowledge base retrieval (compliance docs / ingested templates) ──────
+        kb_context = ""
+        try:
+            from src.services.knowledge_service import KnowledgeService
+            _kb_svc = KnowledgeService(llm=llm_client)
+            _kb_result = _kb_svc.search(question, agent="chat", top_k=3)
+            if _kb_result.context:
+                kb_context = f"COMPLIANCE KNOWLEDGE BASE:\n{_kb_result.context}"
+        except Exception as _kb_exc:
+            logging.warning("Knowledge base search failed (non-fatal): %s", _kb_exc)
+
+        # Combine Retrieved Docs + Knowledge Base + Live Data
+        context = "\n\n".join(filter(None, [retrieved_context, kb_context, live_context_str])).strip()
 
     if context:
         context = f"{COMPANY_PROFILE_CONTEXT}\n\n{context}".strip()
@@ -3739,14 +3849,14 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         answer = llm_client.generate_response(
             context=context,
             question=question,
-            instruction=_build_chat_instruction(mode=mode),
+            instruction=_build_chat_instruction(mode=mode, question=question),
         )
     if not answer:
         answer = (
             f"{BOT_BRAND} supports Vaccine Distribution, Pharma Supply, Cold Chain Logistics, and Regulatory Support in Nigeria. "
             "Please ask a specific company or operations question and I will answer with available backend data."
         )
-    answer = _enforce_mode_tone(answer=answer, mode=mode)
+    answer = _enforce_mode_tone(answer=answer, mode=mode, question=question)
     # answer = append_disclaimer(answer)  # Removed per user request: disclaimer at bottom of chat, not per response
     sources = []
     try:
@@ -3837,9 +3947,40 @@ async def inventory_expiring(request: Request, thresholds: Optional[str] = None)
         return {"items": [], "summary": {"count": 0}}
 
 
+@app.get("/debug/sage-counts")
+async def debug_sage_counts(request: Request):
+    """Admin-only: return row counts and latest import timestamps for all snapshot tables."""
+    require_roles(request, ["admin"])
+    tables = [
+        "sage_ar_snapshot", "sage_inventory_snapshot", "sage_gl_snapshot",
+        "sage_ap_snapshot", "sage_staff_snapshot", "sage_vendors_snapshot", "sage_coa_snapshot",
+    ]
+    result = {}
+    for table in tables:
+        try:
+            resp = db.table(table).select("id", count="exact").limit(1).execute()
+            latest = db.table(table).select("imported_at").order("imported_at", desc=True).limit(1).execute()
+            result[table] = {
+                "count": resp.count,
+                "latest_import": (latest.data[0].get("imported_at") if latest.data else None),
+            }
+        except Exception as e:
+            result[table] = {"count": None, "error": str(e)}
+    return result
+
+
+@app.post("/cache/clear")
+async def admin_clear_cache(request: Request):
+    """Admin-only: flush all in-process TTL cache entries."""
+    require_roles(request, ["admin"])
+    from src.cache import clear_cache
+    clear_cache()
+    return {"cleared": True, "message": "In-process TTL cache flushed."}
+
+
 @app.get("/analytics/ar_trends")
 async def analytics_ar_trends(request: Request, periods: int = 3):
-    require_roles(request, ["admin", "finance", "management"])
+    require_roles(request, ["admin", "finance", "management", "ops"])
     if periods < 1:
         periods = 1
     if periods > 12:
@@ -5255,6 +5396,9 @@ async def import_inventory(
                 action="import_complete",
                 outcome="success",
             )
+            # Bust in-process TTL caches so the dashboard reflects fresh inventory immediately
+            from src.cache import invalidate_cache_tags
+            invalidate_cache_tags("inventory", "inventory_dashboard", "executive")
             return JSONResponse(status_code=200, content={"status": "ok", "job_id": job_id, "batch_id": batch_id, "result": res})
         except Exception as e:
             update_import_job(job_id, status="failed", error_message=str(e))
@@ -6681,26 +6825,6 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))  # Render uses PORT env
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-@app.get("/admin/leads")
-async def admin_leads(request: Request, limit: int = 50, offset: int = 0):
-    """Admin endpoint: return recent leads with pagination (admin only)."""
-    require_role(request, "admin")
-    from src.db import db, audit_event
-    from src.constants import TABLE_LEADS
-    try:
-        start = int(offset)
-        end = int(offset) + int(limit) - 1
-        resp = db.table(TABLE_LEADS).select("*").order("created_at", desc=True).range(start, end).execute()
-        leads = resp.data or []
-        audit_event("admin_list_leads", {"count": len(leads)}, event_class="admin", actor_id=getattr(request.state, "user", None), subject_type="leads")
-        return {"data": leads, "count": len(leads)}
-    except Exception as e:
-        import logging
-
-        logging.exception("Failed to fetch admin leads: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to fetch leads")
 
 
 @app.get("/admin/leads")

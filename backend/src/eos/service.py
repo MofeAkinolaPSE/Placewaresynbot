@@ -40,15 +40,19 @@ def get_llm_client() -> DeepSeek:
 
 # Available agent domains for task routing
 AVAILABLE_AGENTS = {
-    "financial_agent": "Financial analysis, P&L, cashflow, AR/AP trends",
-    "inventory_agent": "Inventory levels, stock movements, expiry tracking",
-    "compliance_agent": "Regulatory compliance, audit logs, policy violations",
-    "cold_chain_agent": "Temperature monitoring, cold storage, spoilage risk",
-    "logistics_agent": "Shipping, deliveries, supply chain capacity",
-    "revenue_agent": "Revenue forecasts, pricing, profitability",
-    "enterprise_risk_agent": "Risk assessment, mitigation strategies",
+    "financial_agent":            "Financial analysis, P&L, cashflow, AR/AP trends",
+    "inventory_agent":            "Inventory levels, stock movements, expiry tracking",
+    "compliance_agent":           "Regulatory compliance, NAFDAC audits, QMS activity scanning, SOP adherence, policy violations",
+    "audit_intelligence":         "Audit schedule analysis, overdue audits, upcoming audits, compliance calendar, department audit risk",
+    "deviation_capa":             "Deviation reports, CAPA actions, investigation workflow, QMS non-conformances",
+    "maintenance_tracker":        "Equipment maintenance schedules, calibration status, cold-chain equipment uptime",
+    "recall_manager":             "Product recalls, distribution trace, NAFDAC recall notifications, recall effectiveness",
+    "cold_chain_agent":           "Temperature monitoring, cold storage, spoilage risk",
+    "logistics_agent":            "Shipping, deliveries, supply chain capacity",
+    "revenue_agent":              "Revenue forecasts, pricing, profitability",
+    "enterprise_risk_agent":      "Risk assessment, mitigation strategies",
     "process_optimization_agent": "Workflow efficiency, automation opportunities",
-    "import_agent": "Import status, customs, procurement tracking",
+    "import_agent":               "Import status, customs, procurement tracking",
 }
 
 
@@ -140,9 +144,24 @@ Executive statement: {text}"""
         elif any(w in text_lower for w in ["stock", "inventory", "expir", "quantity"]):
             intent_type = "inventory_audit"
             domains = ["inventory_agent"]
-        elif any(w in text_lower for w in ["compliance", "audit", "regulation", "nafdac"]):
+        elif any(w in text_lower for w in ["recall", "product recall", "batch recall"]):
+            intent_type = "recall_management"
+            domains = ["recall_manager", "compliance_agent"]
+        elif any(w in text_lower for w in ["deviation", "capa", "non-conformance", "nonconformance", "corrective"]):
+            intent_type = "deviation_review"
+            domains = ["deviation_capa", "compliance_agent"]
+        elif any(w in text_lower for w in ["maintenance", "calibration", "equipment", "service", "breakdown"]):
+            intent_type = "maintenance_check"
+            domains = ["maintenance_tracker"]
+        elif any(w in text_lower for w in ["audit schedule", "audit calendar", "overdue audit", "upcoming audit"]):
+            intent_type = "audit_review"
+            domains = ["audit_intelligence", "compliance_agent"]
+        elif any(w in text_lower for w in ["sop", "standard operating", "procedure", "compliance activity"]):
             intent_type = "compliance_check"
-            domains = ["compliance_agent"]
+            domains = ["compliance_agent", "audit_intelligence"]
+        elif any(w in text_lower for w in ["compliance", "audit", "regulation", "nafdac", "qms"]):
+            intent_type = "compliance_check"
+            domains = ["compliance_agent", "audit_intelligence"]
         elif any(w in text_lower for w in ["risk", "threat", "vulnerability"]):
             intent_type = "risk_assessment"
             domains = ["enterprise_risk_agent"]
@@ -205,6 +224,26 @@ class TaskDecomposer:
             {"agent": "process_optimization_agent", "action": "recommend"},
         ],
         "create_task": [],  # No agent tasks - handled directly
+        # ── QMS / Compliance intent types (Milestone 9) ──────────────────────
+        "compliance_check": [
+            {"agent": "compliance_agent",    "action": "get_activity_compliance"},
+            {"agent": "audit_intelligence",  "action": "get_audit_status"},
+        ],
+        "audit_review": [
+            {"agent": "audit_intelligence",  "action": "get_audit_status"},
+            {"agent": "compliance_agent",    "action": "get_sop_adherence"},
+        ],
+        "deviation_review": [
+            {"agent": "deviation_capa",      "action": "get_open_deviations"},
+            {"agent": "compliance_agent",    "action": "get_violations"},
+        ],
+        "maintenance_check": [
+            {"agent": "maintenance_tracker", "action": "get_overdue"},
+        ],
+        "recall_management": [
+            {"agent": "recall_manager",      "action": "get_active_recalls"},
+            {"agent": "compliance_agent",    "action": "get_violations"},
+        ],
     }
 
     def decompose(self, intent: Dict[str, Any]) -> List[Dict[str, Any]]:

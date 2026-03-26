@@ -61,6 +61,13 @@ def mock_env(monkeypatch):
 
     monkeypatch.setattr(db, 'db', make_supabase_stub())
 
+    # oeis.py and crm.py each bind `db` at import time — patch their local references too
+    import src.services.oeis as oeis_svc
+    import src.routers.crm as crm_router
+
+    monkeypatch.setattr(oeis_svc, 'db', make_supabase_stub())
+    monkeypatch.setattr(crm_router, 'db', make_supabase_stub())
+
     # Mock JWT decode to always return a valid crm role
     import src.middleware as mw
 
@@ -72,7 +79,7 @@ def mock_env(monkeypatch):
 
 
 def test_create_lead_creates_event_and_returns_lead():
-    from backend.app import app
+    from app import app
 
     client = TestClient(app)
     payload = {'source': 'web', 'industry': 'pharma', 'metadata': {'source': 'web'}}
@@ -85,7 +92,7 @@ def test_create_lead_creates_event_and_returns_lead():
 
 
 def test_create_opportunity_creates_event_and_returns_opp():
-    from backend.app import app
+    from app import app
 
     client = TestClient(app)
     payload = {'title': 'New Deal', 'customer_id': 5, 'value': 1000}

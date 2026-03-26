@@ -42,9 +42,8 @@ async def dashboard_finance(response: Response, user: Dict[str, Any] = Depends(r
     """Finance specific dashboard data."""
     if "finance" not in user.get("roles", []) and "admin" not in user.get("roles", []) and "management" not in user.get("roles", []):
          raise HTTPException(403, "Role not authorized for Finance view")
-    
+    response.headers["Cache-Control"] = "no-store, no-cache"
     try:
-        response.headers["Cache-Control"] = "private, max-age=300"
         return {"data": finance_kpis()}
     except Exception as e:
         logging.error(f"Finance dashboard error: {e}")
@@ -53,25 +52,25 @@ async def dashboard_finance(response: Response, user: Dict[str, Any] = Depends(r
 @router.get("/inventory")
 async def dashboard_inventory(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """Inventory specific dashboard data."""
-    response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_inventory_dashboard()}
 
 @router.get("/workforce")
 async def dashboard_workforce(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """Workforce specific dashboard data."""
-    response.headers["Cache-Control"] = "private, max-age=600"
+    response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_workforce_dashboard()}
 
 @router.get("/crm")
 async def dashboard_crm(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """CRM specific dashboard data."""
-    response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_crm_stats()}
 
 @router.get("/alerts")
 async def list_alerts(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """Active system alerts."""
-    response.headers["Cache-Control"] = "private, max-age=30"
+    response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_active_alerts()}
 
 @router.get("/executive-briefing")
@@ -81,8 +80,8 @@ async def executive_briefing(response: Response, user: Dict[str, Any] = Depends(
     Audited access.
     """
     audit_logger.info({"event": "executive_briefing_access", "user": user.get("sub")})
+    response.headers["Cache-Control"] = "no-store, no-cache"
     try:
-        response.headers["Cache-Control"] = "private, max-age=300"
         return {"data": generate_executive_briefing()}
     except Exception as e:
         logging.error(f"Briefing generation failed: {e}")

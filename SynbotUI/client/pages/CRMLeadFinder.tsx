@@ -4,6 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/lib/api-client";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 
@@ -90,11 +97,34 @@ export default function CRMLeadFinder() {
         <CardContent className="grid gap-3 md:grid-cols-4">
           <div>
             <Label>Industry</Label>
-            <Input value={industry} onChange={(e) => setIndustry(e.target.value)} />
+            <Select value={industry} onValueChange={setIndustry}>
+              <SelectTrigger><SelectValue placeholder="Industry" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pharma">Pharma / Healthcare</SelectItem>
+                <SelectItem value="fmcg">FMCG</SelectItem>
+                <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                <SelectItem value="retail">Retail</SelectItem>
+                <SelectItem value="finance">Financial Services</SelectItem>
+                <SelectItem value="logistics">Logistics</SelectItem>
+                <SelectItem value="education">Education</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Region</Label>
-            <Input value={region} onChange={(e) => setRegion(e.target.value)} />
+            <Select value={region} onValueChange={setRegion}>
+              <SelectTrigger><SelectValue placeholder="Region" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="lagos">Lagos</SelectItem>
+                <SelectItem value="abuja">Abuja (FCT)</SelectItem>
+                <SelectItem value="kano">Kano</SelectItem>
+                <SelectItem value="phc">Port Harcourt</SelectItem>
+                <SelectItem value="ibadan">Ibadan</SelectItem>
+                <SelectItem value="enugu">Enugu</SelectItem>
+                <SelectItem value="nationwide">Nationwide</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Limit</Label>
@@ -124,7 +154,14 @@ export default function CRMLeadFinder() {
             </div>
             <div>
               <Label>Urgency</Label>
-              <Input value={urgency} onChange={(e) => setUrgency((e.target.value as any) || "medium")} />
+              <Select value={urgency} onValueChange={(v) => setUrgency(v as "low" | "medium" | "high")}>
+                <SelectTrigger><SelectValue placeholder="Urgency" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-end">
               <Button className="w-full" onClick={() => scoreMutation.mutate()} disabled={!selectedProspectId || scoreMutation.isPending}>

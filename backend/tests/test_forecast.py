@@ -13,7 +13,13 @@ from assertions import assert_status  # noqa: E402
 client = TestClient(app)
 
 def make_admin_token():
-    return jwt.encode({"roles": ["admin"]}, JWT_SECRET, algorithm="HS256")
+    import time
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": "admin-test", "roles": ["admin"], "iat": now, "exp": now + 7200},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
 
 
 def test_forecast_requires_admin():

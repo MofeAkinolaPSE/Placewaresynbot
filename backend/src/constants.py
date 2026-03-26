@@ -178,6 +178,80 @@ ENV_SAGE_API_KEY = "SAGE_API_KEY"
 ENV_HF_API_URL = "HF_API_URL"
 ENV_HF_API_KEY = "HF_API_KEY"
 
+# ---------------------------------------------------------------------------
+# QMS / Compliance Table Names
+# ---------------------------------------------------------------------------
+TABLE_SOP_REGISTRY          = "sop_registry"
+TABLE_AUDIT_SCHEDULE        = "audit_schedule"
+TABLE_COMPLIANCE_ACTIVITY   = "compliance_activity_log"
+TABLE_EQUIPMENT_REGISTRY    = "equipment_registry"
+TABLE_MAINTENANCE_SCHEDULE  = "maintenance_schedule"
+TABLE_DEVIATION_REPORTS     = "deviation_reports"
+TABLE_RECALL_CASES          = "recall_cases"
+TABLE_DOCUMENT_ARCHIVE      = "document_archive"
+
+# Reliability / Maintenance Agent tables
+TABLE_MAINTENANCE_ASSETS         = "placeware_maintenance_assets"
+TABLE_MAINTENANCE_TASKS          = "placeware_maintenance_tasks"
+TABLE_INCIDENT_LOG               = "placeware_incident_log"
+TABLE_REMEDIATION_ACTIONS        = "placeware_remediation_actions"
+TABLE_FAILURE_PATTERN_LIBRARY    = "placeware_failure_pattern_library"
+
+# Digital Twin tables (migration 075)
+TABLE_TWIN_NODES                 = "placeware_twin_nodes"
+TABLE_TWIN_STATE_HISTORY         = "placeware_twin_state_history"
+TABLE_TWIN_ANOMALY_EVENTS        = "placeware_twin_anomaly_events"
+TABLE_TWIN_DEPENDENCY_EDGES      = "placeware_twin_dependency_edges"
+
+# Capability Discovery tables (migration 076)
+TABLE_CAPABILITY_SIGNALS         = "placeware_capability_signals"
+TABLE_CAPABILITY_PROPOSALS       = "placeware_capability_proposals"
+TABLE_CAPABILITY_STATUS_HISTORY  = "placeware_capability_status_history"
+
+# Reliability rollout mode: when True, all auto-fix playbooks are skipped and
+# the agent only observes/records without mutating state.
+RELIABILITY_OBSERVE_ONLY: bool = os.getenv("RELIABILITY_OBSERVE_ONLY", "false").lower() == "true"
+
+# ── Knowledge Engine tables (migration 073) ──────────────────────────────────
+TABLE_INGESTED_DOCUMENTS    = "ingested_documents"
+TABLE_KNOWLEDGE_CHUNKS      = "knowledge_chunks"
+TABLE_KNOWLEDGE_GAPS        = "knowledge_gaps"
+TABLE_SYNBOT_MEMORY         = "synbot_memory"
+
+# Deviation report ID prefix sequence helper (format: DEV-YYYY-NNN)
+DEVIATION_ID_PREFIX = "DEV"
+RECALL_ID_PREFIX    = "RECALL"
+
+# Document storage backend (local | supabase | s3)
+DOCUMENT_STORAGE_BACKEND  = os.getenv("DOCUMENT_STORAGE_BACKEND", "local")
+DOCUMENT_STORAGE_BUCKET   = os.getenv("DOCUMENT_STORAGE_BUCKET", "compliance-documents")
+DOCUMENT_LOCAL_PATH       = os.path.join(os.path.dirname(__file__), "..", "static", "documents")
+
+# QMS / Compliance role permission sets
+COMPLIANCE_ALL_ROLES  = {"admin", "quality_assurance", "qa", "management", "operations", "ops", "staff"}
+COMPLIANCE_QA_ROLES   = {"admin", "quality_assurance", "qa"}
+COMPLIANCE_MGMT_ROLES = {"admin", "management"}
+COMPLIANCE_OPS_ROLES  = {"admin", "quality_assurance", "qa", "operations", "ops", "management"}
+
+# Deviation & Recall status workflows
+DEVIATION_STATUS_ALLOWED      = {"open", "under_investigation", "closed", "escalated"}
+RECALL_STATUS_ALLOWED         = {"initiated", "in_progress", "completed", "closed"}
+AUDIT_STATUS_ALLOWED          = {"scheduled", "in_progress", "completed", "overdue", "skipped"}
+ACTIVITY_STATUS_ALLOWED       = {"scheduled", "completed", "missed", "overdue", "deferred"}
+MAINTENANCE_STATUS_ALLOWED    = {"scheduled", "completed", "overdue", "cancelled"}
+
+# SOP categories
+SOP_CATEGORY_LABELS = {
+    "storage":       "Storage & Handling",
+    "qc":            "Quality Control & Regulatory",
+    "distribution":  "Distribution",
+    "warehouse":     "Warehouse Operations",
+    "equipment":     "Equipment & Calibration",
+    "deviation":     "Deviation & CAPA",
+    "recall":        "Recall Management",
+    "hr":            "HR & Training",
+}
+
 # Webhook shared secret (HMAC) for provider callbacks
 ENV_WEBHOOK_SECRET = "WEBHOOK_SECRET"
 
@@ -210,7 +284,7 @@ LLM_SPACE_API_NAME = os.getenv(ENV_LLM_SPACE_API_NAME, "/predict")
 LLM_SPACE_API_KEY = os.getenv(ENV_LLM_SPACE_API_KEY, "")
 DEEPSEEK_API_KEY = os.getenv(ENV_DEEPSEEK_API_KEY, "")
 SAGE_MOCK = os.getenv(ENV_SAGE_MOCK, "1") not in ("0", "false", "False")
-JWT_SECRET = os.getenv(ENV_JWT_SECRET, "change-me-for-prod")
+JWT_SECRET = os.getenv(ENV_JWT_SECRET, "change-me-for-prod-replace-with-32plus-chars")
 
 # Webhook secret used to verify provider callbacks (HMAC-SHA256)
 WEBHOOK_SECRET = os.getenv(ENV_WEBHOOK_SECRET, "")

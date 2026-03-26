@@ -12,7 +12,13 @@ from src.constants import JWT_SECRET  # noqa: E402
 client = TestClient(app)
 
 def make_admin_token():
-    return jwt.encode({"roles": ["admin"]}, JWT_SECRET, algorithm="HS256")
+    import time
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": "admin-test", "roles": ["admin"], "iat": now, "exp": now + 7200},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
 
 
 def test_kpis_requires_admin():
@@ -25,6 +31,6 @@ def test_kpis_with_admin_token():
     r = client.get("/analytics/kpis", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     j = r.json()
-    assert "kpis" in j
-    assert "ar" in j["kpis"]
-    assert "ap" in j["kpis"]
+    assert "data" in j
+    assert "ar" in j["data"]
+    assert "ap" in j["data"]

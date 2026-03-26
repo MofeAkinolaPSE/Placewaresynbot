@@ -47,7 +47,7 @@ def trend_label(change_pct: float, positive_is_good: bool = True, flat_threshold
 
 # --- Dashboard Aggregators ---
 
-@ttl_cache(ttl_seconds=300, ignore_kwargs=("client",), tags=("inventory", "inventory_dashboard", "executive"))
+@ttl_cache(ttl_seconds=60, ignore_kwargs=("client",), tags=("inventory", "inventory_dashboard", "executive"))
 def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str, Any]:
     """
     Inventory Health Check:
@@ -73,7 +73,7 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
         "recent_movements": recent_movements,
     }
 
-@ttl_cache(ttl_seconds=600, ignore_kwargs=("client",), tags=("staff", "workforce_dashboard", "executive", "hr_summary"))
+@ttl_cache(ttl_seconds=60, ignore_kwargs=("client",), tags=("staff", "workforce_dashboard", "executive", "hr_summary"))
 def get_workforce_dashboard(client: DBClient = db) -> Dict[str, Any]:
     """
     Workforce Pulse:
@@ -100,32 +100,23 @@ def get_workforce_dashboard(client: DBClient = db) -> Dict[str, Any]:
     
     active_count = len(active_staff)
     
-    # Fallback: If no timesheets logged (Phase 2), show total registered staff (Phase 1)
+    # Fallback: If no timesheets logged (Phase 2), show total registered staff (Phase 1).
+    # No batch_id filter — the global KPI batch_id belongs to finance/GL, not staff snapshots.
     if active_count == 0:
         try:
-            sage_batch_id = get_sage_kpi_batch_id()
-            # Get count
             staff_q = client.table("sage_staff_snapshot").select("*", count="exact")
-            if sage_batch_id:
-                staff_q = staff_q.eq("batch_id", sage_batch_id)
             staff_resp = staff_q.limit(1).execute()
-            if staff_resp.count > 0:
+            if staff_resp.count and staff_resp.count > 0:
                 active_count = staff_resp.count
-            
-            # Get breakdown by department for chart fallback
-            # We can't do GROUP BY via API easily without RPC, so we fetch all staff departments
-            all_staff_q = client.table("sage_staff_snapshot").select("department")
-            if sage_batch_id:
-                all_staff_q = all_staff_q.eq("batch_id", sage_batch_id)
-            all_staff = all_staff_q.limit(1000).execute()
+
+            # Fetch all departments for the headcount bar chart (1 person = 1 unit)
+            all_staff = client.table("sage_staff_snapshot").select("department").limit(1000).execute()
             for s in all_staff.data:
                 d = s.get("department") or "Unassigned"
-                # Use hours=1 per person as proxy for "headcount" in the chart
                 dept_hours[d] = dept_hours.get(d, 0) + 1
-                
+
         except Exception as e:
             logger.warning(f"Workforce fallback failed: {e}")
-            pass 
 
     return {
         "period": "current_week",

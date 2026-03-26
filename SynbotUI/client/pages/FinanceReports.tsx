@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search, Download, Filter } from "lucide-react";
+import { Search, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,11 +14,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { useNavigate } from "react-router-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
 
 const FinanceReports = () => {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [searchAR, setSearchAR] = useState("");
   const [searchInventory, setSearchInventory] = useState("");
   const { data: arAgingRaw, isLoading: arLoading, error: arError } = useQuery({
@@ -196,7 +198,7 @@ const FinanceReports = () => {
                   <p className="text-xs font-semibold text-muted-foreground uppercase">
                     {bucket}
                   </p>
-                  <p className="text-lg font-bold text-foreground mt-1">
+                  <p className="text-2xl font-bold text-foreground mt-1">
                     {typeof amount === "number" ? `₦${Number(amount).toLocaleString()}` : "Data error"}
                   </p>
                 </div>
@@ -224,59 +226,92 @@ const FinanceReports = () => {
             </div>
 
             {/* Table */}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Amount (₦)</TableHead>
-                        <TableHead>Bucket</TableHead>
-                        <TableHead className="text-center">Days Range</TableHead>
-                        <TableHead>Due Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAR.length > 0 ? (
-                    filteredAR.map((item) => (
-                      <TableRow
-                        key={item.id}
-                        className="cursor-pointer hover:bg-muted/40"
-                        onClick={() => {
-                          const bucketParam = encodeURIComponent(item.bucket);
-                          navigate(`/finance/reports/ar/${bucketParam}`);
-                        }}
-                      >
-                        <TableCell className="font-medium">
-                          {item.customer}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {item.amount.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`rounded px-2 py-1 text-xs font-medium ${getArBucketClass(item.bucket)}`}
-                          >
-                            {item.bucket}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">{item.days}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {item.dueDate}
+            {isMobile ? (
+              <div className="space-y-3">
+                {filteredAR.length > 0 ? (
+                  filteredAR.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 cursor-pointer"
+                      onClick={() => {
+                        const bucketParam = encodeURIComponent(item.bucket);
+                        navigate(`/finance/reports/ar/${bucketParam}`);
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-semibold text-foreground">{item.customer}</p>
+                        <p className="font-mono font-semibold text-foreground">₦{item.amount.toLocaleString()}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded px-2 py-1 text-xs font-medium ${getArBucketClass(item.bucket)}`}>
+                          {item.bucket}
+                        </span>
+                        <span className="rounded px-2 py-1 text-xs font-medium bg-muted text-muted-foreground">
+                          {item.days}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Due date: {item.dueDate}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">No results found</p>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="sticky left-0 z-10 min-w-[180px] bg-muted/90">Customer</TableHead>
+                      <TableHead className="text-right min-w-[140px]">Amount (₦)</TableHead>
+                      <TableHead className="min-w-[120px]">Bucket</TableHead>
+                      <TableHead className="text-center min-w-[110px]">Days Range</TableHead>
+                      <TableHead className="min-w-[100px]">Due Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAR.length > 0 ? (
+                      filteredAR.map((item) => (
+                        <TableRow
+                          key={item.id}
+                          className="cursor-pointer hover:bg-muted/40"
+                          onClick={() => {
+                            const bucketParam = encodeURIComponent(item.bucket);
+                            navigate(`/finance/reports/ar/${bucketParam}`);
+                          }}
+                        >
+                          <TableCell className="sticky left-0 z-10 bg-background font-medium">
+                            {item.customer}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {item.amount.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`rounded px-2 py-1 text-xs font-medium ${getArBucketClass(item.bucket)}`}
+                            >
+                              {item.bucket}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">{item.days}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {item.dueDate}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8">
+                          <p className="text-muted-foreground">
+                            No results found
+                          </p>
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8">
-                        <p className="text-muted-foreground">
-                          No results found
-                        </p>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
             <p className="text-xs text-muted-foreground">
               Showing {filteredAR.length} of {arAgingData.length} records
@@ -295,7 +330,7 @@ const FinanceReports = () => {
                 <p className="text-xs font-semibold text-success uppercase">
                   Optimal Stock
                 </p>
-                <p className="text-lg font-bold text-success mt-1">
+                <p className="text-2xl font-bold text-success mt-1">
                   {inventoryData.filter((i) => i.status === "optimal").length}
                 </p>
               </div>
@@ -303,7 +338,7 @@ const FinanceReports = () => {
                 <p className="text-xs font-semibold text-warning uppercase">
                   Low Stock
                 </p>
-                <p className="text-lg font-bold text-warning mt-1">
+                <p className="text-2xl font-bold text-warning mt-1">
                   {inventoryData.filter((i) => i.status === "low").length}
                 </p>
               </div>
@@ -311,7 +346,7 @@ const FinanceReports = () => {
                 <p className="text-xs font-semibold text-info uppercase">
                   Total SKUs
                 </p>
-                <p className="text-lg font-bold text-info mt-1">
+                <p className="text-2xl font-bold text-info mt-1">
                   {inventoryData.length}
                 </p>
               </div>
@@ -319,7 +354,7 @@ const FinanceReports = () => {
                 <p className="text-xs font-semibold text-secondary uppercase">
                   Total Value
                 </p>
-                <p className="text-lg font-bold text-secondary mt-1">
+                <p className="text-2xl font-bold text-secondary mt-1">
                   ₦
                   {(
                     inventoryData.reduce((sum, i) => sum + i.valuation, 0) /
@@ -351,60 +386,91 @@ const FinanceReports = () => {
             </div>
 
             {/* Table */}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Product Name</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Unit Cost (₦)</TableHead>
-                    <TableHead className="text-right">Valuation (₦)</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInventory.length > 0 ? (
-                    filteredInventory.map((item) => (
-                      <TableRow key={item.sku}>
-                        <TableCell className="font-mono text-sm">
-                          {item.sku}
-                        </TableCell>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell className="text-right">
-                          {item.quantity.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {item.unitCost.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {item.valuation.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`rounded px-2 py-1 text-xs font-medium ${getInventoryStatusClass(item.status)}`}
-                          >
-                            {item.status === "optimal"
-                              ? "Optimal"
-                              : item.status === "low"
-                                ? "Low Stock"
-                                : "Out of Stock"}
-                          </span>
+            {isMobile ? (
+              <div className="space-y-3">
+                {filteredInventory.length > 0 ? (
+                  filteredInventory.map((item) => (
+                    <div key={item.sku} className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-foreground">{item.name}</p>
+                          <p className="text-xs font-mono text-muted-foreground">{item.sku}</p>
+                        </div>
+                        <span className={`rounded px-2 py-1 text-xs font-medium ${getInventoryStatusClass(item.status)}`}>
+                          {item.status === "optimal"
+                            ? "Optimal"
+                            : item.status === "low"
+                              ? "Low Stock"
+                              : "Out of Stock"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <p className="text-muted-foreground">Qty: <span className="font-medium text-foreground">{item.quantity.toLocaleString()}</span></p>
+                        <p className="text-muted-foreground">Unit: <span className="font-mono text-foreground">₦{item.unitCost.toLocaleString()}</span></p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Valuation: <span className="font-mono text-foreground">₦{item.valuation.toLocaleString()}</span></p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">No results found</p>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="sticky left-0 z-10 min-w-[130px] bg-muted/90">SKU</TableHead>
+                      <TableHead className="min-w-[220px]">Product Name</TableHead>
+                      <TableHead className="text-right min-w-[100px]">Quantity</TableHead>
+                      <TableHead className="text-right min-w-[140px]">Unit Cost (₦)</TableHead>
+                      <TableHead className="text-right min-w-[150px]">Valuation (₦)</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredInventory.length > 0 ? (
+                      filteredInventory.map((item) => (
+                        <TableRow key={item.sku}>
+                          <TableCell className="sticky left-0 z-10 bg-background font-mono text-sm">
+                            {item.sku}
+                          </TableCell>
+                          <TableCell className="font-medium">{item.name}</TableCell>
+                          <TableCell className="text-right">
+                            {item.quantity.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {item.unitCost.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {item.valuation.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`rounded px-2 py-1 text-xs font-medium ${getInventoryStatusClass(item.status)}`}
+                            >
+                              {item.status === "optimal"
+                                ? "Optimal"
+                                : item.status === "low"
+                                  ? "Low Stock"
+                                  : "Out of Stock"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8">
+                          <p className="text-muted-foreground">
+                            No results found
+                          </p>
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
-                        <p className="text-muted-foreground">
-                          No results found
-                        </p>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
             <p className="text-xs text-muted-foreground">
               Showing {filteredInventory.length} of {inventoryData.length}{" "}

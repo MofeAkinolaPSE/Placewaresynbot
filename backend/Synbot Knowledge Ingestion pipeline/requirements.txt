@@ -1,0 +1,5 @@
+fastembed
+psycopg2-binary
+python-docx
+pypdf
+python-dotenv

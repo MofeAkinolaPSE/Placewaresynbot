@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from src.cache import invalidate_cache_tags
+from src.cache import invalidate_cache_tags, clear_cache
 from src.db import audit_event, create_import_job, db, insert_snapshot
 from src.middleware import verify_jwt, require_role
 
@@ -113,6 +113,9 @@ def _map_vendors(row: Dict[str, str]) -> Dict[str, Any]:
         "country": row.get("country", "").strip() or None,
         "payment_terms": row.get("payment_terms", "").strip() or None,
         "tax_id": row.get("tax_id", "").strip() or None,
+        "bank_details": row.get("bank_details", "").strip() or None,
+        "current_balance": _safe_float(row.get("current_balance")),
+        "created_date": _safe_date(row.get("created_date")),
         "status": row.get("status", "active").strip() or "active",
     }
 
@@ -590,9 +593,45 @@ async def upload_csv(
         except Exception as exc:
             logger.warning(f"upload_csv: AP mirror failed (non-fatal): {exc}")
 
+    # ── 6c. Upsert vendors into suppliers table ─────────────────────────────
+    # suppliers is the authoritative table for the Suppliers dashboard.
+    # CSV columns are upserted (keyed on external_vendor_id); agent-owned metric
+    # columns (reliability_score, avg_delay_days, etc.) are never touched here.
+    if file_type == "vendors" and rows_inserted > 0:
+        try:
+            supplier_rows: List[Dict[str, Any]] = [
+                {
+                    "external_vendor_id": v.get("vendor_id", ""),
+                    "name": v.get("vendor_name") or "Unknown",
+                    "contact_name": v.get("contact_name"),
+                    "contact_email": v.get("email"),
+                    "phone": v.get("phone"),
+                    "address": v.get("address"),
+                    "payment_terms": v.get("payment_terms"),
+                    "tax_id": v.get("tax_id"),
+                    "bank_details": v.get("bank_details"),
+                    "current_balance": v.get("current_balance"),
+                    "status": v.get("status") or "active",
+                }
+                for v in mapped_rows
+                if v.get("vendor_id", "").strip()
+            ]
+            if supplier_rows:
+                db.table("suppliers").upsert(
+                    supplier_rows, on_conflict="external_vendor_id"
+                ).execute()
+                logger.info(
+                    f"upload_csv: upserted {len(supplier_rows)} rows into "
+                    f"suppliers table batch={batch_id}"
+                )
+        except Exception as exc:
+            logger.warning(f"upload_csv: suppliers upsert failed (non-fatal): {exc}")
+
     # ── 7. Bust caches ───────────────────────────────────────────────────────
     # Always invalidate — even on failure — so stale zero-values don't persist
     invalidate_cache_tags(*_CACHE_TAGS.get(file_type, []))
+    if rows_inserted > 0:
+        clear_cache()  # full flush — guarantees all in-process TTL entries are cleared
 
     # ── 8. Audit ─────────────────────────────────────────────────────────────
     audit_event(

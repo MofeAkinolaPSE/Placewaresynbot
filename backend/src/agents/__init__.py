@@ -13,5 +13,8 @@ from . import cold_room_capacity_agent  # noqa: F401
 from . import cold_chain_integrity_agent  # noqa: F401
 from . import logistics_optimization_agent  # noqa: F401
 from . import expiry_monitoring_agent  # noqa: F401
+from . import maintenance_agent  # noqa: F401
+from . import digital_twin_monitor_agent  # noqa: F401
+from . import capability_discovery_agent  # noqa: F401
 
 __all__ = ["BaseAgent", "Insight"]

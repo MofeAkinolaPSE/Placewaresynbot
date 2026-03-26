@@ -55,6 +55,18 @@ export default defineConfig(({ mode }) => {
       "@shared": path.resolve(__dirname, "./shared"),
     },
   },
+  test: {
+    // Run in node environment by default (no DOM needed for existing spec files).
+    // Switch individual files to "jsdom" via `@vitest-environment jsdom` docblock
+    // when writing React component tests.
+    environment: "node",
+    include: [
+      "client/**/*.{test,spec}.{ts,tsx}",
+      "server/**/*.{test,spec}.ts",
+      "shared/**/*.{test,spec}.ts",
+    ],
+    globals: true,
+  },
 };
 });
 

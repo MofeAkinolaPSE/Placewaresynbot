@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkforceDashboard } from "@/components/dashboards/WorkforceDashboard";
 import { StaffDirectory } from "@/components/dashboards/StaffDirectory";
@@ -82,15 +82,15 @@ const HR = () => {
   };
 
   return (
-    <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
         <div>
-           <h2 className="text-3xl font-bold tracking-tight">Human Resources</h2>
-           <p className="text-muted-foreground">Workforce analytics and staff directory.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Human Resources</h1>
+          <p className="text-sm text-muted-foreground">Workforce analytics and staff directory.</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button size="sm">
               <UserPlus className="mr-2 h-4 w-4" />
               Add Staff
             </Button>
@@ -162,13 +162,13 @@ const HR = () => {
         </Dialog>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
+      <Tabs defaultValue="overview">
+        <TabsList className="mb-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="staff">Staff Directory</TabsTrigger>
           <TabsTrigger value="timesheets">Timesheets</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="space-y-4">
+        <TabsContent value="overview">
            <WorkforceDashboard />
         </TabsContent>
         <TabsContent value="staff">

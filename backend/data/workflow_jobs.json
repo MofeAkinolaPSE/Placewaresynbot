@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "job_id": "374677ad-9998-4618-a3ad-5116a98a947f",
+    "event_id": "06feda38-3a9d-42ea-a43e-39cb4270a53f",
+    "department": "staff",
+    "event_type": "timesheet_recorded",
+    "trigger": "event.staff.timesheet_recorded",
+    "created_at": "2026-03-13 13:09:29.787003+00:00",
+    "state": "submitted",
+    "approval_required": false,
+    "approvals": [],
+    "attempts": 0,
+    "last_error": null,
+    "payload": {
+      "date": "2026-03-13",
+      "staff_id": "da5f8606-8ae9-4655-afe2-8633d666f4c3",
+      "department": "Operations",
+      "hours_worked": 8.0
+    },
+    "escalation_role": "role:management:staff",
+    "escalation_due_at": null,
+    "escalated": false,
+    "escalated_at": null
+  }
+]

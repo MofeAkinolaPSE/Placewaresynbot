@@ -323,8 +323,111 @@ def register_standard_workflows(engine: WorkflowEngine) -> None:
             return {"error": str(e)}
     
     engine.register("logistics.delivery_breach", [logistics_delivery_breach])
-    
+
     logger.info("Registered 7 standard workflows")
+
+    # ==========================================
+    # RELIABILITY WORKFLOWS
+    # ==========================================
+
+    def reliability_incident_detected(ctx: WorkflowContext) -> Dict[str, Any]:
+        """Handle a newly detected maintenance incident — create task for ops team."""
+        incident_id = ctx.payload.get("incident_id")
+        component = ctx.payload.get("component", "unknown")
+        severity = ctx.payload.get("severity", "medium")
+        summary = ctx.payload.get("summary", "")
+
+        if not incident_id:
+            return {"error": "incident_id required"}
+
+        try:
+            db.table("placeware_tasks").insert({
+                "title": f"[{severity.upper()}] Maintenance incident: {component}",
+                "description": summary or f"Automated incident detected on {component}.",
+                "status": "pending",
+                "priority": "high" if severity in ("critical", "high") else "medium",
+                "source": "maintenance_agent",
+                "assigned_to": "role:ops",
+                "metadata": {"incident_id": incident_id, "component": component},
+            }).execute()
+            logger.info(f"Created ops task for incident {incident_id} on {component}")
+            audit_event(
+                "maintenance_task_created",
+                {"incident_id": incident_id, "component": component, "severity": severity},
+                event_class="reliability",
+                action="create_task",
+                outcome="success",
+                subject_type="incident",
+                subject_id=incident_id,
+            )
+            return {"success": True, "incident_id": incident_id}
+        except Exception as e:
+            logger.error(f"Failed to create task for incident {incident_id}: {e}")
+            return {"error": str(e)}
+
+    engine.register("reliability.incident_detected", [reliability_incident_detected])
+
+    def reliability_twin_anomaly_detected(ctx: WorkflowContext) -> Dict[str, Any]:
+        """Forward a twin anomaly event to the maintenance agent as a diagnostic trigger."""
+        anomaly_id = ctx.payload.get("anomaly_id")
+        node_key = ctx.payload.get("node_key", "unknown")
+        severity = ctx.payload.get("severity", "medium")
+        anomaly_type = ctx.payload.get("anomaly_type", "")
+
+        if not anomaly_id:
+            return {"error": "anomaly_id required"}
+
+        try:
+            from src.services.maintenance_service import create_incident
+            incident = create_incident(
+                component=node_key,
+                severity=severity,
+                summary=f"Twin anomaly detected: {anomaly_type} on {node_key}",
+                details={"twin_anomaly_id": anomaly_id, "node_key": node_key, "anomaly_type": anomaly_type},
+            )
+            logger.info(f"Created maintenance incident from twin anomaly {anomaly_id}")
+            return {"success": True, "anomaly_id": anomaly_id, "incident": incident}
+        except Exception as e:
+            logger.error(f"Failed to handle twin anomaly {anomaly_id}: {e}")
+            return {"error": str(e)}
+
+    engine.register("reliability.twin_anomaly_detected", [reliability_twin_anomaly_detected])
+
+    def reliability_capability_proposal_created(ctx: WorkflowContext) -> Dict[str, Any]:
+        """Notify management when a high-confidence proposal is generated."""
+        proposal_id = ctx.payload.get("proposal_id")
+        capability_name = ctx.payload.get("capability_name", "")
+        confidence = float(ctx.payload.get("confidence", 0))
+
+        if not proposal_id:
+            return {"error": "proposal_id required"}
+
+        if confidence < 0.7:
+            # Low confidence proposals don't trigger notifications
+            return {"skipped": True, "reason": "confidence below threshold"}
+
+        try:
+            db.table("placeware_tasks").insert({
+                "title": f"Review capability proposal: {capability_name}",
+                "description": (
+                    f"Capability Discovery Agent generated a proposal with {confidence:.0%} confidence. "
+                    f"Review and approve/reject in the capability portal."
+                ),
+                "status": "pending",
+                "priority": "low",
+                "source": "capability_discovery_agent",
+                "assigned_to": "role:management",
+                "metadata": {"proposal_id": proposal_id},
+            }).execute()
+            logger.info(f"Created review task for capability proposal {proposal_id}")
+            return {"success": True, "proposal_id": proposal_id}
+        except Exception as e:
+            logger.error(f"Failed to create review task for proposal {proposal_id}: {e}")
+            return {"error": str(e)}
+
+    engine.register("reliability.capability_proposal_created", [reliability_capability_proposal_created])
+
+    logger.info("Registered 3 reliability workflows")
 
 
 # Auto-register on import if engine is available

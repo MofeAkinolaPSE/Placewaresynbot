@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   DollarSign,
@@ -13,32 +15,69 @@ import {
   ShoppingCart,
   Zap,
   Shield,
+  ShieldCheck,
   CalendarDays,
   Bot,
   ClipboardList,
+  ChevronDown,
+  ChevronRight,
+  LogOut,
+  MoreVertical,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type SidebarProps = {
   mobileOpen: boolean;
   onMobileClose: () => void;
 };
 
+type NavChild = { label: string; href: string };
+
+type NavItem = {
+  label: string;
+  icon: React.ElementType;
+  href?: string;
+  badge?: string;
+  roles?: string[];
+  children?: NavChild[];
+  aiPulse?: boolean;
+};
+
 const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
   const location = useLocation();
-  const { roles } = useAuth();
+  const { roles, logout } = useAuth();
+
+  // Track which collapsible groups are open
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const isActive = (path: string) => location.pathname === path;
   const isActiveGroup = (paths: string[]) =>
     paths.some((p) => location.pathname.startsWith(p));
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       label: "Dashboard",
       icon: LayoutDashboard,
       href: "/",
-      badge: null,
     },
     {
       label: "Executive Summary",
@@ -75,7 +114,6 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       label: "Operations",
       icon: Factory,
       roles: ["admin", "ops", "operations"],
-      href: "/operations",
       children: [
         { label: "Overview", href: "/operations" },
         { label: "Project Controls", href: "/operations/project-controls" },
@@ -91,6 +129,12 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         { label: "Lead Finder", href: "/crm/lead-finder" },
         { label: "Leads", href: "/admin/leads" },
       ],
+    },
+    {
+      label: "Compliance & QMS",
+      icon: ShieldCheck,
+      href: "/compliance",
+      roles: ["admin", "quality_assurance", "qa", "management"],
     },
     {
       label: "Workflow",
@@ -109,18 +153,20 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       icon: MessageSquare,
       href: "/synbot",
       badge: "AI",
-    },
-    {
-      label: "Calendar & Tasks",
-      icon: CalendarDays,
-      href: "/calendar",
+      aiPulse: true,
     },
     {
       label: "Agent Stack",
       icon: Bot,
       href: "/agents",
       badge: "AI",
+      aiPulse: true,
       roles: ["admin", "management"],
+    },
+    {
+      label: "Calendar & Tasks",
+      icon: CalendarDays,
+      href: "/calendar",
     },
     {
       label: "Settings",
@@ -135,10 +181,18 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
     return roles.some((role) => allowed.includes(role));
   };
 
-  const visibleNavItems = navItems.filter((item) => canView((item as any).roles));
+  const visibleNavItems = navItems.filter((item) => canView(item.roles));
+
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+  // Derive user initials from roles/auth — fallback to "PW"
+  const userRole = roles[0] ?? "user";
+  const initials = userRole.slice(0, 2).toUpperCase();
 
   return (
     <>
+      {/* Mobile overlay */}
       <div
         className={cn(
           "fixed inset-0 z-20 bg-black/40 transition-opacity lg:hidden",
@@ -146,6 +200,8 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         )}
         onClick={onMobileClose}
       />
+
+      {/* Sidebar panel */}
       <div
         className={cn(
           "fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-sidebar-border/70 bg-sidebar/95 text-sidebar-foreground backdrop-blur-lg transition-transform duration-300",
@@ -153,84 +209,172 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
           "lg:translate-x-0",
         )}
       >
-      {/* Logo/Header */}
-      <div className="border-b border-sidebar-border/80 p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-primary shadow-elevation-2">
-            <Zap className="w-6 h-6 text-accent-foreground" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">PlacewareBot</h1>
-            <p className="text-xs opacity-70">Enterprise Intelligence</p>
+        {/* Logo/Header */}
+        <div className="border-b border-sidebar-border/80 p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-primary shadow-elevation-2">
+              <Zap className="h-5 w-5 text-accent-foreground" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold leading-tight">PlacewareBot</h1>
+              <p className="text-[11px] opacity-60">Enterprise Intelligence</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {visibleNavItems.map((item) => {
-          const Icon = item.icon;
-          const hasChildren = "children" in item;
-          const isGroupActive =
-            hasChildren && isActiveGroup(item.children!.map((c) => c.href));
-          const itemActive = !hasChildren && isActive(item.href || "");
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto px-2 py-3 scrollbar-thin">
+          <div className="space-y-0.5">
+            {visibleNavItems.map((item) => {
+              const Icon = item.icon;
+              const hasChildren = !!item.children;
+              const groupOpen = !!openGroups[item.label];
+              const childActive = hasChildren
+                ? isActiveGroup(item.children!.map((c) => c.href))
+                : false;
+              const itemActive = !hasChildren && isActive(item.href ?? "");
 
-          return (
-            <div key={item.label}>
-              {hasChildren ? (
-                <div className="mb-2">
-                  <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide opacity-55">
-                    {item.label}
-                  </div>
-                  <div className="space-y-1">
-                    {item.children!.map((child) => (
-                      <Link
-                        key={child.href}
-                        to={child.href}
-                        onClick={onMobileClose}
+              if (hasChildren) {
+                return (
+                  <Collapsible
+                    key={item.label}
+                    open={groupOpen}
+                    onOpenChange={() => toggleGroup(item.label)}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button
                         className={cn(
-                          "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-smooth",
-                          isActive(child.href)
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-elevation-1"
-                            : "text-sidebar-foreground/90 hover:bg-sidebar-accent/60"
+                          "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-out",
+                          childActive
+                            ? "bg-sidebar-accent/70 text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
                         )}
                       >
-                        <div className="w-1 h-1 rounded-full" />
-                        {child.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : (
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200",
+                            groupOpen && "rotate-180",
+                          )}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+                      <div className="ml-3 mt-0.5 space-y-0.5 border-l border-sidebar-border/50 pl-3 pb-1">
+                        {item.children!.map((child) => (
+                          <Link
+                            key={child.href}
+                            to={child.href}
+                            onClick={onMobileClose}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all duration-150",
+                              isActive(child.href)
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-elevation-1"
+                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                            )}
+                          >
+                            <span className="h-1 w-1 rounded-full bg-current opacity-50" />
+                            {child.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                );
+              }
+
+              return (
                 <Link
-                  to={item.href || "/"}
+                  key={item.label}
+                  to={item.href ?? "/"}
                   onClick={onMobileClose}
                   className={cn(
-                    "mb-1 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-smooth",
+                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-out",
                     itemActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-elevation-1"
-                      : "text-sidebar-foreground/90 hover:bg-sidebar-accent/60"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
                   )}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   <span className="flex-1">{item.label}</span>
-                  {item.badge && (
-                    <span className="rounded-full bg-gradient-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+                  {item.aiPulse && (
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                    </span>
+                  )}
+                  {item.badge && !item.aiPulse && (
+                    <span className="rounded-full bg-gradient-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
                       {item.badge}
                     </span>
                   )}
                 </Link>
-              )}
-            </div>
-          );
-        })}
-      </nav>
+              );
+            })}
+          </div>
+        </nav>
 
-      {/* Footer */}
-      <div className="border-t border-sidebar-border/80 p-4 text-xs opacity-60">
-        <p>Placeware Nigeria</p>
-        <p>Enterprise Console</p>
-      </div>
+        {/* User Profile Footer */}
+        <div className="border-t border-sidebar-border/80 p-3">
+          <div className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-sidebar-accent/40 transition-colors duration-150">
+            {/* Avatar */}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-primary text-xs font-bold text-primary-foreground shadow-elevation-1">
+              {initials}
+            </div>
+            {/* Name + role */}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm font-medium leading-tight">
+                PlacewareBot
+              </span>
+              <span className="truncate text-[11px] capitalize text-sidebar-foreground/50 leading-tight">
+                {userRole}
+              </span>
+            </div>
+            {/* Actions dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
+                  aria-label="User options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                side="top"
+                sideOffset={8}
+                className="w-48"
+              >
+                <DropdownMenuItem asChild>
+                  <Link to="/settings">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setTheme(isDark ? "light" : "dark")}
+                >
+                  {isDark ? (
+                    <Sun className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Moon className="mr-2 h-4 w-4" />
+                  )}
+                  {isDark ? "Light mode" : "Dark mode"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => logout()}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
       </div>
     </>
   );

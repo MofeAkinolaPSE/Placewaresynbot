@@ -15,10 +15,10 @@ client = TestClient(app)
 
 
 def make_admin_token():
-    now = dt.datetime.utcnow()
-    exp = now + dt.timedelta(minutes=30)
+    now = dt.datetime.now(tz=dt.timezone.utc)
+    exp = now + dt.timedelta(minutes=120)
     return jwt.encode(
-        {"roles": ["admin"], "iat": int(now.timestamp()), "exp": int(exp.timestamp())},
+        {"sub": "admin-test", "roles": ["admin"], "iat": int(now.timestamp()), "exp": int(exp.timestamp())},
         JWT_SECRET,
         algorithm="HS256",
     )

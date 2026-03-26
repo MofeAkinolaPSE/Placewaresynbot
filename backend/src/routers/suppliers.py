@@ -4,21 +4,54 @@ from src.middleware import verify_jwt, require_role
 from src.db import audit_event, db
 import statistics
 import datetime as dt
+import logging
 from src.services.supplier_intel import compute_supplier_metrics
+
+logger = logging.getLogger("suppliers")
 
 router = APIRouter()
 
 
+def _snapshot_row_to_supplier(row: dict) -> dict:
+    """Translate a sage_vendors_snapshot row into the suppliers schema expected by the frontend."""
+    return {
+        "id": row.get("id"),
+        "name": row.get("vendor_name") or "Unknown",
+        "contact_name": row.get("contact_name"),
+        "contact_email": row.get("email"),
+        "phone": row.get("phone"),
+        "address": row.get("address"),
+        "payment_terms": row.get("payment_terms"),
+        "tax_id": row.get("tax_id"),
+        "bank_details": row.get("bank_details"),
+        "current_balance": row.get("current_balance"),
+        "status": row.get("status") or "active",
+        "external_vendor_id": row.get("vendor_id"),
+        "created_at": row.get("imported_at"),
+    }
 
 
 @router.get('/suppliers')
 async def list_suppliers(request: Request):
+    """Return all suppliers from the suppliers table.
+
+    Populated by the vendors CSV import (POST /sage/import/csv, file_type=vendors)
+    which upserts on external_vendor_id.  Agent-owned metric columns
+    (reliability_score, avg_delay_days, etc.) are written separately by SupplierAgent.
+    """
     verify_jwt(request)
     try:
-        resp = db.table('suppliers').select('*').order('created_at', desc=True).execute()
+        resp = (
+            db.table('suppliers')
+            .select('*')
+            .order('created_at', desc=True)
+            .execute()
+        )
         data = resp.data or []
-    except Exception as e:
+    except Exception as exc:
+        logger.error(f"list_suppliers: suppliers table query failed: {exc}")
         raise HTTPException(status_code=500, detail='Failed to load suppliers from DB')
+
     try:
         actor = getattr(request.state, 'user', None)
         audit_event('list_suppliers', {'count': len(data)}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', subject_type='suppliers')

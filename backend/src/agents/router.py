@@ -77,6 +77,28 @@ _ROUTE_MAP = {
     "efficiency": ["process_optimization"],
     "turnaround": ["process_optimization"],
     "cycle time": ["process_optimization"],
+
+    # 11. Maintenance Tracking Agent
+    "maintenance": ["maintenance_tracking"],
+    "incident": ["maintenance_tracking"],
+    "self-heal": ["maintenance_tracking"],
+    "downtime": ["maintenance_tracking"],
+    "blank dashboard": ["maintenance_tracking"],
+
+    # 12. Digital Twin Monitor Agent
+    "twin": ["digital_twin_monitor"],
+    "digital twin": ["digital_twin_monitor"],
+    "state map": ["digital_twin_monitor"],
+    "anomaly": ["digital_twin_monitor"],
+    "system health": ["digital_twin_monitor"],
+    "pipeline health": ["digital_twin_monitor"],
+
+    # 13. Capability Discovery Agent
+    "capability": ["capability_discovery"],
+    "capability gap": ["capability_discovery"],
+    "discover": ["capability_discovery"],
+    "proposal": ["capability_discovery"],
+    "capability proposal": ["capability_discovery"],
 }
 
 

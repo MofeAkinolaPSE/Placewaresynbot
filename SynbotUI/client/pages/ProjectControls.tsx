@@ -22,6 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -35,6 +36,8 @@ import { api } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+import { ChevronDown, LayoutGrid } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const STAGE_LABELS: Record<string, { label: string; department: string }> = {
   port_clearing: { label: "Port Clearing", department: "Logistics" },
@@ -58,6 +61,7 @@ const STAGE_TRANSITIONS: Record<string, string[]> = {
 
 const QC_STATUSES = ["pending", "in_review", "passed", "failed", "waived"] as const;
 const NAFDAC_STATUSES = ["pending", "in_progress", "released"] as const;
+const STAGE_BOARD_PREFS_KEY = "project_controls_stage_board_prefs";
 
 interface Project {
   id: string;
@@ -515,6 +519,8 @@ export default function ProjectControls() {
 }
 
 function ProjectList({ projects, loading }: { projects: Project[]; loading: boolean }) {
+  const isMobile = useIsMobile();
+
   const statusBadge = (status: string) => {
     switch (status) {
       case "active": return <Badge>Active</Badge>;
@@ -544,37 +550,66 @@ function ProjectList({ projects, loading }: { projects: Project[]; loading: bool
           </div>
         ) : projects.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">No projects found. Create one to get started.</p>
+        ) : isMobile ? (
+          <div className="space-y-3">
+            {projects.map((p) => (
+              <div key={p.id} className="rounded-lg border bg-card p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium leading-tight">{p.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{p.activity_type || "-"} • {p.supplier_name || "-"}</p>
+                  </div>
+                  {statusBadge(p.status)}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  <span className="text-muted-foreground">Owner</span>
+                  <span className="truncate">{p.assigned_staff_id || p.owner_id || "-"}</span>
+                  <span className="text-muted-foreground">Stage</span>
+                  <span>{p.workflow_stage || "-"}</span>
+                  <span className="text-muted-foreground">QC</span>
+                  <span>{p.quality_check_status || "-"}</span>
+                  <span className="text-muted-foreground">Created</span>
+                  <span>{p.created_at ? new Date(p.created_at).toLocaleDateString() : "-"}</span>
+                </div>
+                {p.description ? (
+                  <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{p.description}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project Name</TableHead>
-                <TableHead>Activity</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead>QC</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {projects.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell>{p.activity_type || "-"}</TableCell>
-                  <TableCell>{p.supplier_name || "-"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{p.assigned_staff_id || p.owner_id || "-"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{p.workflow_stage || "-"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{p.quality_check_status || "-"}</TableCell>
-                  <TableCell>{statusBadge(p.status)}</TableCell>
-                  <TableCell className="max-w-xs truncate">{p.description || "-"}</TableCell>
-                  <TableCell>{p.created_at ? new Date(p.created_at).toLocaleDateString() : "-"}</TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 z-10 min-w-[200px] bg-muted/90">Project Name</TableHead>
+                  <TableHead className="min-w-[120px]">Activity</TableHead>
+                  <TableHead className="min-w-[160px]">Supplier</TableHead>
+                  <TableHead className="min-w-[140px]">Owner</TableHead>
+                  <TableHead className="min-w-[150px]">Stage</TableHead>
+                  <TableHead className="min-w-[110px]">QC</TableHead>
+                  <TableHead className="min-w-[100px]">Status</TableHead>
+                  <TableHead className="min-w-[260px]">Description</TableHead>
+                  <TableHead className="min-w-[110px]">Created</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {projects.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="sticky left-0 z-10 bg-background font-medium">{p.name}</TableCell>
+                    <TableCell>{p.activity_type || "-"}</TableCell>
+                    <TableCell>{p.supplier_name || "-"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.assigned_staff_id || p.owner_id || "-"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.workflow_stage || "-"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.quality_check_status || "-"}</TableCell>
+                    <TableCell>{statusBadge(p.status)}</TableCell>
+                    <TableCell className="max-w-xs truncate">{p.description || "-"}</TableCell>
+                    <TableCell>{p.created_at ? new Date(p.created_at).toLocaleDateString() : "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -598,6 +633,34 @@ function StageTransitionBoard({
   onDraftChange: (project: Project, patch: Partial<{ workflow_stage: string; quality_check_status: string; nafdac_sampling_status: string; quality_notes: string }>) => void;
   onMoveStage: (project: Project) => Promise<void>;
 }) {
+  const [compactMode, setCompactMode] = useState(false);
+  const [collapsedStages, setCollapsedStages] = useState<Record<string, boolean>>({});
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STAGE_BOARD_PREFS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        compactMode?: boolean;
+        collapsedStages?: Record<string, boolean>;
+        collapsedProjects?: Record<string, boolean>;
+      };
+      setCompactMode(Boolean(parsed.compactMode));
+      setCollapsedStages(parsed.collapsedStages || {});
+      setCollapsedProjects(parsed.collapsedProjects || {});
+    } catch {
+      // Ignore malformed stored preferences.
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      STAGE_BOARD_PREFS_KEY,
+      JSON.stringify({ compactMode, collapsedStages, collapsedProjects }),
+    );
+  }, [compactMode, collapsedStages, collapsedProjects]);
+
   const grouped = Object.keys(STAGE_LABELS).map((stageKey) => ({
     stageKey,
     stage: STAGE_LABELS[stageKey],
@@ -607,8 +670,16 @@ function StageTransitionBoard({
   return (
     <Card className="pw-surface-interactive">
       <CardHeader>
-        <CardTitle>Workflow Stage Board</CardTitle>
-        <CardDescription>Track transitions from Port Clearing to End Users with explicit Quality Control gating.</CardDescription>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Workflow Stage Board</CardTitle>
+            <CardDescription>Track transitions from Port Clearing to End Users with explicit Quality Control gating.</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" className="w-fit" onClick={() => setCompactMode((prev) => !prev)}>
+            <LayoutGrid className="mr-2 h-4 w-4" />
+            {compactMode ? "Expanded Mode" : "Compact Mode"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -617,93 +688,125 @@ function StageTransitionBoard({
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {grouped.map((column) => (
-              <div key={column.stageKey} className="rounded-xl border border-border/60 bg-background/30 p-3">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold">{column.stage.label}</h3>
-                  <p className="text-xs text-muted-foreground">{column.stage.department}</p>
-                </div>
-                <div className="space-y-3">
-                  {column.projects.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">No projects in this stage.</p>
+            {grouped.map((column) => {
+              const stageCollapsed = Boolean(collapsedStages[column.stageKey]);
+              return (
+                <div key={column.stageKey} className={compactMode ? "rounded-xl border border-border/60 bg-background/30 p-2" : "rounded-xl border border-border/60 bg-background/30 p-3"}>
+                  <button
+                    type="button"
+                    onClick={() => setCollapsedStages((prev) => ({ ...prev, [column.stageKey]: !stageCollapsed }))}
+                    className="mb-3 flex w-full items-start justify-between text-left"
+                  >
+                    <div>
+                      <h3 className={compactMode ? "text-xs font-semibold" : "text-sm font-semibold"}>{column.stage.label}</h3>
+                      <p className="text-xs text-muted-foreground">{column.stage.department}</p>
+                    </div>
+                    <ChevronDown className={stageCollapsed ? "h-4 w-4 transition-transform rotate-180" : "h-4 w-4 transition-transform"} />
+                  </button>
+
+                  {stageCollapsed ? (
+                    <p className="rounded-lg border border-dashed border-border/60 p-2 text-xs text-muted-foreground">
+                      {column.projects.length} hidden in this stage.
+                    </p>
                   ) : (
-                    column.projects.map((project) => {
-                      const nextOptions = STAGE_TRANSITIONS[column.stageKey] || [];
-                      const draft = stageDrafts[project.id] || {
-                        workflow_stage: nextOptions[0] || column.stageKey,
-                        quality_check_status: project.quality_check_status || "pending",
-                        nafdac_sampling_status: project.nafdac_sampling_status || "pending",
-                        quality_notes: project.quality_notes || "",
-                      };
-                      const moving = movingProjectId === project.id;
-                      return (
-                        <div key={project.id} className="rounded-lg border border-border/60 bg-background/50 p-3 space-y-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium leading-tight">{project.name}</p>
-                            <p className="text-xs text-muted-foreground">{project.supplier_name || "No supplier"}</p>
-                            <div className="flex flex-wrap gap-2">
-                              <Badge variant="outline" className="text-[10px]">QC: {project.quality_check_status || "pending"}</Badge>
-                              <Badge variant="outline" className="text-[10px]">NAFDAC: {project.nafdac_sampling_status || "pending"}</Badge>
-                            </div>
-                          </div>
-                          {nextOptions.length > 0 ? (
-                            <>
-                              <Select
-                                value={draft.workflow_stage}
-                                onValueChange={(value) => onDraftChange(project, { workflow_stage: value })}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select next stage" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {nextOptions.map((option) => (
-                                    <SelectItem key={option} value={option}>{STAGE_LABELS[option]?.label || option}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Select
-                                  value={draft.quality_check_status}
-                                  onValueChange={(value) => onDraftChange(project, { quality_check_status: value })}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="QC status" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {QC_STATUSES.map((status) => (
-                                      <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <Select
-                                  value={draft.nafdac_sampling_status}
-                                  onValueChange={(value) => onDraftChange(project, { nafdac_sampling_status: value })}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="NAFDAC status" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {NAFDAC_STATUSES.map((status) => (
-                                      <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                    <div className={compactMode ? "space-y-2" : "space-y-3"}>
+                      {column.projects.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">No projects in this stage.</p>
+                      ) : (
+                        column.projects.map((project) => {
+                          const nextOptions = STAGE_TRANSITIONS[column.stageKey] || [];
+                          const draft = stageDrafts[project.id] || {
+                            workflow_stage: nextOptions[0] || column.stageKey,
+                            quality_check_status: project.quality_check_status || "pending",
+                            nafdac_sampling_status: project.nafdac_sampling_status || "pending",
+                            quality_notes: project.quality_notes || "",
+                          };
+                          const moving = movingProjectId === project.id;
+                          const projectCollapsed = Boolean(collapsedProjects[project.id]);
+
+                          return (
+                            <Collapsible
+                              key={project.id}
+                              open={!projectCollapsed}
+                              onOpenChange={(open) => setCollapsedProjects((prev) => ({ ...prev, [project.id]: !open }))}
+                            >
+                              <div className={compactMode ? "rounded-lg border border-border/60 bg-background/50 p-2" : "rounded-lg border border-border/60 bg-background/50 p-3"}>
+                                <CollapsibleTrigger asChild>
+                                  <button type="button" className="flex w-full items-start justify-between text-left">
+                                    <div className="space-y-1">
+                                      <p className={compactMode ? "text-xs font-medium leading-tight" : "text-sm font-medium leading-tight"}>{project.name}</p>
+                                      <p className="text-xs text-muted-foreground">{project.supplier_name || "No supplier"}</p>
+                                      <div className="flex flex-wrap gap-2">
+                                        <Badge variant="outline" className="text-[10px]">QC: {project.quality_check_status || "pending"}</Badge>
+                                        <Badge variant="outline" className="text-[10px]">NAFDAC: {project.nafdac_sampling_status || "pending"}</Badge>
+                                      </div>
+                                    </div>
+                                    <ChevronDown className={projectCollapsed ? "h-4 w-4 transition-transform rotate-180" : "h-4 w-4 transition-transform"} />
+                                  </button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="space-y-3 pt-3">
+                                  {nextOptions.length > 0 ? (
+                                    <>
+                                      <Select
+                                        value={draft.workflow_stage}
+                                        onValueChange={(value) => onDraftChange(project, { workflow_stage: value })}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select next stage" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {nextOptions.map((option) => (
+                                            <SelectItem key={option} value={option}>{STAGE_LABELS[option]?.label || option}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <Select
+                                          value={draft.quality_check_status}
+                                          onValueChange={(value) => onDraftChange(project, { quality_check_status: value })}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="QC status" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {QC_STATUSES.map((status) => (
+                                              <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <Select
+                                          value={draft.nafdac_sampling_status}
+                                          onValueChange={(value) => onDraftChange(project, { nafdac_sampling_status: value })}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="NAFDAC status" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {NAFDAC_STATUSES.map((status) => (
+                                              <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <Button disabled={moving || !controlsReady} onClick={() => void onMoveStage(project)} className="w-full">
+                                        {moving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                        Move Stage
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <p className="text-xs text-success">Workflow completed.</p>
+                                  )}
+                                </CollapsibleContent>
                               </div>
-                              <Button disabled={moving || !controlsReady} onClick={() => void onMoveStage(project)} className="w-full">
-                                {moving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Move Stage
-                              </Button>
-                            </>
-                          ) : (
-                            <p className="text-xs text-success">Workflow completed.</p>
-                          )}
-                        </div>
-                      );
-                    })
+                            </Collapsible>
+                          );
+                        })
+                      )}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
@@ -712,6 +815,8 @@ function StageTransitionBoard({
 }
 
 function DeliveryList() {
+  const isMobile = useIsMobile();
+
     return (
         <Card className="pw-surface-interactive">
         <CardHeader>
@@ -721,39 +826,64 @@ function DeliveryList() {
             </CardDescription>
         </CardHeader>
         <CardContent>
-            <Table>
-            <TableHeader>
-                <TableRow>
-                <TableHead>Ref ID</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Destination</TableHead>
-                <TableHead>ETA</TableHead>
-                <TableHead>Status</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                <TableRow>
-                <TableCell>DLV-1023</TableCell>
-                <TableCell>Outbound</TableCell>
-                <TableCell>Lagos General Hospital</TableCell>
-                <TableCell>Today, 14:00</TableCell>
-                <TableCell><Badge className="border-info/30 bg-info/15 text-info">In Transit</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                <TableCell>DLV-1024</TableCell>
-                <TableCell>Inbound</TableCell>
-                <TableCell>Main Warehouse</TableCell>
-                <TableCell>Tomorrow, 09:00</TableCell>
-                <TableCell><Badge variant="outline">Scheduled</Badge></TableCell>
-                </TableRow>
-            </TableBody>
-            </Table>
+            {isMobile ? (
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">DLV-1023</span>
+                    <Badge className="border-info/30 bg-info/15 text-info">In Transit</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Outbound • Lagos General Hospital</p>
+                  <p className="mt-1 text-xs">ETA: Today, 14:00</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">DLV-1024</span>
+                    <Badge variant="outline">Scheduled</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Inbound • Main Warehouse</p>
+                  <p className="mt-1 text-xs">ETA: Tomorrow, 09:00</p>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="sticky left-0 z-10 min-w-[120px] bg-muted/90">Ref ID</TableHead>
+                      <TableHead className="min-w-[110px]">Type</TableHead>
+                      <TableHead className="min-w-[200px]">Destination</TableHead>
+                      <TableHead className="min-w-[130px]">ETA</TableHead>
+                      <TableHead className="min-w-[110px]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="sticky left-0 z-10 bg-background">DLV-1023</TableCell>
+                      <TableCell>Outbound</TableCell>
+                      <TableCell>Lagos General Hospital</TableCell>
+                      <TableCell>Today, 14:00</TableCell>
+                      <TableCell><Badge className="border-info/30 bg-info/15 text-info">In Transit</Badge></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="sticky left-0 z-10 bg-background">DLV-1024</TableCell>
+                      <TableCell>Inbound</TableCell>
+                      <TableCell>Main Warehouse</TableCell>
+                      <TableCell>Tomorrow, 09:00</TableCell>
+                      <TableCell><Badge variant="outline">Scheduled</Badge></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
         </CardContent>
         </Card>
     )
 }
 
 function StockOrderList() {
+    const isMobile = useIsMobile();
+
     return (
         <Card className="pw-surface-interactive">
         <CardHeader>
@@ -763,33 +893,58 @@ function StockOrderList() {
             </CardDescription>
         </CardHeader>
         <CardContent>
-            <Table>
-            <TableHeader>
-                <TableRow>
-                <TableHead>Order ID</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead>Requester</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                <TableRow>
-                <TableCell>SO-8821</TableCell>
-                <TableCell>Pfizer COVID-19 (x500)</TableCell>
-                <TableCell>Dr. Smith (Clinical Ops)</TableCell>
-                <TableCell>2026-02-18</TableCell>
-                <TableCell><Badge variant="destructive">Approval Required</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                <TableCell>SO-8820</TableCell>
-                <TableCell>Syringes 5ml (x2000)</TableCell>
-                <TableCell>Inventory Mgr</TableCell>
-                <TableCell>2026-02-17</TableCell>
-                <TableCell><Badge className="border-success/30 bg-success/15 text-success">Approved</Badge></TableCell>
-                </TableRow>
-            </TableBody>
-            </Table>
+            {isMobile ? (
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">SO-8821</span>
+                    <Badge variant="destructive">Approval Required</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Pfizer COVID-19 (x500)</p>
+                  <p className="mt-1 text-xs">Requester: Dr. Smith (Clinical Ops)</p>
+                  <p className="mt-1 text-xs">Date: 2026-02-18</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">SO-8820</span>
+                    <Badge className="border-success/30 bg-success/15 text-success">Approved</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Syringes 5ml (x2000)</p>
+                  <p className="mt-1 text-xs">Requester: Inventory Mgr</p>
+                  <p className="mt-1 text-xs">Date: 2026-02-17</p>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="sticky left-0 z-10 min-w-[120px] bg-muted/90">Order ID</TableHead>
+                      <TableHead className="min-w-[220px]">Items</TableHead>
+                      <TableHead className="min-w-[180px]">Requester</TableHead>
+                      <TableHead className="min-w-[120px]">Date</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="sticky left-0 z-10 bg-background">SO-8821</TableCell>
+                      <TableCell>Pfizer COVID-19 (x500)</TableCell>
+                      <TableCell>Dr. Smith (Clinical Ops)</TableCell>
+                      <TableCell>2026-02-18</TableCell>
+                      <TableCell><Badge variant="destructive">Approval Required</Badge></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="sticky left-0 z-10 bg-background">SO-8820</TableCell>
+                      <TableCell>Syringes 5ml (x2000)</TableCell>
+                      <TableCell>Inventory Mgr</TableCell>
+                      <TableCell>2026-02-17</TableCell>
+                      <TableCell><Badge className="border-success/30 bg-success/15 text-success">Approved</Badge></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
         </CardContent>
         </Card>
     )

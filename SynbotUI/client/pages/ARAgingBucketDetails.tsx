@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -24,6 +25,7 @@ const bucketLabelMap: Record<string, string> = {
 };
 
 const ARAgingBucketDetails = () => {
+  const isMobile = useIsMobile();
   const params = useParams<{ bucket: string }>();
   const rawBucket = typeof params.bucket === "string" ? params.bucket : "";
 
@@ -93,52 +95,82 @@ const ARAgingBucketDetails = () => {
               Data error: {malformedCount} customer record(s) were malformed and excluded.
             </p>
           )}
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Customer ID</TableHead>
-                  <TableHead>Customer Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead className="text-right">Total Balance (₦)</TableHead>
-                  <TableHead className="text-right">Total Amount (₦)</TableHead>
-                  <TableHead className="text-center">Invoices</TableHead>
-                  <TableHead className="text-center">Max Days Overdue</TableHead>
-                  <TableHead>Earliest Due Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {customers.length > 0 ? (
-                  customers.map((c: any) => (
-                    <TableRow key={c.customer_id}>
-                      <TableCell className="font-mono text-xs">{c.customer_id}</TableCell>
-                      <TableCell className="font-medium">{c.customer_name}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{typeof c.email === "string" ? c.email : ""}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{typeof c.phone === "string" ? c.phone : ""}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {Number(c.total_balance).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {Number(c.total_amount).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-center">{c.invoices_count}</TableCell>
-                      <TableCell className="text-center">{c.max_days_overdue}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {typeof c.earliest_due_date === "string" ? c.earliest_due_date : ""}
+          {isMobile ? (
+            <div className="space-y-3">
+              {customers.length > 0 ? (
+                customers.map((c: any) => (
+                  <div key={c.customer_id} className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-foreground">{c.customer_name}</p>
+                        <p className="text-xs font-mono text-muted-foreground">{c.customer_id}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{typeof c.earliest_due_date === "string" ? c.earliest_due_date : ""}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <p className="text-muted-foreground">Balance: <span className="font-mono text-foreground">₦{Number(c.total_balance).toLocaleString()}</span></p>
+                      <p className="text-muted-foreground">Amount: <span className="font-mono text-foreground">₦{Number(c.total_amount).toLocaleString()}</span></p>
+                      <p className="text-muted-foreground">Invoices: <span className="text-foreground">{c.invoices_count}</span></p>
+                      <p className="text-muted-foreground">Max overdue: <span className="text-foreground">{c.max_days_overdue}</span></p>
+                    </div>
+                    <div className="text-xs text-muted-foreground break-all">
+                      {typeof c.email === "string" ? c.email : ""}
+                      {typeof c.phone === "string" && c.phone ? ` • ${c.phone}` : ""}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center py-8 text-muted-foreground">No customers found in this bucket.</p>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky left-0 z-10 min-w-[120px] bg-muted/90">Customer ID</TableHead>
+                    <TableHead className="min-w-[180px]">Customer Name</TableHead>
+                    <TableHead className="min-w-[220px]">Email</TableHead>
+                    <TableHead className="min-w-[130px]">Phone</TableHead>
+                    <TableHead className="text-right min-w-[150px]">Total Balance (₦)</TableHead>
+                    <TableHead className="text-right min-w-[150px]">Total Amount (₦)</TableHead>
+                    <TableHead className="text-center min-w-[90px]">Invoices</TableHead>
+                    <TableHead className="text-center min-w-[130px]">Max Days Overdue</TableHead>
+                    <TableHead className="min-w-[130px]">Earliest Due Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customers.length > 0 ? (
+                    customers.map((c: any) => (
+                      <TableRow key={c.customer_id}>
+                        <TableCell className="sticky left-0 z-10 bg-background font-mono text-xs">{c.customer_id}</TableCell>
+                        <TableCell className="font-medium">{c.customer_name}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{typeof c.email === "string" ? c.email : ""}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{typeof c.phone === "string" ? c.phone : ""}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {Number(c.total_balance).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {Number(c.total_amount).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-center">{c.invoices_count}</TableCell>
+                        <TableCell className="text-center">{c.max_days_overdue}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {typeof c.earliest_due_date === "string" ? c.earliest_due_date : ""}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8">
+                        <p className="text-muted-foreground">No customers found in this bucket.</p>
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
-                      <p className="text-muted-foreground">No customers found in this bucket.</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             Showing {customers.length} customers in the {displayLabel} bucket.
           </p>

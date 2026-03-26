@@ -154,10 +154,10 @@ def _update_kg_for_event(event_row: dict[str, Any]) -> dict[str, int]:
 
     event_id = event_row.get("event_id")
     ev_node = _node(
-        node_type="event",
-        ref_table="event_ledger",
-        ref_value=event_id,
-        properties={
+        "event",
+        "event_ledger",
+        event_id,
+        {
             "department": event_row.get("department"),
             "event_type": event_row.get("event_type"),
             "created_by": event_row.get("created_by"),

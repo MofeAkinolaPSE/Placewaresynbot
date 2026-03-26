@@ -12,15 +12,22 @@ from src.constants import (
     COST_GL_ACCOUNT_MIN,
     COST_GL_ACCOUNT_MAX,
 )
-from src.db import db, get_promoted_kpi_batch, get_latest_successful_import_batch  # reuse configured client
+from src.db import db, get_promoted_kpi_batch  # reuse configured client
 from src.cache import ttl_cache
 
 
 def get_sage_kpi_batch_id() -> str | None:
+    """Return the currently promoted Sage KPI batch id, or None.
+
+    Deliberately returns None (never the latest import-job batch) so every
+    service falls back to its own per-table _latest_batch_for_table() resolver.
+    This prevents a GL / AR CSV upload batch_id from being applied to
+    sage_inventory_snapshot queries (which would match 0 rows).
+    """
     promoted = get_promoted_kpi_batch("sage")
     if promoted and promoted.get("batch_id"):
         return promoted.get("batch_id")
-    return get_latest_successful_import_batch("sage")
+    return None
 
 
 def _latest_batch_for_table(table: str, client: DBClient = db) -> str | None:
@@ -38,26 +45,83 @@ def _latest_batch_for_table(table: str, client: DBClient = db) -> str | None:
 
 
 def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[Dict[str, Any]]:
-    """Return latest inventory rows from snapshot table.
+    """Return latest inventory rows from snapshot table, aggregated per SKU.
 
-    Orders by imported_at desc then id desc; limits results.
+    Multiple warehouse rows for the same SKU are merged: quantity and valuation
+    are summed across warehouses so each SKU appears exactly once.
     """
-    batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_inventory_snapshot", client)
-    q = client.table("sage_inventory_snapshot").select("sku,name,quantity,unit_cost,valuation,imported_at")
-    if batch_id:
-        q = q.eq("batch_id", batch_id)
-    resp = q.order("imported_at", desc=True).order("id", desc=True).limit(limit).execute()
-    return resp.data or []
+    """Return latest inventory rows from snapshot table, aggregated per SKU.
+
+    Multiple warehouse rows for the same SKU are merged: quantity and valuation
+    are summed across warehouses so each SKU appears exactly once.
+
+    NOTE: We do NOT use get_sage_kpi_batch_id() here. The globally promoted KPI
+    batch_id belongs to finance/GL imports and will never match rows in
+    sage_inventory_snapshot, returning 0 rows. Go directly to the table instead.
+    """
+    try:
+        resp = (
+            client.table("sage_inventory_snapshot")
+            .select("sku,name,quantity,unit_cost,valuation,imported_at")
+            .order("imported_at", desc=True)
+            .order("id", desc=True)
+            .limit(limit)
+            .execute()
+        )
+    except Exception as e:
+        logging.error(f"latest_inventory_snapshot query failed: {e}")
+        resp = type("_R", (), {"data": []})()
+    # Aggregate across warehouses: sum quantity + valuation, keep first occurrence for other fields
+    aggregated: Dict[str, Dict[str, Any]] = {}
+    for row in resp.data or []:
+        sku = row.get("sku")
+        if not sku:
+            continue
+        if sku not in aggregated:
+            aggregated[sku] = dict(row)
+        else:
+            aggregated[sku]["quantity"] = float(aggregated[sku].get("quantity") or 0) + float(row.get("quantity") or 0)
+            aggregated[sku]["valuation"] = float(aggregated[sku].get("valuation") or 0) + float(row.get("valuation") or 0)
+
+    result = list(aggregated.values())
+    if result:
+        return result
+
+    # Fallback: sage_inventory_snapshot is empty — read from inventory_items + stock_levels so
+    # the public /stock endpoint stays populated when data was entered via the inventory module.
+    try:
+        items_resp = client.table("inventory_items").select("id, sku, name").limit(limit).execute()
+        for item in (items_resp.data or []):
+            item_id = item.get("id")
+            sku = item.get("sku") or str(item_id)
+            if not sku:
+                continue
+            stock_resp = client.table("stock_levels").select("quantity").eq("item_id", item_id).execute()
+            total_qty = sum(float(s.get("quantity") or 0) for s in (stock_resp.data or []))
+            result.append({
+                "sku": sku,
+                "name": item.get("name") or "Unknown",
+                "quantity": total_qty,
+                "unit_cost": None,
+                "valuation": None,
+                "imported_at": None,
+            })
+    except Exception:
+        pass
+    return result
 
 
 def inventory_by_skus(skus: List[str], client: DBClient = db) -> List[Dict[str, Any]]:
     if not skus:
         return []
-    batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_inventory_snapshot", client)
-    q = client.table("sage_inventory_snapshot").select("sku,name,quantity,unit_cost,valuation,imported_at").in_("sku", skus)
-    if batch_id:
-        q = q.eq("batch_id", batch_id)
-    resp = q.order("imported_at", desc=True).order("id", desc=True).execute()
+    resp = (
+        client.table("sage_inventory_snapshot")
+        .select("sku,name,quantity,unit_cost,valuation,imported_at")
+        .in_("sku", skus)
+        .order("imported_at", desc=True)
+        .order("id", desc=True)
+        .execute()
+    )
     # Deduplicate by SKU keeping latest
     latest: Dict[str, Dict[str, Any]] = {}
     for row in resp.data or []:
@@ -108,9 +172,8 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
     """
     import datetime
     today = datetime.date.today()
-    # Use a global promoted batch if available; otherwise fall back per-table
-    # so that each independently uploaded CSV file is visible in its own table.
-    global_batch = get_sage_kpi_batch_id()
+    # Resolve batch per table to avoid cross-table mismatches when CSV files
+    # are imported independently with different batch ids.
 
     def parse_date(d):
         try:
@@ -119,7 +182,7 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
             return None
 
     # --- AR ---
-    ar_batch = global_batch or _latest_batch_for_table("sage_ar_snapshot", client)
+    ar_batch = _latest_batch_for_table("sage_ar_snapshot", client)
     ar_q = client.table("sage_ar_snapshot").select("amount,balance,due_date")
     if ar_batch:
         ar_q = ar_q.eq("batch_id", ar_batch)
@@ -133,7 +196,7 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
     )
 
     # --- AP ---
-    ap_batch = global_batch or _latest_batch_for_table("sage_ap_snapshot", client)
+    ap_batch = _latest_batch_for_table("sage_ap_snapshot", client)
     ap_q = client.table("sage_ap_snapshot").select("amount,balance,due_date")
     if ap_batch:
         ap_q = ap_q.eq("batch_id", ap_batch)
@@ -151,7 +214,7 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
     total_revenue = 0.0
     total_cost = 0.0
     try:
-        gl_batch = global_batch or _latest_batch_for_table("sage_gl_snapshot", client)
+        gl_batch = _latest_batch_for_table("sage_gl_snapshot", client)
         gl_q = client.table("sage_gl_snapshot").select("account_code,debit,credit")
         if gl_batch:
             gl_q = gl_q.eq("batch_id", gl_batch)
@@ -217,7 +280,7 @@ def ar_aging_buckets(client: DBClient = db) -> Dict[str, Any]:
             return datetime.date.fromisoformat(d)
         except Exception:
             return None
-    batch_id = get_sage_kpi_batch_id()
+    batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
     q = client.table("sage_ar_snapshot").select("due_date,balance")
     if batch_id:
         q = q.eq("batch_id", batch_id)
@@ -275,7 +338,7 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
         return []
 
     # Fetch AR invoices
-    batch_id = get_sage_kpi_batch_id()
+    batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
     ar_q = client.table("sage_ar_snapshot").select(
         "invoice_id,customer_id,due_date,amount,balance,status"
     )
@@ -370,21 +433,34 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
 @ttl_cache(ttl_seconds=120, ignore_kwargs=("client",), tags=("finance", "finance_gl"))
 def get_latest_gl_snapshot(limit: int = 1000, client: DBClient = db) -> List[Dict[str, Any]]:
     """Return latest GL rows from snapshot table."""
-    # Order by imported_at (DESC) to find latest batch, then serve those rows
-    # Optimization: Find latest batch_id first
+    # Prefer promoted batch if configured, but fall back to latest table batch
+    # when promoted batch has no rows (common with independent imports).
     batch_id = get_sage_kpi_batch_id()
-    if not batch_id:
-        latest_batch = client.table("sage_gl_snapshot").select("batch_id").order("imported_at", desc=True).limit(1).execute()
-        if not latest_batch.data:
+    rows: List[Dict[str, Any]] = []
+
+    if batch_id:
+        resp = (
+            client.table("sage_gl_snapshot")
+            .select("*")
+            .eq("batch_id", batch_id)
+            .order("period", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = resp.data or []
+
+    if not rows:
+        fallback_batch = _latest_batch_for_table("sage_gl_snapshot", client)
+        if not fallback_batch:
             return []
-        batch_id = latest_batch.data[0]["batch_id"]
-    
-    # Fetch all rows for this batch
-    resp = client.table("sage_gl_snapshot")\
-        .select("*")\
-        .eq("batch_id", batch_id)\
-        .order("period", desc=True)\
-        .limit(limit)\
-        .execute()
-        
-    return resp.data or []
+        resp = (
+            client.table("sage_gl_snapshot")
+            .select("*")
+            .eq("batch_id", fallback_batch)
+            .order("period", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = resp.data or []
+
+    return rows

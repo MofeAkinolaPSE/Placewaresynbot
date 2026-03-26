@@ -101,6 +101,11 @@ class TableQuery:
         self._where.append((col, "IN", list(values)))
         return self
 
+    def not_in(self, col, values):
+        """NOT IN (...) filter"""
+        self._where.append((col, "NOT_IN", list(values)))
+        return self
+
     def order(self, col, desc=False):
         """Order by column"""
         self._order_by.append((col, desc))
@@ -136,8 +141,13 @@ class TableQuery:
                             emb_text = '[' + ','.join(map(str, v)) + ']'
                             vals.append(emb_text)
                             placeholders.append('%s::vector')
+                        elif v and isinstance(v[0], dict):
+                            # List of dicts (e.g., sources JSONB array) → serialize as JSONB
+                            import json as _json
+                            vals.append(_json.dumps(v))
+                            placeholders.append('%s::jsonb')
                         else:
-                            # String array (e.g., roles) → use PostgreSQL array
+                            # String/scalar array (e.g., roles) → use PostgreSQL array
                             vals.append(list(v))
                             placeholders.append('%s')
                     elif isinstance(v, dict):
@@ -212,6 +222,13 @@ class TableQuery:
                                 placeholders = ', '.join(['%s'] * len(val))
                                 conditions.append(f"{col} IN ({placeholders})")
                                 params.extend(val)
+                        elif op == "NOT_IN":
+                            if not val:
+                                conditions.append("TRUE")
+                            else:
+                                placeholders = ', '.join(['%s'] * len(val))
+                                conditions.append(f"{col} NOT IN ({placeholders})")
+                                params.extend(val)
                         else:
                             if isinstance(val, dict):
                                 import json as _json
@@ -228,49 +245,41 @@ class TableQuery:
                 return Result(rows)
 
             if getattr(self, '_action', None) == 'upsert':
-                # Determine conflict column: explicit on_conflict kwarg takes priority,
-                # then fall back to 'id' if present, otherwise plain insert.
-                conflict_col = getattr(self, '_upsert_conflict_col', None) or (
-                    'id' if 'id' in self._payload else None
-                )
-                cols_all = list(self._payload.keys())
-                vals = []
-                placeholders = []
-                for c in cols_all:
-                    v = self._payload[c]
-                    if isinstance(v, (list, tuple)):
-                        if _is_numeric_list(v):
-                            emb_text = '[' + ','.join(map(str, v)) + ']'
-                            vals.append(emb_text)
-                            placeholders.append('%s::vector')
-                        else:
-                            vals.append(list(v))
-                            placeholders.append('%s')
-                    elif isinstance(v, dict):
-                        import json as _json
-                        vals.append(_json.dumps(v))
-                        placeholders.append('%s::jsonb')
+                # Supports both a single dict and a list of dicts (batch upsert).
+                conflict_col = getattr(self, '_upsert_conflict_col', None)
+                payload = self._payload
+                rows_to_upsert = payload if isinstance(payload, list) else [payload]
+
+                if not rows_to_upsert:
+                    return Result([])
+
+                if not conflict_col:
+                    conflict_col = 'id' if 'id' in rows_to_upsert[0] else None
+
+                cols_all = list(rows_to_upsert[0].keys())
+                all_rows = []
+
+                for row_dict in rows_to_upsert:
+                    vals, placeholders = _prepare_row_values(row_dict, cols_all)
+                    placeholders_sql = ','.join(placeholders)
+                    if conflict_col:
+                        update_cols = [c for c in cols_all if c != conflict_col]
+                        set_clause = ', '.join([f"{c} = EXCLUDED.{c}" for c in update_cols])
+                        sql = (
+                            f"INSERT INTO public.{self.table} ({', '.join(cols_all)}) "
+                            f"VALUES ({placeholders_sql}) "
+                            f"ON CONFLICT ({conflict_col}) DO UPDATE SET {set_clause} RETURNING *"
+                        )
                     else:
-                        vals.append(v)
-                        placeholders.append('%s')
-                placeholders_sql = ','.join(placeholders)
-                if conflict_col:
-                    update_cols = [c for c in cols_all if c != conflict_col]
-                    set_clause = ', '.join([f"{c} = EXCLUDED.{c}" for c in update_cols])
-                    sql = (
-                        f"INSERT INTO public.{self.table} ({', '.join(cols_all)}) "
-                        f"VALUES ({placeholders_sql}) "
-                        f"ON CONFLICT ({conflict_col}) DO UPDATE SET {set_clause} RETURNING *"
-                    )
-                else:
-                    sql = (
-                        f"INSERT INTO public.{self.table} ({', '.join(cols_all)}) "
-                        f"VALUES ({placeholders_sql}) RETURNING *"
-                    )
-                cur.execute(sql, vals)
-                rows = cur.fetchall()
+                        sql = (
+                            f"INSERT INTO public.{self.table} ({', '.join(cols_all)}) "
+                            f"VALUES ({placeholders_sql}) RETURNING *"
+                        )
+                    cur.execute(sql, vals)
+                    all_rows.extend(cur.fetchall())
+
                 conn.commit()
-                return Result(rows)
+                return Result(all_rows)
 
             # Default: SELECT
             cols_sql = ', '.join(self._select_cols)
@@ -296,6 +305,13 @@ class TableQuery:
                         else:
                             placeholders = ', '.join(['%s'] * len(val))
                             conditions.append(f"{col} IN ({placeholders})")
+                            params.extend(val)
+                    elif op == "NOT_IN":
+                        if not val:
+                            conditions.append("TRUE")
+                        else:
+                            placeholders = ', '.join(['%s'] * len(val))
+                            conditions.append(f"{col} NOT IN ({placeholders})")
                             params.extend(val)
                     elif op in ("LIKE",):
                         conditions.append(f"{col} LIKE %s")
@@ -338,11 +354,17 @@ class TableQuery:
             rows = cur.fetchall()
             return Result(rows, count=total_count)
         except Exception as e:
-            logging.error(f"local_db TableQuery execute error: {e}")
+            logging.error(
+                f"local_db TableQuery execute error on {self.table!r} "
+                f"(action={getattr(self, '_action', 'select')}): {e} | sql={locals().get('sql', '<not built>')!r}"
+            )
             try:
                 conn.rollback()
             except Exception:
                 pass
+            # Mutations must not silently fail — re-raise so callers know data was not saved
+            if getattr(self, '_action', None) in ('insert', 'update', 'upsert'):
+                raise
             return Result([])
         finally:
             try:

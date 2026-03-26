@@ -41,6 +41,19 @@ async def approve_job(request: Request, job_id: str):
     return {"status": "approved", "job_id": job_id}
 
 
+@router.post("/workflow/jobs/{job_id}/reject")
+async def reject_job(request: Request, job_id: str):
+    payload = verify_jwt(request)
+    roles = set(payload.get("roles") or [])
+    if not ("admin" in roles or "manager" in roles or "management" in roles):
+        raise HTTPException(status_code=403, detail="Insufficient role to reject")
+    rejecter = payload.get("sub") or payload.get("user_id") or "unknown"
+    ok = engine.reject_job(job_id, rejecter)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Job not found or not rejectable")
+    return {"status": "rejected", "job_id": job_id}
+
+
 @router.post("/workflow/trigger-discover")
 async def trigger_discover(request: Request):
     verify_jwt(request, required_role="admin")

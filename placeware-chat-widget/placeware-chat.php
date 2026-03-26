@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Placeware Chat Widget
  * Description: RAG Chatbot Widget for Placeware (SaaS Connected).
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Placeware
  * Text Domain: placeware-chat
  */
@@ -24,28 +24,27 @@ class Placeware_Chat_Widget {
             'placeware-widget-css',
             plugin_dir_url(__FILE__) . 'assets/css/widget.css',
             array(),
-            '1.0.0'
+            '1.0.1'
         );
         wp_enqueue_script(
             'placeware-widget-js',
             plugin_dir_url(__FILE__) . 'assets/js/widget.js',
             array(),
-            '1.0.0',
+            '1.0.1',
             true
         );
 
-        $api_url = get_option('placeware_api_url', 'http://0.0.0.0:8000');
-        $site_key = get_option('placeware_site_key', '');
+        $api_url  = get_option('placeware_api_url', 'http://localhost:8000');
+        $site_key = get_option('placeware_site_key', 'site_prod_abc123');
 
         wp_localize_script('placeware-widget-js', 'PlacewareConfig', array(
-            'apiUrl' => rtrim($api_url, '/'),
+            'apiUrl'  => rtrim($api_url, '/'),
             'siteKey' => $site_key,
         ));
     }
 
     public function render_widget() {
-        // Only render if configured
-        if (!get_option('placeware_api_url')) return;
+        // Always render the mount point — JS uses PlacewareConfig.apiUrl at runtime
         ?>
         <div id="placeware-chat-root"></div>
         <?php
@@ -79,15 +78,18 @@ class Placeware_Chat_Widget {
                     <tr valign="top">
                         <th scope="row">API Base URL</th>
                         <td>
-                            <input type="text" name="placeware_api_url" value="<?php echo esc_attr(get_option('placeware_api_url', 'http://0.0.0.0:8000')); ?>" class="regular-text" />
-                            <p class="description">e.g., http://0.0.0.0:8000</p>
+                            <input type="text" name="placeware_api_url" value="<?php echo esc_attr(get_option('placeware_api_url', 'http://localhost:8000')); ?>" class="regular-text" />
+                            <p class="description">e.g., http://localhost:8000 (must be reachable from the visitor's browser)</p>
                         </td>
                     </tr>
                     <tr valign="top">
-                        <th scope="row">Site Key (Optional)</th>
+                        <th scope="row">Site Key</th>
                         <td>
-                            <input type="text" name="placeware_site_key" value="<?php echo esc_attr(get_option('placeware_site_key')); ?>" class="regular-text" />
-                            <p class="description">Public key for this specific site widget.</p>
+                            <input type="text" name="placeware_site_key" value="<?php echo esc_attr(get_option('placeware_site_key', 'site_prod_abc123')); ?>" class="regular-text" />
+                            <p class="description">
+                                Must match one of the keys in <code>WIDGET_SITE_KEYS</code> in your backend <code>.env</code> file.<br>
+                                Default value: <code>site_prod_abc123</code> (matches the current backend configuration).
+                            </p>
                         </td>
                     </tr>
                 </table>

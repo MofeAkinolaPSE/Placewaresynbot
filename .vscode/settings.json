@@ -4,8 +4,9 @@
   "less.lint.unknownAtRules": "ignore",
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}/backend",
   "python.testing.pytestArgs": [
-    "backend"
+    "tests"
   ],
   "python.testing.autoTestDiscoverOnSaveEnabled": true,
   "python.analysis.extraPaths": [

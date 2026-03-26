@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any as DBClient
 from ..db import db
 from ..constants import TABLE_INVENTORY_EVENTS
-from .sage_adapter.service import get_sage_kpi_batch_id
+from .sage_adapter.service import get_sage_kpi_batch_id, _latest_batch_for_table
 
 # Use the literal table name used in the adapter for consistency until migrated
 TABLE_SAGE_SNAPSHOT = "sage_inventory_snapshot"
@@ -52,7 +52,7 @@ def get_realtime_stock(sku: str, client: DBClient = db) -> Dict[str, Any]:
     """
     # 1. Fetch Baseline (Last Sage Snapshot)
     # limit=1 + order desc ensures we get the very latest import entry for this SKU
-    sage_batch_id = get_sage_kpi_batch_id()
+    sage_batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table(TABLE_SAGE_SNAPSHOT, client)
     snap_q = client.table(TABLE_SAGE_SNAPSHOT)\
         .select("sku, name, quantity, imported_at, unit_cost")\
         .eq("sku", sku)
@@ -104,33 +104,121 @@ def get_realtime_stock(sku: str, client: DBClient = db) -> Dict[str, Any]:
 
 def get_inventory_summary(limit: int = 50, client: DBClient = db) -> List[Dict[str, Any]]:
     """
-    Get aggregated view of recently active items.
-    Note: For a full system, this would need a dedicated materialized view.
-    For Phase 1 MVP, we query the snapshot and enrich it.
-    """
-    # Get latest snapshots unique by SKU (this is expensive in raw SQL, simplifying for MVP)
-    # We grab the most recent imports
-    sage_batch_id = get_sage_kpi_batch_id()
-    snap_q = client.table(TABLE_SAGE_SNAPSHOT).select("sku, name, quantity, imported_at")
-    if sage_batch_id:
-        snap_q = snap_q.eq("batch_id", sage_batch_id)
-    snap_resp = snap_q.order("imported_at", desc=True).limit(limit).execute()
-    
-    results = []
-    # Deduplicate SKUs in python if the snapshot log is raw
-    seen_skus = set()
-    
-    for item in (snap_resp.data or []):
-        sku = item["sku"]
-        if sku in seen_skus:
-            continue
-        seen_skus.add(sku)
-        
-        # N+1 query pattern allowed for MVP Phase 1 (Accuracy > Speed per prompt)
-        # In Phase 2 this should be a DB function or View
-        realtime = get_realtime_stock(sku, client)
-        results.append(realtime)
+    Bulk inventory summary directly from sage_inventory_snapshot.
 
+    Strategy:
+      1. Pull latest rows from sage_inventory_snapshot ordered by imported_at DESC.
+         Deduplicate by SKU in Python — keeps the freshest row per SKU.
+         No batch_id filter: we always surface whatever is in the table.
+      2. Fetch all inventory_events in one shot and merge deltas in Python.
+      3. Fall back to inventory_items + stock_levels only if the snapshot is empty.
+
+    This replaces the previous N+1 loop (get_realtime_stock per SKU) which
+    fired 2 DB queries per SKU and caused timeouts with 500+ rows.
+    """
+    # ── Step 1: bulk snapshot read (no batch_id filter) ──────────────────────
+    try:
+        snap_resp = (
+            client.table(TABLE_SAGE_SNAPSHOT)
+            .select("sku, name, quantity, unit_cost, imported_at")
+            .order("imported_at", desc=True)
+            .limit(limit * 10)   # over-fetch to cover duplicate warehouse rows per SKU
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"sage_inventory_snapshot bulk query failed: {e}")
+        snap_resp = type("_R", (), {"data": []})()  # empty sentinel
+
+    # Deduplicate: keep first (latest) row per SKU
+    seen_skus: set = set()
+    snapshots: Dict[str, Dict[str, Any]] = {}
+    for row in (snap_resp.data or []):
+        sku = row.get("sku")
+        if not sku:
+            continue
+        if sku not in seen_skus:
+            seen_skus.add(sku)
+            snapshots[sku] = row
+        else:
+            # Sum warehouse quantities for the same SKU / same import batch
+            snapshots[sku]["quantity"] = (
+                float(snapshots[sku].get("quantity") or 0)
+                + float(row.get("quantity") or 0)
+            )
+
+    if not snapshots:
+        # ── Fallback: inventory_items + stock_levels ──────────────────────────
+        logger.info("sage_inventory_snapshot empty; falling back to inventory_items + stock_levels")
+        results: List[Dict[str, Any]] = []
+        try:
+            items_resp = client.table("inventory_items").select("id, sku, name").limit(limit).execute()
+            for item in (items_resp.data or []):
+                item_id = item.get("id")
+                sku = item.get("sku") or str(item_id)
+                name = item.get("name") or "Unknown"
+                stock_resp = client.table("stock_levels").select("quantity").eq("item_id", item_id).execute()
+                total_qty = sum(float(s.get("quantity") or 0) for s in (stock_resp.data or []))
+                results.append({
+                    "sku": sku,
+                    "name": name,
+                    "baseline": {"quantity": total_qty, "source": "Inventory Module", "as_of": None},
+                    "events": {"count": 0, "net_change": 0.0},
+                    "current_stock": total_qty,
+                    "status": "In Stock" if total_qty > 0 else "Out of Stock",
+                })
+        except Exception as e:
+            logger.error(f"Inventory module fallback failed: {e}")
+        return results
+
+    # ── Step 2: bulk events read — ONE query for all SKUs ────────────────────
+    events_by_sku: Dict[str, List[Dict[str, Any]]] = {s: [] for s in snapshots}
+    try:
+        ev_resp = (
+            client.table(TABLE_INVENTORY_EVENTS)
+            .select("sku, quantity_change, event_type, created_at")
+            .in_("sku", list(snapshots.keys()))
+            .order("created_at", desc=False)
+            .execute()
+        )
+        for ev in (ev_resp.data or []):
+            s = ev.get("sku")
+            if s and s in events_by_sku:
+                events_by_sku[s].append(ev)
+    except Exception as e:
+        logger.warning(f"Inventory events bulk fetch failed (non-fatal): {e}")
+
+    # ── Step 3: merge snapshot + events ─────────────────────────────────────
+    results = []
+    for sku, snap in list(snapshots.items())[:limit]:
+        baseline_qty = float(snap.get("quantity") or 0)
+        baseline_ts  = snap.get("imported_at")
+        sku_name     = snap.get("name") or sku
+
+        # Only count events that occurred AFTER the snapshot timestamp
+        relevant_events = [
+            e for e in events_by_sku.get(sku, [])
+            if not baseline_ts or (e.get("created_at") or "") > str(baseline_ts)
+        ]
+        delta_qty = sum(float(e.get("quantity_change") or 0) for e in relevant_events)
+        current_qty = baseline_qty + delta_qty
+
+        results.append({
+            "sku": sku,
+            "name": sku_name,
+            "baseline": {
+                "quantity": baseline_qty,
+                "source": "sage_inventory_snapshot",
+                "as_of": baseline_ts,
+            },
+            "events": {
+                "count": len(relevant_events),
+                "net_change": delta_qty,
+            },
+            "current_stock": current_qty,
+            "status": "In Stock" if current_qty > 0 else "Out of Stock",
+        })
+
+    logger.info(f"get_inventory_summary: returned {len(results)} SKUs from sage_inventory_snapshot")
     return results
 
 

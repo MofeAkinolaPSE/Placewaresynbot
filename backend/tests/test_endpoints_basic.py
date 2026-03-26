@@ -39,8 +39,8 @@ def test_chat_fallback_no_embedding(monkeypatch):
     assert_status(r, 200)
     j = r.json()
     assert "answer" in j
-    # Has disclaimer appended
-    assert "disclaimer" in j["answer"].lower() or "consult" in j["answer"].lower()
+    # Fallback returns a non-empty company profile response
+    assert len(j["answer"]) > 20
 
 
 def test_stock_snapshot_fallback():

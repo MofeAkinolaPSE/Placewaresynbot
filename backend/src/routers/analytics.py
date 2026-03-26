@@ -21,7 +21,7 @@ def require_analytics_access(request: Request) -> Dict[str, Any]:
     roles = payload.get("roles", [])
     
     # Allowed roles for analytics
-    allowed = {"admin", "finance"}
+    allowed = {"admin", "finance", "ops", "management"}
     
     # Check intersection
     if not any(r in allowed for r in roles):
@@ -92,11 +92,39 @@ def _cashflow_summary(periods: int = 6, limit: int = 5000) -> Dict[str, Any]:
         if debit > 0:
             agg["outflow"] += debit
 
-    sorted_periods = sorted(buckets.keys())[-max(1, periods):]
+    # Discard degenerate "Unknown" placeholder periods from GL
+    valid_buckets = {k: v for k, v in buckets.items() if k != "Unknown" and len(k) >= 7}
+
+    # Fall back to AR trend data when GL is absent or has no valid periods
+    if not valid_buckets:
+        try:
+            ar_data = ar_trend_summary(periods=periods)
+            ar_periods = ar_data.get("periods") or []
+            if ar_periods:
+                chart_periods_ar: List[Dict[str, Any]] = []
+                for p in ar_periods[-max(1, periods):]:
+                    amount = _to_float(p.get("amount"))
+                    balance = _to_float(p.get("balance"))
+                    collected = max(0.0, amount - balance)  # cash collected so far
+                    chart_periods_ar.append(
+                        {
+                            "period": p.get("period", ""),
+                            "inflow": amount,
+                            "outflow": collected,
+                            "net": balance,
+                            "amount": amount,
+                        }
+                    )
+                return {"mode": "ar_trend", "periods": chart_periods_ar}
+        except Exception:
+            pass
+        return {"mode": "cashflow", "periods": []}
+
+    sorted_periods = sorted(valid_buckets.keys())[-max(1, periods):]
     chart_periods: List[Dict[str, Any]] = []
     for p in sorted_periods:
-        inflow = buckets[p]["inflow"]
-        outflow = buckets[p]["outflow"]
+        inflow = valid_buckets[p]["inflow"]
+        outflow = valid_buckets[p]["outflow"]
         chart_periods.append(
             {
                 "period": p,
@@ -157,6 +185,27 @@ async def get_financial_trend(user: Dict[str, Any] = Depends(require_finance_tre
     except Exception as e:
         audit_logger.error(f"Trend fetch failed: {e}")
         return {"data": {"mode": "cashflow", "periods": []}}
+
+
+@router.get("/ar_trends")
+async def get_ar_trends(
+    periods: int = 6,
+    user: Dict[str, Any] = Depends(require_analytics_access),
+):
+    """Return AR trends for executive dashboard charts."""
+    safe_periods = max(1, min(periods, 24))
+    try:
+        summary = ar_trend_summary(periods=safe_periods)
+        return {
+            "summary": summary,
+            "trend": None,
+        }
+    except Exception as e:
+        audit_logger.error(f"AR trends fetch failed: {e}")
+        return {
+            "summary": {"periods": []},
+            "trend": None,
+        }
 
 @router.get("/gl")
 async def get_general_ledger(

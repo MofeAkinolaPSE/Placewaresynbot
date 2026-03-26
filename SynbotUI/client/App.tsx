@@ -33,6 +33,7 @@ import Leads from "./pages/Leads";
 import StaffDashboard from "./pages/StaffDashboard";
 import StaffCollaboration from "./pages/StaffCollaboration";
 import CRMLeadFinder from "./pages/CRMLeadFinder";
+import Compliance from "./pages/Compliance";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -86,6 +87,7 @@ const App = () => (
                 <Route path="/agents" element={<AgentsDashboard />} />
                 <Route path="/agents/:name" element={<AgentDetail />} />
                 <Route path="/admin/leads" element={<Leads />} />
+                <Route path="/compliance" element={<Compliance />} />
                 <Route path="/workflow" element={<Workflow />} />
                 <Route path="/staff/dashboard" element={<StaffDashboard />} />
                 <Route path="/staff/collaboration" element={<StaffCollaboration />} />

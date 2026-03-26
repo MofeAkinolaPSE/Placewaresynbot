@@ -247,6 +247,34 @@ class WorkflowJobsEngine:
             return True
         return False
 
+    def reject_job(self, job_id: str, rejecter: str) -> bool:
+        jobs = self._load_jobs()
+        for job in jobs:
+            if job.get("job_id") != job_id:
+                continue
+            if job.get("state") not in ("pending", "submitted", "approved"):
+                return False
+            job.setdefault("rejections", []).append({"rejecter": rejecter, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ")})
+            job["state"] = "rejected"
+            self._write_jobs(jobs)
+            try:
+                from src.db import audit_event
+
+                audit_event(
+                    "workflow_job_rejected",
+                    {"job_id": job_id, "rejecter": rejecter},
+                    actor_id=rejecter,
+                    event_class="workflow",
+                    action="reject",
+                    outcome="rejected",
+                    subject_type="workflow_job",
+                    subject_id=job_id,
+                )
+            except Exception:
+                pass
+            return True
+        return False
+
     def _escalate_overdue_jobs(self) -> int:
         import datetime as _dt
 

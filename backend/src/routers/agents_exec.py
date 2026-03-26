@@ -71,6 +71,19 @@ AGENT_DEFAULT_SPECS: Dict[str, List[Dict[str, Any]]] = {
     "expiry_monitoring": [
         {"type": "inventory_expiring", "days": 60},
     ],
+    # Reliability stack agents
+    "maintenance_tracking": [
+        {"type": "maintenance_incidents_open"},
+        {"type": "maintenance_tasks_overdue"},
+    ],
+    "digital_twin_monitor": [
+        {"type": "twin_current_state_map"},
+        {"type": "twin_open_anomalies"},
+    ],
+    "capability_discovery": [
+        {"type": "capability_proposals_active"},
+        {"type": "capability_signals_recent"},
+    ],
 }
 
 
@@ -270,7 +283,7 @@ def create_db_executor():
 
             elif query_type == "credit_risk_actions":
                 result = db.table("credit_risk_actions").select("*").order(
-                    "created_at", desc=True
+                    "executed_at", desc=True
                 ).limit(50).execute()
                 return result.data if hasattr(result, 'data') else []
 
@@ -325,6 +338,45 @@ def create_db_executor():
                                 "units": 0,
                             })
                 return rows_out
+
+            # ── Reliability stack query handlers ──────────────────────────────
+            elif query_type == "maintenance_incidents_open":
+                result = db.table("placeware_incident_log").select("*").eq(
+                    "status", "open"
+                ).order("detected_at", desc=True).limit(100).execute()
+                return result.data if hasattr(result, "data") else []
+
+            elif query_type == "maintenance_tasks_overdue":
+                import datetime as _dt
+                now_iso = _dt.datetime.utcnow().isoformat() + "Z"
+                result = db.table("placeware_maintenance_tasks").select("*").in_(
+                    "status", ["scheduled", "in_progress", "open"]
+                ).lt("due_at", now_iso).limit(100).execute()
+                return result.data if hasattr(result, "data") else []
+
+            elif query_type == "twin_current_state_map":
+                result = db.table("placeware_twin_nodes").select(
+                    "node_key,component,label,actual_state,health_status,last_sync_at"
+                ).execute()
+                return result.data if hasattr(result, "data") else []
+
+            elif query_type == "twin_open_anomalies":
+                result = db.table("placeware_twin_anomaly_events").select("*").is_(
+                    "resolved_at", "null"
+                ).order("detected_at", desc=True).limit(50).execute()
+                return result.data if hasattr(result, "data") else []
+
+            elif query_type == "capability_proposals_active":
+                result = db.table("placeware_capability_proposals").select("*").in_(
+                    "status", ["proposed", "approved"]
+                ).order("confidence_score", desc=True).limit(50).execute()
+                return result.data if hasattr(result, "data") else []
+
+            elif query_type == "capability_signals_recent":
+                result = db.table("placeware_capability_signals").select("*").order(
+                    "last_seen_at", desc=True
+                ).limit(100).execute()
+                return result.data if hasattr(result, "data") else []
 
             else:
                 logger.warning(f"Unknown query type: {query_type}")

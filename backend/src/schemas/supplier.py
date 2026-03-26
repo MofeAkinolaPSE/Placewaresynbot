@@ -1,11 +1,19 @@
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional
 
 
 class Supplier(BaseModel):
     name: str
     category: Optional[str] = None
-    contact: Optional[Dict[str, Any]] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    payment_terms: Optional[str] = None
+    tax_id: Optional[str] = None
+    bank_details: Optional[str] = None
+    current_balance: Optional[float] = None
+    status: Optional[str] = "active"
 
 
 class SupplierDelivery(BaseModel):

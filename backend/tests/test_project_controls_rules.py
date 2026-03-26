@@ -14,7 +14,13 @@ client = TestClient(app)
 
 
 def make_admin_token():
-    return jwt.encode({"roles": ["admin"], "sub": "admin-1"}, JWT_SECRET, algorithm="HS256")
+    import time
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": "admin-1", "roles": ["admin"], "iat": now, "exp": now + 7200},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
 
 
 def test_change_decision_transition_guard(monkeypatch):

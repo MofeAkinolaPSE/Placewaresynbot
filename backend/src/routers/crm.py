@@ -55,13 +55,13 @@ async def list_customers(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt
 
 
 class LeadIn(BaseModel):
-    source: Optional[str]
-    industry: Optional[str]
-    assigned_rep: Optional[str]
-    stage: Optional[str]
-    score: Optional[float]
-    expected_value: Optional[float]
-    linked_campaign_id: Optional[int]
+    source: Optional[str] = None
+    industry: Optional[str] = None
+    assigned_rep: Optional[str] = None
+    stage: Optional[str] = None
+    score: Optional[float] = None
+    expected_value: Optional[float] = None
+    linked_campaign_id: Optional[int] = None
     metadata: Optional[dict] = {}
 
 

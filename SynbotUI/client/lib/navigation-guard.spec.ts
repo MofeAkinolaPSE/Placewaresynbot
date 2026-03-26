@@ -26,6 +26,8 @@ describe("navigation guardrail", () => {
 
     const excludedFromSidebar = new Set([
       "/login",
+      "/executive/summary",       // drilldown from Executive page, not a direct nav item
+      "/finance/reports/ar/:bucket", // parameterised detail route
     ]);
 
     const appRoutesForSidebar = [...appRoutes].filter(

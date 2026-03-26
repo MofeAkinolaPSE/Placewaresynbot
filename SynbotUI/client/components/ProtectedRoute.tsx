@@ -17,6 +17,7 @@ const ProtectedRoute = ({ children }: PropsWithChildren) => {
     { startsWith: "/admin/users", allowed: ["admin"] },
     { startsWith: "/settings", allowed: ["admin"] },
     { startsWith: "/executive", allowed: ["admin", "management"] },
+    { startsWith: "/compliance", allowed: ["admin", "quality", "quality_assurance", "qa", "ops"] },
   ];
 
   if (isLoading) {

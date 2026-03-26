@@ -100,6 +100,7 @@ async function getBearerToken(): Promise<string> {
 async function fetchJson<T>(endpoint: string): Promise<T> {
   let token = await getBearerToken();
   let res = await fetch(apiUrl(endpoint), {
+    cache: "no-store",
     headers: {
       "Authorization": `Bearer ${token}`
     }
@@ -112,7 +113,7 @@ async function fetchJson<T>(endpoint: string): Promise<T> {
       throw new ApiError("Session expired", 401, "session");
     }
     token = await getBearerToken();
-    res = await fetch(apiUrl(endpoint), { headers: { "Authorization": `Bearer ${token}` } });
+    res = await fetch(apiUrl(endpoint), { cache: "no-store", headers: { "Authorization": `Bearer ${token}` } });
   }
 
   if (!res.ok) {
@@ -125,7 +126,7 @@ async function fetchJson<T>(endpoint: string): Promise<T> {
 
 async function fetchRaw<T = any>(endpoint: string): Promise<T> {
   let token = await getBearerToken();
-  let res = await fetch(apiUrl(endpoint), { headers: { "Authorization": `Bearer ${token}` } });
+  let res = await fetch(apiUrl(endpoint), { cache: "no-store", headers: { "Authorization": `Bearer ${token}` } });
 
   if (res.status === 401) {
     const refreshed = await authClient.refresh();
@@ -134,7 +135,7 @@ async function fetchRaw<T = any>(endpoint: string): Promise<T> {
       throw new ApiError("Session expired", 401, "session");
     }
     token = await getBearerToken();
-    res = await fetch(apiUrl(endpoint), { headers: { "Authorization": `Bearer ${token}` } });
+    res = await fetch(apiUrl(endpoint), { cache: "no-store", headers: { "Authorization": `Bearer ${token}` } });
   }
 
   if (!res.ok) {
@@ -291,9 +292,9 @@ export const api = {
     /** @deprecated use importJobs() */
     history: () => fetchJson<any[]>("/sage/history"),
     importJobs: (limit = 20) =>
-      fetchJson<{ jobs: any[]; count: number }>(`/sage/import/jobs?limit=${limit}`),
+      fetchJson<{ data: any[] }>(`/imports/jobs?limit=${limit}&domain=sage`),
     supportedTypes: () =>
-      fetchJson<{ file_types: any[] }>("/sage/import/supported"),
+      Promise.resolve({ file_types: ["customers", "ar", "ap", "gl", "inventory", "staff"] }),
   },
   audit: {
     logs: () => fetchJson<any[]>("/audit/logs"),
@@ -576,6 +577,9 @@ export const api = {
   },
   suppliers: {
     list: () => fetchRaw<any[]>("/suppliers"),
+    create: (payload: Record<string, any>) => sendJson<any>("/suppliers", "POST", payload),
+    metrics: (supplierName: string) =>
+      fetchRaw<any>(`/suppliers/${encodeURIComponent(supplierName)}/metrics`),
   },
   calendar: {
     list: (month?: string) => {
@@ -611,8 +615,7 @@ export const api = {
     update: (taskId: string, payload: Record<string, any>) =>
       sendJson<{ data: any }>(`/tasks/${taskId}`, "PATCH", payload),
     delete: (taskId: string) =>
-      sendJson<{ status: string }>(`/tasks/${taskId}`, "POST", { _method: "DELETE" })
-        .catch(() => fetchRaw(`/tasks/${taskId}`)),
+      sendJson<{ status: string }>(`/tasks/${taskId}`, "DELETE"),
   },
   agents: {
     list: () => fetchRaw<{ agents: any[]; count: number }>("/agents/list"),
@@ -633,5 +636,113 @@ export const api = {
       fetchRaw<{ key: string; value: any }>(`/cache/get/${agentName}`),
     cacheTtl: (agentName: string) =>
       fetchRaw<{ key: string; ttl_seconds: number | null }>(`/cache/ttl/${agentName}`),
+  },
+  compliance: {
+    status: () => fetchRaw<any>("/compliance/status"),
+    audits: (status?: string) => {
+      const q = status ? `?status=${status}` : "";
+      return fetchRaw<{ data: any[] }>(`/compliance/audits${q}`);
+    },
+    startAudit: (auditId: string) =>
+      sendJson<any>(`/compliance/audits/${auditId}/start`, "POST", {}),
+    completeAudit: (auditId: string, payload: { findings?: string; recommendations?: string; score?: number }) =>
+      sendJson<any>(`/compliance/audits/${auditId}/complete`, "POST", payload),
+    generateAuditReport: (auditId: string, payload: {
+      auditor_name?: string;
+      summary?: string;
+      findings?: string[];
+      observations?: string[];
+      recommendations?: string[];
+      score?: number;
+    }) => sendJson<any>(`/compliance/audits/${auditId}/generate-report`, "POST", payload),
+    deviations: (status?: string) => {
+      const q = status ? `?status=${status}` : "";
+      return fetchRaw<{ data: any[] }>(`/compliance/deviations${q}`);
+    },
+    createDeviation: (payload: {
+      title: string;
+      severity: string;
+      category: string;
+      description: string;
+      detected_by: string;
+      product_batch?: string;
+      sop_reference?: string;
+    }) => sendJson<any>("/compliance/deviations", "POST", payload),
+    updateDeviation: (devId: string, payload: Record<string, any>) =>
+      sendJson<any>(`/compliance/deviations/${devId}`, "PUT", payload),
+    generateDeviationReport: (devId: string) =>
+      sendJson<any>(`/compliance/deviations/${devId}/generate-report`, "POST", {}),
+    equipment: () => fetchRaw<{ data: any[] }>("/compliance/equipment"),
+    maintenance: (filter?: "overdue" | "upcoming" | "all") => {
+      const q = filter && filter !== "all" ? `?filter=${filter}` : "";
+      return fetchRaw<{ data: any[] }>(`/compliance/maintenance${q}`);
+    },
+    completeMaintenance: (maintenanceId: string, payload: {
+      completed_by: string;
+      notes?: string;
+      next_due_date?: string;
+    }) => sendJson<any>(`/compliance/maintenance/${maintenanceId}/complete`, "POST", payload),
+    generateMaintenanceCertificate: (maintenanceId: string, payload: {
+      performed_by: string;
+      maintenance_type?: string;
+      completion_notes?: string;
+      next_maintenance_date?: string;
+    }) => sendJson<any>(`/compliance/maintenance/${maintenanceId}/generate-certificate`, "POST", payload),
+    recalls: (status?: string) => {
+      const q = status ? `?status=${status}` : "";
+      return fetchRaw<{ data: any[] }>(`/compliance/recalls${q}`);
+    },
+    initiateRecall: (payload: {
+      product_name: string;
+      batch_number: string;
+      recall_reason: string;
+      severity: string;
+      nafdac_notified?: boolean;
+    }) => sendJson<any>("/compliance/recalls", "POST", payload),
+    updateRecall: (recallId: string, payload: Record<string, any>) =>
+      sendJson<any>(`/compliance/recalls/${recallId}`, "PUT", payload),
+    generateRecallDocuments: (recallId: string) =>
+      sendJson<any>(`/compliance/recalls/${recallId}/generate-documents`, "POST", {}),
+    sopList: (category?: string) => {
+      const q = category ? `?category=${category}` : "";
+      return fetchRaw<{ data: any[] }>(`/compliance/sop${q}`);
+    },
+    ingestSopDocx: (formData: FormData) =>
+      sendFormData<any>("/compliance/sop/ingest-docx", "POST", formData),
+    documentArchive: (docType?: string) => {
+      const q = docType ? `?doc_type=${docType}` : "";
+      return fetchRaw<{ data: any[] }>(`/documents/archive${q}`);
+    },
+  },
+  knowledge: {
+    getDocuments: (docType?: string, department?: string, page = 1) => {
+      const params = new URLSearchParams();
+      if (docType) params.set("doc_type", docType);
+      if (department) params.set("department", department);
+      params.set("page", String(page));
+      return fetchRaw<{ data: any[]; page: number; page_size: number }>(
+        `/api/documents?${params.toString()}`
+      );
+    },
+    getDocument: (id: string) => fetchRaw<any>(`/api/documents/${encodeURIComponent(id)}`),
+    ingestFile: (formData: FormData) =>
+      sendFormData<{ status: string; document_id: string; chunks: number; filename: string; message: string }>(
+        "/knowledge/ingest",
+        "POST",
+        formData
+      ),
+    search: (q: string, department?: string, docType?: string) => {
+      const params = new URLSearchParams({ q });
+      if (department) params.set("department", department);
+      if (docType) params.set("doc_type", docType);
+      return fetchRaw<any>(`/knowledge/search?${params.toString()}`);
+    },
+    getGaps: (status?: string, page = 1) => {
+      const params = new URLSearchParams({ page: String(page) });
+      if (status) params.set("status", status);
+      return fetchRaw<{ data: any[]; page: number }>(`/knowledge/gaps?${params.toString()}`);
+    },
+    resolveGap: (gapId: number) =>
+      fetchRaw<any>(`/knowledge/gaps/${gapId}/resolve`),
   },
 };

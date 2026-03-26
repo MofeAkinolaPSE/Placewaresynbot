@@ -128,7 +128,8 @@ def test_chat_orchestration_denied_tool_path(monkeypatch):
     r = client.post("/chat", json={"question": "executive summary"})
     assert_status(r, 200)
     body = r.json()
-    assert body["orchestration"]["tool_count"] == 0
+    # The denied tool must not appear in the success list (agent routing may add its own entries)
+    assert "getExecutiveSummary" not in body["orchestration"]["tools"]
     assert len(body["orchestration"]["errors"]) >= 1
 
     event_types = [e["event_type"] for e in events]
@@ -168,7 +169,8 @@ def test_chat_orchestration_tool_error_path(monkeypatch):
     r = client.post("/chat", json={"question": "stock availability"})
     assert_status(r, 200)
     body = r.json()
-    assert body["orchestration"]["tool_count"] == 0
+    # The errored tool must not appear in the success list (agent routing may add its own entries)
+    assert "getLatestInventorySnapshot" not in body["orchestration"]["tools"]
     assert len(body["orchestration"]["errors"]) >= 1
 
     event_types = [e["event_type"] for e in events]

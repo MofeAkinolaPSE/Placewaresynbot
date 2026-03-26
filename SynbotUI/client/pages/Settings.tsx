@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, AlertCircle, Copy } from "lucide-react";
+import { CheckCircle, AlertCircle, Copy, Sun, Moon } from "lucide-react";
 import { toast } from "sonner";
 import { getSynbotConfig } from "@/lib/wp-config";
 import { authClient } from "@/lib/auth-client";
@@ -34,6 +35,9 @@ function loadStoredSettings(): Partial<SettingsPayload> {
 }
 
 const Settings = () => {
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark" || (theme === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
   const config = getSynbotConfig();
   const stored = loadStoredSettings();
   const token = authClient.getAccessToken();
@@ -197,6 +201,30 @@ const Settings = () => {
             <p className="text-xs text-muted-foreground">
               Displayed from in-memory authenticated session only
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Appearance */}
+      <div className="pw-surface-interactive space-y-4 rounded-xl p-6">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground mb-1">Appearance</h2>
+          <p className="text-sm text-muted-foreground mb-5">Choose your preferred colour scheme. Takes effect immediately.</p>
+          <div className="pw-surface-base flex items-center justify-between rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              {isDark ? <Moon className="h-5 w-5 text-muted-foreground" /> : <Sun className="h-5 w-5 text-warning" />}
+              <div>
+                <p className="font-medium text-foreground">Dark Mode</p>
+                <p className="text-sm text-muted-foreground">
+                  {isDark ? "Currently using dark theme" : "Currently using light theme"}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={isDark}
+              onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+              aria-label="Toggle dark mode"
+            />
           </div>
         </div>
       </div>

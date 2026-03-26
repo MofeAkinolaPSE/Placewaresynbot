@@ -1,4 +1,5 @@
-﻿import { useState } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinancialDashboard } from "@/components/dashboards/FinancialDashboard";
 import { GeneralLedgerTable } from "@/components/dashboards/GeneralLedgerTable";
@@ -14,6 +15,7 @@ import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
  * Finance Page - Combines Analytics (Dashboard) and Reports
  */
 const FinanceAnalytics = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
@@ -77,45 +79,42 @@ const FinanceAnalytics = () => {
   };
 
   const handleNewReport = () => {
-    toast({
-      title: "Custom Reports",
-      description: "Navigate to the Reports tab or use the AR Aging report in the sidebar for detailed analysis.",
-    });
+    navigate("/finance/reports");
   };
 
   return (
-    <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
         <div>
-           <h2 className="text-3xl font-bold tracking-tight">Financial Intelligence</h2>
-           <p className="text-muted-foreground">Monitor cashflow, AR/AP, and profitability.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Financial Intelligence</h1>
+          <p className="text-sm text-muted-foreground">Monitor cashflow, AR/AP, and profitability.</p>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" onClick={handleExportPL} disabled={exporting}>
-              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
-              Export P&L
-           </Button>
-           <Button onClick={handleNewReport}>
-              <PieChart className="mr-2 h-4 w-4" />
-              New Report
-           </Button>
+          <Button variant="outline" size="sm" onClick={handleExportPL} disabled={exporting}>
+            {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+            Export P&L
+          </Button>
+          <Button size="sm" onClick={handleNewReport}>
+            <PieChart className="mr-2 h-4 w-4" />
+            New Report
+          </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="dashboard" className="space-y-4">
-        <TabsList>
+      <Tabs defaultValue="dashboard">
+        <TabsList className="mb-4">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="profitability">Profitability</TabsTrigger>
           <TabsTrigger value="ledgers">Ledgers</TabsTrigger>
         </TabsList>
-        <TabsContent value="dashboard" className="space-y-4">
-           <FinancialDashboard />
+        <TabsContent value="dashboard">
+          <FinancialDashboard />
         </TabsContent>
         <TabsContent value="profitability">
-           <ProfitabilityDashboard />
+          <ProfitabilityDashboard />
         </TabsContent>
         <TabsContent value="ledgers">
-           <GeneralLedgerTable />
+          <GeneralLedgerTable />
         </TabsContent>
       </Tabs>
     </div>

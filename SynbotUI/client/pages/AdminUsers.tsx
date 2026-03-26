@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -15,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type UserRecord = {
   id: string;
@@ -33,7 +41,20 @@ const parseRoles = (value: string): string[] =>
     .map((part) => part.trim().toLowerCase())
     .filter(Boolean);
 
+const SPECIAL_CHARS = "!@#$%^&*()-_=+[]{};:,.?/";
+
+function passwordStrengthError(pwd: string): string | null {
+  if (pwd.length < 10) return "At least 10 characters";
+  if (!/[a-z]/.test(pwd)) return "At least one lowercase letter";
+  if (!/[A-Z]/.test(pwd)) return "At least one uppercase letter";
+  if (!/[0-9]/.test(pwd)) return "At least one number";
+  if (![...SPECIAL_CHARS].some((c) => pwd.includes(c)))
+    return `At least one special character (${SPECIAL_CHARS})`;
+  return null;
+}
+
 const AdminUsers = () => {
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
   const [newEmail, setNewEmail] = useState("");
@@ -134,9 +155,10 @@ const AdminUsers = () => {
     },
   });
 
+  const pwdError = passwordStrengthError(newPassword);
   const canCreate =
     newEmail.trim().length > 0 &&
-    newPassword.length > 0 &&
+    pwdError === null &&
     parseRoles(newRoles).length > 0 &&
     createReason.trim().length > 0 &&
     createAttestation.trim().length > 0;
@@ -164,19 +186,35 @@ const AdminUsers = () => {
             placeholder="user@placeware.ng"
             aria-label="Email"
           />
-          <Input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Initial password"
-            aria-label="Password"
-          />
-          <Input
-            value={newRoles}
-            onChange={(e) => setNewRoles(e.target.value)}
-            placeholder="viewer, finance"
-            aria-label="Roles"
-          />
+          <div className="flex flex-col gap-1">
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Initial password"
+              aria-label="Password"
+              aria-describedby="pw-hint"
+            />
+            <p id="pw-hint" className={`text-xs ${newPassword.length > 0 && pwdError ? "text-destructive" : "text-muted-foreground"}`}>
+              {newPassword.length > 0 && pwdError
+                ? `⚠️ ${pwdError}`
+                : "Min 10 chars · uppercase · lowercase · number · special char"}
+            </p>
+          </div>
+          <Select value={newRoles} onValueChange={(v) => setNewRoles(v)}>
+            <SelectTrigger aria-label="Roles">
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="viewer">Viewer</SelectItem>
+              <SelectItem value="sales">Sales</SelectItem>
+              <SelectItem value="hr">HR</SelectItem>
+              <SelectItem value="ops">Operations</SelectItem>
+              <SelectItem value="finance">Finance</SelectItem>
+              <SelectItem value="management">Management</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
           <Input
             value={createReason}
             onChange={(e) => setCreateReason(e.target.value)}
@@ -215,39 +253,71 @@ const AdminUsers = () => {
           <p className="text-sm text-muted-foreground">No users found.</p>
         )}
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Email</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        {isMobile ? (
+          <div className="space-y-3">
             {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell className="font-medium">{user.email}</TableCell>
-                <TableCell>{user.roles.join(", ")}</TableCell>
-                <TableCell>{user.is_active ? "active" : "inactive"}</TableCell>
-                <TableCell className="space-x-2">
+              <div key={user.id} className="rounded-lg border bg-card p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-medium break-all leading-tight">{user.email}</p>
+                  <span className="rounded-full border px-2 py-0.5 text-xs capitalize">{user.is_active ? "active" : "inactive"}</span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">Roles: {user.roles.join(", ")}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
                   <Button
+                    size="sm"
                     variant="outline"
                     onClick={() => setSelectedUserId(user.id)}
                   >
                     {user.is_active ? "Deactivate" : "Activate"}
                   </Button>
                   <Button
+                    size="sm"
                     variant="outline"
                     onClick={() => setPasswordUserId(user.id)}
                   >
                     Reset Password
                   </Button>
-                </TableCell>
-              </TableRow>
+                </div>
+              </div>
             ))}
-          </TableBody>
-        </Table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 z-10 min-w-[260px] bg-muted/90">Email</TableHead>
+                  <TableHead className="min-w-[220px]">Roles</TableHead>
+                  <TableHead className="min-w-[100px]">Status</TableHead>
+                  <TableHead className="min-w-[240px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="sticky left-0 z-10 bg-background font-medium">{user.email}</TableCell>
+                    <TableCell>{user.roles.join(", ")}</TableCell>
+                    <TableCell>{user.is_active ? "active" : "inactive"}</TableCell>
+                    <TableCell className="space-x-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setSelectedUserId(user.id)}
+                      >
+                        {user.is_active ? "Deactivate" : "Activate"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setPasswordUserId(user.id)}
+                      >
+                        Reset Password
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
 
       {selectedUserId && (

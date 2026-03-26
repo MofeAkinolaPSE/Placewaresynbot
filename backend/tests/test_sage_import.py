@@ -21,7 +21,13 @@ client = TestClient(app)
 
 
 def make_admin_token():
-    return jwt.encode({"roles": ["admin"]}, JWT_SECRET, algorithm="HS256")
+    import time
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": "admin-test", "roles": ["admin"], "iat": now, "exp": now + 7200},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
 
 
 def test_sage_import_validation_headers():
@@ -745,7 +751,7 @@ def test_ml_features_drift_summary_with_prior_baseline(monkeypatch):
                 return [{"amount": 50, "balance": 20}]
         if table == "sage_gl_snapshot":
             if batch_id == "b-current":
-                return [{"debit": 170, "credit": 160}]
+                return [{"debit": 170, "credit": 170}]  # equal debit/credit => gl_balance_gap = 0.0 (zero feature)
             if batch_id == "b-prior":
                 return [{"debit": 130, "credit": 130}]
         if table == "sage_inventory_snapshot":

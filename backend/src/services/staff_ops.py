@@ -5,8 +5,6 @@ from typing import Any as DBClient
 from datetime import date
 from ..db import db
 from ..constants import TABLE_STAFF, TABLE_TIMESHEETS
-from .sage_adapter.service import get_sage_kpi_batch_id
-
 logger = logging.getLogger("ops")
 
 # --- Staff Registry Logic ---
@@ -143,13 +141,11 @@ def get_latest_staff_snapshot(limit: int = 1000, client: DBClient = db) -> List[
     """Return latest staff snapshot rows (append-only) for visibility/fallback.
 
     Orders by imported_at desc then id desc; limits results. Deduplicates by email if present.
+    No batch_id filter — the KPI batch_id belongs to finance/GL and has no rows here.
     """
-    sage_batch_id = get_sage_kpi_batch_id()
     q = client.table("sage_staff_snapshot").select(
         "staff_id,full_name,email,department,role,status,imported_at"
     )
-    if sage_batch_id:
-        q = q.eq("batch_id", sage_batch_id)
     resp = q.order("imported_at", desc=True).order("id", desc=True).limit(limit).execute()
     rows = resp.data or []
     latest_by_email: Dict[str, Dict[str, Any]] = {}

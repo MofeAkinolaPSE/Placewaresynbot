@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InventoryDashboard } from "@/components/dashboards/InventoryDashboard";
 import { LogisticsDashboard } from "@/components/dashboards/LogisticsDashboard";
@@ -30,6 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+import InventoryAutoComplete from "@/components/leads/InventoryAutoComplete";
 
 export default function Operations() {
   const queryClient = useQueryClient();
@@ -50,12 +51,10 @@ export default function Operations() {
     void queryClient.invalidateQueries({ queryKey: ["ops-forecast-stock-turnover"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   });
-
   useRealtimeChannel("workflow_updates", () => {
     void queryClient.invalidateQueries({ queryKey: ["ops-kpis"] });
     void queryClient.invalidateQueries({ queryKey: ["ops-forecast-stock-turnover"] });
   });
-
   useRealtimeChannel("logistics_updates", () => {
     void queryClient.invalidateQueries({ queryKey: ["inventory-dashboard"] });
     void queryClient.invalidateQueries({ queryKey: ["ops-kpis"] });
@@ -96,17 +95,18 @@ export default function Operations() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={motionTransitions.standard}
-      className="pw-page-surface space-y-8 p-8"
+      className="flex flex-col gap-5"
     >
-      <div className="flex items-center justify-between">
-         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Operations</h2>
-          <p className="text-muted-foreground">Manage inventory and stock movements.</p>
+      {/* Header */}
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Operations</h1>
+          <p className="text-sm text-muted-foreground">Manage inventory and stock movements.</p>
         </div>
         <div className="flex gap-2">
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button size="sm">
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Record Movement
               </Button>
@@ -119,20 +119,20 @@ export default function Operations() {
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="item_id" className="text-right">Item/SKU</Label>
-                  <Input
-                    id="item_id"
-                    className="col-span-3"
-                    value={formData.item_id}
-                    onChange={(e) => setFormData({ ...formData, item_id: e.target.value })}
-                    placeholder="e.g. VAC-001"
-                  />
+                  <div className="col-span-3">
+                    <InventoryAutoComplete
+                      onSelect={(p) =>
+                        setFormData({ ...formData, item_id: p.sku || p.name })
+                      }
+                    />
+                    {formData.item_id && (
+                      <p className="text-xs text-muted-foreground mt-1">Selected: {formData.item_id}</p>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="movement_type" className="text-right">Type</Label>
-                  <Select
-                    value={formData.movement_type}
-                    onValueChange={(val) => setFormData({ ...formData, movement_type: val })}
-                  >
+                  <Select value={formData.movement_type} onValueChange={(val) => setFormData({ ...formData, movement_type: val })}>
                     <SelectTrigger className="col-span-3">
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
@@ -190,23 +190,24 @@ export default function Operations() {
         </div>
       </div>
 
-      <Tabs defaultValue="inventory" className="space-y-4">
-        <TabsList>
+      {/* Tabs */}
+      <Tabs defaultValue="inventory">
+        <TabsList className="mb-4">
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="logistics">Logistics</TabsTrigger>
           <TabsTrigger value="procurement-import">Procurement/Import</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
-        <TabsContent value="inventory" className="space-y-4">
+        <TabsContent value="inventory">
           <InventoryDashboard />
         </TabsContent>
         <TabsContent value="logistics">
           <LogisticsDashboard />
         </TabsContent>
-        <TabsContent value="procurement-import" className="space-y-4">
+        <TabsContent value="procurement-import">
           <ProcurementImportDashboard />
         </TabsContent>
-        <TabsContent value="settings" className="space-y-4">
+        <TabsContent value="settings">
           <OperationsSettings />
         </TabsContent>
       </Tabs>
