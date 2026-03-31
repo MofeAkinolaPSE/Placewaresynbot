@@ -1,12 +1,14 @@
 
 services:
+
+  # ── PostgreSQL 18 + pgvector ─────────────────────────────────────────────
   db:
     build:
       context: ./db
     image: placeware-postgres:18
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres   
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin1234
       POSTGRES_DB: synbot_demo
     init: true
@@ -20,8 +22,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Adminer removed: use pgAdmin, TablePlus, or DO DB Management for DB administration
-
+  # ── FastAPI Backend (runs migrations automatically on start) ─────────────
   backend:
     container_name: chat-backend.v1
     build: .
@@ -29,9 +30,28 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
+
+  # ── React Frontend served by nginx ───────────────────────────────────────
+  frontend:
+    container_name: placeware-frontend.v1
+    build:
+      context: ../SynbotUI
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    depends_on:
+      backend:
         condition: service_healthy
 
 volumes:
