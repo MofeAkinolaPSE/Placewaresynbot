@@ -6,9 +6,9 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-# Install dependencies (respects pnpm-lock.yaml for reproducible builds)
+# Install all dependencies including devDependencies (needed for vite, typescript etc.)
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # Copy source and build
 # VITE_API_BASE_URL is intentionally left empty — nginx proxies API routes
