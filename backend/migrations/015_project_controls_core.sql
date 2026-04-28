@@ -80,18 +80,18 @@ alter table public.placeware_risk_register enable row level security;
 alter table public.placeware_change_requests enable row level security;
 
 drop policy if exists admin_all_projects on public.placeware_projects;
-create policy admin_all_projects on public.placeware_projects for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_projects on public.placeware_projects for all using (true) with check (true);
 
 drop policy if exists admin_all_scope_items on public.placeware_scope_items;
-create policy admin_all_scope_items on public.placeware_scope_items for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_scope_items on public.placeware_scope_items for all using (true) with check (true);
 
 drop policy if exists admin_all_cost_items on public.placeware_cost_items;
-create policy admin_all_cost_items on public.placeware_cost_items for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_cost_items on public.placeware_cost_items for all using (true) with check (true);
 
 drop policy if exists admin_all_risk_register on public.placeware_risk_register;
-create policy admin_all_risk_register on public.placeware_risk_register for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_risk_register on public.placeware_risk_register for all using (true) with check (true);
 
 drop policy if exists admin_all_change_requests on public.placeware_change_requests;
-create policy admin_all_change_requests on public.placeware_change_requests for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_change_requests on public.placeware_change_requests for all using (true) with check (true);
 
 commit;

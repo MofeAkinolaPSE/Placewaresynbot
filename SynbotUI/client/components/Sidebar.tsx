@@ -13,12 +13,12 @@ import {
   Workflow,
   Factory,
   ShoppingCart,
-  Zap,
   Shield,
   ShieldCheck,
   CalendarDays,
   Bot,
   ClipboardList,
+  Timer,
   ChevronDown,
   ChevronRight,
   LogOut,
@@ -92,6 +92,9 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       children: [
         { label: "Analytics", href: "/finance/analytics" },
         { label: "Reports", href: "/finance/reports" },
+        { label: "AR & Alerts", href: "/finance/ar" },
+        { label: "Vendor Payments", href: "/finance/vendor-payments" },
+        { label: "Budget", href: "/finance/budget" },
         { label: "Sage Import", href: "/finance/sage-import" },
       ],
     },
@@ -107,6 +110,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin", "hr", "ops", "management"],
       children: [
         { label: "Dashboard", href: "/staff/dashboard" },
+        { label: "Time Tracker", href: "/staff/time-tracker" },
         { label: "Collaboration", href: "/staff/collaboration" },
       ],
     },
@@ -118,6 +122,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         { label: "Overview", href: "/operations" },
         { label: "Project Controls", href: "/operations/project-controls" },
         { label: "Suppliers", href: "/operations/suppliers" },
+        { label: "Logistics Monitor", href: "/operations/logistics" },
       ],
     },
     {
@@ -126,14 +131,22 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin", "crm", "sales"],
       children: [
         { label: "Overview", href: "/crm" },
+        { label: "Sales Pipeline", href: "/crm/sales" },
         { label: "Lead Finder", href: "/crm/lead-finder" },
         { label: "Leads", href: "/admin/leads" },
+        { label: "Frontdesk", href: "/frontdesk" },
       ],
     },
     {
       label: "Compliance & QMS",
       icon: ShieldCheck,
       href: "/compliance",
+      roles: ["admin", "quality_assurance", "qa", "management"],
+    },
+    {
+      label: "Quality Control",
+      icon: ClipboardList,
+      href: "/quality-control",
       roles: ["admin", "quality_assurance", "qa", "management"],
     },
     {
@@ -149,7 +162,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin"],
     },
     {
-      label: "Ask PlacewareBot",
+      label: "Ask Warebot",
       icon: MessageSquare,
       href: "/synbot",
       badge: "AI",
@@ -164,7 +177,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin", "management"],
     },
     {
-      label: "Calendar & Tasks",
+      label: "Logistics Calendar",
       icon: CalendarDays,
       href: "/calendar",
     },
@@ -210,15 +223,32 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         )}
       >
         {/* Logo/Header */}
-        <div className="border-b border-sidebar-border/80 p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-primary shadow-elevation-2">
-              <Zap className="h-5 w-5 text-accent-foreground" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight">PlacewareBot</h1>
-              <p className="text-[11px] opacity-60">Enterprise Intelligence</p>
-            </div>
+        <div className="border-b border-sidebar-border/80 px-4 py-3.5">
+          <div
+            className="relative overflow-hidden rounded-xl px-3 py-2"
+            style={{
+              background: "linear-gradient(135deg, rgba(0,200,220,0.07) 0%, rgba(0,90,200,0.05) 100%)",
+              border: "1px solid rgba(0,200,220,0.15)",
+              boxShadow: "0 0 18px rgba(0,200,220,0.08), inset 0 1px 0 rgba(255,255,255,0.06)",
+            }}
+          >
+            {/* Radial highlight shimmer */}
+            <div
+              className="pointer-events-none absolute inset-0"
+              aria-hidden
+              style={{
+                background: "radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255,255,255,0.07) 0%, transparent 70%)",
+              }}
+            />
+            <img
+              src="/placeware-logo.jpg"
+              alt="Placeware Nigeria Limited"
+              className="relative w-full h-auto object-contain"
+              style={{
+                maxHeight: "48px",
+                filter: "drop-shadow(0 2px 8px rgba(0,200,220,0.28)) drop-shadow(0 0 2px rgba(255,255,255,0.15))",
+              }}
+            />
           </div>
         </div>
 
@@ -325,7 +355,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
             {/* Name + role */}
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm font-medium leading-tight">
-                PlacewareBot
+                Warebot
               </span>
               <span className="truncate text-[11px] capitalize text-sidebar-foreground/50 leading-tight">
                 {userRole}

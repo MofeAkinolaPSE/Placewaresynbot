@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from src.middleware import verify_jwt, require_role
 from pydantic import BaseModel
 from typing import Optional, Any
 from ..db import db
-import hashlib, json
+import hashlib, json, io, csv, logging
 import datetime as dt
+
+logger = logging.getLogger("crm")
 from src.services.realtime import realtime_hub
 from src.cache import invalidate_cache_tags
 from src.services.oeis import process_operational_event
+from src.services.places_service import search_places, cache_key as _places_cache_key
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 
@@ -88,6 +92,16 @@ class LeadAssignIn(BaseModel):
     follow_up_type: Optional[str] = "call"
     follow_up_hours: Optional[int] = 24
     notes: Optional[str] = None
+
+
+class LocationSearchIn(BaseModel):
+    """Input for Google Places-powered prospect discovery."""
+    location: str                          # e.g. "Lekki, Lagos"
+    business_type: str = "pharmacy"        # e.g. "pharmacy", "hospital"
+    radius_m: Optional[int] = 5000         # search radius in metres
+    limit: Optional[int] = 20
+    industry: Optional[str] = "pharma"    # used to tag the inserted prospect
+    region: Optional[str] = None          # fallback tag if not derived from location
 
 
 def _score_lead(expected_value: float, urgency: str, fit_signals: dict | None) -> float:
@@ -525,3 +539,156 @@ async def lead_finder_pipeline(limit: int = 100, _u=Depends(verify_jwt)):
     prospects = db.table("crm_prospects").select("*").order("created_at", desc=True).limit(bounded_limit).execute().data or []
     followups = db.table("crm_followups").select("*").order("created_at", desc=True).limit(bounded_limit).execute().data or []
     return {"prospects": prospects, "followups": followups}
+
+
+# =============================================================================
+# GOOGLE PLACES-POWERED DISCOVERY  (Migration 085)
+# =============================================================================
+
+@router.post("/lead-finder/search")
+async def search_leads_by_location(
+    request: Request,
+    payload: LocationSearchIn,
+    _u=Depends(require_role("crm")),
+):
+    """
+    Discover leads via Google Places API (or mock fallback).
+    Deduplicates by place_id — already-indexed prospects are skipped.
+    Results are cached in prospect_search_cache to avoid repeated API calls.
+    """
+    auth = verify_jwt(request)
+    actor = auth.get("sub") or auth.get("user_id")
+
+    location     = (payload.location or "").strip()
+    business_type = (payload.business_type or "pharmacy").strip()
+    radius_m     = max(500, min(int(payload.radius_m or 5000), 50_000))
+    limit        = max(1, min(int(payload.limit or 20), 60))
+
+    if not location:
+        raise HTTPException(status_code=400, detail="location is required")
+
+    q_key = _places_cache_key(location, business_type, radius_m)
+    query_label = f"{business_type} near {location} ({radius_m}m)"
+
+    # ── Call Places service (mock fallback built-in) ──────────────────────────
+    try:
+        places = search_places(location, business_type, radius_m=radius_m, limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Places lookup failed: {exc}")
+
+    # ── Insert, deduplicating by place_id ─────────────────────────────────────
+    inserted: list[dict] = []
+    skipped_ids: list[str] = []  # place_ids already in DB (true duplicates)
+    skipped = 0                  # count of true duplicates
+    errors  = 0                  # count of insert failures (schema / DB errors)
+    for place in places:
+        row = {
+            **place,
+            "industry":      payload.industry or "pharma",
+            "region":        payload.region or location,
+            "score":         place.get("places_score") or 0,
+            "status":        "enriched",
+            "source":        place.get("source", "google_places"),
+            "search_query":  query_label,
+            "created_by":    actor,
+        }
+        # Ensure source is set from the places payload (not cleared by the spread)
+        row["source"] = place.get("source", "google_places")
+
+        place_id = row.get("place_id")
+        if place_id:
+            try:
+                existing = db.table("crm_prospects").select("id").eq("place_id", place_id).limit(1).execute()
+                if (existing.data or []):
+                    skipped += 1
+                    skipped_ids.append(place_id)
+                    continue
+            except Exception as e:
+                logger.warning("crm dedup check failed for place_id=%s: %s", place_id, e)
+                # Fall through to attempt the insert anyway
+
+        try:
+            ins = db.table("crm_prospects").insert(row).execute()
+            rows = ins.data or []
+            if rows:
+                inserted.append(rows[0])
+        except Exception as e:
+            logger.error("crm prospect insert failed (place_id=%s): %s", place_id, e)
+            errors += 1
+            continue
+
+    # ── Fetch existing records for skipped place_ids so UI can display them ──
+    existing_records: list[dict] = []
+    if skipped_ids:
+        try:
+            ex_res = db.table("crm_prospects").select("*").in_("place_id", skipped_ids).execute()
+            existing_records = ex_res.data or []
+        except Exception as e:
+            logger.error("crm batch-fetch of skipped prospects failed: %s", e)
+
+    all_prospects = inserted + existing_records
+
+    # ── Update search cache ───────────────────────────────────────────────────
+    try:
+        db.table("prospect_search_cache").upsert({
+            "query_key":       q_key,
+            "search_location": location,
+            "business_type":   business_type,
+            "radius_m":        radius_m,
+            "result_count":    len(inserted),
+            "cached_at":       dt.datetime.utcnow().isoformat() + "Z",
+        }).execute()
+    except Exception:
+        pass
+
+    await realtime_hub.broadcast("crm_updates", {
+        "event": "prospects_sourced",
+        "count": len(inserted),
+        "source": "google_places",
+        "at": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+    })
+    invalidate_cache_tags("crm", "crm_dashboard", "executive")
+
+    return {
+        "status":  "ok",
+        "count":   len(inserted),
+        "skipped": skipped,
+        "errors":  errors,
+        "query":   query_label,
+        "prospects": all_prospects,
+    }
+
+
+@router.get("/lead-finder/export")
+async def export_prospects(limit: int = 1000, _u=Depends(verify_jwt)):
+    """
+    Download all crm_prospects as a CSV file.
+    Returns a streaming CSV response (suitable for browser download).
+    """
+    try:
+        resp = db.table("crm_prospects").select("*").order("created_at", desc=True).limit(max(1, min(limit, 5000))).execute()
+        rows = resp.data or []
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Export failed: {exc}")
+
+    FIELDS = [
+        "id", "company_name", "industry", "region", "formatted_address",
+        "contact_name", "contact_email", "contact_phone", "phone_number",
+        "website", "rating", "user_ratings_total", "places_score", "score",
+        "status", "source", "search_query", "assigned_rep",
+        "converted_lead_id", "created_at",
+    ]
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: (row.get(k) or "") for k in FIELDS})
+
+    buffer.seek(0)
+    filename = f"prospects_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+    return StreamingResponse(
+        iter([buffer.read()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

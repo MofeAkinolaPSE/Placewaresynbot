@@ -64,6 +64,7 @@ class BaseAgent(abc.ABC):
         start = datetime.utcnow()
         actor_id = self.context.get("actor_id")
         actor_role = self.context.get("actor_role")
+        enable_memory = bool(self.context.get("enable_memory", False))
 
         try:
             from src.db import audit_event
@@ -84,6 +85,21 @@ class BaseAgent(abc.ABC):
         except Exception:
             pass
 
+        # ── Memory recall — inject historical context before collect_data ────
+        if enable_memory:
+            try:
+                from src.services.agent_memory import AgentMemory
+                query_text = (
+                    self.context.get("intent_text")
+                    or self.context.get("query")
+                    or self.name
+                )
+                recalled = AgentMemory(self.name).recall(query_text=query_text, k=3)
+                if recalled:
+                    self.context["historical_context"] = recalled
+            except Exception:
+                pass  # Never block the agent lifecycle for a memory failure
+
         data = self.collect_data()
         analysis = self.analyze(data)
         insight = self.generate_insights(analysis)
@@ -94,6 +110,18 @@ class BaseAgent(abc.ABC):
             insight.execution_metadata.setdefault("cache_write_error", True)
         latency = int((datetime.utcnow() - start).total_seconds() * 1000)
         insight.execution_metadata.setdefault("latency_ms", latency)
+
+        # ── Memory store — persist high-confidence findings after run ────────
+        if enable_memory and insight.confidence_score >= 0.65 and insight.findings:
+            try:
+                from src.services.agent_memory import AgentMemory
+                AgentMemory(self.name).store(
+                    findings=insight.findings,
+                    confidence=insight.confidence_score,
+                    memory_type="finding",
+                )
+            except Exception:
+                pass  # Never block on a memory write failure
 
         try:
             from src.db import audit_event

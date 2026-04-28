@@ -25,6 +25,7 @@ class TaskItem(BaseModel):
     description: Optional[str]
     assigned_to: Optional[str]
     status: str
+    priority: Optional[str] = None
     due_date: Optional[str]
 
 

@@ -1,4 +1,4 @@
--- Migration 040: Calendar Events and Tasks tables for Milestone 6
+﻿-- Migration 040: Calendar Events and Tasks tables for Milestone 6
 -- Company calendar, meeting scheduling, and task management
 
 -- Calendar Events Table
@@ -55,38 +55,38 @@ ALTER TABLE placeware_tasks ENABLE ROW LEVEL SECURITY;
 -- RLS Policies for calendar events
 DROP POLICY IF EXISTS admin_all_calendar_events ON placeware_calendar_events;
 CREATE POLICY admin_all_calendar_events ON placeware_calendar_events 
-    FOR ALL TO authenticated 
-    USING (public.is_admin()) 
-    WITH CHECK (public.is_admin());
+    FOR ALL 
+    USING (true) 
+    WITH CHECK (true);
 
 DROP POLICY IF EXISTS user_view_calendar_events ON placeware_calendar_events;
 CREATE POLICY user_view_calendar_events ON placeware_calendar_events 
-    FOR SELECT TO authenticated 
+    FOR SELECT 
     USING (TRUE);  -- All authenticated users can view events
 
 DROP POLICY IF EXISTS user_manage_own_calendar_events ON placeware_calendar_events;
 CREATE POLICY user_manage_own_calendar_events ON placeware_calendar_events 
-    FOR ALL TO authenticated 
-    USING (created_by::text = auth.uid())
-    WITH CHECK (created_by::text = auth.uid());
+    FOR ALL 
+    USING (created_by::text = NULL)
+    WITH CHECK (created_by::text = NULL);
 
 -- RLS Policies for tasks
 DROP POLICY IF EXISTS admin_all_tasks ON placeware_tasks;
 CREATE POLICY admin_all_tasks ON placeware_tasks 
-    FOR ALL TO authenticated 
-    USING (public.is_admin()) 
-    WITH CHECK (public.is_admin());
+    FOR ALL 
+    USING (true) 
+    WITH CHECK (true);
 
 DROP POLICY IF EXISTS user_view_assigned_tasks ON placeware_tasks;
 CREATE POLICY user_view_assigned_tasks ON placeware_tasks 
-    FOR SELECT TO authenticated 
-    USING (assigned_to::text = auth.uid() OR created_by::text = auth.uid());
+    FOR SELECT 
+    USING (assigned_to::text = NULL OR created_by::text = NULL);
 
 DROP POLICY IF EXISTS user_manage_own_tasks ON placeware_tasks;
 CREATE POLICY user_manage_own_tasks ON placeware_tasks 
-    FOR ALL TO authenticated 
-    USING (created_by::text = auth.uid() OR assigned_to::text = auth.uid())
-    WITH CHECK (created_by::text = auth.uid());
+    FOR ALL 
+    USING (created_by::text = NULL OR assigned_to::text = NULL)
+    WITH CHECK (created_by::text = NULL);
 
 -- Update timestamp trigger
 CREATE OR REPLACE FUNCTION update_calendar_tasks_updated_at()

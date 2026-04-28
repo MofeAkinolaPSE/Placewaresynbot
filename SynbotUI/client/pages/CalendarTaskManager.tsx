@@ -11,7 +11,10 @@ import {
   ListTodo,
   Flag,
   MoreHorizontal,
+  Search,
   Trash2,
+  User,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -47,8 +50,16 @@ interface Task {
   status: "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
   priority: "low" | "medium" | "high" | "critical";
   due_date?: string;
+  assigned_to?: string;
   source: string;
   created_at: string;
+}
+
+interface DirectoryUser {
+  id: string;
+  email: string;
+  display_name?: string;
+  roles: string[];
 }
 
 const CalendarTaskManager = () => {
@@ -59,7 +70,8 @@ const CalendarTaskManager = () => {
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [newEvent, setNewEvent] = useState({ title: "", description: "", event_type: "meeting", start_time: "", end_time: "", location: "", all_day: false });
-  const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", due_date: "" });
+  const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", due_date: "", assigned_to: "" });
+  const [assigneeSearch, setAssigneeSearch] = useState("");
 
   useRealtimeChannel("calendar_tasks", (message) => {
     const evt = message?.event;
@@ -83,6 +95,19 @@ const CalendarTaskManager = () => {
     queryKey: ["tasks"],
     queryFn: () => api.tasks.list(),
   });
+
+  // Fetch user directory for assignment dropdown (admins/managers)
+  const { data: directoryData } = useQuery({
+    queryKey: ["user-directory"],
+    queryFn: () => api.users.directory(),
+    staleTime: 300_000,
+  });
+  const directoryUsers: DirectoryUser[] = (directoryData as any) ?? [];
+  const filteredUsers = assigneeSearch.trim()
+    ? directoryUsers.filter((u) =>
+        (u.display_name || u.email).toLowerCase().includes(assigneeSearch.toLowerCase())
+      )
+    : directoryUsers;
 
   const events = (eventsData as { events?: CalendarEvent[] })?.events ?? [];
   const tasks = (tasksData as { tasks?: Task[] })?.tasks ?? [];
@@ -118,11 +143,23 @@ const CalendarTaskManager = () => {
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: (data: typeof newTask) => api.tasks.create(data),
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast({ title: "Task created", description: "Your task has been added." });
+      const assignedTo = vars.assigned_to;
+      const assigneeName = assignedTo
+        ? directoryUsers.find((u) => u.id === assignedTo)?.display_name ||
+          directoryUsers.find((u) => u.id === assignedTo)?.email ||
+          "team member"
+        : null;
+      toast({
+        title: "Task created",
+        description: assigneeName
+          ? `Task assigned to ${assigneeName}`
+          : "Task added to your list.",
+      });
       setShowTaskDialog(false);
-      setNewTask({ title: "", description: "", priority: "medium", due_date: "" });
+      setNewTask({ title: "", description: "", priority: "medium", due_date: "", assigned_to: "" });
+      setAssigneeSearch("");
     },
     onError: (e: any) => {
       toast({ title: "Error", description: e?.message || "Failed to create task", variant: "destructive" });
@@ -302,7 +339,7 @@ const CalendarTaskManager = () => {
                           <div className="flex-1">
                             <p className="text-sm font-medium">{task.title}</p>
                             {task.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{task.description}</p>}
-                            <div className="flex items-center gap-2 mt-2">
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
                               <Badge variant="outline" className={`text-xs ${getPriorityColor(task.priority)}`}>
                                 <Flag className="h-3 w-3 mr-1" />
                                 {task.priority}
@@ -311,6 +348,14 @@ const CalendarTaskManager = () => {
                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                                   <Clock className="h-3 w-3" />
                                   {new Date(task.due_date).toLocaleDateString()}
+                                </span>
+                              )}
+                              {task.assigned_to && (
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <UserCheck className="h-3 w-3 text-primary" />
+                                  {directoryUsers.find((u) => u.id === task.assigned_to)?.display_name ||
+                                    directoryUsers.find((u) => u.id === task.assigned_to)?.email ||
+                                    task.assigned_to}
                                 </span>
                               )}
                             </div>
@@ -446,15 +491,15 @@ const CalendarTaskManager = () => {
       </Dialog>
 
       {/* New Task Dialog */}
-      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
-        <DialogContent className="sm:max-w-[500px]">
+      <Dialog open={showTaskDialog} onOpenChange={(o) => { setShowTaskDialog(o); if (!o) { setAssigneeSearch(""); } }}>
+        <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Create New Task</DialogTitle>
-            <DialogDescription>Add a task to your to-do list.</DialogDescription>
+            <DialogDescription>Add a task and optionally assign it to a team member.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <label className="text-sm font-medium">Title</label>
+              <label className="text-sm font-medium">Title *</label>
               <Input
                 placeholder="Task title"
                 value={newTask.title}
@@ -493,16 +538,78 @@ const CalendarTaskManager = () => {
                 />
               </div>
             </div>
+
+            {/* ── Assign To ── */}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <User className="w-3.5 h-3.5" />
+                Assign To
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+
+              {/* Selected assignee pill */}
+              {newTask.assigned_to && (
+                <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-sm">
+                  <span className="flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-primary" />
+                    {directoryUsers.find((u) => u.id === newTask.assigned_to)?.display_name ||
+                      directoryUsers.find((u) => u.id === newTask.assigned_to)?.email ||
+                      newTask.assigned_to}
+                  </span>
+                  <button
+                    onClick={() => { setNewTask({ ...newTask, assigned_to: "" }); setAssigneeSearch(""); }}
+                    className="text-muted-foreground hover:text-destructive text-xs"
+                  >
+                    ✕ clear
+                  </button>
+                </div>
+              )}
+
+              {/* Search + dropdown list */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  className="pl-8"
+                  placeholder="Search team members…"
+                  value={assigneeSearch}
+                  onChange={(e) => setAssigneeSearch(e.target.value)}
+                />
+              </div>
+              {assigneeSearch.trim() && filteredUsers.length > 0 && (
+                <div className="max-h-44 overflow-y-auto rounded-md border bg-popover shadow-md">
+                  {filteredUsers.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted text-left transition-colors"
+                      onClick={() => {
+                        setNewTask({ ...newTask, assigned_to: u.id });
+                        setAssigneeSearch("");
+                      }}
+                    >
+                      <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{u.display_name || u.email}</span>
+                      <span className="ml-auto text-xs text-muted-foreground shrink-0">
+                        {u.roles.join(", ")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {assigneeSearch.trim() && filteredUsers.length === 0 && (
+                <p className="text-xs text-muted-foreground pl-1">No matching team members found.</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTaskDialog(false)}>
+            <Button variant="outline" onClick={() => { setShowTaskDialog(false); setAssigneeSearch(""); }}>
               Cancel
             </Button>
             <Button
               onClick={() => createTaskMutation.mutate(newTask)}
               disabled={!newTask.title || createTaskMutation.isPending}
             >
-              {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+              {createTaskMutation.isPending ? "Creating..." : newTask.assigned_to ? "Assign Task" : "Create Task"}
             </Button>
           </DialogFooter>
         </DialogContent>

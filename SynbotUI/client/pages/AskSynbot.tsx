@@ -204,7 +204,7 @@ const AskSynbot = () => {
         </ScrollArea>
 
         <div className="border-t border-border/70 p-4 text-xs text-muted-foreground">
-          <p>PlacewareBot v1.0</p>
+          <p>Warebot v1.0</p>
           <p>Powered by Placeware AI</p>
         </div>
       </div>
@@ -292,7 +292,7 @@ const AskSynbot = () => {
           <div className="flex gap-3">
             <AlertCircle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
             <p className="text-xs text-warning">
-              <strong>Pharma Compliance Notice:</strong> PlacewareBot analysis is for business intelligence only. 
+              <strong>Pharma Compliance Notice:</strong> Warebot analysis is for business intelligence only. 
               For regulated decisions (formulary inclusions, pricing), consult subject matter experts and 
               regulatory compliance team.
             </p>
@@ -311,7 +311,7 @@ const AskSynbot = () => {
                   handleSendMessage();
                 }
               }}
-              placeholder="Ask PlacewareBot a question about your business..."
+              placeholder="Ask Warebot a question about your business..."
               className="flex-1"
             />
             <Button onClick={handleSendMessage} size="icon" disabled={isSending}>

@@ -615,7 +615,7 @@ const Dashboard = () => {
           <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🛡 Compliance</Badge>
         </Link>
         <Link to="/synbot">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🤖 Ask PlacewareBot</Badge>
+          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🤖 Ask Warebot</Badge>
         </Link>
       </div>
     </motion.div>

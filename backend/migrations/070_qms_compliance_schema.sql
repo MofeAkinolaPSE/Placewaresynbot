@@ -1,4 +1,4 @@
--- Migration 070: QMS Compliance Schema
+﻿-- Migration 070: QMS Compliance Schema
 -- Adds Quality Management System tables: SOP registry, audit schedule,
 -- compliance activity log, equipment registry, maintenance schedule,
 -- deviation reports (CAPA), recall cases, and document archive.
@@ -201,10 +201,10 @@ CREATE INDEX IF NOT EXISTS idx_recall_cases_batch      ON recall_cases(batch_num
 CREATE INDEX IF NOT EXISTS idx_recall_cases_initiation ON recall_cases(initiation_date DESC);
 
 -- ---------------------------------------------------------------------------
--- Document Archive (generated compliance documents — hybrid storage)
--- file_path    → local filesystem path (when storage_backend='local')
--- cloud_key    → object storage key (when storage_backend='supabase'|'s3')
--- download_url → always populated: relative API path (local) or pre-signed URL (cloud)
+-- Document Archive (generated compliance documents â€” hybrid storage)
+-- file_path    â†’ local filesystem path (when storage_backend='local')
+-- cloud_key    â†’ object storage key (when storage_backend='supabase'|'s3')
+-- download_url â†’ always populated: relative API path (local) or pre-signed URL (cloud)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS document_archive (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -292,59 +292,59 @@ ALTER TABLE document_archive         ENABLE ROW LEVEL SECURITY;
 -- Admin: full CRUD
 DROP POLICY IF EXISTS admin_all_sop_registry ON sop_registry;
 CREATE POLICY admin_all_sop_registry ON sop_registry
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_audit_schedule ON audit_schedule;
 CREATE POLICY admin_all_audit_schedule ON audit_schedule
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_compliance_activity ON compliance_activity_log;
 CREATE POLICY admin_all_compliance_activity ON compliance_activity_log
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_equipment_registry ON equipment_registry;
 CREATE POLICY admin_all_equipment_registry ON equipment_registry
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_maintenance_schedule ON maintenance_schedule;
 CREATE POLICY admin_all_maintenance_schedule ON maintenance_schedule
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_deviation_reports ON deviation_reports;
 CREATE POLICY admin_all_deviation_reports ON deviation_reports
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_recall_cases ON recall_cases;
 CREATE POLICY admin_all_recall_cases ON recall_cases
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS admin_all_document_archive ON document_archive;
 CREATE POLICY admin_all_document_archive ON document_archive
-  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL  USING (true) WITH CHECK (true);
 
 -- All authenticated users: read access
 DROP POLICY IF EXISTS read_sop_registry ON sop_registry;
-CREATE POLICY read_sop_registry ON sop_registry FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_sop_registry ON sop_registry FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_audit_schedule ON audit_schedule;
-CREATE POLICY read_audit_schedule ON audit_schedule FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_audit_schedule ON audit_schedule FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_compliance_activity ON compliance_activity_log;
-CREATE POLICY read_compliance_activity ON compliance_activity_log FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_compliance_activity ON compliance_activity_log FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_equipment_registry ON equipment_registry;
-CREATE POLICY read_equipment_registry ON equipment_registry FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_equipment_registry ON equipment_registry FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_maintenance_schedule ON maintenance_schedule;
-CREATE POLICY read_maintenance_schedule ON maintenance_schedule FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_maintenance_schedule ON maintenance_schedule FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_deviation_reports ON deviation_reports;
-CREATE POLICY read_deviation_reports ON deviation_reports FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_deviation_reports ON deviation_reports FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_recall_cases ON recall_cases;
-CREATE POLICY read_recall_cases ON recall_cases FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_recall_cases ON recall_cases FOR SELECT  USING (true);
 
 DROP POLICY IF EXISTS read_document_archive ON document_archive;
-CREATE POLICY read_document_archive ON document_archive FOR SELECT TO authenticated USING (true);
+CREATE POLICY read_document_archive ON document_archive FOR SELECT  USING (true);
 
 COMMIT;

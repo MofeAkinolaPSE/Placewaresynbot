@@ -2,11 +2,12 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from src.schemas.staff_dashboard import StaffDashboard, ActivityItem, PendingApproval, TaskItem, KPIWidget, Badge, AssignedProjectItem
 from src.middleware import verify_jwt, require_role
 from typing import List
-import os, json
+import os, json, logging
 import datetime as dt
 from src.db import db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 LEDGER_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "event_ledger.jsonl")
 TASKS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "staff_tasks.json")
@@ -83,19 +84,50 @@ async def get_staff_dashboard(request: Request, user_id: str):
 
     activities = activities[:25]
 
-    # Tasks assigned to user
+    # Tasks assigned to user — merge JSON file + Supabase placeware_tasks
     raw_tasks = _read_tasks()
     tasks = []
+    seen_task_ids: set = set()
     for t in raw_tasks:
         if str(t.get("assigned_to")) == str(user_id):
+            tid = t.get("task_id")
+            if tid:
+                seen_task_ids.add(str(tid))
             tasks.append(TaskItem(
-                task_id=t.get("task_id"),
+                task_id=tid or f"json-{len(tasks)}",
                 title=t.get("title"),
                 description=t.get("description"),
                 assigned_to=t.get("assigned_to"),
                 status=t.get("status"),
                 due_date=t.get("due_date"),
             ))
+
+    # Pull tasks from Supabase placeware_tasks table
+    try:
+        supabase_tasks = (
+            db.table("placeware_tasks")
+            .select("id,title,description,assigned_to,status,priority,due_date")
+            .eq("assigned_to", user_id)
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        ).data or []
+        for t in supabase_tasks:
+            tid = str(t.get("id") or "")
+            if tid in seen_task_ids:
+                continue  # de-dupe
+            seen_task_ids.add(tid)
+            tasks.append(TaskItem(
+                task_id=tid,
+                title=t.get("title") or "Untitled",
+                description=t.get("description"),
+                assigned_to=t.get("assigned_to"),
+                status=t.get("status") or "pending",
+                priority=t.get("priority"),
+                due_date=str(t.get("due_date")) if t.get("due_date") else None,
+            ))
+    except Exception as exc:
+        logger.warning(f"Could not query placeware_tasks for user {user_id}: {exc}")
 
     assigned_projects: List[AssignedProjectItem] = []
     try:

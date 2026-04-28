@@ -18,6 +18,15 @@ from ..deepseek import DeepSeek
 from ..constants import BOT_NAME, BOT_BRAND
 import src.agent_router as agent_router
 import src.db as db
+from .tool_manifest import (
+    AVAILABLE_AGENTS,
+    ACTION_INTENTS,
+    DATA_INTENTS,
+    ALL_INTENT_TYPES,
+    TASK_MAPPING,
+    DEPARTMENT_SYNONYMS,
+    ORDERED_ACTION_KEYWORDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,22 +47,7 @@ def get_llm_client() -> DeepSeek:
     return _llm_client
 
 
-# Available agent domains for task routing
-AVAILABLE_AGENTS = {
-    "financial_agent":            "Financial analysis, P&L, cashflow, AR/AP trends",
-    "inventory_agent":            "Inventory levels, stock movements, expiry tracking",
-    "compliance_agent":           "Regulatory compliance, NAFDAC audits, QMS activity scanning, SOP adherence, policy violations",
-    "audit_intelligence":         "Audit schedule analysis, overdue audits, upcoming audits, compliance calendar, department audit risk",
-    "deviation_capa":             "Deviation reports, CAPA actions, investigation workflow, QMS non-conformances",
-    "maintenance_tracker":        "Equipment maintenance schedules, calibration status, cold-chain equipment uptime",
-    "recall_manager":             "Product recalls, distribution trace, NAFDAC recall notifications, recall effectiveness",
-    "cold_chain_agent":           "Temperature monitoring, cold storage, spoilage risk",
-    "logistics_agent":            "Shipping, deliveries, supply chain capacity",
-    "revenue_agent":              "Revenue forecasts, pricing, profitability",
-    "enterprise_risk_agent":      "Risk assessment, mitigation strategies",
-    "process_optimization_agent": "Workflow efficiency, automation opportunities",
-    "import_agent":               "Import status, customs, procurement tracking",
-}
+# AVAILABLE_AGENTS imported from tool_manifest — single source of truth
 
 
 class IntentRequest(BaseModel):
@@ -66,10 +60,11 @@ class IntentParser:
     Parses free-form executive text into structured intent using LLM.
     """
 
+    # Intent list is built from tool_manifest at parse time so it stays in sync automatically.
     PARSE_PROMPT = """You are an executive intent parser for {brand}, a pharmaceutical distribution company.
 
 Given the executive's statement, extract a structured intent with these fields:
-- intent_type: One of [capacity_analysis, financial_review, compliance_check, inventory_audit, risk_assessment, forecast, optimization, status_update, action_request]
+- intent_type: One of [{intent_types}]
 - scope: One of [global, regional, department, specific_item]
 - urgency: One of [low, medium, high, critical]
 - domains: List of relevant domains from [{domains}]
@@ -85,8 +80,12 @@ Executive statement: {text}"""
         try:
             llm = get_llm_client()
             domains_list = ", ".join(AVAILABLE_AGENTS.keys())
+            intent_types_list = ", ".join(ALL_INTENT_TYPES)
             prompt = self.PARSE_PROMPT.format(
-                brand=BOT_BRAND, domains=domains_list, text=text
+                brand=BOT_BRAND,
+                domains=domains_list,
+                intent_types=intent_types_list,
+                text=text,
             )
             
             response = llm.generate_response(
@@ -94,6 +93,7 @@ Executive statement: {text}"""
                 question=prompt,
                 instruction="You are a JSON extraction engine. Output ONLY valid JSON with no additional text."
             )
+            # Inject intent_types dynamically from the manifest so the prompt stays current.
             
             # Extract JSON from response
             json_match = re.search(r'\{[\s\S]*\}', response)
@@ -113,73 +113,67 @@ Executive statement: {text}"""
             return self._fallback_parse(text)
 
     def _fallback_parse(self, text: str) -> Dict[str, Any]:
-        """Fallback parsing using keyword detection."""
-        text_lower = text.lower()
-        
-        # Check for task creation intent first
-        if any(w in text_lower for w in ["create task", "add task", "new task", "remind me", "schedule", "todo", "to-do", "meeting"]):
-            intent_type = "create_task"
-            domains = []
-            # Try to extract task details
-            priority = "medium"
-            if any(w in text_lower for w in ["urgent", "critical", "asap", "immediately"]):
-                priority = "critical"
-            elif any(w in text_lower for w in ["high priority", "important"]):
-                priority = "high"
-            elif any(w in text_lower for w in ["low priority", "whenever", "eventually"]):
-                priority = "low"
-            return {
-                "intent_type": intent_type,
-                "scope": "specific_item",
-                "urgency": priority,
-                "domains": domains,
-                "parameters": {"task_text": text, "priority": priority},
-                "original_text": text,
-            }
-        
-        # Detect intent type from keywords
-        if any(w in text_lower for w in ["revenue", "profit", "cashflow", "p&l", "ar", "ap", "financial"]):
-            intent_type = "financial_review"
-            domains = ["financial_agent", "revenue_agent"]
-        elif any(w in text_lower for w in ["stock", "inventory", "expir", "quantity"]):
-            intent_type = "inventory_audit"
-            domains = ["inventory_agent"]
-        elif any(w in text_lower for w in ["recall", "product recall", "batch recall"]):
-            intent_type = "recall_management"
-            domains = ["recall_manager", "compliance_agent"]
-        elif any(w in text_lower for w in ["deviation", "capa", "non-conformance", "nonconformance", "corrective"]):
-            intent_type = "deviation_review"
-            domains = ["deviation_capa", "compliance_agent"]
-        elif any(w in text_lower for w in ["maintenance", "calibration", "equipment", "service", "breakdown"]):
-            intent_type = "maintenance_check"
-            domains = ["maintenance_tracker"]
-        elif any(w in text_lower for w in ["audit schedule", "audit calendar", "overdue audit", "upcoming audit"]):
-            intent_type = "audit_review"
-            domains = ["audit_intelligence", "compliance_agent"]
-        elif any(w in text_lower for w in ["sop", "standard operating", "procedure", "compliance activity"]):
-            intent_type = "compliance_check"
-            domains = ["compliance_agent", "audit_intelligence"]
-        elif any(w in text_lower for w in ["compliance", "audit", "regulation", "nafdac", "qms"]):
-            intent_type = "compliance_check"
-            domains = ["compliance_agent", "audit_intelligence"]
-        elif any(w in text_lower for w in ["risk", "threat", "vulnerability"]):
-            intent_type = "risk_assessment"
-            domains = ["enterprise_risk_agent"]
-        elif any(w in text_lower for w in ["forecast", "predict", "project"]):
-            intent_type = "forecast"
-            domains = ["financial_agent", "inventory_agent"]
-        elif any(w in text_lower for w in ["delivery", "shipment", "logistics", "capacity"]):
-            intent_type = "capacity_analysis"
-            domains = ["logistics_agent"]
-        else:
-            intent_type = "status_update"
-            domains = ["financial_agent"]
+        """Keyword-based fallback when LLM parsing fails.
 
+        Detection order (most-specific phrase first prevents false positives):
+        1. Action intents — checked via ORDERED_ACTION_KEYWORDS from the manifest.
+        2. Data intents   — checked via DATA_INTENTS[*].keywords from the manifest.
+        """
+        text_lower = text.lower()
+
+        # ── 1. Action intent detection (longest keyword wins) ─────────────────
+        for keyword, intent_type in ORDERED_ACTION_KEYWORDS:
+            if keyword in text_lower:
+                params: Dict[str, Any] = {"text": text}
+
+                if intent_type == "send_email" or intent_type == "send_whatsapp":
+                    detected_dept = "operations"
+                    for dept, synonyms in DEPARTMENT_SYNONYMS.items():
+                        if any(s in text_lower for s in synonyms):
+                            detected_dept = dept
+                            break
+                    params["department"] = detected_dept
+
+                if intent_type == "create_task":
+                    priority = "medium"
+                    if any(w in text_lower for w in ["urgent", "critical", "asap", "immediately"]):
+                        priority = "critical"
+                    elif any(w in text_lower for w in ["high priority", "important"]):
+                        priority = "high"
+                    elif any(w in text_lower for w in ["low priority", "whenever", "eventually"]):
+                        priority = "low"
+                    params["task_text"] = text
+                    params["priority"] = priority
+
+                return {
+                    "intent_type": intent_type,
+                    "scope": "specific_item" if intent_type in ("create_task", "schedule_meeting") else "department",
+                    "urgency": params.get("priority", "medium"),
+                    "domains": [],
+                    "parameters": params,
+                    "original_text": text,
+                }
+
+        # ── 2. Data intent detection (first keyword match wins) ────────────────
+        for intent_type, cfg in DATA_INTENTS.items():
+            if not cfg.get("keywords"):
+                continue
+            if any(kw in text_lower for kw in cfg["keywords"]):
+                return {
+                    "intent_type": intent_type,
+                    "scope": "global",
+                    "urgency": "medium",
+                    "domains": list(cfg.get("agents", [])),
+                    "parameters": {},
+                    "original_text": text,
+                }
+
+        # ── 3. Default ─────────────────────────────────────────────────────────
         return {
-            "intent_type": intent_type,
+            "intent_type": "status_update",
             "scope": "global",
             "urgency": "medium",
-            "domains": domains,
+            "domains": ["financial_agent"],
             "parameters": {},
             "original_text": text,
         }
@@ -190,61 +184,8 @@ class TaskDecomposer:
     Decomposes structured intent into concrete agent tasks.
     """
 
-    TASK_MAPPING = {
-        "financial_review": [
-            {"agent": "financial_agent", "action": "get_summary"},
-            {"agent": "revenue_agent", "action": "get_trends"},
-        ],
-        "inventory_audit": [
-            {"agent": "inventory_agent", "action": "get_stock_levels"},
-            {"agent": "inventory_agent", "action": "get_expiry_alerts"},
-        ],
-        "compliance_check": [
-            {"agent": "compliance_agent", "action": "get_violations"},
-            {"agent": "compliance_agent", "action": "get_audit_status"},
-        ],
-        "risk_assessment": [
-            {"agent": "enterprise_risk_agent", "action": "assess_risks"},
-        ],
-        "forecast": [
-            {"agent": "financial_agent", "action": "forecast"},
-            {"agent": "inventory_agent", "action": "demand_forecast"},
-        ],
-        "capacity_analysis": [
-            {"agent": "logistics_agent", "action": "capacity"},
-            {"agent": "cold_chain_agent", "action": "storage_status"},
-        ],
-        "optimization": [
-            {"agent": "process_optimization_agent", "action": "analyze_workflows"},
-        ],
-        "status_update": [
-            {"agent": "financial_agent", "action": "get_summary"},
-        ],
-        "action_request": [
-            {"agent": "process_optimization_agent", "action": "recommend"},
-        ],
-        "create_task": [],  # No agent tasks - handled directly
-        # ── QMS / Compliance intent types (Milestone 9) ──────────────────────
-        "compliance_check": [
-            {"agent": "compliance_agent",    "action": "get_activity_compliance"},
-            {"agent": "audit_intelligence",  "action": "get_audit_status"},
-        ],
-        "audit_review": [
-            {"agent": "audit_intelligence",  "action": "get_audit_status"},
-            {"agent": "compliance_agent",    "action": "get_sop_adherence"},
-        ],
-        "deviation_review": [
-            {"agent": "deviation_capa",      "action": "get_open_deviations"},
-            {"agent": "compliance_agent",    "action": "get_violations"},
-        ],
-        "maintenance_check": [
-            {"agent": "maintenance_tracker", "action": "get_overdue"},
-        ],
-        "recall_management": [
-            {"agent": "recall_manager",      "action": "get_active_recalls"},
-            {"agent": "compliance_agent",    "action": "get_violations"},
-        ],
-    }
+    # TASK_MAPPING is imported from tool_manifest — no duplicate keys, single source of truth.
+    TASK_MAPPING = TASK_MAPPING
 
     def decompose(self, intent: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Transform intent into list of agent tasks."""
@@ -419,6 +360,482 @@ Respond with ONLY the task title (max 100 chars), no explanation."""
         }
 
 
+async def _handle_send_email_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """Delegate email composition and delivery to EmailAgent."""
+    from src.agent_registry import get_agent
+
+    params = intent.get("parameters", {})
+    department = (params.get("department") or "operations").lower()
+
+    agent = get_agent("email_agent", context={
+        "intent_text": text,
+        "department":  department,
+        "actor_id":    "eos_chat",
+        "simulation":  simulation,
+        "enable_memory": True,
+    })
+    if agent:
+        try:
+            insight = agent.run()
+            summary = "\n".join(insight.findings) if insight.findings else "Email action completed."
+            status = "simulated" if simulation else ("success" if insight.confidence_score >= 0.5 else "error")
+            return {
+                "intent": intent,
+                "report": {"summary": summary, "status": status, "metrics": insight.metrics},
+                "simulation": simulation,
+            }
+        except Exception as exc:
+            logger.error(f"EmailAgent failed: {exc}")
+            # Fall through to inline fallback below
+            return {
+                "intent": intent,
+                "report": {"summary": f"Email agent encountered an error: {exc}", "status": "error"},
+                "simulation": simulation,
+            }
+
+    # ── Inline fallback (no agent registered) ────────────────────────────────
+    import yaml
+    from src.services.messaging import send_email
+
+    cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+    to_email: Optional[str] = None
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        to_email = ((cfg.get("email") or {}).get("recipients") or {}).get(department)
+    except Exception as exc:
+        logger.error(f"Config load failed in email fallback: {exc}")
+
+    if not to_email:
+        return {
+            "intent": intent,
+            "report": {
+                "summary": (
+                    f"No email address configured for department '{department}'. "
+                    "Check email.recipients in config.yaml."
+                ),
+                "status": "error",
+            },
+            "simulation": simulation,
+        }
+
+    subject = f"Message via {BOT_BRAND} Executive Assistant"
+    body_text = f"This message was sent via {BOT_NAME}:\n\n{text}\n\n---\nSent by {BOT_BRAND} AI Assistant"
+
+    if simulation:
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"[SIMULATION] Would send email to {department} ({to_email}).\nSubject: {subject}",
+                "status": "simulated",
+            },
+            "simulation": True,
+        }
+
+    try:
+        send_email(to_email=to_email, subject=subject, body=body_text)
+        return {
+            "intent": intent,
+            "report": {"summary": f"Email sent to {department} ({to_email}).", "status": "success"},
+            "simulation": False,
+        }
+    except Exception as exc:
+        logger.error(f"Email fallback send failed: {exc}")
+        return {
+            "intent": intent,
+            "report": {"summary": f"Failed to send email: {exc}", "status": "error"},
+            "simulation": False,
+        }
+
+
+async def _handle_schedule_meeting_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """Delegate calendar parsing, conflict-check, and event creation to CalendarAgent."""
+    from src.agent_registry import get_agent
+
+    agent = get_agent("calendar_agent", context={
+        "intent_text": text,
+        "action":      "create",
+        "actor_id":    "eos_chat",
+        "simulation":  simulation,
+        "enable_memory": True,
+    })
+    if agent:
+        try:
+            insight = agent.run()
+            summary = "\n".join(insight.findings) if insight.findings else "Calendar action completed."
+            status = "simulated" if simulation else ("success" if insight.confidence_score >= 0.5 else "error")
+            return {
+                "intent": intent,
+                "report": {"summary": summary, "status": status, "metrics": insight.metrics},
+                "simulation": simulation,
+            }
+        except Exception as exc:
+            logger.error(f"CalendarAgent failed: {exc}")
+            return {
+                "intent": intent,
+                "report": {"summary": f"Calendar agent encountered an error: {exc}", "status": "error"},
+                "simulation": simulation,
+            }
+
+    # ── Inline fallback ───────────────────────────────────────────────────────
+    import datetime as _dt
+    from src.db import db as _db
+
+    now = _dt.datetime.utcnow()
+    time_match = re.search(
+        r"\bat\s+(noon|midnight|\d{1,2}(?::\d{2})?(?:\s*[ap]m)?)",
+        text, re.IGNORECASE
+    )
+    if time_match:
+        ts = time_match.group(1).strip().lower()
+        if ts == "noon":
+            start = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        elif ts == "midnight":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            hm = re.match(r"(\d{1,2})(?::(\d{2}))?(?:\s*([ap]m))?", ts, re.IGNORECASE)
+            if hm:
+                hour = int(hm.group(1))
+                minutes = int(hm.group(2) or 0)
+                ampm = (hm.group(3) or "").lower()
+                if ampm == "pm" and hour < 12:
+                    hour += 12
+                elif ampm == "am" and hour == 12:
+                    hour = 0
+                start = now.replace(hour=min(hour, 23), minute=min(minutes, 59), second=0, microsecond=0)
+            else:
+                start = now + _dt.timedelta(hours=1)
+    else:
+        start = now + _dt.timedelta(hours=1)
+
+    end = start + _dt.timedelta(hours=1)
+    title_match = re.search(
+        r"(?:schedule|book|arrange|set up|create|add)\s+a?\s*(?:meeting|call|event)\s+"
+        r"(?:about|for|with|re|regarding|to discuss)?\s*(.+?)"
+        r"(?:\s+at\s+\d|\s+on\s+|\s*$)",
+        text, re.IGNORECASE
+    )
+    title = (title_match.group(1).strip().capitalize() if title_match else "") or f"Meeting – {now.strftime('%b %d, %Y')}"
+    if len(title) > 100:
+        title = title[:97] + "..."
+
+    if simulation:
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"[SIMULATION] Would schedule: {title}\nStart: {start.isoformat()}Z",
+                "status": "simulated",
+            },
+            "simulation": True,
+        }
+
+    try:
+        import json as _json
+        result = _db.table("placeware_calendar_events").insert({
+            "title": title,
+            "description": f"Scheduled via {BOT_NAME}: {text}",
+            "event_type": "meeting",
+            "start_time": start.isoformat() + "Z",
+            "end_time": end.isoformat() + "Z",
+            "all_day": False,
+            "location": None,
+            "attendees": _json.dumps([]),
+            "metadata": _json.dumps({"created_via": "eos_chat"}),
+        }).execute()
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"Meeting scheduled!\nTitle: {title}\nStart: {start.strftime('%Y-%m-%d %H:%M UTC')}",
+                "status": "success",
+            },
+            "simulation": False,
+        }
+    except Exception as exc:
+        logger.error(f"Schedule meeting fallback failed: {exc}")
+        return {
+            "intent": intent,
+            "report": {"summary": f"Failed to schedule meeting: {exc}", "status": "error"},
+            "simulation": False,
+        }
+
+
+async def _handle_find_leads_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """Delegate location-based prospect discovery to LeadFinderAgent."""
+    from src.agent_registry import get_agent
+    import re as _re
+
+    params   = intent.get("parameters", {})
+    location = params.get("location") or params.get("region") or ""
+
+    # ── Inline NLP fallback: extract "in <city>" or "near <city>" ───────────
+    if not location:
+        m = _re.search(r"\b(?:in|near|around|close to)\s+([A-Za-z][A-Za-z ,]+?)(?:\s+(?:for|to|with|and|$)|\.|,|$)", text, _re.IGNORECASE)
+        location = m.group(1).strip() if m else "Lagos, Nigeria"
+
+    business_type = params.get("business_type") or params.get("type") or ""
+    if not business_type:
+        for kw in ("pharmacy", "hospital", "clinic", "healthcare", "distributor", "lab"):
+            if kw in text.lower():
+                business_type = kw
+                break
+        business_type = business_type or "pharmacy"
+
+    radius_m = int(params.get("radius_m") or 5000)
+    limit    = int(params.get("limit") or 20)
+
+    agent = get_agent("lead_finder_agent", context={
+        "intent_text":   text,
+        "location":      location,
+        "business_type": business_type,
+        "radius_m":      radius_m,
+        "limit":         limit,
+        "industry":      "pharma",
+        "simulation":    simulation,
+        "actor_id":      "eos_chat",
+        "enable_memory": True,
+    })
+
+    if agent:
+        try:
+            insight = agent.run()
+            summary = "\n".join(insight.findings) if insight.findings else "Lead discovery completed."
+            status  = "simulated" if simulation else ("success" if insight.confidence_score >= 0.5 else "error")
+            return {
+                "intent":     intent,
+                "report":     {"summary": summary, "status": status, "metrics": insight.metrics},
+                "simulation": simulation,
+            }
+        except Exception as exc:
+            logger.error(f"LeadFinderAgent failed: {exc}")
+            return {
+                "intent": intent,
+                "report": {"summary": f"Lead finder encountered an error: {exc}", "status": "error"},
+                "simulation": simulation,
+            }
+
+    return {
+        "intent": intent,
+        "report": {
+            "summary": (
+                f"Lead Finder is available via the CRM → Lead Finder page. "
+                f"Search for '{business_type}' near '{location}'."
+            ),
+            "status": "fallback",
+        },
+        "simulation": simulation,
+    }
+
+
+async def _handle_send_whatsapp_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """Send a WhatsApp message to an internal department via Termii."""
+    import yaml
+    from src.services.messaging import send_whatsapp
+
+    params = intent.get("parameters", {})
+    department = (params.get("department") or "operations").lower()
+
+    cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+    to_phone: Optional[str] = None
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        phones = ((cfg.get("whatsapp") or {}).get("recipients")) or {}
+        to_phone = phones.get(department)
+    except Exception as exc:
+        logger.error(f"Failed to load config for WhatsApp dispatch: {exc}")
+
+    if not to_phone:
+        return {
+            "intent": intent,
+            "report": {
+                "summary": (
+                    f"No WhatsApp number configured for '{department}'. "
+                    "Add a whatsapp.recipients section to config.yaml."
+                ),
+                "status": "error",
+            },
+            "simulation": simulation,
+        }
+
+    if simulation:
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"[SIMULATION] Would send WhatsApp to {department} ({to_phone}).",
+                "status": "simulated",
+            },
+            "simulation": True,
+        }
+
+    try:
+        send_whatsapp(to_phone=to_phone, message=text)
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"WhatsApp message sent to the {department} department.",
+                "status": "success",
+            },
+            "simulation": False,
+        }
+    except Exception as exc:
+        logger.error(f"WhatsApp send failed: {exc}")
+        return {
+            "intent": intent,
+            "report": {"summary": f"Failed to send WhatsApp to {department}: {exc}", "status": "error"},
+            "simulation": False,
+        }
+
+
+async def _handle_generate_report_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """Delegate structured report generation to ReportGenerationAgent."""
+    from src.agent_registry import get_agent
+
+    params = intent.get("parameters", {})
+    report_type = params.get("report_type")  # Optional override
+
+    agent = get_agent("report_generation_agent", context={
+        "intent_text": text,
+        "report_type": report_type,
+        "actor_id":    "eos_chat",
+        "simulation":  simulation,
+        "enable_memory": True,
+    })
+    if agent:
+        try:
+            insight = agent.run()
+            summary = "\n".join(insight.findings) if insight.findings else "Report generation completed."
+            status = "simulated" if simulation else "success"
+            return {
+                "intent": intent,
+                "report": {"summary": summary, "status": status, "metrics": insight.metrics},
+                "simulation": simulation,
+            }
+        except Exception as exc:
+            logger.error(f"ReportGenerationAgent failed: {exc}")
+            return {
+                "intent": intent,
+                "report": {"summary": f"Report agent encountered an error: {exc}", "status": "error"},
+                "simulation": simulation,
+            }
+
+    # ── Inline fallback (legacy path) ────────────────────────────────────────
+    if simulation:
+        return {
+            "intent": intent,
+            "report": {"summary": "[SIMULATION] Would generate a report based on: " + text, "status": "simulated"},
+            "simulation": True,
+        }
+
+    report_data: Dict[str, Any] = {}
+    text_lower = text.lower()
+    detected_type = "general"
+
+    try:
+        if any(w in text_lower for w in ["p&l", "profit", "loss", "income statement", "pl report"]):
+            detected_type = "P&L"
+            from src.services.finance import get_pl_summary  # type: ignore[import]
+            report_data = get_pl_summary()
+        elif any(w in text_lower for w in ["payroll", "salary", "wages"]):
+            detected_type = "Payroll"
+            from src.services.hr import get_payroll_summary  # type: ignore[import]
+            report_data = get_payroll_summary()
+        elif any(w in text_lower for w in ["compliance", "audit", "qms", "nafdac"]):
+            detected_type = "Compliance"
+            from src.services.compliance import get_compliance_summary  # type: ignore[import]
+            report_data = get_compliance_summary()
+        elif any(w in text_lower for w in ["inventory", "stock"]):
+            detected_type = "Inventory"
+            from src.services.tool_registry import ToolRegistry
+            report_data = ToolRegistry.execute("getLatestInventorySnapshot", {}, ["executive"], "executive")
+        else:
+            from src.services.tool_registry import ToolRegistry
+            report_data = ToolRegistry.execute("getExecutiveSummary", {}, ["executive"], "executive")
+    except Exception as exc:
+        logger.warning(f"Report fallback data pull partial error: {exc}")
+
+    synth = Synthesizer()
+    report = synth.synthesize(
+        [{"source": "report", "type": detected_type, "data": report_data}],
+        original_text=text,
+    )
+    return {"intent": intent, "report": report, "simulation": False}
+
+
+async def _handle_trigger_replenishment_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """Create a replenishment request for a SKU mentioned in the text."""
+    import re as _re
+
+    # Extract SKU and quantity from text using simple heuristics
+    sku_match = _re.search(r"\b([A-Z]{2,}-?\d{3,})\b", text)
+    qty_match = _re.search(r"\b(\d+)\s*(?:units?|packs?|pieces?|boxes?|items?)?\b", text)
+
+    sku = sku_match.group(1) if sku_match else None
+    qty = int(qty_match.group(1)) if qty_match else 50
+
+    if simulation:
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"[SIMULATION] Would create replenishment request: SKU={sku or 'unknown'}, qty={qty}",
+                "status": "simulated",
+            },
+            "simulation": True,
+        }
+
+    try:
+        from src.services.replenishment import create_replenishment_request  # type: ignore[import]
+        result = create_replenishment_request(sku=sku, quantity=qty, notes=text)
+        return {
+            "intent": intent,
+            "report": {
+                "summary": f"Replenishment request created for SKU {sku}, quantity {qty}.",
+                "details": result,
+                "status": "success",
+            },
+            "simulation": False,
+        }
+    except ImportError:
+        # Fallback: insert directly via Supabase
+        try:
+            row = {
+                "sku": sku,
+                "requested_qty": qty,
+                "notes": text,
+                "status": "pending",
+                "created_via": "eos_chat",
+            }
+            result_db = db.db.table("placeware_replenishment_requests").insert(row).execute()
+            inserted = result_db.data[0] if hasattr(result_db, "data") and result_db.data else row
+            return {
+                "intent": intent,
+                "report": {
+                    "summary": f"Replenishment request submitted: SKU {sku or 'N/A'}, qty {qty}.",
+                    "details": inserted,
+                    "status": "success",
+                },
+                "simulation": False,
+            }
+        except Exception as exc:
+            logger.error(f"Replenishment insert failed: {exc}")
+            return {
+                "intent": intent,
+                "report": {"summary": f"Failed to create replenishment: {exc}", "status": "error"},
+                "simulation": False,
+            }
+
+
 @router.post("/intent")
 async def handle_intent(request: Request, body: IntentRequest):
     """
@@ -435,33 +852,104 @@ async def handle_intent(request: Request, body: IntentRequest):
     intent = parser.parse(text)
     logger.info(f"Parsed intent: {intent.get('intent_type')} scope={intent.get('scope')}")
     
-    # Handle task creation intent specially
+    # Handle action intents before analytics pipeline
+    if intent.get("intent_type") == "send_email":
+        return await _handle_send_email_action(intent, text, simulation)
+
+    if intent.get("intent_type") == "send_whatsapp":
+        return await _handle_send_whatsapp_action(intent, text, simulation)
+
+    if intent.get("intent_type") == "schedule_meeting":
+        return await _handle_schedule_meeting_action(intent, text, simulation)
+
     if intent.get("intent_type") == "create_task":
         return await _handle_task_creation(intent, text, simulation)
+
+    if intent.get("intent_type") == "generate_report":
+        return await _handle_generate_report_action(intent, text, simulation)
+
+    if intent.get("intent_type") == "trigger_replenishment":
+        return await _handle_trigger_replenishment_action(intent, text, simulation)
     
     # 2. Decompose into tasks
     decomposer = TaskDecomposer()
     tasks = decomposer.decompose(intent)
     logger.info(f"Decomposed into {len(tasks)} tasks")
     
-    # 3. Dispatch tasks (or simulate)
+    # 3. Dispatch tasks (or simulate) — real agent execution via agent_registry
     outputs = []
     for t in tasks:
-        agent = t.get("agent")
+        agent_name = t.get("agent")
         task = t.get("task")
-        
+
         if simulation:
             outputs.append({
-                "agent": agent,
-                "result": f"[SIMULATION] Would execute {task.get('action')} on {agent}",
+                "agent": agent_name,
+                "result": f"[SIMULATION] Would execute {task.get('action')} on {agent_name}",
                 "status": "simulated",
             })
         else:
             try:
-                tid = agent_router.send_task(agent, task)
-                outputs.append({"agent": agent, "task_id": tid, "status": "dispatched"})
+                from src.agent_registry import get_agent as _get_agent
+                from src.routers.agents_exec import (
+                    create_db_executor,
+                    _get_default_specs_for_agent,
+                    workflow_engine as _wf_engine,
+                    shared_cache as _cache,
+                )
+                actor = request.client.host if request.client else "eos"
+                agent_obj = _get_agent(
+                    agent_name,
+                    context={
+                        "db_executor":         create_db_executor(),
+                        "query_specs":         _get_default_specs_for_agent(agent_name),
+                        "cache":               _cache,
+                        "workflow_engine":     _wf_engine,
+                        "auto_trigger_workflow": False,
+                        "actor_id":            actor,
+                        "actor_role":          None,
+                    },
+                )
+                if agent_obj:
+                    insight = agent_obj.run()
+                    outputs.append({
+                        "agent":  agent_name,
+                        "result": getattr(insight, "__dict__", insight),
+                        "status": "executed",
+                    })
+                else:
+                    # Agent not in registry — fall back to stub dispatch
+                    tid = agent_router.send_task(agent_name, task)
+                    outputs.append({"agent": agent_name, "task_id": tid, "status": "dispatched"})
             except Exception as e:
-                outputs.append({"agent": agent, "error": str(e), "status": "failed"})
+                logger.error(f"Agent execution failed for {agent_name}: {e}")
+                outputs.append({"agent": agent_name, "error": str(e), "status": "failed"})
+
+    # 3b. Augment with tool-registry data for this intent type
+    intent_type = intent.get("intent_type", "status_update")
+    tool_names = (DATA_INTENTS.get(intent_type) or {}).get("tools", [])
+    if tool_names and not simulation:
+        try:
+            from src.services.tool_registry import ToolRegistry
+            for tool_name in tool_names:
+                try:
+                    result = ToolRegistry.execute(
+                        tool_name,
+                        args={},
+                        roles=["executive"],
+                        mode="executive",
+                    )
+                    outputs.append({
+                        "source": "tool_registry",
+                        "tool":   tool_name,
+                        "result": result,
+                        "status": "ok",
+                    })
+                except Exception as te:
+                    logger.warning(f"Tool registry call failed [{tool_name}]: {te}")
+                    outputs.append({"source": "tool_registry", "tool": tool_name, "error": str(te), "status": "failed"})
+        except ImportError:
+            logger.warning("tool_registry module not importable; skipping")
     
     # 4. Synthesize report
     synth = Synthesizer()

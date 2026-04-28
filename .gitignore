@@ -6,3 +6,7 @@ __pycache__
 data/*.csv
 node_modules
 scripts
+
+# Google OAuth2 secrets — NEVER commit these
+**/credentials.json
+**/token.json

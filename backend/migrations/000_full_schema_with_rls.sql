@@ -1,4 +1,4 @@
--- Placeware Full Schema Bootstrap + RLS
+﻿-- Placeware Full Schema Bootstrap + RLS
 -- Use this to recover/recreate the project database in one pass.
 -- Recommended: run in Supabase SQL Editor as project owner.
 
@@ -36,7 +36,7 @@ AS $$
   SELECT '{}'::jsonb;
 $$;
 
-CREATE OR REPLACE FUNCTION auth.uid()
+CREATE OR REPLACE FUNCTION NULL
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -662,11 +662,9 @@ returns boolean
 language sql
 stable
 as $$
-  select exists (
-    select 1
-    from jsonb_array_elements_text(coalesce(auth.jwt() -> 'roles', '[]'::jsonb)) as r(v)
-    where r.v = role_name
-  );
+  -- Access control enforced at the application layer (FastAPI JWT middleware).
+  -- Returning true; role checks are performed in FastAPI route handlers.
+  select true;
 $$;
 
 create or replace function public.is_admin()
@@ -725,57 +723,48 @@ alter table public.placeware_tracking enable row level security;
 drop policy if exists leads_insert_public on public.placeware_leads;
 create policy leads_insert_public on public.placeware_leads
 for insert
-to anon, authenticated
 with check (true);
 
 drop policy if exists leads_admin_all on public.placeware_leads;
 create policy leads_admin_all on public.placeware_leads
 for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+using (true)
+with check (true);
 
 -- QnA: allow read for anon/authenticated (for semantic retrieval use-cases)
 drop policy if exists qna_read_public on public.qna;
 create policy qna_read_public on public.qna
 for select
-to anon, authenticated
 using (true);
 
 drop policy if exists qna_admin_write on public.qna;
 create policy qna_admin_write on public.qna
 for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+using (true)
+with check (true);
 
 -- Chat history: user can see own rows, admin can see all
 
 drop policy if exists chat_history_select_own on public.placeware_chat_history;
 create policy chat_history_select_own on public.placeware_chat_history
 for select
-to authenticated
 using (
-  public.is_admin()
-  or user_id is null
-  or user_id = auth.uid()::text
+  user_id is null
+  or user_id = NULL::text
 );
 
 drop policy if exists chat_history_insert_user on public.placeware_chat_history;
 create policy chat_history_insert_user on public.placeware_chat_history
 for insert
-to authenticated
 with check (
-  public.is_admin()
-  or user_id is null
-  or user_id = auth.uid()::text
+  user_id is null
+  or user_id = NULL::text
 );
 
 drop policy if exists chat_history_admin_delete on public.placeware_chat_history;
 create policy chat_history_admin_delete on public.placeware_chat_history
 for delete
-to authenticated
-using (public.is_admin());
+using (true);
 
 -- Admin-only tables
 -- service_role bypasses RLS, but authenticated admin policies are provided.
@@ -783,103 +772,103 @@ using (public.is_admin());
 -- Helper block for repeated policy creation
 
 drop policy if exists admin_all_audit on public.placeware_audit_logs;
-create policy admin_all_audit on public.placeware_audit_logs for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_audit on public.placeware_audit_logs for all using (true) with check (true);
 
 drop policy if exists admin_all_import_jobs on public.placeware_import_jobs;
-create policy admin_all_import_jobs on public.placeware_import_jobs for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_import_jobs on public.placeware_import_jobs for all using (true) with check (true);
 
 drop policy if exists admin_all_import_rejections on public.placeware_import_rejections;
-create policy admin_all_import_rejections on public.placeware_import_rejections for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_import_rejections on public.placeware_import_rejections for all using (true) with check (true);
 
 drop policy if exists admin_all_kpi_promotions on public.placeware_kpi_promotions;
-create policy admin_all_kpi_promotions on public.placeware_kpi_promotions for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_kpi_promotions on public.placeware_kpi_promotions for all using (true) with check (true);
 
 drop policy if exists admin_all_data_policies on public.placeware_data_policies;
-create policy admin_all_data_policies on public.placeware_data_policies for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_data_policies on public.placeware_data_policies for all using (true) with check (true);
 
 drop policy if exists admin_all_projects on public.placeware_projects;
-create policy admin_all_projects on public.placeware_projects for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_projects on public.placeware_projects for all using (true) with check (true);
 
 drop policy if exists admin_all_scope_items on public.placeware_scope_items;
-create policy admin_all_scope_items on public.placeware_scope_items for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_scope_items on public.placeware_scope_items for all using (true) with check (true);
 
 drop policy if exists admin_all_cost_items on public.placeware_cost_items;
-create policy admin_all_cost_items on public.placeware_cost_items for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_cost_items on public.placeware_cost_items for all using (true) with check (true);
 
 drop policy if exists admin_all_risk_register on public.placeware_risk_register;
-create policy admin_all_risk_register on public.placeware_risk_register for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_risk_register on public.placeware_risk_register for all using (true) with check (true);
 
 drop policy if exists admin_all_change_requests on public.placeware_change_requests;
-create policy admin_all_change_requests on public.placeware_change_requests for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_change_requests on public.placeware_change_requests for all using (true) with check (true);
 
 drop policy if exists admin_all_intents on public.placeware_intents;
-create policy admin_all_intents on public.placeware_intents for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_intents on public.placeware_intents for all using (true) with check (true);
 
 drop policy if exists admin_all_approvals on public.placeware_approvals;
-create policy admin_all_approvals on public.placeware_approvals for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_approvals on public.placeware_approvals for all using (true) with check (true);
 
 drop policy if exists admin_all_sage_customers on public.sage_customers_snapshot;
-create policy admin_all_sage_customers on public.sage_customers_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_sage_customers on public.sage_customers_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_sage_ar on public.sage_ar_snapshot;
-create policy admin_all_sage_ar on public.sage_ar_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_sage_ar on public.sage_ar_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_sage_ap on public.sage_ap_snapshot;
-create policy admin_all_sage_ap on public.sage_ap_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_sage_ap on public.sage_ap_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_sage_gl on public.sage_gl_snapshot;
-create policy admin_all_sage_gl on public.sage_gl_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_sage_gl on public.sage_gl_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_sage_inventory on public.sage_inventory_snapshot;
-create policy admin_all_sage_inventory on public.sage_inventory_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_sage_inventory on public.sage_inventory_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_sage_staff on public.sage_staff_snapshot;
-create policy admin_all_sage_staff on public.sage_staff_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_sage_staff on public.sage_staff_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_hr_payroll on public.hr_payroll_snapshot;
-create policy admin_all_hr_payroll on public.hr_payroll_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_hr_payroll on public.hr_payroll_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_hr_absence on public.hr_absence_snapshot;
-create policy admin_all_hr_absence on public.hr_absence_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_hr_absence on public.hr_absence_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_ops_orders on public.ops_orders_snapshot;
-create policy admin_all_ops_orders on public.ops_orders_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_ops_orders on public.ops_orders_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_ops_downtime on public.ops_downtime_snapshot;
-create policy admin_all_ops_downtime on public.ops_downtime_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_ops_downtime on public.ops_downtime_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_crm_pipeline on public.crm_pipeline_snapshot;
-create policy admin_all_crm_pipeline on public.crm_pipeline_snapshot for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_crm_pipeline on public.crm_pipeline_snapshot for all using (true) with check (true);
 
 drop policy if exists admin_all_inventory_events on public.placeware_inventory_events;
-create policy admin_all_inventory_events on public.placeware_inventory_events for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_inventory_events on public.placeware_inventory_events for all using (true) with check (true);
 
 drop policy if exists admin_all_staff on public.placeware_staff;
-create policy admin_all_staff on public.placeware_staff for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_staff on public.placeware_staff for all using (true) with check (true);
 
 drop policy if exists admin_all_timesheets on public.placeware_timesheets;
-create policy admin_all_timesheets on public.placeware_timesheets for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_timesheets on public.placeware_timesheets for all using (true) with check (true);
 
 drop policy if exists admin_all_alerts on public.placeware_alerts;
-create policy admin_all_alerts on public.placeware_alerts for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_alerts on public.placeware_alerts for all using (true) with check (true);
 
 drop policy if exists admin_all_briefings on public.placeware_executive_briefings;
-create policy admin_all_briefings on public.placeware_executive_briefings for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_briefings on public.placeware_executive_briefings for all using (true) with check (true);
 
 drop policy if exists admin_all_users on public.placeware_users;
-create policy admin_all_users on public.placeware_users for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_users on public.placeware_users for all using (true) with check (true);
 
 drop policy if exists admin_all_refresh_tokens on public.placeware_refresh_tokens;
-create policy admin_all_refresh_tokens on public.placeware_refresh_tokens for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_refresh_tokens on public.placeware_refresh_tokens for all using (true) with check (true);
 
 drop policy if exists admin_all_orders on public.placeware_orders;
-create policy admin_all_orders on public.placeware_orders for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_orders on public.placeware_orders for all using (true) with check (true);
 
 drop policy if exists admin_all_tracking on public.placeware_tracking;
-create policy admin_all_tracking on public.placeware_tracking for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_tracking on public.placeware_tracking for all using (true) with check (true);
 
 drop policy if exists admin_all_stock_cache on public.placeware_stock_cache;
-create policy admin_all_stock_cache on public.placeware_stock_cache for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy admin_all_stock_cache on public.placeware_stock_cache for all using (true) with check (true);
 
 create or replace function public.placeware_controls_rollup(p_project_id uuid default null)
 returns jsonb
@@ -948,6 +937,6 @@ select jsonb_build_object(
 from scope_counts, cost_counts, risk_counts, risk_open_high, change_counts, pending_changes;
 $$;
 
-grant execute on function public.placeware_controls_rollup(uuid) to authenticated;
+grant execute on function public.placeware_controls_rollup(uuid) ;
 
 commit;

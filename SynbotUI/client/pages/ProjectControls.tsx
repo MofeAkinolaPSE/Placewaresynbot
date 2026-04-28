@@ -62,6 +62,7 @@ const STAGE_TRANSITIONS: Record<string, string[]> = {
 const QC_STATUSES = ["pending", "in_review", "passed", "failed", "waived"] as const;
 const NAFDAC_STATUSES = ["pending", "in_progress", "released"] as const;
 const STAGE_BOARD_PREFS_KEY = "project_controls_stage_board_prefs";
+// Note: STAGE_BOARD_PREFS_KEY retained for potential future use
 
 interface Project {
   id: string;
@@ -497,15 +498,19 @@ export default function ProjectControls() {
           <ProjectList projects={projects} loading={loading} />
         </TabsContent>
         <TabsContent value="stage_board" className="space-y-4">
-          <StageTransitionBoard
-            projects={projects}
-            loading={loading}
-            controlsReady={controlsReady}
-            movingProjectId={movingProjectId}
-            stageDrafts={stageDrafts}
-            onDraftChange={updateStageDraft}
-            onMoveStage={moveProjectStage}
-          />
+          <Card className="pw-surface-interactive">
+            <CardContent className="pt-5 pb-4 px-5">
+              <StageTransitionBoard
+                projects={projects}
+                loading={loading}
+                controlsReady={controlsReady}
+                movingProjectId={movingProjectId}
+                stageDrafts={stageDrafts}
+                onDraftChange={updateStageDraft}
+                onMoveStage={moveProjectStage}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="deliveries" className="space-y-4">
           <DeliveryList />
@@ -616,6 +621,206 @@ function ProjectList({ projects, loading }: { projects: Project[]; loading: bool
   );
 }
 
+// ── Kanban column accent colours (Placeware brand) ─────────────────────────
+const STAGE_COLUMN: Record<string, { bg: string; count: string }> = {
+  port_clearing:          { bg: "#2740AE", count: "rgba(255,255,255,0.22)" },
+  anti_room_received:     { bg: "#256CAE", count: "rgba(255,255,255,0.22)" },
+  cold_room_stacked:      { bg: "#02646F", count: "rgba(255,255,255,0.22)" },
+  nafdac_sampling:        { bg: "#d97706", count: "rgba(255,255,255,0.22)" },
+  released_for_issuing:   { bg: "#16a34a", count: "rgba(255,255,255,0.22)" },
+  packaging_for_delivery: { bg: "#ea580c", count: "rgba(255,255,255,0.22)" },
+  delivered_to_end_users: { bg: "#059669", count: "rgba(255,255,255,0.22)" },
+};
+
+const QC_CHIP: Record<string, string> = {
+  passed:    "bg-emerald-50 text-emerald-700 border-emerald-200",
+  failed:    "bg-red-50 text-red-700 border-red-200",
+  in_review: "bg-sky-50 text-sky-700 border-sky-200",
+  waived:    "bg-amber-50 text-amber-700 border-amber-200",
+  pending:   "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+const NAFDAC_CHIP: Record<string, string> = {
+  released:    "bg-emerald-50 text-emerald-700 border-emerald-200",
+  in_progress: "bg-sky-50 text-sky-700 border-sky-200",
+  pending:     "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+const ACTIVITY_CHIP: Record<string, string> = {
+  restock:        "bg-blue-50 text-blue-700 border-blue-200",
+  qc:             "bg-teal-50 text-teal-700 border-teal-200",
+  delivery:       "bg-cyan-50 text-cyan-700 border-cyan-200",
+  client_request: "bg-amber-50 text-amber-700 border-amber-200",
+  cold_chain:     "bg-indigo-50 text-indigo-700 border-indigo-200",
+};
+
+// ── Per-card expanded state ──────────────────────────────────────────────────
+function KanbanCard({
+  project,
+  stageKey,
+  controlsReady,
+  movingProjectId,
+  stageDrafts,
+  onDraftChange,
+  onMoveStage,
+}: {
+  project: Project;
+  stageKey: string;
+  controlsReady: boolean;
+  movingProjectId: string | null;
+  stageDrafts: Record<string, { workflow_stage: string; quality_check_status: string; nafdac_sampling_status: string; quality_notes: string }>;
+  onDraftChange: (project: Project, patch: Partial<{ workflow_stage: string; quality_check_status: string; nafdac_sampling_status: string; quality_notes: string }>) => void;
+  onMoveStage: (project: Project) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const nextOptions = STAGE_TRANSITIONS[stageKey] || [];
+  const draft = stageDrafts[project.id] || {
+    workflow_stage: nextOptions[0] || stageKey,
+    quality_check_status: project.quality_check_status || "pending",
+    nafdac_sampling_status: project.nafdac_sampling_status || "pending",
+    quality_notes: project.quality_notes || "",
+  };
+  const moving = movingProjectId === project.id;
+  const qcChip  = QC_CHIP[project.quality_check_status || "pending"]  || QC_CHIP.pending;
+  const nafChip = NAFDAC_CHIP[project.nafdac_sampling_status || "pending"] || NAFDAC_CHIP.pending;
+  const actChip = ACTIVITY_CHIP[project.activity_type || ""] || "bg-slate-100 text-slate-600 border-slate-200";
+  const isComplete = stageKey === "delivered_to_end_users";
+
+  // Left border accent based on QC
+  const leftAccent =
+    project.quality_check_status === "passed"    ? "border-l-emerald-500" :
+    project.quality_check_status === "failed"    ? "border-l-red-500"     :
+    project.quality_check_status === "in_review" ? "border-l-sky-500"     :
+    stageKey === "delivered_to_end_users"         ? "border-l-emerald-500" :
+    "border-l-primary";
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-xl border border-border/60 border-l-4 ${leftAccent} bg-card shadow-elevation-1 transition-shadow hover:shadow-elevation-2`}
+    >
+      {/* Card body */}
+      <div className="p-3 space-y-2">
+        <p className="text-sm font-semibold leading-snug line-clamp-2">{project.name}</p>
+
+        {/* Activity + supplier row */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {project.activity_type && (
+            <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${actChip}`}>
+              {project.activity_type.replace("_", " ")}
+            </span>
+          )}
+          {project.supplier_name && (
+            <span className="text-[11px] text-muted-foreground truncate max-w-[120px]">{project.supplier_name}</span>
+          )}
+        </div>
+
+        {/* QC + NAFDAC badges */}
+        <div className="flex flex-wrap gap-1.5">
+          <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${qcChip}`}>
+            QC: {(project.quality_check_status || "pending").replace("_", " ")}
+          </span>
+          <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${nafChip}`}>
+            NAFDAC: {(project.nafdac_sampling_status || "pending").replace("_", " ")}
+          </span>
+        </div>
+
+        {/* PO reference */}
+        {project.po_reference && (
+          <p className="text-[11px] text-muted-foreground font-mono">PO: {project.po_reference}</p>
+        )}
+
+        {/* Footer row: staff avatar + expand button */}
+        <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-1.5">
+            {(project.assigned_staff_id || project.owner_id) && (
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary select-none ring-1 ring-primary/30">
+                {((project.assigned_staff_id || project.owner_id) as string).charAt(0).toUpperCase()}
+              </div>
+            )}
+            {project.temperature_profile && (
+              <span className="text-[10px] text-muted-foreground">{project.temperature_profile}</span>
+            )}
+          </div>
+          {!isComplete && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-0.5 rounded-md px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors"
+            >
+              {expanded ? "Close" : "Move"}
+              <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          )}
+          {isComplete && (
+            <span className="text-[11px] font-medium text-emerald-600">✓ Delivered</span>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded move controls */}
+      {expanded && nextOptions.length > 0 && (
+        <div className="border-t border-border/50 bg-muted/30 rounded-b-xl p-3 space-y-2">
+          <Select
+            value={draft.workflow_stage}
+            onValueChange={(value) => onDraftChange(project, { workflow_stage: value })}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Next stage" />
+            </SelectTrigger>
+            <SelectContent>
+              {nextOptions.map((opt) => (
+                <SelectItem key={opt} value={opt} className="text-xs">
+                  {STAGE_LABELS[opt]?.label || opt}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="grid grid-cols-2 gap-2">
+            <Select
+              value={draft.quality_check_status}
+              onValueChange={(value) => onDraftChange(project, { quality_check_status: value })}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="QC" /></SelectTrigger>
+              <SelectContent>
+                {QC_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s} className="text-xs">{s.replace("_", " ")}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={draft.nafdac_sampling_status}
+              onValueChange={(value) => onDraftChange(project, { nafdac_sampling_status: value })}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="NAFDAC" /></SelectTrigger>
+              <SelectContent>
+                {NAFDAC_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s} className="text-xs">{s.replace("_", " ")}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            className="w-full h-8 text-xs gap-1.5"
+            disabled={moving || !controlsReady}
+            onClick={() => { void onMoveStage(project); setExpanded(false); }}
+          >
+            {moving
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <span>→</span>
+            }
+            Confirm Move
+          </Button>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ── Main board ───────────────────────────────────────────────────────────────
 function StageTransitionBoard({
   projects,
   loading,
@@ -633,184 +838,94 @@ function StageTransitionBoard({
   onDraftChange: (project: Project, patch: Partial<{ workflow_stage: string; quality_check_status: string; nafdac_sampling_status: string; quality_notes: string }>) => void;
   onMoveStage: (project: Project) => Promise<void>;
 }) {
-  const [compactMode, setCompactMode] = useState(false);
-  const [collapsedStages, setCollapsedStages] = useState<Record<string, boolean>>({});
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STAGE_BOARD_PREFS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        compactMode?: boolean;
-        collapsedStages?: Record<string, boolean>;
-        collapsedProjects?: Record<string, boolean>;
-      };
-      setCompactMode(Boolean(parsed.compactMode));
-      setCollapsedStages(parsed.collapsedStages || {});
-      setCollapsedProjects(parsed.collapsedProjects || {});
-    } catch {
-      // Ignore malformed stored preferences.
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      STAGE_BOARD_PREFS_KEY,
-      JSON.stringify({ compactMode, collapsedStages, collapsedProjects }),
-    );
-  }, [compactMode, collapsedStages, collapsedProjects]);
-
   const grouped = Object.keys(STAGE_LABELS).map((stageKey) => ({
     stageKey,
     stage: STAGE_LABELS[stageKey],
-    projects: projects.filter((project) => (project.workflow_stage || "port_clearing") === stageKey),
+    col: STAGE_COLUMN[stageKey] || { bg: "#2740AE", count: "rgba(255,255,255,0.22)" },
+    items: projects.filter((p) => (p.workflow_stage || "port_clearing") === stageKey),
   }));
 
+  const total = projects.length;
+
   return (
-    <Card className="pw-surface-interactive">
-      <CardHeader>
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <CardTitle>Workflow Stage Board</CardTitle>
-            <CardDescription>Track transitions from Port Clearing to End Users with explicit Quality Control gating.</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" className="w-fit" onClick={() => setCompactMode((prev) => !prev)}>
-            <LayoutGrid className="mr-2 h-4 w-4" />
-            {compactMode ? "Expanded Mode" : "Compact Mode"}
-          </Button>
+    <div className="space-y-4">
+      {/* Board header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="text-base font-bold">Workflow Stage Board</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {total} active project{total !== 1 ? "s" : ""} · Port Clearing → Delivered
+          </p>
         </div>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {grouped.map((column) => {
-              const stageCollapsed = Boolean(collapsedStages[column.stageKey]);
-              return (
-                <div key={column.stageKey} className={compactMode ? "rounded-xl border border-border/60 bg-background/30 p-2" : "rounded-xl border border-border/60 bg-background/30 p-3"}>
-                  <button
-                    type="button"
-                    onClick={() => setCollapsedStages((prev) => ({ ...prev, [column.stageKey]: !stageCollapsed }))}
-                    className="mb-3 flex w-full items-start justify-between text-left"
+        <div className="flex items-center gap-2 flex-wrap">
+          {grouped.map((col) => (
+            <div key={col.stageKey} className="flex items-center gap-1 text-[11px] font-medium">
+              <span className="h-2 w-2 rounded-full" style={{ background: col.col.bg }} />
+              <span className="text-muted-foreground">{col.stage.label.split(" ")[0]}</span>
+              <span className="font-bold">{col.items.length}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        /* Horizontal Kanban scroll container */
+        <div className="overflow-x-auto pb-4 -mx-1 px-1">
+          <div className="flex gap-3" style={{ minWidth: "max-content" }}>
+            {grouped.map((col) => (
+              <div
+                key={col.stageKey}
+                className="flex flex-col rounded-2xl border border-border/50 bg-background/60 backdrop-blur-sm"
+                style={{ width: "252px", minWidth: "252px" }}
+              >
+                {/* Column header */}
+                <div
+                  className="flex items-center justify-between rounded-t-2xl px-3.5 py-2.5"
+                  style={{ background: col.col.bg }}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white leading-tight truncate">{col.stage.label}</p>
+                    <p className="text-[10px] text-white/70 truncate">{col.stage.department}</p>
+                  </div>
+                  <span
+                    className="ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-white"
+                    style={{ background: col.col.count }}
                   >
-                    <div>
-                      <h3 className={compactMode ? "text-xs font-semibold" : "text-sm font-semibold"}>{column.stage.label}</h3>
-                      <p className="text-xs text-muted-foreground">{column.stage.department}</p>
-                    </div>
-                    <ChevronDown className={stageCollapsed ? "h-4 w-4 transition-transform rotate-180" : "h-4 w-4 transition-transform"} />
-                  </button>
+                    {col.items.length}
+                  </span>
+                </div>
 
-                  {stageCollapsed ? (
-                    <p className="rounded-lg border border-dashed border-border/60 p-2 text-xs text-muted-foreground">
-                      {column.projects.length} hidden in this stage.
-                    </p>
+                {/* Cards */}
+                <div className="flex-1 space-y-2 overflow-y-auto p-2" style={{ maxHeight: "520px" }}>
+                  {col.items.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-8 text-center">
+                      <p className="text-[11px] text-muted-foreground">No projects here</p>
+                    </div>
                   ) : (
-                    <div className={compactMode ? "space-y-2" : "space-y-3"}>
-                      {column.projects.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">No projects in this stage.</p>
-                      ) : (
-                        column.projects.map((project) => {
-                          const nextOptions = STAGE_TRANSITIONS[column.stageKey] || [];
-                          const draft = stageDrafts[project.id] || {
-                            workflow_stage: nextOptions[0] || column.stageKey,
-                            quality_check_status: project.quality_check_status || "pending",
-                            nafdac_sampling_status: project.nafdac_sampling_status || "pending",
-                            quality_notes: project.quality_notes || "",
-                          };
-                          const moving = movingProjectId === project.id;
-                          const projectCollapsed = Boolean(collapsedProjects[project.id]);
-
-                          return (
-                            <Collapsible
-                              key={project.id}
-                              open={!projectCollapsed}
-                              onOpenChange={(open) => setCollapsedProjects((prev) => ({ ...prev, [project.id]: !open }))}
-                            >
-                              <div className={compactMode ? "rounded-lg border border-border/60 bg-background/50 p-2" : "rounded-lg border border-border/60 bg-background/50 p-3"}>
-                                <CollapsibleTrigger asChild>
-                                  <button type="button" className="flex w-full items-start justify-between text-left">
-                                    <div className="space-y-1">
-                                      <p className={compactMode ? "text-xs font-medium leading-tight" : "text-sm font-medium leading-tight"}>{project.name}</p>
-                                      <p className="text-xs text-muted-foreground">{project.supplier_name || "No supplier"}</p>
-                                      <div className="flex flex-wrap gap-2">
-                                        <Badge variant="outline" className="text-[10px]">QC: {project.quality_check_status || "pending"}</Badge>
-                                        <Badge variant="outline" className="text-[10px]">NAFDAC: {project.nafdac_sampling_status || "pending"}</Badge>
-                                      </div>
-                                    </div>
-                                    <ChevronDown className={projectCollapsed ? "h-4 w-4 transition-transform rotate-180" : "h-4 w-4 transition-transform"} />
-                                  </button>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="space-y-3 pt-3">
-                                  {nextOptions.length > 0 ? (
-                                    <>
-                                      <Select
-                                        value={draft.workflow_stage}
-                                        onValueChange={(value) => onDraftChange(project, { workflow_stage: value })}
-                                      >
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select next stage" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {nextOptions.map((option) => (
-                                            <SelectItem key={option} value={option}>{STAGE_LABELS[option]?.label || option}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <Select
-                                          value={draft.quality_check_status}
-                                          onValueChange={(value) => onDraftChange(project, { quality_check_status: value })}
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="QC status" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {QC_STATUSES.map((status) => (
-                                              <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                        <Select
-                                          value={draft.nafdac_sampling_status}
-                                          onValueChange={(value) => onDraftChange(project, { nafdac_sampling_status: value })}
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="NAFDAC status" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {NAFDAC_STATUSES.map((status) => (
-                                              <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <Button disabled={moving || !controlsReady} onClick={() => void onMoveStage(project)} className="w-full">
-                                        {moving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                        Move Stage
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <p className="text-xs text-success">Workflow completed.</p>
-                                  )}
-                                </CollapsibleContent>
-                              </div>
-                            </Collapsible>
-                          );
-                        })
-                      )}
-                    </div>
+                    col.items.map((project) => (
+                      <KanbanCard
+                        key={project.id}
+                        project={project}
+                        stageKey={col.stageKey}
+                        controlsReady={controlsReady}
+                        movingProjectId={movingProjectId}
+                        stageDrafts={stageDrafts}
+                        onDraftChange={onDraftChange}
+                        onMoveStage={onMoveStage}
+                      />
+                    ))
                   )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 }
 

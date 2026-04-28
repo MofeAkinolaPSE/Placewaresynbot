@@ -68,7 +68,8 @@ def decode_jwt_token(token: str, required_role: str | None = None) -> dict:
 
     if required_role:
         roles = payload.get("roles") or payload.get("permissions") or []
-        if required_role not in roles:
+        # admin is a superrole — bypass all role checks
+        if "admin" not in roles and required_role not in roles:
             raise HTTPException(status_code=403, detail="Insufficient role")
     return payload
 
@@ -85,8 +86,17 @@ def verify_jwt(request: Request, required_role: str | None = None) -> dict:
 
 
 def require_role(role: str):
-    """Return a FastAPI-compatible dependency that verifies JWT and enforces *role*."""
-    return partial(verify_jwt, required_role=role)
+    """Return a FastAPI-compatible dependency that verifies JWT and enforces *role*.
+
+    Uses a proper closure (not functools.partial) so FastAPI v0.100+ can correctly
+    introspect the `request: Request` parameter and inject the HTTP Request object
+    rather than treating it as a query-string field (which partial causes in newer
+    FastAPI/Starlette versions).
+    """
+    async def _dep(request: Request) -> dict:
+        return verify_jwt(request, required_role=role)
+    return _dep
+
 
 
 def rate_limit(request: Request, key: str | None = None, limit: int | None = None) -> None:

@@ -1,3 +1,0 @@
-gradio 
-sentence-transformers
-torch

@@ -321,6 +321,9 @@ export const api = {
       const payload = await fetchRaw<{ users?: any[] }>(`/users?limit=${limit}`);
       return Array.isArray(payload?.users) ? payload.users : [];
     },
+    /** Lightweight user list for task/project assignment dropdowns.
+     *  Accessible by admin, management, manager, hr, finance. */
+    directory: () => fetchRaw<Array<{ id: string; email: string; display_name?: string; roles: string[] }>>("/users/directory"),
     create: (payload: {
       email: string;
       password: string;
@@ -376,13 +379,144 @@ export const api = {
       sendFormData<any>(`/crm/import${asyncMode ? "?async_mode=true" : ""}`, "POST", payload),
   },
   finance: {
-     gl: () => fetchJson<any[]>("/analytics/gl"),
-     trend: () => fetchJson<any>("/analytics/trend"),
-     transactions: () => fetchJson<any[]>("/analytics/transactions"),
-     profitability: () => fetchJson<any>("/analytics/profitability"),
-     arAging: () => fetchRaw<any>("/reports/ar_aging"),
-      arAgingCustomers: (bucket: string) =>
-       fetchRaw<any>(`/reports/ar_aging/customers?bucket=${encodeURIComponent(bucket)}`),
+    gl: () => fetchJson<any[]>("/analytics/gl"),
+    trend: () => fetchJson<any>("/analytics/trend"),
+    transactions: () => fetchJson<any[]>("/analytics/transactions"),
+    profitability: () => fetchJson<any>("/analytics/profitability"),
+    arAging: () => fetchRaw<any>("/reports/ar_aging"),
+    arAgingCustomers: (bucket: string) =>
+      fetchRaw<any>(`/reports/ar_aging/customers?bucket=${encodeURIComponent(bucket)}`),
+
+    // --- Tier-1 Finance Module (from 078 requirements) ---
+
+    /** Unified AR aging: buckets + per-customer rows + triggered alerts */
+    arAgingDetail: (bucket?: string) => {
+      const q = bucket ? `?bucket=${encodeURIComponent(bucket)}` : "";
+      return fetchRaw<any>(`/finance/ar/aging${q}`);
+    },
+
+    /** List active alert rules + unacknowledged events */
+    listArAlerts: () => fetchRaw<any>("/finance/ar/alerts"),
+    /** Create a new threshold alert rule */
+    createArAlert: (payload: {
+      threshold_amount: number;
+      days_overdue_min?: number;
+      customer_id?: string;
+      description?: string;
+      notify_emails?: string[];
+    }) => sendJson<any>("/finance/ar/alerts", "POST", payload),
+    /** Deactivate an alert rule */
+    deleteArAlert: (ruleId: string) => sendDelete<any>(`/finance/ar/alerts/${encodeURIComponent(ruleId)}`),
+    /** Acknowledge (dismiss) a triggered alert event */
+    ackAlertEvent: (eventId: string) => sendJson<any>(`/finance/ar/alerts/${encodeURIComponent(eventId)}/ack`, "POST", {}),
+
+    /** Invoice-to-payment matching */
+    matchInvoices: (payload: { period?: string }) =>
+      sendJson<any>("/finance/ar/match", "POST", payload),
+
+    /** P&L from GL journal entries */
+    pl: (period?: string) => {
+      const q = period ? `?period=${encodeURIComponent(period)}` : "";
+      return fetchRaw<any>(`/finance/reports/pl${q}`);
+    },
+    /** P&L as audit-stamped PDF — returns URL for direct browser download */
+    plPdfUrl: (period?: string) => {
+      const q = period ? `?period=${encodeURIComponent(period)}` : "";
+      return `/finance/reports/pl/pdf${q}`;
+    },
+
+    /** Audit export log */
+    exportLog: (limit = 50) => fetchRaw<any>(`/finance/exports/log?limit=${limit}`),
+
+    /** Tier-2: 12-week rolling cash flow forecast */
+    cashflowForecast: (weeks = 12) => fetchRaw<any>(`/finance/forecast/cashflow?weeks=${weeks}`),
+
+    /** Tier-2: Payroll summary + period variance */
+    payrollSummary: (period?: string) => {
+      const q = period ? `?period=${encodeURIComponent(period)}` : "";
+      return fetchRaw<any>(`/finance/payroll/summary${q}`);
+    },
+
+    /** Tier-2: Payroll PDF download URL (caller fetches with auth header) */
+    payrollPdfUrl: (period?: string) => {
+      const q = period ? `?period=${encodeURIComponent(period)}` : "";
+      return `/finance/payroll/pdf${q}`;
+    },
+
+    // -----------------------------------------------------------------------
+    // Tier 3 — Vendor Payment Approval Workflow
+    // -----------------------------------------------------------------------
+
+    /** List vendor payment requests. Optional status filter. */
+    listVendorPayments: (status?: string, limit = 50, offset = 0) => {
+      const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (status) p.set("status", status);
+      return fetchRaw<any>(`/finance/vendor/payments?${p}`);
+    },
+
+    /** Create a new vendor payment request. */
+    createVendorPayment: (payload: {
+      vendor_id: string;
+      vendor_name?: string;
+      amount: number;
+      currency?: string;
+      payment_date?: string;
+      reference?: string;
+      description?: string;
+    }) => sendJson<any>("/finance/vendor/payments", "POST", payload),
+
+    /** Approve a pending vendor payment. */
+    approveVendorPayment: (id: string, note?: string) =>
+      sendJson<any>(`/finance/vendor/payments/${id}/approve`, "PATCH", { note: note ?? null }),
+
+    /** Reject a vendor payment. */
+    rejectVendorPayment: (id: string, note?: string) =>
+      sendJson<any>(`/finance/vendor/payments/${id}/reject`, "PATCH", { note: note ?? null }),
+
+    /** Mark an approved vendor payment as paid. */
+    markVendorPaymentPaid: (id: string) =>
+      sendJson<any>(`/finance/vendor/payments/${id}/mark-paid`, "PATCH", {}),
+
+    /** Cancel (soft-delete) a pending vendor payment. */
+    cancelVendorPayment: (id: string) =>
+      sendDelete<any>(`/finance/vendor/payments/${id}`),
+
+    // -----------------------------------------------------------------------
+    // Tier 3 — Credit Risk Scoring
+    // -----------------------------------------------------------------------
+
+    /** Get credit risk scores for all customers. */
+    creditRiskScores: () => fetchRaw<any>("/finance/credit/risk"),
+
+    // -----------------------------------------------------------------------
+    // Tier 3 — Budget vs. Actual
+    // -----------------------------------------------------------------------
+
+    /** List budget targets, optional period/department filters. */
+    listBudgetTargets: (period?: string, department?: string) => {
+      const p = new URLSearchParams();
+      if (period) p.set("period", period);
+      if (department) p.set("department", department);
+      return fetchRaw<any>(`/finance/budget/targets${p.toString() ? "?" + p : ""}`);
+    },
+
+    /** Upsert a budget target. */
+    upsertBudgetTarget: (payload: {
+      department: string;
+      category?: string;
+      period: string;
+      budgeted_amount: number;
+      note?: string;
+    }) => sendJson<any>("/finance/budget/targets", "POST", payload),
+
+    /** Delete a budget target by ID. */
+    deleteBudgetTarget: (id: string) => sendDelete<any>(`/finance/budget/targets/${id}`),
+
+    /** Get budget vs. actual variance for a period. */
+    budgetVariance: (period?: string) => {
+      const q = period ? `?period=${encodeURIComponent(period)}` : "";
+      return fetchRaw<any>(`/finance/budget/variance${q}`);
+    },
   },
   intelligence: {
     executiveSummary: () => fetchRaw<ExecutiveSummaryResponse>("/intelligence/executive_summary"),
@@ -451,6 +585,20 @@ export const api = {
       notes?: string;
     }) => sendJson<any>("/crm/lead-finder/assign", "POST", payload),
     pipeline: (limit: number = 100) => fetchRaw<any>(`/crm/lead-finder/pipeline?limit=${limit}`),
+
+    /** Google Places-powered location search (mock fallback when no API key) */
+    searchByLocation: (payload: {
+      location: string;
+      business_type?: string;
+      radius_m?: number;
+      limit?: number;
+      industry?: string;
+      region?: string;
+    }) => sendJson<any>("/crm/lead-finder/search", "POST", payload),
+
+    /** Download all prospects as CSV — returns a fetch Response (caller handles blob) */
+    exportProspects: (limit: number = 1000) =>
+      fetchRaw<any>(`/crm/lead-finder/export?limit=${limit}`),
   },
   events: {
     trace: (eventId: string) => fetchRaw<any>(`/events/${encodeURIComponent(eventId)}/trace`),
@@ -594,11 +742,29 @@ export const api = {
       end_time?: string;
       location?: string;
       all_day?: boolean;
+      metadata?: Record<string, any>;
     }) => sendJson<{ data: any }>("/calendar/events", "POST", payload),
     update: (eventId: string, payload: Record<string, any>) =>
       sendJson<{ data: any }>(`/calendar/events/${eventId}`, "PATCH", payload),
     delete: (eventId: string) =>
-      fetchRaw<{ status: string }>(`/calendar/events/${eventId}`).then(() => ({ status: "deleted" })),
+      sendDelete<{ status: string }>(`/calendar/events/${eventId}`),
+    /** Pharma logistics: returns batches expiring within window_days (default 30). */
+    logisticsAlerts: (windowDays = 30) =>
+      fetchRaw<{
+        alerts: Array<{
+          event_id: string;
+          title: string;
+          event_type: string;
+          batch_id?: string;
+          product_name?: string;
+          expiry_date: string;
+          days_until_expiry: number;
+          is_cold_chain: boolean;
+          is_nafdac_regulated: boolean;
+        }>;
+        total: number;
+        window_days: number;
+      }>(`/calendar/logistics/alerts?window_days=${windowDays}`),
   },
   tasks: {
     list: (status?: string) => {
@@ -615,7 +781,7 @@ export const api = {
     update: (taskId: string, payload: Record<string, any>) =>
       sendJson<{ data: any }>(`/tasks/${taskId}`, "PATCH", payload),
     delete: (taskId: string) =>
-      sendJson<{ status: string }>(`/tasks/${taskId}`, "DELETE"),
+      sendDelete<{ status: string }>(`/tasks/${taskId}`),
   },
   agents: {
     list: () => fetchRaw<{ agents: any[]; count: number }>("/agents/list"),
@@ -744,5 +910,403 @@ export const api = {
     },
     resolveGap: (gapId: number) =>
       fetchRaw<any>(`/knowledge/gaps/${gapId}/resolve`),
+  },
+  salesCrm: {
+    pipeline: (limit: number = 200) =>
+      fetchRaw<any>(`/crm/sales/pipeline?limit=${limit}`),
+
+    moveStage: (leadId: number, stage: string, notes?: string) =>
+      sendJson<any>(`/crm/sales/leads/${leadId}/stage`, "PATCH", { stage, notes }),
+
+    createFollowUp: (payload: {
+      lead_id?: number;
+      customer_id?: number;
+      assigned_rep?: string;
+      reminder_type?: string;
+      due_at: string;
+      note?: string;
+    }) => sendJson<any>("/crm/sales/followups", "POST", payload),
+
+    dueReminders: (hours: number = 24, repId?: string) => {
+      const q = new URLSearchParams({ hours: String(hours) });
+      if (repId) q.set("rep_id", repId);
+      return fetchRaw<any>(`/crm/sales/followups/due?${q.toString()}`);
+    },
+
+    updateReminder: (reminderId: string, status: string, note?: string) =>
+      sendJson<any>(`/crm/sales/followups/${encodeURIComponent(reminderId)}`, "PATCH", {
+        status,
+        note,
+      }),
+
+    queueBulkMessage: (payload: {
+      channel: string;
+      message_text: string;
+      subject?: string;
+      recipient_filter?: Record<string, any>;
+    }) => sendJson<any>("/crm/sales/bulk-message", "POST", payload),
+
+    listBulkMessages: (limit: number = 20) =>
+      fetchRaw<any[]>(`/crm/sales/bulk-message?limit=${limit}`),
+
+    weeklyReport: (weekStart?: string) => {
+      const q = weekStart ? `?week_start=${weekStart}` : "";
+      return fetchRaw<any>(`/crm/sales/weekly-report${q}`);
+    },
+
+    query: (query: string) =>
+      sendJson<{ query: string; answer: string }>("/crm/sales/query", "POST", { query }),
+
+    leaderboard: (days: number = 30) =>
+      fetchRaw<any>(`/crm/sales/leaderboard?days=${days}`),
+
+    dispatchBulkMessage: (jobId: string) =>
+      sendJson<any>(`/crm/sales/bulk-message/${encodeURIComponent(jobId)}/dispatch`, "POST", {}),
+
+    getLeadBrief: (leadId: number) =>
+      fetchRaw<any>(`/crm/sales/leads/${leadId}/brief`),
+
+    getProductAvailability: (leadId: number) =>
+      fetchRaw<any>(`/crm/sales/leads/${leadId}/product-availability`),
+
+    getPurchaseHistory: (leadId: number, limit = 20) =>
+      fetchRaw<any>(`/crm/sales/leads/${leadId}/purchase-history?limit=${limit}`),
+
+    weeklyReportPdfUrl: (weekStart?: string) => {
+      const q = weekStart ? `?week_start=${weekStart}` : "";
+      return apiUrl(`/crm/sales/weekly-report/pdf${q}`);
+    },
+
+    // Gap-fill: Lead CRUD
+    createLead: (payload: {
+      company_name: string;
+      contact_person?: string;
+      contact_phone?: string;
+      product_interest?: string[];
+      stage?: string;
+      expected_value?: number;
+      payment_terms?: string;
+      notes?: string;
+      next_action?: string;
+      assigned_rep?: string;
+    }) => sendJson<any>("/crm/sales/leads", "POST", payload),
+
+    updateLead: (leadId: number, payload: Record<string, any>) =>
+      sendJson<any>(`/crm/sales/leads/${leadId}`, "PATCH", payload),
+
+    // Gap-fill: Interaction log
+    logInteraction: (leadId: number, payload: {
+      interaction_type: string;
+      summary: string;
+      outcome?: string;
+      next_step?: string;
+      occurred_at?: string;
+    }) => sendJson<any>(`/crm/sales/leads/${leadId}/interactions`, "POST", payload),
+
+    listInteractions: (leadId: number, limit = 50) =>
+      fetchRaw<any>(`/crm/sales/leads/${leadId}/interactions?limit=${limit}`),
+
+    // Gap-fill: Sales targets
+    createTarget: (payload: {
+      rep_id?: string;
+      period: string;
+      period_type: string;
+      target_value: number;
+      target_deals?: number;
+    }) => sendJson<any>("/crm/sales/targets", "POST", payload),
+
+    listTargets: (period?: string, repId?: string) => {
+      const q = new URLSearchParams();
+      if (period) q.set("period", period);
+      if (repId) q.set("rep_id", repId);
+      return fetchRaw<any>(`/crm/sales/targets${q.toString() ? `?${q.toString()}` : ""}`);
+    },
+
+    targetsVsActuals: (period: string) =>
+      fetchRaw<any>(`/crm/sales/targets/vs-actuals?period=${encodeURIComponent(period)}`),
+  },
+
+  frontdesk: {
+    registerWalkIn: (payload: {
+      customer_name: string;
+      company_name?: string;
+      contact_phone?: string;
+      email?: string;
+      has_appointment?: boolean;
+      purpose: string;
+      products_requested?: string[];
+      notes?: string;
+    }) => sendJson<any>("/frontdesk/walk-ins", "POST", payload),
+
+    listWalkIns: (date?: string, status?: string) => {
+      const q = new URLSearchParams();
+      if (date) q.set("date", date);
+      if (status) q.set("status", status);
+      return fetchRaw<any>(`/frontdesk/walk-ins${q.toString() ? `?${q.toString()}` : ""}`);
+    },
+
+    getWalkIn: (id: string) => fetchRaw<any>(`/frontdesk/walk-ins/${id}`),
+
+    createInvoice: (walkInId: string, payload: {
+      items: { product: string; quantity: number; unit_price: number }[];
+      payment_method?: string;
+      notes?: string;
+    }) => sendJson<any>(`/frontdesk/walk-ins/${walkInId}/invoice`, "POST", payload),
+
+    submitQc: (invoiceId: string, payload: {
+      passed: boolean;
+      inspector_name: string;
+      notes?: string;
+      batch_numbers?: string[];
+    }) => sendJson<any>(`/frontdesk/invoices/${invoiceId}/qc`, "POST", payload),
+
+    financeApproval: (invoiceId: string, payload: {
+      approved: boolean;
+      approver_name: string;
+      reason?: string;
+    }) => sendJson<any>(`/frontdesk/invoices/${invoiceId}/finance`, "POST", payload),
+
+    notifyExecutive: (invoiceId: string, message?: string) =>
+      sendJson<any>(`/frontdesk/invoices/${invoiceId}/notify`, "POST", { message }),
+
+    // --- New endpoints ---
+
+    searchClients: (q: string, limit?: number) => {
+      const params = new URLSearchParams({ q });
+      if (limit) params.set("limit", String(limit));
+      return fetchRaw<any>(`/frontdesk/clients/search?${params.toString()}`);
+    },
+
+    clientHistory: (walkInId: string) =>
+      fetchRaw<any>(`/frontdesk/clients/${walkInId}/history`),
+
+    listInvoices: (params?: {
+      status?: string;
+      date_from?: string;
+      date_to?: string;
+      q?: string;
+      limit?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.status)    qs.set("status", params.status);
+      if (params?.date_from) qs.set("date_from", params.date_from);
+      if (params?.date_to)   qs.set("date_to", params.date_to);
+      if (params?.q)         qs.set("q", params.q);
+      if (params?.limit)     qs.set("limit", String(params.limit));
+      return fetchRaw<any>(`/frontdesk/invoices${qs.toString() ? `?${qs.toString()}` : ""}`);
+    },
+
+    getInvoice: (invoiceId: string) =>
+      fetchRaw<any>(`/frontdesk/invoices/${invoiceId}`),
+
+    stockCheck: (products: string[]) => {
+      const qs = new URLSearchParams({ products: products.join(",") });
+      return fetchRaw<any>(`/frontdesk/stock-check?${qs.toString()}`);
+    },
+
+    dailyReport: (date?: string) => {
+      const qs = new URLSearchParams();
+      if (date) qs.set("date", date);
+      return fetchRaw<any>(`/frontdesk/reports/daily${qs.toString() ? `?${qs.toString()}` : ""}`);
+    },
+
+    cancelWalkIn: (id: string, reason?: string) =>
+      sendJson<any>(`/frontdesk/walk-ins/${id}/cancel`, "POST", reason ? { reason } : {}),
+  },
+
+  // -------------------------------------------------------------------------
+  // Quality Control
+  // -------------------------------------------------------------------------
+  qc: {
+    /** Unified KPI dashboard: expiring count, open deviations, temp alerts, NAFDAC pending, recalls */
+    dashboard: () =>
+      fetchRaw<any>("/qc/dashboard"),
+
+    /** Expiring stock grouped into expired/critical(≤30d)/high(≤60d)/medium(≤90d) buckets */
+    expiryAlerts: (days?: number) => {
+      const qs = new URLSearchParams();
+      if (days) qs.set("days", String(days));
+      return fetchRaw<any>(`/qc/expiry-alerts${qs.toString() ? `?${qs}` : ""}`);
+    },
+
+    // --- Temperature logs ---
+    logTemperature: (payload: {
+      location: string;
+      reading_celsius: number;
+      min_threshold?: number;
+      max_threshold?: number;
+      log_session?: "morning" | "midday" | "evening" | "ad_hoc";
+      logged_by: string;
+      logged_at?: string;
+      equipment_id?: string;
+      notes?: string;
+    }) => sendJson<any>("/qc/temperature-logs", "POST", payload),
+
+    listTemperatureLogs: (params?: {
+      location?: string;
+      date_from?: string;
+      date_to?: string;
+      deviations_only?: boolean;
+      limit?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.location)        qs.set("location", params.location);
+      if (params?.date_from)       qs.set("date_from", params.date_from);
+      if (params?.date_to)         qs.set("date_to", params.date_to);
+      if (params?.deviations_only) qs.set("deviations_only", "true");
+      if (params?.limit)           qs.set("limit", String(params.limit));
+      return fetchRaw<any>(`/qc/temperature-logs${qs.toString() ? `?${qs}` : ""}`);
+    },
+
+    activeDeviations: () =>
+      fetchRaw<any>("/qc/temperature-logs/deviations"),
+
+    escalateDeviation: (logId: string, payload: { escalated_to: string; escalation_notes?: string }) =>
+      sendJson<any>(`/qc/temperature-logs/${logId}/escalate`, "POST", payload),
+
+    // --- CAPA Deviation reports ---
+    createDeviation: (payload: {
+      classification?: "minor" | "major" | "critical";
+      trigger_type: string;
+      trigger_ref?: string;
+      observation: string;
+      impact_assessment?: string;
+      recommendations?: string;
+      responsible_department: string;
+      responsible_person?: string;
+      capa_actions?: object[];
+    }) => sendJson<any>("/qc/deviations", "POST", payload),
+
+    listDeviations: (params?: {
+      status?: string;
+      classification?: string;
+      department?: string;
+      limit?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.status)         qs.set("status", params.status);
+      if (params?.classification) qs.set("classification", params.classification);
+      if (params?.department)     qs.set("department", params.department);
+      if (params?.limit)          qs.set("limit", String(params.limit));
+      return fetchRaw<any>(`/qc/deviations${qs.toString() ? `?${qs}` : ""}`);
+    },
+
+    updateDeviation: (id: string, payload: {
+      status?: string;
+      impact_assessment?: string;
+      recommendations?: string;
+      responsible_person?: string;
+      capa_actions?: object[];
+    }) => sendJson<any>(`/qc/deviations/${id}`, "PATCH", payload),
+
+    closeDeviation: (id: string, payload: { resolution: string; capa_actions?: object[] }) =>
+      sendJson<any>(`/qc/deviations/${id}/close`, "POST", payload),
+
+    // --- NAFDAC batch registry ---
+    registerBatch: (payload: {
+      batch_number: string;
+      product_name: string;
+      nafdac_reg_number?: string;
+      supplier?: string;
+      valid_from?: string;
+      valid_to?: string;
+      certificate_ref?: string;
+      notes?: string;
+    }) => sendJson<any>("/qc/nafdac/batches", "POST", payload),
+
+    listBatches: (params?: {
+      status?: string;
+      product?: string;
+      blocked?: boolean;
+      limit?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.status)            qs.set("status", params.status);
+      if (params?.product)           qs.set("product", params.product);
+      if (params?.blocked !== undefined) qs.set("blocked", String(params.blocked));
+      if (params?.limit)             qs.set("limit", String(params.limit));
+      return fetchRaw<any>(`/qc/nafdac/batches${qs.toString() ? `?${qs}` : ""}`);
+    },
+
+    approveBatch: (id: string, payload?: {
+      valid_from?: string;
+      valid_to?: string;
+      certificate_ref?: string;
+      nafdac_reg_number?: string;
+      notes?: string;
+    }) => sendJson<any>(`/qc/nafdac/batches/${id}/approve`, "PATCH", payload ?? {}),
+
+    rejectBatch: (id: string, payload: { rejection_reason: string; notes?: string }) =>
+      sendJson<any>(`/qc/nafdac/batches/${id}/reject`, "PATCH", payload),
+
+    // --- Product recalls ---
+    initiateRecall: (payload: {
+      batch_number: string;
+      product_name: string;
+      recall_reason: string;
+      scope?: "voluntary" | "mandatory";
+      regulatory_authority?: string;
+      distribution_data?: object[];
+    }) => sendJson<any>("/qc/recalls", "POST", payload),
+
+    listRecalls: (params?: { status?: string; product?: string; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.status)  qs.set("status", params.status);
+      if (params?.product) qs.set("product", params.product);
+      if (params?.limit)   qs.set("limit", String(params.limit));
+      return fetchRaw<any>(`/qc/recalls${qs.toString() ? `?${qs}` : ""}`);
+    },
+
+    updateRecallStatus: (id: string, payload: {
+      status: "initiated" | "in_progress" | "completed" | "closed";
+      distribution_data?: object[];
+      notes?: string;
+    }) => sendJson<any>(`/qc/recalls/${id}/status`, "PATCH", payload),
+  },
+
+  logistics: {
+    createRider: (payload: { name: string; phone?: string; vehicle?: string }) =>
+      sendJson<any>("/logistics/riders", "POST", payload),
+
+    createDelivery: (payload: {
+      destination: string;
+      recipient_name?: string;
+      recipient_phone?: string;
+      dest_lat?: number;
+      dest_lng?: number;
+    }) => sendJson<any>("/logistics/deliveries", "POST", payload),
+
+    assignRoutes: () => sendJson<any>("/logistics/assign", "POST", {}),
+
+    getRiderRoute: (riderId: string) =>
+      fetchRaw<any>(`/logistics/riders/${encodeURIComponent(riderId)}/route`),
+
+    updateDeliveryStatus: (deliveryId: string, status: string) =>
+      sendJson<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/status`, "POST", { status }),
+
+    computeRoute: (payload: { origin: string; destinations: string[]; optimize?: boolean }) =>
+      sendJson<any>("/logistics/compute-route", "POST", payload),
+
+    // ---- Live tracking (Migration 084) ----
+
+    /** Start a delivery → mints tracking_token, returns PWA URL */
+    startDelivery: (deliveryId: string) =>
+      sendJson<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/start`, "POST", {}),
+
+    /** Rider PWA: resolve delivery info by token (no JWT) */
+    getDeliveryByToken: (token: string) =>
+      fetchRaw<any>(`/logistics/track/${encodeURIComponent(token)}`),
+
+    /** Latest rider positions snapshot (dashboard poll fallback) */
+    livePositions: () =>
+      fetchRaw<any>("/logistics/live-positions"),
+
+    /** All in-transit/assigned deliveries with rider location */
+    activeDeliveries: () =>
+      fetchRaw<any>("/logistics/active-deliveries"),
+
+    /** GPS ping history / route replay for a delivery */
+    deliveryPings: (deliveryId: string) =>
+      fetchRaw<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/pings`),
   },
 };

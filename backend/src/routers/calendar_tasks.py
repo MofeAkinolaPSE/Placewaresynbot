@@ -1,12 +1,13 @@
 """
 Calendar and Tasks API Router
 Implements Milestone 6: Calendar & Task Manager
+Extended: Pharma Logistics Calendar (Migration 081)
 """
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, List
 from uuid import UUID
 
@@ -184,6 +185,74 @@ async def delete_calendar_event(event_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Pharma Logistics Alerts Endpoint
+# ---------------------------------------------------------------------------
+
+_LOGISTICS_TYPES = {"inbound_inventory", "regional_dispatch", "warehouse_audit", "qc_inspection"}
+
+LOGISTICS_ALERT_WINDOW_DAYS = 30
+
+
+@router.get("/logistics/alerts")
+async def get_logistics_alerts(window_days: int = Query(30, ge=1, le=180)):
+    """
+    Return batches/events with expiry dates within the alert window.
+    Scans metadata.batch_expiry on all logistics calendar events that start
+    within [now, now + window_days] and returns those whose batch expires soon.
+    """
+    try:
+        now = datetime.utcnow()
+        cutoff = now + timedelta(days=window_days)
+
+        result = (
+            db.table("placeware_calendar_events")
+            .select("id, title, event_type, start_time, metadata")
+            .gte("start_time", now.isoformat())
+            .lte("start_time", cutoff.isoformat())
+            .execute()
+        )
+
+        events = result.data or []
+        alerts = []
+
+        for ev in events:
+            raw_meta = ev.get("metadata") or {}
+            if isinstance(raw_meta, str):
+                try:
+                    raw_meta = json.loads(raw_meta)
+                except Exception:
+                    raw_meta = {}
+
+            expiry_str = raw_meta.get("batch_expiry") or raw_meta.get("expiry_date")
+            if not expiry_str:
+                continue
+
+            try:
+                expiry_dt = datetime.fromisoformat(expiry_str.replace("Z", ""))
+                days_until = (expiry_dt.date() - now.date()).days
+                if 0 <= days_until <= window_days:
+                    alerts.append({
+                        "event_id": ev.get("id"),
+                        "title": ev.get("title"),
+                        "event_type": ev.get("event_type"),
+                        "batch_id": raw_meta.get("batch_id"),
+                        "product_name": raw_meta.get("product_name"),
+                        "expiry_date": expiry_str,
+                        "days_until_expiry": days_until,
+                        "is_cold_chain": raw_meta.get("is_cold_chain", False),
+                        "is_nafdac_regulated": raw_meta.get("is_nafdac_regulated", False),
+                    })
+            except (ValueError, TypeError):
+                continue
+
+        alerts.sort(key=lambda x: x["days_until_expiry"])
+        return {"alerts": alerts, "total": len(alerts), "window_days": window_days}
+    except Exception as e:
+        logger.error(f"Failed to get logistics alerts: {e}")
+        return {"alerts": [], "total": 0, "window_days": window_days}
+
+
+# ---------------------------------------------------------------------------
 # Tasks Endpoints
 # ---------------------------------------------------------------------------
 
@@ -242,6 +311,15 @@ async def create_task(payload: TaskCreate):
             "status": payload.status,
             "priority": payload.priority,
         })
+        # If a specific user is assigned, notify their personal staff channel
+        if payload.assigned_to:
+            await realtime_hub.broadcast("staff_updates", {
+                "event": "task_assigned",
+                "assigned_to": payload.assigned_to,
+                "title": payload.title,
+                "priority": payload.priority,
+                "id": inserted.get("id") if isinstance(inserted, dict) else None,
+            })
         await realtime_hub.broadcast("workflow_updates", {
             "event": "task_created",
             "source": payload.source,

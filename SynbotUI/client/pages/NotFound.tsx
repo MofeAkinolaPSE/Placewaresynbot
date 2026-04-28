@@ -29,7 +29,7 @@ const NotFound = () => {
           </CardHeader>
           <CardContent className="space-y-6">
             <p className="text-muted-foreground">
-              This page does not exist in the current PlacewareBot admin route map.
+              This page does not exist in the current Warebot admin route map.
             </p>
             <Button asChild>
               <a href="/">Return to Home</a>

@@ -104,7 +104,7 @@ export function ProfitabilityDashboard() {
                   <XAxis dataKey="period" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${(v / 1_000_000).toFixed(1)}M`} />
                   <Tooltip formatter={(value: any) => formatNaira(Number(value))} />
-                  <Line type="monotone" dataKey="profit" name="Profit" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="profit" name="Profit" stroke="#2740AE" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (

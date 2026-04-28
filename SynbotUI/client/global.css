@@ -12,129 +12,129 @@
    * A different format will require also updating the theme in tailwind.config.ts.
   */
   :root {
-    /* ── Light mode — pure white canvas, high contrast, crisp ── */
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    /* ── Placeware Light — operational / blue-led tech platform ── */
+    --background: 210 17% 98%;           /* #F8F9FA */
+    --foreground: 156 14% 7%;            /* #101513 */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 0 0% 100%;                   /* #FFFFFF */
+    --card-foreground: 156 14% 7%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 156 14% 7%;
 
-    --primary: 217 91% 55%;
+    --primary: 229 63% 42%;              /* #2740AE — core brand blue */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 262 83% 58%;
+    --secondary: 209 65% 41%;            /* #256CAE — support blue */
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 225 47% 96%;                /* #EFEFFD — light blue panel */
+    --muted-foreground: 0 0% 46%;        /* #767676 */
 
-    --accent: 217 91% 55%;
+    --accent: 200 91% 52%;               /* #14AAF5 — cyan accent */
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 6 63% 46%;            /* #C0392B */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
+    --border: 223 9% 85%;                /* #D6D8DD */
     --input: 0 0% 100%;
-    --ring: 217 91% 55%;
+    --ring: 229 63% 42%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 11%;
+    --warning-foreground: 156 14% 7%;
 
-    --success: 142 71% 40%;
+    --success: 125 47% 58%;              /* #62C76A */
     --success-foreground: 0 0% 100%;
 
-    --info: 221 83% 53%;
+    --info: 200 91% 52%;                 /* #14AAF5 */
     --info-foreground: 0 0% 100%;
 
-    --radius: 0.85rem;
+    --radius: 0.75rem;
 
     --background-0: 0 0% 100%;
-    --background-1: 210 40% 98%;
-    --background-2: 210 40% 96%;
-    --background-3: 214 32% 91%;
+    --background-1: 210 17% 98%;         /* #F8F9FA */
+    --background-2: 225 47% 96%;         /* #EFEFFD */
+    --background-3: 223 9% 85%;          /* #D6D8DD */
 
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 55%) 0%, hsl(262 83% 58%) 100%);
-    --gradient-soft: linear-gradient(135deg, hsl(217 91% 55% / 0.12) 0%, hsl(262 83% 58% / 0.12) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(229 63% 42%) 0%, hsl(200 91% 52%) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(229 63% 42% / 0.10) 0%, hsl(200 91% 52% / 0.10) 100%);
 
-    --shadow-elevation-1: 0 1px 4px hsl(220 60% 10% / 0.06), 0 2px 8px hsl(220 60% 10% / 0.04);
-    --shadow-elevation-2: 0 4px 16px hsl(220 60% 10% / 0.08), 0 8px 24px hsl(220 60% 10% / 0.05);
-    --shadow-elevation-3: 0 12px 40px hsl(220 60% 10% / 0.12), 0 20px 52px hsl(220 60% 10% / 0.07);
-    --shadow-glow: 0 0 28px hsl(217 91% 55% / 0.28);
+    --shadow-elevation-1: 0 1px 4px hsl(229 63% 10% / 0.06), 0 2px 8px hsl(229 63% 10% / 0.04);
+    --shadow-elevation-2: 0 4px 16px hsl(229 63% 10% / 0.08), 0 8px 24px hsl(229 63% 10% / 0.05);
+    --shadow-elevation-3: 0 12px 40px hsl(229 63% 10% / 0.12), 0 20px 52px hsl(229 63% 10% / 0.07);
+    --shadow-glow: 0 0 28px hsl(229 63% 42% / 0.28);
 
-    --sidebar-background: 222 47% 18%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217 91% 65%;
+    --sidebar-background: 216 100% 28%;  /* #003A91 — deep brand blue */
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 200 91% 52%;      /* #14AAF5 — cyan for active nav items */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 28%;
-    --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 222 30% 28%;
-    --sidebar-ring: 217 91% 65%;
+    --sidebar-accent: 229 63% 35%;       /* darker primary for hover */
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 216 70% 35%;
+    --sidebar-ring: 200 91% 52%;
   }
 
   .dark {
-    /* ── Dark mode — noticeably lighter than before: deep slate, not near-black ── */
-    --background: 222 28% 14%;
-    --foreground: 210 40% 96%;
+    /* ── Placeware Dark — deep navy, blue-led operations platform ── */
+    --background: 220 40% 10%;
+    --foreground: 210 17% 95%;
 
-    --card: 222 26% 18%;
-    --card-foreground: 210 40% 96%;
+    --card: 220 38% 14%;
+    --card-foreground: 210 17% 95%;
 
-    --popover: 222 26% 18%;
-    --popover-foreground: 210 40% 96%;
+    --popover: 220 38% 14%;
+    --popover-foreground: 210 17% 95%;
 
-    --primary: 217 91% 65%;
+    --primary: 229 70% 62%;              /* brightened #2740AE for dark bg */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 262 83% 67%;
+    --secondary: 209 60% 55%;            /* brightened #256CAE for dark bg */
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 222 22% 26%;
-    --muted-foreground: 215 20% 72%;
+    --muted: 220 30% 20%;
+    --muted-foreground: 225 20% 68%;
 
-    --accent: 217 91% 65%;
+    --accent: 200 91% 60%;               /* brighter cyan on dark bg */
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 62%;
+    --destructive: 6 63% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 222 20% 30%;
-    --input: 222 24% 22%;
-    --ring: 217 91% 65%;
+    --border: 220 25% 25%;
+    --input: 220 35% 16%;
+    --ring: 229 70% 62%;
 
     --warning: 38 92% 52%;
-    --warning-foreground: 222 47% 11%;
+    --warning-foreground: 220 40% 10%;
 
-    --success: 142 71% 48%;
-    --success-foreground: 222 28% 14%;
+    --success: 125 47% 60%;
+    --success-foreground: 220 40% 10%;
 
-    --info: 221 83% 60%;
+    --info: 200 91% 60%;
     --info-foreground: 0 0% 100%;
 
-    --background-0: 222 28% 14%;
-    --background-1: 222 26% 18%;
-    --background-2: 222 24% 22%;
-    --background-3: 222 20% 28%;
+    --background-0: 220 40% 10%;
+    --background-1: 220 38% 14%;
+    --background-2: 220 32% 18%;
+    --background-3: 220 28% 24%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 65%) 0%, hsl(262 83% 67%) 100%);
-    --gradient-soft: linear-gradient(135deg, hsl(217 91% 65% / 0.16) 0%, hsl(262 83% 67% / 0.16) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(229 70% 62%) 0%, hsl(200 91% 60%) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(229 70% 62% / 0.16) 0%, hsl(200 91% 60% / 0.16) 100%);
 
-    --shadow-elevation-1: 0 2px 8px hsl(220 60% 2% / 0.22);
-    --shadow-elevation-2: 0 16px 40px hsl(220 60% 2% / 0.34);
-    --shadow-elevation-3: 0 24px 56px hsl(220 60% 2% / 0.44);
-    --shadow-glow: 0 0 24px hsl(217 91% 65% / 0.30);
+    --shadow-elevation-1: 0 2px 8px hsl(220 60% 2% / 0.25);
+    --shadow-elevation-2: 0 16px 40px hsl(220 60% 2% / 0.38);
+    --shadow-elevation-3: 0 24px 56px hsl(220 60% 2% / 0.48);
+    --shadow-glow: 0 0 24px hsl(229 70% 62% / 0.30);
 
-    --sidebar-background: 222 32% 16%;
-    --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 217 91% 65%;
+    --sidebar-background: 220 45% 12%;
+    --sidebar-foreground: 210 17% 95%;
+    --sidebar-primary: 200 91% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 26% 26%;
-    --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 222 22% 28%;
-    --sidebar-ring: 217 91% 65%;
+    --sidebar-accent: 220 35% 22%;
+    --sidebar-accent-foreground: 210 17% 95%;
+    --sidebar-border: 220 30% 22%;
+    --sidebar-ring: 200 91% 60%;
   }
 }
 
@@ -146,8 +146,8 @@
   body {
     @apply bg-background text-foreground antialiased;
     background-image:
-      radial-gradient(circle at 18% 18%, hsl(var(--primary) / 0.07), transparent 45%),
-      radial-gradient(circle at 82% 0%, hsl(var(--secondary) / 0.06), transparent 35%);
+      radial-gradient(circle at 18% 18%, hsl(var(--primary) / 0.06), transparent 45%),
+      radial-gradient(circle at 82% 0%, hsl(200 91% 52% / 0.04), transparent 35%);
   }
 
   :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
@@ -172,7 +172,7 @@
     @apply pointer-events-none absolute inset-0;
     background:
       radial-gradient(circle at 20% 20%, hsl(var(--primary) / 0.05), transparent 42%),
-      radial-gradient(circle at 80% 10%, hsl(var(--secondary) / 0.04), transparent 36%);
+      radial-gradient(circle at 80% 10%, hsl(200 91% 52% / 0.03), transparent 36%);
   }
 
   .pw-surface-base {

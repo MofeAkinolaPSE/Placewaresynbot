@@ -1,7 +1,7 @@
 """
 sage_csv_import.py — POST /sage/import/csv
 
-Accepts multipart CSV file uploads for each of the 10 PlacewareBot
+Accepts multipart CSV file uploads for each of the 10 Warebot
 data-package file types and persists them to their corresponding
 Supabase snapshot tables.
 
@@ -304,6 +304,55 @@ def _map_staff(row: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _map_hr_payroll(row: Dict[str, str]) -> Dict[str, Any]:
+    """Maps HR payroll CSV → sage_payroll_snapshot columns.
+
+    Supported columns (case-insensitive key lookup):
+      employee_id, department, period, salary, overtime_hours, overtime_rate,
+      total_gross, net_pay, deductions
+    """
+    employee_id = (
+        row.get("employee_id") or row.get("EmployeeID") or row.get("Employee ID") or
+        row.get("emp_id") or ""
+    ).strip()
+    if not employee_id:
+        raise ValueError("employee_id is required")
+
+    def _f(key: str, *aliases: str) -> Optional[float]:
+        for k in (key, *aliases):
+            v = row.get(k) or row.get(k.title()) or row.get(k.upper())
+            if v and str(v).strip():
+                try:
+                    return float(str(v).replace(",", "").strip())
+                except (ValueError, TypeError):
+                    continue
+        return None
+
+    salary = _f("salary", "Salary", "base_salary", "BaseSalary") or 0.0
+    ot_hrs = _f("overtime_hours", "OvertimeHours", "ot_hours") or 0.0
+    ot_rate = _f("overtime_rate", "OvertimeRate", "ot_rate") or 0.0
+    ot_cost = ot_hrs * ot_rate
+    total_gross = _f("total_gross", "TotalGross", "gross_pay") or (salary + ot_cost)
+    deductions = _f("deductions", "Deductions", "total_deductions") or 0.0
+    net_pay = _f("net_pay", "NetPay", "net") or (total_gross - deductions)
+
+    return {
+        "employee_id": employee_id,
+        "department": (
+            row.get("department") or row.get("Department") or row.get("dept") or ""
+        ).strip() or None,
+        "period": (
+            row.get("period") or row.get("Period") or row.get("pay_period") or ""
+        ).strip() or None,
+        "salary": salary,
+        "overtime_hours": ot_hrs,
+        "overtime_rate": ot_rate,
+        "total_gross": round(total_gross, 2),
+        "deductions": round(deductions, 2),
+        "net_pay": round(net_pay, 2),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Registry: file_type → (target_table, mapper_fn)
 # ---------------------------------------------------------------------------
@@ -320,6 +369,7 @@ _REGISTRY: Dict[str, Tuple[str, Callable[[Dict[str, str]], Dict[str, Any]]]] = {
     "inventory_transactions": ("sage_inv_transactions_snapshot", _map_inventory_transactions),
     "gl_journal_entries": ("sage_gl_snapshot", _map_gl_journal_entries),
     "staff": ("sage_staff_snapshot", _map_staff),
+    "hr_payroll": ("sage_payroll_snapshot", _map_hr_payroll),
 }
 
 # Human-friendly metadata for UI listing
@@ -401,6 +451,13 @@ SUPPORTED_TYPES: List[Dict[str, Any]] = [
         "target_table": "sage_staff_snapshot",
         "required_columns": ["staff_id", "full_name"],
     },
+    {
+        "file_type": "hr_payroll",
+        "label": "HR Payroll",
+        "description": "Payroll run data with salary, overtime, deductions, and net pay. Required: employee_id.",
+        "target_table": "sage_payroll_snapshot",
+        "required_columns": ["employee_id"],
+    },
 ]
 
 # Cache-tag groups to bust after successful imports
@@ -416,6 +473,7 @@ _CACHE_TAGS: Dict[str, List[str]] = {
     "inventory_transactions": ["inventory", "finance_kpis"],
     "gl_journal_entries": ["finance", "finance_kpis", "finance_trend", "executive", "executive_summary"],
     "staff": ["staff", "executive_summary"],
+    "hr_payroll": ["finance", "payroll", "executive_summary"],
 }
 
 

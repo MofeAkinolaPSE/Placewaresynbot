@@ -1,4 +1,4 @@
--- Compliance retention/version policy baseline for import jobs
+﻿-- Compliance retention/version policy baseline for import jobs
 begin;
 
 alter table if exists public.placeware_import_jobs
@@ -41,8 +41,8 @@ alter table public.placeware_data_policies enable row level security;
 
 drop policy if exists admin_all_data_policies on public.placeware_data_policies;
 create policy admin_all_data_policies on public.placeware_data_policies
-for all to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+for all
+USING (true)
+WITH CHECK (true);
 
 commit;

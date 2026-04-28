@@ -97,13 +97,19 @@ def send_email_background(msg: MIMEText, recipient: str, max_retries: int = 3, b
 
     - `msg` should be a `MIMEText` instance. The `To` header will be set by the worker.
     - Retries are logged; sensitive credentials are not logged.
+    - Credentials are read fresh from the environment on each attempt so that
+      .env changes (with override=True in load_dotenv) are honoured without restart.
     """
     def _worker(message: MIMEText, to_addr: str):
         tries = 0
         while tries < max_retries:
             try:
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                    server.login(EMAIL_FROM, EMAIL_PASS)
+                _from = os.getenv(ENV_EMAIL_FROM, "")
+                _pass = os.getenv(ENV_EMAIL_PASS, "")
+                with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.login(_from, _pass)
                     message["To"] = to_addr
                     server.send_message(message)
                 logging.info(f"Email sent to %s; subject=%s", to_addr, message.get("Subject"))

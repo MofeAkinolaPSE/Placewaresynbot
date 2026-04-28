@@ -170,8 +170,8 @@ export function FinancialDashboard() {
                   <AreaChart data={cashflowData} margin={{ top: 8, right: 16, left: 8, bottom: 10 }}>
                     <defs>
                       <linearGradient id="inflowGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} />
+                        <stop offset="5%" stopColor="#14AAF5" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#14AAF5" stopOpacity={0.02} />
                       </linearGradient>
                       <linearGradient id="outflowGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
@@ -182,7 +182,7 @@ export function FinancialDashboard() {
                     <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} stroke="hsl(var(--muted-foreground))" />
                     <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${v}M`} width={56} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip formatter={(v: number, name: string) => [`₦${v.toFixed(2)}M`, name]} contentStyle={{ fontSize: "13px", borderRadius: "8px" }} />
-                    <Area type="monotone" dataKey="inflow" name="Inflow" stroke="#0ea5e9" strokeWidth={2} fill="url(#inflowGrad)" />
+                    <Area type="monotone" dataKey="inflow" name="Inflow" stroke="#14AAF5" strokeWidth={2} fill="url(#inflowGrad)" />
                     <Area type="monotone" dataKey="outflow" name="Outflow" stroke="#ef4444" strokeWidth={2} fill="url(#outflowGrad)" />
                   </AreaChart>
                 </ResponsiveContainer>

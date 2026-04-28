@@ -25,7 +25,7 @@
     <path fill="white" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
   </svg>`;
 
-  const GREETING = "Hi! I'm PlacewareBot, your Placeware Nigeria assistant.\nHow can I help you today?";
+  const GREETING = "Hi! I'm Warebot, your Placeware Nigeria assistant.\nHow can I help you today?";
 
   // ── Build DOM ───────────────────────────────────────────────────────────────
   const launcher = document.createElement('button');
@@ -36,13 +36,13 @@
   const windowEl = document.createElement('div');
   windowEl.className = 'pw-window';
   windowEl.setAttribute('role', 'dialog');
-  windowEl.setAttribute('aria-label', 'PlacewareBot chat');
+  windowEl.setAttribute('aria-label', 'Warebot chat');
   windowEl.innerHTML = `
     <div class="pw-header">
       <div class="pw-header-title">
         <div class="pw-header-avatar">🤖</div>
         <div>
-          <div>PlacewareBot</div>
+          <div>Warebot</div>
           <div class="pw-header-subtitle">Placeware Nigeria · Powered by AI</div>
         </div>
       </div>

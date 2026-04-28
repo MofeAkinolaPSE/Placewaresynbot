@@ -9,8 +9,8 @@ company:
   country_focus: "Nigeria"
 email:
   recipients:
-    marketing: "marketing@placeware.example"
-    operations: "ops@placeware.example"
-    orders: "orders@placeware.example"
-    sales: "sales@placeware.example"
+    marketing: "akinolamofe2@gmail.com"
+    operations: "akinolamofe2@gmail.com"
+    orders: "akinolamofe2@gmail.com"
+    sales: "akinolamofe2@gmail.com"
     # Extend with more departmental mappings as needed

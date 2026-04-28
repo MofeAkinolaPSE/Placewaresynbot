@@ -1,4 +1,4 @@
-"""Centralized constants for PlacewareBot.
+"""Centralized constants for Warebot.
 
 This module provides a single source of truth for branding, table names,
 embedding parameters, disclaimers, environment variable keys, and service
@@ -9,7 +9,7 @@ import os
 
 # Branding & Bot Identity
 BOT_BRAND = "Placeware"
-BOT_NAME = "PlacewareBot"
+BOT_NAME = "Warebot"
 
 # Embedding / Retrieval Params
 EMBEDDING_DIM = 384

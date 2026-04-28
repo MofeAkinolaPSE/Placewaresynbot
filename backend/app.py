@@ -89,8 +89,9 @@ async def webhook_tracking_update(payload: TrackingWebhookPayload):
     return {"status": "updated", "tracking_id": payload.tracking_id, "new_status": new_status}
 from dotenv import load_dotenv
 
-# Load env immediately, before other imports rely on os.getenv
-load_dotenv()
+# Load env immediately; override=True ensures .env always wins over stale
+# Windows system environment variables (e.g. old EMAIL_FROM set in a prior session).
+load_dotenv(override=True)
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Depends, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
@@ -338,9 +339,48 @@ import socket
 #     SentenceTransformer = None  # type: ignore
 #     _st_model = None
 
-load_dotenv()
+load_dotenv(override=True)
 
 app = FastAPI()
+
+# ── Pending email draft store (confirmation-before-send flow) ─────────────────
+# Keyed by user_id (or IP fallback). Draft expires after 10 minutes.
+# Structure: { user_key → {subject, body, to_email, department, original_request, expires_at} }
+_PENDING_EMAIL_DRAFTS: dict = {}
+_EMAIL_DRAFT_TTL_SECONDS = 600  # 10 minutes
+
+
+def _draft_key(auth_payload: dict, request: "Request") -> str:  # type: ignore[name-defined]
+    uid = (auth_payload or {}).get("sub") or (auth_payload or {}).get("id")
+    if uid:
+        return str(uid)
+    client = getattr(request, "client", None)
+    return str(getattr(client, "host", "anonymous"))
+
+
+def _is_email_confirmation(text: str) -> bool:
+    """Return True if the message is a short affirmative confirming a pending draft."""
+    tl = text.strip().lower()
+    if len(tl) > 120:
+        return False
+    phrases = [
+        "yes", "send it", "send the email", "go ahead", "looks good", "approved",
+        "confirm", "confirmed", "proceed", "ok send", "that's fine", "that's good",
+        "send that", "yes send", "yes please", "yep", "yeah", "okay", "ok",
+        "do it", "send now", "sure", "correct", "right", "fine", "good",
+        "sounds good", "perfect", "great", "send", "approve", "ship it",
+    ]
+    return any(tl == p or tl.startswith(p + " ") or tl.endswith(" " + p) for p in phrases)
+
+
+def _is_email_rejection(text: str) -> bool:
+    """Return True if the message cancels a pending draft."""
+    tl = text.strip().lower()
+    if len(tl) > 120:
+        return False
+    phrases = ["no", "don't send", "dont send", "cancel", "nevermind", "never mind",
+               "abort", "stop", "discard", "scratch that", "forget it"]
+    return any(tl == p or tl.startswith(p + " ") or tl.endswith(" " + p) for p in phrases)
 
 
 @app.exception_handler(RequestValidationError)
@@ -395,7 +435,15 @@ from src.routers.knowledge_router import router as knowledge_router
 from src.routers.maintenance_tracking import router as maintenance_tracking_router
 from src.routers.digital_twin import router as digital_twin_router
 from src.routers.capability_discovery import router as capability_discovery_router
+from src.routers.crm_sales import router as crm_sales_router
+from src.routers.frontdesk import router as frontdesk_router
+from src.routers.finance import router as finance_router
+from src.routers.qc import router as qc_router
 
+app.include_router(crm_sales_router)
+app.include_router(frontdesk_router)
+app.include_router(qc_router)
+app.include_router(finance_router)
 app.include_router(sage_csv_import_router)
 app.include_router(replenishment_router)
 app.include_router(billing_router)
@@ -429,6 +477,15 @@ app.include_router(capability_discovery_router)
 # Register tracking webhook + order status endpoints on the real app
 app.add_api_route("/webhook/tracking", webhook_tracking_update, methods=["POST"])
 app.add_api_route("/orders/{order_id}/status", update_order_status, methods=["POST"])
+
+
+@app.on_event("startup")
+async def _start_weekly_report_scheduler():
+    try:
+        from src.services.scheduler import start_scheduler
+        start_scheduler()
+    except Exception:
+        pass
 
 
 @app.on_event("startup")
@@ -824,6 +881,28 @@ def _build_grounded_direct_answer(question: str, tool_outputs: list[dict[str, An
 # Intent classification — determines if a query needs a report/list or
 # just a short conversational reply.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Action-intent detection — all keywords and handlers are declared ONCE in
+# src/eos/tool_manifest.py.  Do NOT duplicate keyword lists here.
+# ---------------------------------------------------------------------------
+try:
+    from src.eos.tool_manifest import ORDERED_ACTION_KEYWORDS as _ORDERED_ACTION_KEYWORDS
+except Exception:
+    # Graceful degradation if manifest is unavailable at import time
+    _ORDERED_ACTION_KEYWORDS = []
+
+
+def _detect_action_intent(question: str) -> str | None:
+    """Return the action intent_type if the question triggers an EOS action handler,
+    else None.  Detection uses the manifest's ordered keyword table (longest phrase
+    wins) so adding new intents only requires updating tool_manifest.py."""
+    q = (question or "").lower()
+    for keyword, intent_type in _ORDERED_ACTION_KEYWORDS:
+        if keyword in q:
+            return intent_type
+    return None
+
+
 _REPORT_KEYWORDS = {
     # report triggers
     "report", "summary", "summarize", "summarise", "breakdown", "analysis",
@@ -867,6 +946,15 @@ def _build_chat_instruction(mode: str, question: str = "") -> str:
         "Do not invent numbers, trends, or claims not present in the context. "
         "If a metric is missing, briefly say it is unavailable. "
         "Do NOT include customer support copy, ordering instructions, sales CTAs, or contact blocks. "
+        # ── EOS action capabilities (prevents LLM from saying "I can't") ────
+        f"You have FULL built-in ability to execute the following actions via {BOT_BRAND}'s EOS backend: "
+        "sending emails to internal departments, scheduling and managing calendar meetings, "
+        "creating workflow tasks, generating structured business reports (deviation, maintenance, "
+        "compliance, audit, financial, inventory, executive), and triggering inventory replenishment orders. "
+        "When the user asks you to perform any of these actions, CONFIRM that you are executing it and "
+        "report the result back. NEVER say you cannot send emails, cannot access the calendar, "
+        "cannot create tasks, or cannot generate reports — these capabilities are fully operational "
+        f"through {BOT_NAME}'s agent backend. "
     )
 
     if intent == "report":
@@ -3769,6 +3857,149 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         except Exception as e:
             logging.error(f"customer transaction intent failed: {e}")
 
+    # --- Action intent intercept (all 6 action types) --------
+    # For internal staff (mode != customer), detect and handle action phrases
+    # before handing off to the LLM so the action actually gets executed.
+    # Email uses a two-phase flow: compose → preview → user confirms → send.
+    if mode != "customer":
+        import time as _time_mod
+        _dkey = _draft_key(auth_payload, request)
+        _pending = _PENDING_EMAIL_DRAFTS.get(_dkey)
+
+        # ── Phase 2: user is confirming or rejecting a pending draft ──────────
+        if _pending:
+            _expired = _pending.get("expires_at", 0) < _time_mod.time()
+            if _expired:
+                del _PENDING_EMAIL_DRAFTS[_dkey]
+            elif _is_email_confirmation(question):
+                # Send the stored draft without re-composing
+                try:
+                    from src.agent_registry import get_agent as _get_agent_ea
+                    _send_agent = _get_agent_ea("email_agent", context={
+                        "intent_text":         _pending["original_request"],
+                        "department":          _pending["department"],
+                        "precomposed_subject": _pending["subject"],
+                        "precomposed_body":    _pending["body"],
+                        "actor_id":            actor_id or "eos_chat",
+                        "simulation":          False,
+                        "enable_memory":       True,
+                    })
+                    _send_insight = _send_agent.run() if _send_agent else None
+                    del _PENDING_EMAIL_DRAFTS[_dkey]
+                    _send_answer = (
+                        "\n".join(_send_insight.findings)
+                        if _send_insight and _send_insight.findings
+                        else f"Email sent to {_pending['department']} ({_pending['to_email']})."
+                    )
+                    try:
+                        save_chat_history(user_id=actor_id, question=question, answer=_send_answer, sources=[])
+                    except Exception:
+                        pass
+                    return _normalize_chat_contract(
+                        answer=_send_answer, bot=BOT_NAME, sources=[], mode=mode,
+                        trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                    ).model_dump()
+                except Exception as _ce:
+                    logging.error(f"Email confirm-send failed: {_ce}")
+                    del _PENDING_EMAIL_DRAFTS[_dkey]
+            elif _is_email_rejection(question):
+                del _PENDING_EMAIL_DRAFTS[_dkey]
+                _cancel_answer = "Email cancelled. Let me know if you'd like to send a different message."
+                try:
+                    save_chat_history(user_id=actor_id, question=question, answer=_cancel_answer, sources=[])
+                except Exception:
+                    pass
+                return _normalize_chat_contract(
+                    answer=_cancel_answer, bot=BOT_NAME, sources=[], mode=mode,
+                    trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                ).model_dump()
+
+        # ── Phase 1: detect action intent and dispatch ────────────────────────
+        _action_type = _detect_action_intent(question)
+        if _action_type:
+            try:
+                from src.eos.service import (
+                    IntentParser as _IntentParser,
+                    _handle_send_email_action,
+                    _handle_send_whatsapp_action,
+                    _handle_schedule_meeting_action,
+                    _handle_task_creation,
+                    _handle_generate_report_action,
+                    _handle_trigger_replenishment_action,
+                )
+                _parser = _IntentParser()
+                _intent = _parser._fallback_parse(question)
+
+                # Email: compose a draft and ask for confirmation before sending
+                if _action_type == "send_email":
+                    try:
+                        from src.agent_registry import get_agent as _get_agent_preview
+                        _preview_agent = _get_agent_preview("email_agent", context={
+                            "intent_text": question,
+                            "department":  (_intent.get("parameters") or {}).get("department", "operations"),
+                            "actor_id":    actor_id or "eos_chat",
+                            "simulation":  True,
+                            "enable_memory": True,
+                        })
+                        _preview_insight = _preview_agent.run() if _preview_agent else None
+                        if _preview_insight and _preview_insight.metrics.get("subject"):
+                            _dept   = _preview_insight.metrics.get("department", "operations")
+                            _to     = _preview_insight.metrics.get("to_email", "")
+                            _subj   = _preview_insight.metrics.get("subject", "")
+                            _body   = _preview_insight.metrics.get("body", "")
+                            # Store draft (TTL 10 min)
+                            _PENDING_EMAIL_DRAFTS[_dkey] = {
+                                "subject":          _subj,
+                                "body":             _body,
+                                "to_email":         _to,
+                                "department":       _dept,
+                                "original_request": question,
+                                "expires_at":       _time_mod.time() + _EMAIL_DRAFT_TTL_SECONDS,
+                            }
+                            _preview_answer = (
+                                f"Here's the draft email to **{_dept}** ({_to}):\n\n"
+                                f"**Subject:** {_subj}\n\n"
+                                f"{_body}\n\n"
+                                f"---\n"
+                                f"Reply **\"send it\"** to confirm, or tell me what to change."
+                            )
+                            try:
+                                save_chat_history(user_id=actor_id, question=question, answer=_preview_answer, sources=[])
+                            except Exception:
+                                pass
+                            return _normalize_chat_contract(
+                                answer=_preview_answer, bot=BOT_NAME, sources=[], mode=mode,
+                                trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                            ).model_dump()
+                    except Exception as _pe:
+                        logging.error(f"Email preview compose failed: {_pe}")
+                        # Fall through to immediate send if preview fails
+
+                # All other actions execute immediately
+                _ACTION_DISPATCH = {
+                    "send_email":            _handle_send_email_action,
+                    "send_whatsapp":         _handle_send_whatsapp_action,
+                    "schedule_meeting":      _handle_schedule_meeting_action,
+                    "create_task":           _handle_task_creation,
+                    "generate_report":       _handle_generate_report_action,
+                    "trigger_replenishment": _handle_trigger_replenishment_action,
+                }
+                _handler = _ACTION_DISPATCH.get(_action_type)
+                if _handler:
+                    _result = await _handler(_intent, question, False)
+                    _action_answer = (_result.get("report") or {}).get("summary") or "Action completed."
+                    try:
+                        save_chat_history(user_id=actor_id, question=question, answer=_action_answer, sources=[])
+                    except Exception:
+                        pass
+                    return _normalize_chat_contract(
+                        answer=_action_answer, bot=BOT_NAME, sources=[], mode=mode,
+                        trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                    ).model_dump()
+            except Exception as _ae:
+                logging.error(f"action intent handler failed [{_action_type}]: {_ae}")
+                # Fall through to normal LLM path if handler errors
+
     tool_outputs, tool_errors = _run_orchestration_plan(
         question=question,
         roles=roles,
@@ -3841,6 +4072,20 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
     else:
         logging.warning("No retrieval/live context found; using verified company profile context only.")
         context = f"{COMPANY_PROFILE_CONTEXT}\n\nUser question: {question}".strip()
+
+    # ── Conversation history — inject last 6 turns so LLM remembers prior actions ──
+    try:
+        _hist_user_id = (auth_payload or {}).get("sub") or (auth_payload or {}).get("id")
+        if _hist_user_id:
+            _prior = get_chat_history(user_id=_hist_user_id, limit=6)
+            if _prior:
+                _hist_lines = []
+                for _h in reversed(_prior):  # oldest first
+                    _hist_lines.append(f"User: {_h.get('question', '')}")
+                    _hist_lines.append(f"Assistant: {_h.get('answer', '')}")
+                context = context + "\n\n--- Recent Conversation ---\n" + "\n".join(_hist_lines)
+    except Exception as _he:
+        logging.warning(f"Chat history inject failed (non-fatal): {_he}")
 
     direct_answer = _build_grounded_direct_answer(question=question, tool_outputs=tool_outputs, mode=mode)
     if direct_answer:
@@ -5064,6 +5309,31 @@ async def list_all_users(request: Request, limit: int = 50):
     """List users for admin management."""
     require_role(request, "admin")
     return {"users": list_users(limit=limit)}
+
+
+@app.get("/users/directory")
+async def get_user_directory(request: Request):
+    """
+    Return a lightweight user list for task/project assignment dropdowns.
+    Accessible by admin, management, manager, hr, and finance roles.
+    Returns minimal fields: id, email, display_name, roles.
+    """
+    payload = verify_jwt(request)
+    allowed = {"admin", "management", "manager", "hr", "finance"}
+    roles = set(payload.get("roles") or [])
+    if not roles.intersection(allowed):
+        raise HTTPException(status_code=403, detail="Insufficient privileges to view user directory")
+    all_users = list_users(limit=500)
+    directory = []
+    for u in all_users:
+        # Only expose non-sensitive fields
+        directory.append({
+            "id": u.get("id") or u.get("user_id"),
+            "email": u.get("email", ""),
+            "display_name": u.get("display_name") or u.get("full_name") or u.get("email", ""),
+            "roles": u.get("roles") or [],
+        })
+    return directory
 
 
 @app.post("/users")
