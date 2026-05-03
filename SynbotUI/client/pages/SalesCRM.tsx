@@ -703,7 +703,11 @@ export default function SalesCRM() {
                     size="sm"
                     variant="outline"
                     className="gap-1.5"
-                    onClick={() => window.open(api.salesCrm.weeklyReportPdfUrl(report.week_start), "_blank")}
+                    onClick={() => {
+                      window.open(api.salesCrm.weeklyReportPdfUrl(report.week_start), "_blank");
+                      // Background: enrich sales intelligence via ReportGenerationAgent
+                      void api.reports.generate({ report_type: "sales", intent_text: "generate weekly sales report" }).catch(() => {});
+                    }}
                   >
                     <FileDown className="h-4 w-4" />
                     PDF

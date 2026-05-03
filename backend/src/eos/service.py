@@ -145,6 +145,30 @@ Executive statement: {text}"""
                     params["task_text"] = text
                     params["priority"] = priority
 
+                if intent_type == "generate_report":
+                    # Detect specific report type from text
+                    report_type = None
+                    _report_type_map = [
+                        ("sales", ["sales report", "weekly sales", "pipeline report", "crm report", "sales performance", "revenue report", "sales summary"]),
+                        ("payroll", ["payroll report", "staff payroll", "payroll summary", "salary report", "wages"]),
+                        ("pl", ["p&l report", "profit and loss", "profit & loss", "income statement", "pl report"]),
+                        ("ar_aging", ["ar aging", "accounts receivable report", "aging report", "receivables report"]),
+                        ("frontdesk", ["frontdesk report", "daily operations report", "front desk report", "daily frontdesk"]),
+                        ("deviation", ["deviation report", "capa report", "non-conformance report"]),
+                        ("audit", ["audit report", "audit review"]),
+                        ("compliance", ["compliance report", "regulatory report"]),
+                        ("inventory", ["inventory report", "stock report"]),
+                        ("maintenance", ["maintenance report", "equipment report", "calibration report"]),
+                        ("executive", ["executive summary report", "board report", "leadership brief"]),
+                        ("financial", ["financial report", "financial performance report"]),
+                    ]
+                    for rtype, phrases in _report_type_map:
+                        if any(phrase in text_lower for phrase in phrases):
+                            report_type = rtype
+                            break
+                    if report_type:
+                        params["report_type"] = report_type
+
                 return {
                     "intent_type": intent_type,
                     "scope": "specific_item" if intent_type in ("create_task", "schedule_meeting") else "department",
@@ -713,7 +737,11 @@ async def _handle_generate_report_action(
     if agent:
         try:
             insight = agent.run()
-            summary = "\n".join(insight.findings) if insight.findings else "Report generation completed."
+            # Prefer the full narrative over the bullet fragment list
+            full_report: str = (insight.metrics or {}).get("full_report", "") or ""
+            summary = full_report if full_report else (
+                "\n".join(insight.findings) if insight.findings else "Report generation completed."
+            )
             status = "simulated" if simulation else "success"
             return {
                 "intent": intent,

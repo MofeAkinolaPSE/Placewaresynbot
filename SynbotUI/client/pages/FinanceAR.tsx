@@ -188,6 +188,8 @@ export default function FinanceAR() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      // Background: enrich P&L intelligence via ReportGenerationAgent
+      void api.reports.generate({ report_type: "pl", intent_text: "generate profit and loss report" }).catch(() => {});
     } catch (err: any) {
       toast({ title: "PDF export failed", description: err.message, variant: "destructive" });
     } finally {
@@ -222,6 +224,8 @@ export default function FinanceAR() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      // Background: enrich payroll intelligence via ReportGenerationAgent
+      void api.reports.generate({ report_type: "payroll", intent_text: "generate payroll report" }).catch(() => {});
     } catch (err: any) {
       toast({ title: "Payroll PDF export failed", description: err.message, variant: "destructive" });
     } finally {

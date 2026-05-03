@@ -1309,4 +1309,43 @@ export const api = {
     deliveryPings: (deliveryId: string) =>
       fetchRaw<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/pings`),
   },
+
+  // ── Report Intelligence API ────────────────────────────────────────────────
+  reports: {
+    /** Run the ReportGenerationAgent for any report type. Returns full narrative. */
+    generate: (payload: { report_type?: string; intent_text?: string }) =>
+      sendJson<{
+        report_type: string;
+        section_title: string;
+        full_report: string;
+        findings: string[];
+        recommendations: string[];
+        quality_score: number;
+        rag_hits: number;
+        data_rows: number;
+        status: string;
+      }>("/reports/generate", "POST", payload),
+
+    /** URL for downloading a report as a Word document (.docx). Requires auth header. */
+    generateDocxUrl: () => "/reports/generate/docx",
+
+    /** Run the agent and download the result as a .docx — returns URL for fetch-with-auth. */
+    generateDocx: (payload: { report_type?: string; intent_text?: string }) =>
+      sendJson<Blob>("/reports/generate/docx", "POST", payload),
+
+    /** List recently stored reports (optionally filtered by type). */
+    history: (report_type?: string, limit = 10) => {
+      const p = new URLSearchParams({ limit: String(limit) });
+      if (report_type) p.set("report_type", report_type);
+      return fetchRaw<{ reports: any[] }>(`/reports/history?${p}`);
+    },
+
+    /** Get full narrative of a single stored report by ID. */
+    detail: (reportId: string) =>
+      fetchRaw<any>(`/reports/history/${encodeURIComponent(reportId)}`),
+
+    /** Download a stored report as .docx by ID — returns the fetch URL (caller adds auth). */
+    detailDocxUrl: (reportId: string) =>
+      `/reports/history/${encodeURIComponent(reportId)}/docx`,
+  },
 };

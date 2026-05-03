@@ -63,10 +63,12 @@ _REPORT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "section_title": "Audit Intelligence Report",
     },
     "financial": {
-        "keywords": ["p&l", "profit", "cashflow", "ar aging", "revenue", "financial performance"],
-        "tables": [],  # Delegated to FinancialAnalystAgent output
+        "keywords": ["financial performance", "cashflow", "cash flow", "financial overview", "financial summary"],
+        "tables": [
+            {"table": "sage_gl_journal_entries", "select": "*", "order": "transaction_date", "limit": 100},
+            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
+        ],
         "section_title": "Financial Performance Report",
-        "delegate_to": "financial_analyst",
     },
     "inventory": {
         "keywords": ["inventory", "stock", "expiry", "stock level", "low stock", "expiring"],
@@ -77,9 +79,69 @@ _REPORT_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "executive": {
         "keywords": ["executive summary", "board report", "leadership brief", "business health", "kpi overview"],
-        "tables": [],  # Multi-source, handled specially
+        "tables": [
+            {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 50},
+            {"table": "placeware_inventory_snapshot", "select": "*", "limit": 50},
+            {"table": "placeware_compliance_activities", "select": "*", "order": "due_date", "limit": 30},
+            {"table": "sage_payroll_snapshot", "select": "*", "order": "pay_period", "limit": 20},
+        ],
         "section_title": "Executive Business Health Report",
         "is_executive": True,
+    },
+    "sales": {
+        "keywords": [
+            "sales report", "weekly sales", "pipeline report", "crm report", "lead report",
+            "sales performance", "revenue report", "sales summary", "sales activity",
+        ],
+        "tables": [
+            {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 100},
+            {"table": "crm_lead_activity_log", "select": "*", "order": "created_at", "limit": 50},
+        ],
+        "section_title": "Sales & Pipeline Performance Report",
+    },
+    "payroll": {
+        "keywords": [
+            "payroll", "salary", "hr report", "compensation", "payroll report",
+            "staff payroll", "payroll summary", "wages", "staff salary",
+        ],
+        "tables": [
+            {"table": "sage_payroll_snapshot", "select": "*", "order": "pay_period", "limit": 50},
+            {"table": "sage_hr_absences", "select": "*", "order": "absence_date", "limit": 50},
+        ],
+        "section_title": "Payroll & HR Summary Report",
+    },
+    "pl": {
+        "keywords": [
+            "p&l", "profit and loss", "income statement", "pl report", "profit loss",
+            "net income", "profit & loss", "loss statement",
+        ],
+        "tables": [
+            {"table": "sage_gl_journal_entries", "select": "*", "order": "transaction_date", "limit": 100},
+            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
+        ],
+        "section_title": "Profit & Loss Report",
+    },
+    "ar_aging": {
+        "keywords": [
+            "ar aging", "accounts receivable", "outstanding invoices", "aging report",
+            "overdue payments", "receivables", "ar report", "accounts receivable aging",
+        ],
+        "tables": [
+            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
+            {"table": "sage_customers", "select": "*", "limit": 50},
+        ],
+        "section_title": "Accounts Receivable Aging Report",
+    },
+    "frontdesk": {
+        "keywords": [
+            "frontdesk report", "daily report", "reception report", "walk-in summary",
+            "daily operations", "frontdesk summary", "daily frontdesk", "front desk report",
+        ],
+        "tables": [
+            {"table": "placeware_walk_ins", "select": "*", "order": "created_at", "limit": 100},
+            {"table": "placeware_invoices", "select": "*", "order": "created_at", "limit": 50},
+        ],
+        "section_title": "Frontdesk & Daily Operations Report",
     },
 }
 
@@ -193,6 +255,7 @@ class ReportGenerationAgent(BaseAgent):
                 "data_rows":     analysis.get("live_data_rows", 0),
                 "past_reports_used": analysis.get("past_count", 0),
                 "section_title": analysis["section_title"],
+                "full_report":   full_report,
             },
         )
 
@@ -302,16 +365,37 @@ class ReportGenerationAgent(BaseAgent):
         return {}
 
     def _pull_executive_data(self) -> Dict[str, Any]:
+        """Pull multi-table data for executive report from both DB and tool registry."""
+        result: Dict[str, Any] = {}
+
+        # Pull live tables defined in registry
+        try:
+            from src.db import db
+            cfg = _REPORT_REGISTRY.get("executive", {})
+            for tbl_cfg in cfg.get("tables", []):
+                tbl = tbl_cfg.get("table")
+                sel = tbl_cfg.get("select", "*")
+                lim = tbl_cfg.get("limit", 30)
+                order = tbl_cfg.get("order")
+                try:
+                    q = db.table(tbl).select(sel).limit(lim)
+                    if order:
+                        q = q.order(order, desc=True)
+                    res = q.execute()
+                    result[tbl] = res.data or []
+                except Exception as exc:
+                    logger.warning(f"ReportAgent: executive table {tbl!r} fetch failed: {exc}")
+        except Exception as exc:
+            logger.warning(f"ReportAgent: executive DB pull failed: {exc}")
+
+        # Supplement with tool registry signals when available
         try:
             from src.services.tool_registry import ToolRegistry
-            return {
-                "executive_summary": ToolRegistry.execute("getExecutiveSummary", {}, ["executive"], "executive"),
-                "risk_signals":      ToolRegistry.execute("getRiskSignals", {}, ["executive"], "executive"),
-                "recommendations":   ToolRegistry.execute("getRecommendations", {}, ["executive"], "executive"),
-            }
-        except Exception as exc:
-            logger.warning(f"ReportAgent: executive data pull failed: {exc}")
-            return {}
+            result["risk_signals"] = ToolRegistry.execute("getRiskSignals", {}, ["executive"], "executive")
+        except Exception:
+            pass
+
+        return result
 
     def _get_memories(self, query: str) -> List[str]:
         try:

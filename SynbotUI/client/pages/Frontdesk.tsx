@@ -6,7 +6,7 @@ import {
   Building2, Phone, Mail, Calendar, PackageSearch,
   TrendingUp, Clock, ChevronRight, X, Eye, History,
   AlertTriangle, CheckCheck, BarChart3, Users, FileText,
-  Boxes,
+  Boxes, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -20,6 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -976,6 +983,17 @@ function QueueTab() {
     queryFn: () => api.frontdesk.dailyReport(),
     refetchInterval: 30_000,
   });
+  const { toast } = useToast();
+
+  const [reportDialog, setReportDialog] = useState<{ open: boolean; report: string | null }>({ open: false, report: null });
+
+  const intelligenceMutation = useMutation({
+    mutationFn: () => api.reports.generate({ report_type: "frontdesk", intent_text: "generate daily frontdesk operations report" }),
+    onSuccess: (data: any) => {
+      setReportDialog({ open: true, report: data?.full_report ?? data?.findings?.join("\n") ?? "No content generated." });
+    },
+    onError: (e: any) => toast({ title: "Report generation failed", description: e.message, variant: "destructive" }),
+  });
 
   const cancelMut = useMutation({
     mutationFn: (id: string) => api.frontdesk.cancelWalkIn(id),
@@ -1000,10 +1018,76 @@ function QueueTab() {
         <h2 className="text-sm font-semibold text-muted-foreground">
           {new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long" })}
         </h2>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => refetch()} disabled={isFetching}>
-          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} /> Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => intelligenceMutation.mutate()}
+            disabled={intelligenceMutation.isPending}
+          >
+            {intelligenceMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Sparkles className="h-3.5 w-3.5" />
+            }
+            Intelligence Report
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+        </div>
       </div>
+
+      {/* Intelligence Report Dialog */}
+      <Dialog open={reportDialog.open} onOpenChange={(open) => setReportDialog((s) => ({ ...s, open }))}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-500" />
+              Frontdesk Intelligence Report
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-2">
+            <pre className="text-xs whitespace-pre-wrap font-mono leading-relaxed">
+              {reportDialog.report ?? ""}
+            </pre>
+          </ScrollArea>
+          {reportDialog.report && (
+            <div className="flex justify-end pt-2 border-t">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={async () => {
+                  try {
+                    const { authClient } = await import("@/lib/auth-client");
+                    const token = await authClient.getToken();
+                    const { apiUrl } = await import("@/lib/api-base");
+                    const res = await fetch(apiUrl("/reports/generate/docx"), {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                      body: JSON.stringify({ report_type: "frontdesk", intent_text: "generate daily frontdesk operations report" }),
+                    });
+                    if (!res.ok) throw new Error(await res.text());
+                    const blob = await res.blob();
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `frontdesk_report_${new Date().toISOString().slice(0, 10)}.docx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  } catch (err: any) {
+                    toast({ title: "Download failed", description: err.message, variant: "destructive" });
+                  }
+                }}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download Word (.docx)
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
         {stats.map((s) => {

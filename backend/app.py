@@ -439,11 +439,13 @@ from src.routers.crm_sales import router as crm_sales_router
 from src.routers.frontdesk import router as frontdesk_router
 from src.routers.finance import router as finance_router
 from src.routers.qc import router as qc_router
+from src.routers.reports import router as reports_router
 
 app.include_router(crm_sales_router)
 app.include_router(frontdesk_router)
 app.include_router(qc_router)
 app.include_router(finance_router)
+app.include_router(reports_router)
 app.include_router(sage_csv_import_router)
 app.include_router(replenishment_router)
 app.include_router(billing_router)

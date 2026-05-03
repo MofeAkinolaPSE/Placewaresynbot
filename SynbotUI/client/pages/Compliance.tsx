@@ -618,6 +618,8 @@ function AuditsTab() {
       toast({ title: "Report generation queued", description: "PDF will appear in the Documents tab shortly." });
       setGenerateDialog(null);
       void qc.invalidateQueries({ queryKey: ["compliance-audits"] });
+      // Background: enrich audit intelligence via ReportGenerationAgent
+      void api.reports.generate({ report_type: "audit", intent_text: "generate audit report" }).catch(() => {});
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1050,7 +1052,11 @@ function DeviationsTab() {
 
   const reportMutation = useMutation({
     mutationFn: (id: string) => api.compliance.generateDeviationReport(id),
-    onSuccess: () => toast({ title: "Report queued", description: "PDF generation in progress." }),
+    onSuccess: () => {
+      toast({ title: "Report queued", description: "PDF generation in progress." });
+      // Background: enrich deviation intelligence via ReportGenerationAgent
+      void api.reports.generate({ report_type: "deviation", intent_text: "generate deviation report" }).catch(() => {});
+    },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
@@ -1278,6 +1284,8 @@ function MaintenanceTab() {
     onSuccess: () => {
       toast({ title: "Certificate queued", description: "PDF will appear in the Documents tab shortly." });
       setCertDialog(null);
+      // Background: enrich maintenance intelligence via ReportGenerationAgent
+      void api.reports.generate({ report_type: "maintenance", intent_text: "generate maintenance report" }).catch(() => {});
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1598,7 +1606,11 @@ function RecallsTab() {
 
   const docsMutation = useMutation({
     mutationFn: (id: string) => api.compliance.generateRecallDocuments(id),
-    onSuccess: () => toast({ title: "Documents queued", description: "PDF recall pack generation in progress." }),
+    onSuccess: () => {
+      toast({ title: "Documents queued", description: "PDF recall pack generation in progress." });
+      // Background: enrich recall intelligence via ReportGenerationAgent
+      void api.reports.generate({ report_type: "deviation", intent_text: "generate recall and deviation report" }).catch(() => {});
+    },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
