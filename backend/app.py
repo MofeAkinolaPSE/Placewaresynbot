@@ -476,6 +476,11 @@ app.include_router(maintenance_tracking_router)
 app.include_router(digital_twin_router)
 app.include_router(capability_discovery_router)
 
+# Sage 50 live integration routers
+from src.routers.sage_live import router as sage_live_router, webhook_router as sage_webhook_router
+app.include_router(sage_live_router)
+app.include_router(sage_webhook_router)
+
 # Register tracking webhook + order status endpoints on the real app
 app.add_api_route("/webhook/tracking", webhook_tracking_update, methods=["POST"])
 app.add_api_route("/orders/{order_id}/status", update_order_status, methods=["POST"])

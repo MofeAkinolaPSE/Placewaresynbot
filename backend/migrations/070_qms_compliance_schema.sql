@@ -1,4 +1,4 @@
-﻿-- Migration 070: QMS Compliance Schema
+-- Migration 070: QMS Compliance Schema
 -- Adds Quality Management System tables: SOP registry, audit schedule,
 -- compliance activity log, equipment registry, maintenance schedule,
 -- deviation reports (CAPA), recall cases, and document archive.

@@ -1,4 +1,4 @@
-﻿-- Placeware Full Schema Bootstrap + RLS
+-- Placeware Full Schema Bootstrap + RLS
 -- Use this to recover/recreate the project database in one pass.
 -- Recommended: run in Supabase SQL Editor as project owner.
 
@@ -36,7 +36,7 @@ AS $$
   SELECT '{}'::jsonb;
 $$;
 
-CREATE OR REPLACE FUNCTION NULL
+CREATE OR REPLACE FUNCTION auth.uid()
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -937,6 +937,6 @@ select jsonb_build_object(
 from scope_counts, cost_counts, risk_counts, risk_open_high, change_counts, pending_changes;
 $$;
 
-grant execute on function public.placeware_controls_rollup(uuid) ;
+grant execute on function public.placeware_controls_rollup(uuid) to authenticated, anon;
 
 commit;

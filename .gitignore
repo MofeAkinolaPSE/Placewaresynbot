@@ -10,3 +10,5 @@ scripts
 # Google OAuth2 secrets — NEVER commit these
 **/credentials.json
 **/token.json
+Sage 50 2013
+sage-bridge

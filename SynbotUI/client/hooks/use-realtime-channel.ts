@@ -52,9 +52,10 @@ export function useRealtimeChannel(channel: string, onMessage: MessageHandler, e
           }
         };
 
-        ws.onclose = async () => {
+        ws.onclose = async (evt) => {
           if (stopped) return;
-          if (!authClient.getAccessToken()) {
+          // 4401 = auth failure (invalid/expired token) — force refresh; stop if session is gone
+          if (evt.code === 4401 || !authClient.getAccessToken()) {
             const refreshed = await authClient.refresh();
             if (!refreshed) return;
           }

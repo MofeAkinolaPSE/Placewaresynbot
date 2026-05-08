@@ -1,4 +1,4 @@
-﻿-- Stage 3 Pass E: DB-level controls rollup aggregation RPC
+-- Stage 3 Pass E: DB-level controls rollup aggregation RPC
 begin;
 
 create or replace function public.placeware_controls_rollup(p_project_id uuid default null)
@@ -68,6 +68,6 @@ select jsonb_build_object(
 from scope_counts, cost_counts, risk_counts, risk_open_high, change_counts, pending_changes;
 $$;
 
-grant execute on function public.placeware_controls_rollup(uuid) ;
+grant execute on function public.placeware_controls_rollup(uuid) to authenticated, anon;
 
 commit;

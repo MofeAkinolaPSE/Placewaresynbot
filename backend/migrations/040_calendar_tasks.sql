@@ -1,4 +1,4 @@
-﻿-- Migration 040: Calendar Events and Tasks tables for Milestone 6
+-- Migration 040: Calendar Events and Tasks tables for Milestone 6
 -- Company calendar, meeting scheduling, and task management
 
 -- Calendar Events Table

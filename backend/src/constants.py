@@ -53,6 +53,8 @@ TABLE_CHANGE_REQUESTS = "placeware_change_requests"
 TABLE_PROCUREMENT_SHIPMENTS = "placeware_procurement_shipments"
 TABLE_PROCUREMENT_SHIPMENT_EVENTS = "placeware_procurement_shipment_events"
 TABLE_WEBHOOK_IDEMPOTENCY = "placeware_webhook_idempotency"
+TABLE_SAGE_SYNC_LOG = "placeware_sage_sync_log"
+TABLE_SAGE_SYNC_TIMESTAMPS = "placeware_sage_sync_timestamps"
 
 
 # Stage 3 project-controls governance

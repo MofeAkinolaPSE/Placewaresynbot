@@ -1,4 +1,4 @@
-﻿-- Compliance retention/version policy baseline for import jobs
+-- Compliance retention/version policy baseline for import jobs
 begin;
 
 alter table if exists public.placeware_import_jobs

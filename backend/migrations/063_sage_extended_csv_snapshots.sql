@@ -1,4 +1,4 @@
-﻿-- Migration 063: Extended Sage CSV snapshot tables
+-- Migration 063: Extended Sage CSV snapshot tables
 -- Supports the full 10-file PlacewareBot CSV import package.
 -- Tables already covered by migration 002: sage_customers_snapshot, sage_ar_snapshot,
 -- sage_inventory_snapshot, sage_gl_snapshot. This migration adds the remaining six.
