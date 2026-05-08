@@ -1,0 +1,11 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+pyodbc>=5.1.0
+httpx>=0.27.0
+watchdog>=4.0.0
+# pythonnet — must target .NET Framework for the Sage 50 SDK
+# Requires .NET Framework 4.x on the Windows host
+pythonnet>=3.0.3
