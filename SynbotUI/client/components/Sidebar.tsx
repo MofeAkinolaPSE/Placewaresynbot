@@ -25,6 +25,7 @@ import {
   MoreVertical,
   Sun,
   Moon,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
@@ -180,6 +181,15 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       label: "Logistics Calendar",
       icon: CalendarDays,
       href: "/calendar",
+    },
+    {
+      label: "Reports",
+      icon: ScrollText,
+      roles: ["admin", "management", "finance", "manager"],
+      children: [
+        { label: "Generate Report", href: "/reports/new" },
+        { label: "Report Library", href: "/reports" },
+      ],
     },
     {
       label: "Settings",

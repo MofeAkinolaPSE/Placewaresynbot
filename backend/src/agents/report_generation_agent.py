@@ -1,22 +1,24 @@
 """
-ReportGenerationAgent — RAG-powered progressive report generation for EOS.
-==========================================================================
+ReportGenerationAgent — Template-driven, section-by-section report generation.
+===============================================================================
 Responsibilities:
-  • Detect report type from natural language request
-    (deviation | maintenance | compliance | audit | financial | inventory | executive)
+  • Detect report type from natural language request using REPORT_TEMPLATE_REGISTRY
+  • Accept optional session_id to load pre-collected scope params and evidence notes
   • Retrieve RAG context: SOPs + NAFDAC docs from main match_documents index
   • Pull past reports from placeware_report_memory as improvement baselines
-  • Query live Supabase data relevant to the report type
-  • Generate a structured report via LLM that is provably better than the
-    last report on the same topic (enforced via explicit "improve-on" prompt)
-  • Self-score the report (1-10); store in memory only if score >= 7
-  • Return report as Insight.findings (rendered text) + metrics (structured data)
+  • Query live Supabase data with scope-aware WHERE filters (date, dept, etc.)
+  • Generate each report section INDEPENDENTLY via focused LLM prompts
+  • Validate each section for completeness before moving on
+  • Self-score the full report (1-10); store in memory only if score >= 7
+  • Return Insight.findings (full text) + metrics with per-section data
 
 Context keys consumed:
-    intent_text   str  — user request e.g. "generate a deviation report"
-    report_type   str  — optional override; if absent, auto-detected
-    actor_id      str  — for audit log
-    simulation    bool — if True, skip Supabase memory write
+    intent_text   str   — user request e.g. "generate a deviation report"
+    report_type   str   — optional override; if absent, auto-detected
+    session_id    str   — optional; links to placeware_report_sessions row
+    scope_params  dict  — optional; date_from, date_to, department, etc.
+    actor_id      str   — for audit log
+    simulation    bool  — if True, skip Supabase memory write
 """
 from __future__ import annotations
 
@@ -28,122 +30,44 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.agent_registry import register_agent
 from src.agents.base_agent import BaseAgent, Insight
+from src.report_templates import (
+    REPORT_TEMPLATE_REGISTRY,
+    detect_report_type,
+    get_template,
+    TEMPLATE_VERSION,
+)
 
 logger = logging.getLogger(__name__)
 
-# ── Report type registry ───────────────────────────────────────────────────────
-# Maps report_type → table(s) to query + relevant fields
+# Keep legacy alias so any external callers using _REPORT_REGISTRY still work
 _REPORT_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "deviation": {
-        "keywords": ["deviation", "capa", "non-conformance", "nonconformance", "corrective action"],
-        "tables": [
-            {"table": "placeware_deviation_reports", "select": "*", "order": "created_at", "limit": 50},
-        ],
-        "section_title": "Deviation & CAPA Report",
-    },
-    "maintenance": {
-        "keywords": ["maintenance", "calibration", "equipment", "service schedule", "overdue maintenance"],
-        "tables": [
-            {"table": "placeware_equipment_registry", "select": "*", "order": "next_maintenance_date", "limit": 50},
-        ],
-        "section_title": "Equipment Maintenance & Calibration Report",
-    },
-    "compliance": {
-        "keywords": ["compliance", "sop", "nafdac", "qms", "regulatory", "standard operating"],
-        "tables": [
-            {"table": "placeware_compliance_activities", "select": "*", "order": "due_date", "limit": 50},
-        ],
-        "section_title": "Regulatory Compliance Report",
-    },
-    "audit": {
-        "keywords": ["audit schedule", "overdue audit", "upcoming audit", "audit calendar", "audit review"],
-        "tables": [
-            {"table": "audit_schedule", "select": "*", "limit": 50},
-        ],
-        "section_title": "Audit Intelligence Report",
-    },
-    "financial": {
-        "keywords": ["financial performance", "cashflow", "cash flow", "financial overview", "financial summary"],
-        "tables": [
-            {"table": "sage_gl_journal_entries", "select": "*", "order": "transaction_date", "limit": 100},
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
-        ],
-        "section_title": "Financial Performance Report",
-    },
-    "inventory": {
-        "keywords": ["inventory", "stock", "expiry", "stock level", "low stock", "expiring"],
-        "tables": [
-            {"table": "placeware_inventory_snapshot", "select": "*", "limit": 100},
-        ],
-        "section_title": "Inventory Status Report",
-    },
-    "executive": {
-        "keywords": ["executive summary", "board report", "leadership brief", "business health", "kpi overview"],
-        "tables": [
-            {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 50},
-            {"table": "placeware_inventory_snapshot", "select": "*", "limit": 50},
-            {"table": "placeware_compliance_activities", "select": "*", "order": "due_date", "limit": 30},
-            {"table": "sage_payroll_snapshot", "select": "*", "order": "pay_period", "limit": 20},
-        ],
-        "section_title": "Executive Business Health Report",
-        "is_executive": True,
-    },
-    "sales": {
-        "keywords": [
-            "sales report", "weekly sales", "pipeline report", "crm report", "lead report",
-            "sales performance", "revenue report", "sales summary", "sales activity",
-        ],
-        "tables": [
-            {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 100},
-            {"table": "crm_lead_activity_log", "select": "*", "order": "created_at", "limit": 50},
-        ],
-        "section_title": "Sales & Pipeline Performance Report",
-    },
-    "payroll": {
-        "keywords": [
-            "payroll", "salary", "hr report", "compensation", "payroll report",
-            "staff payroll", "payroll summary", "wages", "staff salary",
-        ],
-        "tables": [
-            {"table": "sage_payroll_snapshot", "select": "*", "order": "pay_period", "limit": 50},
-            {"table": "sage_hr_absences", "select": "*", "order": "absence_date", "limit": 50},
-        ],
-        "section_title": "Payroll & HR Summary Report",
-    },
-    "pl": {
-        "keywords": [
-            "p&l", "profit and loss", "income statement", "pl report", "profit loss",
-            "net income", "profit & loss", "loss statement",
-        ],
-        "tables": [
-            {"table": "sage_gl_journal_entries", "select": "*", "order": "transaction_date", "limit": 100},
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
-        ],
-        "section_title": "Profit & Loss Report",
-    },
-    "ar_aging": {
-        "keywords": [
-            "ar aging", "accounts receivable", "outstanding invoices", "aging report",
-            "overdue payments", "receivables", "ar report", "accounts receivable aging",
-        ],
-        "tables": [
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
-            {"table": "sage_customers", "select": "*", "limit": 50},
-        ],
-        "section_title": "Accounts Receivable Aging Report",
-    },
-    "frontdesk": {
-        "keywords": [
-            "frontdesk report", "daily report", "reception report", "walk-in summary",
-            "daily operations", "frontdesk summary", "daily frontdesk", "front desk report",
-        ],
-        "tables": [
-            {"table": "placeware_walk_ins", "select": "*", "order": "created_at", "limit": 100},
-            {"table": "placeware_invoices", "select": "*", "order": "created_at", "limit": 50},
-        ],
-        "section_title": "Frontdesk & Daily Operations Report",
-    },
+    rtype: {
+        "keywords": cfg.get("keywords", []),
+        "tables": cfg.get("tables", []),
+        "section_title": cfg.get("output_title", rtype.replace("_", " ").title()),
+        **({k: v for k, v in cfg.items() if k in ("is_executive", "delegate_to", "is_invoice")}),
+    }
+    for rtype, cfg in REPORT_TEMPLATE_REGISTRY.items()
 }
+
+# ── Shim: sales / payroll / pl / ar_aging / frontdesk section_titles ─────────
+# (kept for any legacy route that calls _REPORT_REGISTRY["sales"]["section_title"])
+for _rt, _cfg in _REPORT_REGISTRY.items():
+    if "section_title" not in _cfg:
+        _cfg["section_title"] = REPORT_TEMPLATE_REGISTRY.get(_rt, {}).get(
+            "output_title", _rt.replace("_", " ").title()
+        )
+
+# ── Sales keywords shim (in case _REPORT_REGISTRY["sales"] is accessed) ──────
+_REPORT_REGISTRY.setdefault("sales", {}).setdefault("keywords", [
+    "sales report", "weekly sales", "pipeline report", "crm report", "lead report",
+    "sales performance", "revenue report", "sales summary", "sales activity",
+])
+_REPORT_REGISTRY.setdefault("sales", {}).setdefault("tables", [
+    {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 100},
+    {"table": "crm_lead_activity_log", "select": "*", "order": "created_at", "limit": 50},
+])
+_REPORT_REGISTRY["sales"]["section_title"] = "Sales & Pipeline Performance Report"
 
 # Default if nothing matches
 _DEFAULT_REPORT_TYPE = "executive"
@@ -152,8 +76,16 @@ _DEFAULT_REPORT_TYPE = "executive"
 @register_agent
 class ReportGenerationAgent(BaseAgent):
     """
-    EOS-callable agent for generating progressively-improving business reports.
-    Each run is better than the previous one on the same topic.
+    Template-driven, section-by-section report generation agent.
+
+    Generation lifecycle:
+      1. Detect / load report type + template from REPORT_TEMPLATE_REGISTRY
+      2. Load scope params from context or linked report session
+      3. Retrieve RAG context + past reports + live data (scope-filtered)
+      4. Generate each template section independently via focused LLM prompts
+      5. Validate each section; mark incomplete if it fails twice
+      6. Assemble full_report + per-section metadata
+      7. Self-score; persist to placeware_report_memory if score >= 7
     """
 
     name = "report_generation_agent"
@@ -162,37 +94,51 @@ class ReportGenerationAgent(BaseAgent):
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     def collect_data(self) -> Dict[str, Any]:
-        """Detect report type, retrieve RAG context, past reports, and live data."""
+        """Detect report type, load session/scope, retrieve RAG + live data."""
         intent_text = self.context.get("intent_text", "")
-        report_type = self.context.get("report_type") or self._detect_report_type(intent_text)
+        report_type = (
+            self.context.get("report_type")
+            or detect_report_type(intent_text)
+        )
+
+        # Load scope from context first, then from linked session
+        scope_params = dict(self.context.get("scope_params") or {})
+        session_id   = self.context.get("session_id")
+        if session_id and not scope_params:
+            scope_params = self._load_session_scope(session_id)
 
         rag_context  = self._retrieve_rag(intent_text)
         past_reports = self._get_past_reports(report_type, limit=3)
-        live_data    = self._fetch_live_data(report_type)
+        live_data    = self._fetch_live_data(report_type, scope_params)
         memories     = self._get_memories(intent_text)
 
         return {
-            "intent_text":  intent_text,
-            "report_type":  report_type,
-            "rag_context":  rag_context,
-            "past_reports": past_reports,
-            "live_data":    live_data,
-            "memories":     memories,
+            "intent_text":   intent_text,
+            "report_type":   report_type,
+            "scope_params":  scope_params,
+            "session_id":    session_id,
+            "rag_context":   rag_context,
+            "past_reports":  past_reports,
+            "live_data":     live_data,
+            "memories":      memories,
         }
 
     def analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate the report via LLM using all collected context."""
+        """Generate each report section independently, then assemble the full report."""
         report_type  = data["report_type"]
         intent_text  = data["intent_text"]
+        scope_params = data["scope_params"]
         rag_context  = data["rag_context"]
         past_reports = data["past_reports"]
         live_data    = data["live_data"]
         memories     = data["memories"]
 
-        report_cfg   = _REPORT_REGISTRY.get(report_type, _REPORT_REGISTRY[_DEFAULT_REPORT_TYPE])
-        section_title = report_cfg["section_title"]
+        template      = get_template(report_type)
+        section_title = template.get("output_title", report_type.replace("_", " ").title())
+        sections      = sorted(template.get("sections", []), key=lambda s: s["order"])
 
-        full_report, structured = self._generate_report(
+        section_results = self._generate_sections(
+            sections=sections,
             intent_text=intent_text,
             report_type=report_type,
             section_title=section_title,
@@ -200,32 +146,48 @@ class ReportGenerationAgent(BaseAgent):
             past_reports=past_reports,
             live_data=live_data,
             memories=memories,
+            scope_params=scope_params,
+        )
+
+        # Assemble full markdown document from sections
+        full_report = self._assemble_report(
+            section_title=section_title,
+            report_type=report_type,
+            sections=section_results,
         )
 
         quality_score = self._self_score(full_report, report_type)
+        structured    = self._extract_structured(full_report)
 
         return {
             "report_type":    report_type,
             "section_title":  section_title,
             "full_report":    full_report,
             "structured":     structured,
+            "section_results": section_results,
             "quality_score":  quality_score,
             "live_data_rows": len(live_data) if isinstance(live_data, list) else 0,
             "rag_hits":       len(rag_context),
             "past_count":     len(past_reports),
+            "scope_params":   scope_params,
+            "session_id":     data.get("session_id"),
         }
 
     def generate_insights(self, analysis: Dict[str, Any]) -> Insight:
         """Package the report as an Insight and persist to report memory."""
-        report_type   = analysis["report_type"]
-        full_report   = analysis["full_report"]
-        structured    = analysis.get("structured", {})
-        quality_score = analysis.get("quality_score", 0.0)
-        simulation    = bool(self.context.get("simulation", False))
+        report_type     = analysis["report_type"]
+        full_report     = analysis["full_report"]
+        structured      = analysis.get("structured", {})
+        section_results = analysis.get("section_results", [])
+        quality_score   = analysis.get("quality_score", 0.0)
+        session_id      = analysis.get("session_id")
+        simulation      = bool(self.context.get("simulation", False))
+
+        report_memory_id: Optional[str] = None
 
         # ── Persist to report memory if quality ≥ 7 ─────────────────────────
         if not simulation and quality_score >= 7.0:
-            self._store_report(
+            report_memory_id = self._store_report(
                 report_type=report_type,
                 intent_text=self.context.get("intent_text", ""),
                 full_report=full_report,
@@ -233,14 +195,27 @@ class ReportGenerationAgent(BaseAgent):
                 findings=structured.get("findings", []),
                 recommendations=structured.get("recommendations", []),
                 quality_score=quality_score,
+                section_data=section_results,
+                session_id=session_id,
             )
-            # Also store a memory so agents can recall this pattern
-            from src.services.agent_memory import AgentMemory
-            AgentMemory(self.name).store(
-                findings=[structured.get("summary", full_report[:400])],
-                confidence=min(quality_score / 10.0, 1.0),
-                memory_type="finding",
-            )
+            # Store a memory so other agents can recall this pattern
+            try:
+                from src.services.agent_memory import AgentMemory
+                AgentMemory(self.name).store(
+                    findings=[structured.get("summary", full_report[:400])],
+                    confidence=min(quality_score / 10.0, 1.0),
+                    memory_type="finding",
+                )
+            except Exception:
+                pass
+
+        # Complete the session if one was provided
+        if session_id and report_memory_id and not simulation:
+            try:
+                from src.services.report_session_service import complete_session
+                complete_session(session_id, report_memory_id)
+            except Exception as exc:
+                logger.warning("ReportAgent: complete_session failed: %s", exc)
 
         findings = [full_report] if full_report else ["Report generation completed but produced no content."]
 
@@ -249,13 +224,17 @@ class ReportGenerationAgent(BaseAgent):
             recommendations=structured.get("recommendations", []),
             confidence_score=min(quality_score / 10.0, 1.0),
             metrics={
-                "report_type":   report_type,
-                "quality_score": quality_score,
-                "rag_hits":      analysis.get("rag_hits", 0),
-                "data_rows":     analysis.get("live_data_rows", 0),
+                "report_type":       report_type,
+                "quality_score":     quality_score,
+                "rag_hits":          analysis.get("rag_hits", 0),
+                "data_rows":         analysis.get("live_data_rows", 0),
                 "past_reports_used": analysis.get("past_count", 0),
-                "section_title": analysis["section_title"],
-                "full_report":   full_report,
+                "section_title":     analysis["section_title"],
+                "full_report":       full_report,
+                "section_results":   section_results,
+                "template_version":  TEMPLATE_VERSION,
+                "report_memory_id":  report_memory_id,
+                "session_id":        session_id,
             },
         )
 
@@ -266,20 +245,30 @@ class ReportGenerationAgent(BaseAgent):
         return {
             "findings": "list[str] — full report text",
             "metrics": {
-                "report_type": "str",
-                "quality_score": "float",
-                "rag_hits": "int",
+                "report_type":      "str",
+                "quality_score":    "float",
+                "rag_hits":         "int",
+                "section_results":  "list[dict] — per-section data",
+                "template_version": "str",
             },
         }
 
-    # ── Detection ──────────────────────────────────────────────────────────────
+    # ── Session / Scope loading ────────────────────────────────────────────────
+
+    def _load_session_scope(self, session_id: str) -> Dict[str, Any]:
+        """Fetch scope_params from a report session row."""
+        try:
+            from src.services.report_session_service import get_session
+            session = get_session(session_id)
+            return session.get("scope_params") or {}
+        except Exception as exc:
+            logger.warning("ReportAgent: load_session_scope failed: %s", exc)
+            return {}
+
+    # ── Detection (kept for legacy callers) ───────────────────────────────────
 
     def _detect_report_type(self, text: str) -> str:
-        text_lower = text.lower()
-        for rtype, cfg in _REPORT_REGISTRY.items():
-            if any(kw in text_lower for kw in cfg.get("keywords", [])):
-                return rtype
-        return _DEFAULT_REPORT_TYPE
+        return detect_report_type(text)
 
     # ── RAG retrieval ──────────────────────────────────────────────────────────
 
@@ -315,37 +304,49 @@ class ReportGenerationAgent(BaseAgent):
             logger.warning(f"ReportAgent: past report fetch failed: {exc}")
             return []
 
-    # ── Live data ─────────────────────────────────────────────────────────────
+    # ── Live data (scope-aware) ───────────────────────────────────────────────
 
-    def _fetch_live_data(self, report_type: str) -> Any:
-        cfg = _REPORT_REGISTRY.get(report_type, {})
+    def _fetch_live_data(self, report_type: str, scope_params: Optional[Dict] = None) -> Any:
+        scope_params = scope_params or {}
+        template = get_template(report_type)
 
-        # Special case: delegate financial data to FinancialAnalystAgent
-        if cfg.get("delegate_to") == "financial_analyst":
+        # Delegate financial data when needed
+        if template.get("delegate_to") == "financial_analyst":
             return self._delegate_to_agent("financial_analyst")
 
-        # Special case: executive report pulls from tool registry
-        if cfg.get("is_executive"):
+        # Executive report pulls across multiple tables
+        if template.get("is_executive"):
             return self._pull_executive_data()
 
         rows: List[Dict] = []
         try:
             from src.db import db
-            for tbl_cfg in cfg.get("tables", []):
-                tbl = tbl_cfg.get("table")
-                sel = tbl_cfg.get("select", "*")
-                lim = tbl_cfg.get("limit", 50)
+            for tbl_cfg in template.get("tables", []):
+                tbl   = tbl_cfg.get("table")
+                sel   = tbl_cfg.get("select", "*")
+                lim   = tbl_cfg.get("limit", 50)
                 order = tbl_cfg.get("order")
                 try:
                     q = db.table(tbl).select(sel).limit(lim)
                     if order:
                         q = q.order(order, desc=True)
+                    # Apply scope date filters where column names exist
+                    date_from = scope_params.get("date_from")
+                    date_to   = scope_params.get("date_to")
+                    if date_from and order:
+                        q = q.gte(order, date_from)
+                    if date_to and order:
+                        q = q.lte(order, date_to)
+                    # Department filter
+                    dept = scope_params.get("department")
+                    if dept:
+                        q = q.eq("department", dept)
                     res = q.execute()
                     rows.extend(res.data or [])
                 except Exception as exc:
-                    logger.warning(f"ReportAgent: table {tbl!r} fetch failed: {exc}")
+                    logger.warning("ReportAgent: table %r fetch failed: %s", tbl, exc)
         except Exception as exc:
-            logger.warning(f"ReportAgent: live data fetch failed: {exc}")
+            logger.warning("ReportAgent: live data fetch failed: %s", exc)
 
         return rows
 
@@ -404,7 +405,237 @@ class ReportGenerationAgent(BaseAgent):
         except Exception:
             return []
 
-    # ── LLM report generation ─────────────────────────────────────────────────
+    # ── Section-by-section generation ────────────────────────────────────────
+
+    def _generate_sections(
+        self,
+        sections: List[Dict],
+        intent_text: str,
+        report_type: str,
+        section_title: str,
+        rag_context: List,
+        past_reports: List,
+        live_data: Any,
+        memories: List,
+        scope_params: Dict,
+    ) -> List[Dict[str, Any]]:
+        """
+        Iterate through template sections and generate each independently.
+        Returns a list of SectionResult dicts.
+        """
+        import json as _json
+        from src.constants import BOT_NAME, BOT_BRAND
+
+        # Build shared context blocks once
+        rag_block = ""
+        if rag_context:
+            hits = "\n\n".join(f"Document: {r[0]}\n{r[1]}" for r in rag_context if r[1])
+            rag_block = f"\n--- Regulatory/SOP Context ---\n{hits}\n"
+
+        past_block = ""
+        if past_reports:
+            lines = []
+            for i, p in enumerate(past_reports):
+                lines.append(
+                    f"Report {i+1} (score {p.get('quality_score',0)}/10, "
+                    f"{str(p.get('created_at',''))[:10]}):\n  {p.get('summary','')[:300]}"
+                )
+            past_block = (
+                f"\n--- Previous {report_type.title()} Reports (improve on these) ---\n"
+                + "\n".join(lines) + "\n"
+            )
+
+        try:
+            live_str = _json.dumps(live_data, default=str, indent=2)
+            if len(live_str) > 8000:
+                live_str = live_str[:8000] + "\n... [truncated]"
+        except Exception:
+            live_str = str(live_data)[:3000]
+        live_block = f"\n--- Live Database Data ---\n{live_str}\n" if live_str else ""
+
+        memory_block = ""
+        if memories:
+            memory_block = "\n--- Historical Intelligence ---\n" + "\n".join(f"• {m}" for m in memories) + "\n"
+
+        scope_block = ""
+        if scope_params:
+            scope_lines = [f"  {k}: {v}" for k, v in scope_params.items() if v]
+            if scope_lines:
+                scope_block = "\n--- Report Scope ---\n" + "\n".join(scope_lines) + "\n"
+
+        improvement_note = (
+            "\nIMPORTANT: Your report MUST be more specific, contain more data-backed findings, "
+            "and sharper recommendations than the previous reports shown above."
+            if past_reports else ""
+        )
+
+        results: List[Dict[str, Any]] = []
+
+        for sec in sections:
+            sec_id    = sec["id"]
+            sec_title = sec["title"]
+            hint      = sec.get("prompt_hint", "")
+            required  = sec.get("required", True)
+
+            content = ""
+            confidence = 0.0
+            status = "incomplete"
+
+            for attempt in range(2):
+                try:
+                    content, confidence = self._generate_section_content(
+                        bot_name=BOT_NAME,
+                        bot_brand=BOT_BRAND,
+                        report_type=report_type,
+                        section_title=section_title,
+                        sec_title=sec_title,
+                        hint=hint,
+                        rag_block=rag_block,
+                        past_block=past_block,
+                        live_block=live_block,
+                        memory_block=memory_block,
+                        scope_block=scope_block,
+                        improvement_note=improvement_note,
+                        intent_text=intent_text,
+                    )
+                    # Validate the section output
+                    if self._validate_section(sec_id, content, required):
+                        status = "complete"
+                        break
+                    logger.warning(
+                        "ReportAgent: section %r failed validation (attempt %d)", sec_id, attempt + 1
+                    )
+                except Exception as exc:
+                    logger.warning("ReportAgent: section %r generation error: %s", sec_id, exc)
+
+            results.append({
+                "section_id":       sec_id,
+                "title":            sec_title,
+                "content":          content,
+                "confidence_score": round(confidence, 2),
+                "status":           status,
+                "order":            sec["order"],
+            })
+
+        return results
+
+    def _generate_section_content(
+        self,
+        bot_name: str,
+        bot_brand: str,
+        report_type: str,
+        section_title: str,
+        sec_title: str,
+        hint: str,
+        rag_block: str,
+        past_block: str,
+        live_block: str,
+        memory_block: str,
+        scope_block: str,
+        improvement_note: str,
+        intent_text: str,
+    ) -> Tuple[str, float]:
+        """
+        Generate a single report section via LLM.
+        Returns (content_text, confidence_score).
+        confidence_score is estimated from content length and specificity heuristics.
+        """
+        prompt = f"""You are {bot_name}, the AI executive intelligence system for {bot_brand} (pharmaceutical distribution).
+
+You are generating ONE SECTION of a {section_title}.
+{scope_block}
+{rag_block}
+{past_block}
+{live_block}
+{memory_block}
+
+SECTION TO GENERATE NOW: "{sec_title}"
+Section guidance: {hint}
+
+Original request: {intent_text}
+{improvement_note}
+
+Instructions:
+- Write ONLY the content for the "{sec_title}" section. Do NOT repeat other sections.
+- Use specific numbers, dates, and records from the live data above.
+- Never fabricate data not present in the provided context.
+- Be precise, business-grade, and actionable.
+- Format with sub-headings (###), numbered lists, and **bold** key figures where appropriate.
+- Minimum 3 meaningful, data-backed sentences.
+
+Begin the section content now (do NOT include the section heading itself):
+"""
+        from src.deepseek import DeepSeek
+        llm = DeepSeek(os.getenv("DEEPSEEK_API_KEY", ""))
+        content = llm.generate_response(
+            context="",
+            question=prompt,
+            instruction=(
+                f"You are {bot_name}, a senior business analyst. "
+                "Generate ONLY the requested report section. "
+                "Use real data. Be specific. Minimum 3 sentences."
+            ),
+        ).strip()
+
+        # Heuristic confidence: longer + more numbers = higher confidence
+        num_count = len(re.findall(r"\d+(?:\.\d+)?", content))
+        word_count = len(content.split())
+        confidence = min(0.95, 0.4 + (word_count / 400) * 0.3 + min(num_count / 10, 1) * 0.25)
+        return content, confidence
+
+    def _validate_section(self, section_id: str, content: str, required: bool) -> bool:
+        """
+        Basic completeness check: non-empty, minimum length, not a refusal.
+        Returns True if section passes validation.
+        """
+        if not content or len(content.strip()) < 60:
+            return not required  # Allow empty optional sections through
+        refusal_phrases = [
+            "i cannot", "i'm unable", "i don't have", "no data available",
+            "cannot generate", "not enough information",
+        ]
+        lower = content.lower()
+        if any(phrase in lower for phrase in refusal_phrases) and len(content) < 200:
+            logger.warning("ReportAgent: section %r appears to be a refusal", section_id)
+            return not required
+        return True
+
+    def _assemble_report(
+        self,
+        section_title: str,
+        report_type: str,
+        sections: List[Dict[str, Any]],
+    ) -> str:
+        """
+        Assemble per-section content into a single full markdown document.
+        """
+        lines: List[str] = [
+            f"# {section_title}",
+            f"**Generated:** {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}",
+            f"**Report Type:** {report_type.replace('_', ' ').title()}",
+            "",
+        ]
+        for sec in sorted(sections, key=lambda s: s["order"]):
+            title   = sec["title"]
+            content = sec["content"]
+            status  = sec["status"]
+            conf    = sec["confidence_score"]
+
+            lines.append(f"## {title}")
+            if status == "incomplete":
+                lines.append("*[Section incomplete — insufficient data available for this period.]*")
+            elif content:
+                lines.append(content)
+            lines.append(f"*Section confidence: {conf:.0%}*")
+            lines.append("")
+
+        lines += [
+            "---",
+            f"*Report generated by Warebot — Placeware Nigeria AI Executive Intelligence*",
+        ]
+        return "\n".join(lines)
+
+    # ── Legacy single-pass report generation (kept as fallback) ──────────────
 
     def _generate_report(
         self,
@@ -589,11 +820,14 @@ Tables queried: [list] | RAG documents referenced: {len(rag_context)} | Previous
         findings: List[str],
         recommendations: List[str],
         quality_score: float,
-    ) -> None:
+        section_data: Optional[List[Dict]] = None,
+        session_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Persist report to placeware_report_memory. Returns the inserted row id."""
         import json as _json
         try:
             from src.db import db
-            db.table("placeware_report_memory").insert({
+            payload: Dict[str, Any] = {
                 "report_type":     report_type,
                 "intent_text":     intent_text,
                 "full_report":     full_report[:10000],
@@ -601,6 +835,17 @@ Tables queried: [list] | RAG documents referenced: {len(rag_context)} | Previous
                 "findings":        _json.dumps(findings),
                 "recommendations": _json.dumps(recommendations),
                 "quality_score":   quality_score,
-            }).execute()
+                "template_version": TEMPLATE_VERSION,
+                "approval_status": "complete",
+            }
+            if section_data is not None:
+                payload["section_data"] = _json.dumps(section_data)
+            if session_id:
+                payload["session_id"] = session_id
+
+            res = db.table("placeware_report_memory").insert(payload).execute()
+            if res.data:
+                return str(res.data[0].get("id"))
         except Exception as exc:
-            logger.warning(f"ReportAgent: store_report failed: {exc}")
+            logger.warning("ReportAgent: store_report failed: %s", exc)
+        return None

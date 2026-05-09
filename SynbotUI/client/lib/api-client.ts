@@ -1347,5 +1347,129 @@ export const api = {
     /** Download a stored report as .docx by ID — returns the fetch URL (caller adds auth). */
     detailDocxUrl: (reportId: string) =>
       `/reports/history/${encodeURIComponent(reportId)}/docx`,
+
+    // ── Wizard / session endpoints ──────────────────────────────────────────
+
+    /** List all supported report types with their scope fields. */
+    types: () => fetchRaw<{
+      report_types: Array<{
+        type: string;
+        name: string;
+        required_scope_fields: Array<{ key: string; label: string; type: string; required: boolean; options?: string[] }>;
+        is_invoice: boolean;
+      }>;
+    }>("/reports/types"),
+
+    /**
+     * Step 1 — create a session and get required scope fields.
+     * Returns session_id, status, scope_fields_required.
+     */
+    createSession: (report_type: string) =>
+      sendJson<{
+        session_id: string;
+        report_type: string;
+        status: string;
+        client_facing_name: string;
+        sections: string[];
+        scope_fields_required: any[];
+        all_scope_fields: any[];
+      }>("/reports/session", "POST", { report_type }),
+
+    /**
+     * Step 2 — save scope parameters and evidence notes.
+     * Advances session to 'scoping'.
+     */
+    updateScope: (sessionId: string, scope: Record<string, any>, evidence_notes?: string) =>
+      sendJson<{ session_id: string; status: string; scope: Record<string, any> }>(
+        `/reports/session/${encodeURIComponent(sessionId)}/scope`,
+        "PUT",
+        { scope, evidence_notes },
+      ),
+
+    /** Get current session state. */
+    getSession: (sessionId: string) =>
+      fetchRaw<any>(`/reports/session/${encodeURIComponent(sessionId)}`),
+
+    /**
+     * Step 3 — trigger generation from a scoped session.
+     * Returns a full ReportResponse including section_results.
+     */
+    generateFromSession: (sessionId: string) =>
+      sendJson<{
+        report_type: string;
+        section_title: string;
+        full_report: string;
+        findings: string[];
+        recommendations: string[];
+        quality_score: number;
+        rag_hits: number;
+        data_rows: number;
+        status: string;
+        session_id?: string;
+        report_memory_id?: string;
+        sections?: Array<{
+          id: string;
+          title: string;
+          content: string;
+          order: number;
+          status: string;
+          confidence_score: number;
+        }>;
+        traceability?: {
+          template_version: string;
+          rag_hits: number;
+          data_rows: number;
+          past_reports_used: number;
+          section_count: number;
+        };
+        template_version?: string;
+      }>(
+        `/reports/session/${encodeURIComponent(sessionId)}/generate`,
+        "POST",
+        {},
+      ),
+
+    /** Step 3 (invoice) — generate a branded invoice .docx from a session. */
+    generateInvoiceDocx: async (sessionId: string): Promise<{ url: string; filename: string }> => {
+      const token = authClient.getAccessToken();
+      const res = await fetch(apiUrl(`/reports/session/${encodeURIComponent(sessionId)}/generate/invoice`), {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new ApiError(`Invoice generation failed`, res.status, classifyApiErrorKind(res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      return { url, filename: match?.[1] ?? "invoice.docx" };
+    },
+
+    /**
+     * Approve a completed report (admin / management only).
+     * Returns { report_id, status: "approved", approved_by }.
+     */
+    approve: (reportId: string) =>
+      sendJson<{ report_id: string; status: string; approved_by: string }>(
+        `/reports/${encodeURIComponent(reportId)}/approve`,
+        "POST",
+        {},
+      ),
+
+    /**
+     * Download a stored report as a branded .docx (DRAFT or FINAL based on approval).
+     * Returns a blob object URL for <a download>.
+     */
+    downloadDocx: async (reportId: string): Promise<{ url: string; filename: string }> => {
+      const token = authClient.getAccessToken();
+      const res = await fetch(apiUrl(`/reports/history/${encodeURIComponent(reportId)}/docx`), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new ApiError(`DOCX download failed`, res.status, classifyApiErrorKind(res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      return { url, filename: match?.[1] ?? `report_${reportId.slice(0, 8)}.docx` };
+    },
   },
 };

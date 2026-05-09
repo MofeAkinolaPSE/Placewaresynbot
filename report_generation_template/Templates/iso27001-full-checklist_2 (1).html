@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISO/IEC 27001:2022 — Full Implementation Checklist</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d0f14;
+  --surface: #13161e;
+  --surface2: #1a1e28;
+  --border: #252a38;
+  --border2: #2e3448;
+  --text: #e2ddd6;
+  --text2: #9a9690;
+  --text3: #5a5750;
+  --gold: #c9a84c;
+  --gold2: #a8893c;
+  --blue: #4a7fc1;
+  --green: #3d8f5f;
+  --red: #b84444;
+  --clause-accent: #c9a84c;
+  --sub-accent: #4a7fc1;
+  --ctrl-accent: #3d8f5f;
+  --subctrl-accent: #7a5fc1;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+/* ── HEADER ── */
+.header {
+  background: linear-gradient(135deg, #0d0f14 0%, #141824 50%, #0f1219 100%);
+  border-bottom: 1px solid var(--gold2);
+  padding: 60px 60px 50px;
+  position: relative;
+  overflow: hidden;
+}
+.header::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 80% 50%, rgba(201,168,76,0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+.header-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(201,168,76,0.1);
+  border: 1px solid rgba(201,168,76,0.3);
+  border-radius: 2px;
+  padding: 4px 12px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 3px;
+  color: var(--gold); text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.header h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 52px; font-weight: 400;
+  line-height: 1.05; letter-spacing: -1px;
+  color: var(--text);
+  max-width: 700px;
+}
+.header h1 span { color: var(--gold); font-style: italic; }
+.header-desc {
+  margin-top: 18px;
+  font-size: 14px; color: var(--text2);
+  max-width: 600px; line-height: 1.7;
+}
+.header-meta {
+  display: flex; gap: 32px; margin-top: 32px;
+  flex-wrap: wrap;
+}
+.meta-item {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--text3);
+  letter-spacing: 1px;
+}
+.meta-item strong { color: var(--gold); font-weight: 500; display: block; font-size: 18px; margin-bottom: 2px; }
+
+/* ── STICKY PROGRESS ── */
+.sticky-bar {
+  position: sticky; top: 0; z-index: 200;
+  background: rgba(13,15,20,0.96);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border2);
+  padding: 12px 60px;
+  display: flex; align-items: center; gap: 20px;
+}
+.prog-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--text3); text-transform: uppercase; white-space: nowrap; }
+.prog-bar { flex:1; height: 3px; background: var(--border2); border-radius: 2px; overflow:hidden; }
+.prog-fill { height:100%; background: linear-gradient(90deg, var(--gold2), var(--gold)); border-radius:2px; transition: width 0.3s ease; width:0%; }
+.prog-nums { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text); white-space:nowrap; }
+.prog-nums b { color: var(--gold); }
+.prog-pct { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text2); }
+
+/* ── NAV PILLS ── */
+.nav-wrap {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 60px;
+  display: flex; gap: 8px; flex-wrap: wrap;
+  overflow-x: auto;
+}
+.nav-pill {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 1px;
+  padding: 5px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  background: transparent;
+}
+.nav-pill:hover { border-color: var(--gold2); color: var(--gold); }
+
+/* ── MAIN ── */
+.main { padding: 0 60px 80px; max-width: 1200px; }
+
+/* ── CLAUSE BLOCK ── */
+.clause-block {
+  margin-top: 56px;
+  border-left: 3px solid var(--gold2);
+  padding-left: 28px;
+}
+.clause-hd {
+  display: flex; align-items: baseline; gap: 14px;
+  margin-bottom: 6px;
+}
+.clause-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; letter-spacing: 2px;
+  color: var(--gold); text-transform: uppercase;
+  background: rgba(201,168,76,0.1);
+  border: 1px solid rgba(201,168,76,0.2);
+  padding: 3px 10px; border-radius: 2px;
+  white-space: nowrap;
+}
+.clause-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; font-weight: 400; color: var(--text);
+}
+.clause-desc { font-size: 13px; color: var(--text3); margin-bottom: 20px; line-height: 1.6; max-width: 700px; }
+.clause-progress {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
+}
+.c-prog-bar { width: 140px; height: 2px; background: var(--border2); border-radius:1px; overflow:hidden; }
+.c-prog-fill { height:100%; background: var(--gold2); border-radius:1px; transition: width 0.3s; }
+.c-prog-txt { font-family:'IBM Plex Mono',monospace; font-size:10px; color: var(--text3); }
+
+/* ── SUBCLAUSE ── */
+.subclause-block {
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.subclause-hd {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  background: var(--surface2);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.subclause-hd:hover { background: #1e2232; }
+.subclause-hd.open { border-bottom-color: var(--border2); }
+.sc-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 1.5px;
+  color: var(--blue); background: rgba(74,127,193,0.12);
+  border: 1px solid rgba(74,127,193,0.25);
+  padding: 2px 8px; border-radius: 2px;
+  white-space: nowrap;
+}
+.sc-title { font-size: 14px; font-weight: 500; color: var(--text); flex:1; }
+.sc-check { margin-left: auto; }
+.sc-arrow { color: var(--text3); font-size: 10px; transition: transform 0.2s; margin-left: 8px; }
+.subclause-hd.open .sc-arrow { transform: rotate(90deg); }
+.sc-body { display: none; padding: 16px 18px; }
+.sc-body.open { display: block; }
+
+/* ── CONTROL (Annex A) ── */
+.ctrl-block {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.ctrl-hd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px;
+  background: rgba(61,143,95,0.06);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.ctrl-hd:hover { background: rgba(61,143,95,0.12); }
+.ctrl-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 1px;
+  color: var(--green); background: rgba(61,143,95,0.12);
+  border: 1px solid rgba(61,143,95,0.25);
+  padding: 2px 7px; border-radius: 2px;
+  white-space: nowrap;
+}
+.ctrl-title { font-size: 13px; font-weight: 500; color: var(--text); flex:1; }
+.ctrl-body { display: none; padding: 12px 14px; }
+.ctrl-body.open { display: block; }
+.ctrl-arrow { color: var(--text3); font-size: 9px; transition: transform 0.2s; }
+.ctrl-hd.open .ctrl-arrow { transform: rotate(90deg); }
+
+/* ── CHECKBOX ITEMS ── */
+.item-list { display: flex; flex-direction: column; gap: 1px; }
+
+.chk-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 12px; border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+}
+.chk-item:hover { background: rgba(255,255,255,0.03); border-color: var(--border); }
+.chk-item.done { background: rgba(61,143,95,0.07); border-color: rgba(61,143,95,0.15); }
+.chk-item.done .chk-label { text-decoration: line-through; color: var(--text3); }
+
+.chk-box {
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--border2);
+  border-radius: 3px;
+  flex-shrink: 0; margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+  background: var(--bg);
+}
+.chk-item.done .chk-box {
+  background: var(--green); border-color: var(--green);
+}
+.chk-box svg { display:none; width:9px; height:9px; }
+.chk-item.done .chk-box svg { display:block; }
+.chk-label { font-size: 13px; color: var(--text2); line-height: 1.5; flex:1; }
+
+/* sub-control item (deeper indent) */
+.subctrl-item .chk-box { border-color: rgba(122,95,193,0.4); }
+.subctrl-item.done .chk-box { background: var(--subctrl-accent); border-color: var(--subctrl-accent); }
+.subctrl-item .chk-label { font-size: 12px; color: var(--text3); }
+.subctrl-item { padding-left: 28px; }
+
+/* ── TYPE TAGS ── */
+.tag {
+  flex-shrink:0;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:9px; letter-spacing:1px;
+  padding: 1px 6px; border-radius:2px;
+  text-transform: uppercase; margin-top:3px;
+}
+.tag-m { background: rgba(184,68,68,0.15); color:#d06060; border:1px solid rgba(184,68,68,0.2); }
+.tag-r { background: rgba(74,127,193,0.15); color:#5b8fd4; border:1px solid rgba(74,127,193,0.2); }
+.tag-p { background: rgba(61,143,95,0.15); color:#4daa73; border:1px solid rgba(61,143,95,0.2); }
+
+/* ── SECTION DIVIDER ── */
+.sec-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px 0 12px;
+}
+.sec-divider-line { flex:1; height:1px; background: var(--border); }
+.sec-divider-label {
+  font-family:'IBM Plex Mono',monospace;
+  font-size:9px; letter-spacing:2px; color:var(--text3); text-transform:uppercase;
+}
+
+/* ── FOOTER ── */
+.footer {
+  padding: 32px 60px 60px;
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+.btn {
+  font-family:'IBM Plex Mono',monospace;
+  font-size:10px; letter-spacing:2px; text-transform:uppercase;
+  padding: 9px 18px;
+  border-radius: 3px; cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--border2);
+  background: transparent; color: var(--text2);
+}
+.btn:hover { border-color: var(--gold2); color: var(--gold); }
+.btn-primary { background: rgba(201,168,76,0.12); border-color: var(--gold2); color: var(--gold); }
+.btn-primary:hover { background: rgba(201,168,76,0.22); }
+
+@media(max-width:760px){
+  .header, .main, .footer, .sticky-bar, .nav-wrap { padding-left:20px; padding-right:20px; }
+  .header h1 { font-size:32px; }
+  .clause-block { padding-left:14px; }
+  .header-meta { gap:20px; }
+}
+
+@media print {
+  .sticky-bar, .nav-wrap, .footer { display:none; }
+  .sc-body, .ctrl-body { display:block !important; }
+  body { background:white; color:black; }
+}
+
+/* ── COMMENT SYSTEM ── */
+.chk-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 12px 9px 12px;
+  border-radius: 4px;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+}
+.chk-row:hover { background: rgba(255,255,255,0.03); border-color: var(--border); }
+.chk-row.done { background: rgba(61,143,95,0.07); border-color: rgba(61,143,95,0.15); }
+.chk-row.done .chk-label { text-decoration: line-through; color: var(--text3); }
+.chk-row.has-comment { border-left: 2px solid rgba(201,168,76,0.5); }
+
+.chk-item-wrap {
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1px;
+}
+.chk-item-wrap.subctrl-wrap { padding-left: 28px; }
+
+.chk-main-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+  border-radius: 4px 4px 0 0;
+}
+.chk-item-wrap:not(.comment-open) .chk-main-row { border-radius: 4px; }
+.chk-main-row:hover { background: rgba(255,255,255,0.03); border-color: var(--border); }
+.chk-item-wrap.done .chk-main-row { background: rgba(61,143,95,0.07); border-color: rgba(61,143,95,0.15); }
+.chk-item-wrap.done .chk-label { text-decoration: line-through; color: var(--text3); }
+.chk-item-wrap.has-comment .chk-main-row { border-left: 2px solid rgba(201,168,76,0.55); }
+
+.chk-actions {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0; margin-top: 1px;
+}
+
+.comment-btn {
+  width: 22px; height: 22px;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--text3);
+}
+.comment-btn:hover { border-color: var(--gold2); color: var(--gold); background: rgba(201,168,76,0.08); }
+.comment-btn.active { border-color: var(--gold2); color: var(--gold); background: rgba(201,168,76,0.12); }
+.comment-btn.has-note { border-color: rgba(201,168,76,0.5); color: var(--gold); }
+.comment-btn svg { width: 11px; height: 11px; pointer-events: none; }
+
+/* Comment panel */
+.comment-panel {
+  display: none;
+  padding: 0 12px 10px 12px;
+  background: rgba(201,168,76,0.03);
+  border: 1px solid rgba(201,168,76,0.15);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+}
+.comment-panel.open { display: block; }
+
+.comment-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.comment-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--gold2);
+}
+.comment-meta {
+  display: flex; align-items: center; gap: 8px;
+}
+.char-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; color: var(--text3);
+}
+.comment-clear {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; color: var(--text3);
+  background: none; border: none; cursor: pointer;
+  padding: 2px 6px; border-radius: 2px;
+  transition: all 0.12s; letter-spacing: 1px; text-transform: uppercase;
+}
+.comment-clear:hover { color: var(--red); background: rgba(184,68,68,0.1); }
+
+.comment-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 200px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px; font-weight: 300;
+  line-height: 1.6;
+  padding: 8px 10px;
+  resize: vertical;
+  transition: border-color 0.15s;
+  outline: none;
+}
+.comment-textarea:focus { border-color: rgba(201,168,76,0.4); background: rgba(0,0,0,0.4); }
+.comment-textarea::placeholder { color: var(--text3); font-style: italic; }
+
+.ref-row {
+  display: flex; gap: 8px; margin-top: 6px; align-items: center;
+}
+.ref-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; color: var(--text3); letter-spacing: 1px;
+  text-transform: uppercase; white-space: nowrap;
+}
+.ref-input {
+  flex: 1;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  color: var(--text2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.ref-input:focus { border-color: rgba(201,168,76,0.4); }
+.ref-input::placeholder { color: var(--text3); }
+
+/* Status badges inside item */
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold2); flex-shrink: 0; margin-top: 6px;
+  display: none;
+}
+.chk-item-wrap.has-comment .status-dot { display: block; }
+
+/* Subctrl wrap indented */
+.subctrl-wrap .chk-main-row { padding-left: 12px; }
+.subctrl-wrap .chk-box { border-color: rgba(122,95,193,0.4); }
+.subctrl-wrap.done .chk-box { background: var(--subctrl-accent); border-color: var(--subctrl-accent); }
+.subctrl-wrap .chk-label { font-size: 12px; color: var(--text3); }
+
+/* Print styles for comments */
+@media print {
+  .comment-panel { display: block !important; background: #f9f7f0; border: 1px solid #ccc; }
+  .comment-btn, .comment-clear { display: none; }
+  .comment-textarea { border: none; background: transparent; color: #333; }
+  .ref-input { border: none; background: transparent; color: #555; }
+}
+
+
+/* ── ACTION / DOCUMENT META STRIP ── */
+.item-meta {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 5px 12px 7px 38px;
+  border-top: 1px solid rgba(201,168,76,0.08);
+  background: rgba(0,0,0,0.18);
+}
+.chk-item-wrap.subctrl-wrap .item-meta { padding-left: 52px; }
+.meta-chip {
+  display: inline-flex; align-items: flex-start; gap: 5px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5px; line-height: 1.45;
+  border-radius: 3px; padding: 3px 8px;
+  max-width: 100%;
+}
+.meta-chip-label {
+  font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
+  white-space: nowrap; flex-shrink: 0;
+}
+.meta-chip-text { color: inherit; opacity: 0.85; }
+.chip-action {
+  background: rgba(74,127,193,0.10);
+  border: 1px solid rgba(74,127,193,0.22);
+  color: #7baee0;
+}
+.chip-action .meta-chip-label { color: #4a7fc1; }
+.chip-doc {
+  background: rgba(201,168,76,0.08);
+  border: 1px solid rgba(201,168,76,0.20);
+  color: #c9a84c;
+}
+.chip-doc .meta-chip-label { color: #c9a84c; opacity: 0.9; }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-badge">✦ Information Security Management System</div>
+  <h1>ISO/IEC 27001<span>:2022</span><br>Full Implementation Checklist</h1>
+  <p class="header-desc">Comprehensive coverage of all mandatory clauses (4–10) and all 93 Annex A controls across 4 themes — with every subclause, control, and sub-control carrying its own checkbox for granular progress tracking.</p>
+  <div class="header-meta">
+    <div class="meta-item"><strong id="h-total">—</strong>Total Items</div>
+    <div class="meta-item"><strong id="h-done">0</strong>Completed</div>
+    <div class="meta-item"><strong id="h-pct">0%</strong>Progress</div>
+    <div class="meta-item"><strong>93</strong>Annex A Controls</div>
+    <div class="meta-item"><strong>4</strong>Control Themes</div>
+  </div>
+</div>
+
+<div class="sticky-bar">
+  <div class="prog-label">Progress</div>
+  <div class="prog-bar"><div class="prog-fill" id="gFill"></div></div>
+  <div class="prog-nums"><b id="gDone">0</b> / <span id="gTotal">0</span></div>
+  <div class="prog-pct" id="gPct">0%</div>
+</div>
+
+<div class="nav-wrap" id="navWrap"></div>
+
+<div class="main" id="main"></div>
+
+<div class="footer">
+  <button class="btn btn-primary" onclick="expandAll()">Expand All</button>
+  <button class="btn" onclick="collapseAll()">Collapse All</button>
+  <button class="btn btn-primary" onclick="markAllDone()">Mark All Done</button>
+  <button class="btn" onclick="resetAll()">Reset All</button>
+  <button class="btn" onclick="window.print()">Print / Export</button>
+  <button class="btn" onclick="exportComments()" title="Download all remarks as text file">Export Remarks</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// FULL ISO/IEC 27001:2022 DATA STRUCTURE
+// Each item: { id, text, tag:'m'|'r'|'p', sub:[] }
+// tag: m=mandatory, r=recommended, p=procedural
+// ═══════════════════════════════════════════════════════
+
+const STANDARD = [
+
+// ══════════════════════════════════════════
+// CLAUSE 4: CONTEXT OF THE ORGANISATION
+// ══════════════════════════════════════════
+{
+  id:'c4', num:'Clause 4', title:`Context of the Organisation`,
+  desc:`Establishes the foundation by understanding internal/external context, interested parties, and defining the ISMS scope.`,
+  subclauses:[
+    {
+      id:'c4.1', num:'4.1', title:`Understanding the organisation and its context`,
+      items:[
+        { id:'4.1.1', text:`Determine external issues relevant to the organisation's purpose that affect its ability to achieve ISMS outcomes`, action:`Conduct context analysis workshop; document findings`, doc:`Context Analysis Register / PESTLE Analysis`, tag:'m', sub:[
+          { id:'4.1.1a', text:`Legal, regulatory, and contractual landscape` , action:`Survey legal/regulatory landscape; log all applicable laws`, doc:`External Issues Register`},
+          { id:'4.1.1b', text:`Competitive, market, and technological environment` , action:`Benchmark against competitors; assess technology threats`, doc:`External Issues Register`},
+          { id:'4.1.1c', text:`Social, cultural, and geopolitical factors` },
+          { id:'4.1.1d', text:`Economic climate and financial constraints` },
+        ]},
+        { id:'4.1.2', text:`Determine internal issues relevant to the organisation's purpose that affect ISMS outcomes`, action:`Interview department heads; consolidate internal context`, doc:`Internal Issues Register`, tag:'m', sub:[
+          { id:'4.1.2a', text:`Organisational structure, roles, and accountabilities` , action:`Map org chart; document roles and reporting lines`, doc:`Organisational Chart / Roles & Responsibilities Matrix`},
+          { id:'4.1.2b', text:`Policies, objectives, and strategies` , action:`Review strategic plan and align ISMS objectives accordingly`, doc:`Strategic Plan / ISMS Objectives Document`},
+          { id:'4.1.2c', text:`Internal information systems and data flows` , action:`Conduct data flow mapping across all departments`, doc:`Data Flow Diagram / Information Asset Register`},
+          { id:'4.1.2d', text:`Organisational culture, values, and capabilities` },
+          { id:'4.1.2e', text:`Contractual relationships and dependencies` },
+        ]},
+        { id:'4.1.3', text:`Document the internal and external issues identified and review periodically`, action:`Schedule periodic review (min. annually); log review evidence`, doc:`Context Review Record / Meeting Minutes`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c4.2', num:'4.2', title:`Understanding the needs and expectations of interested parties`,
+      items:[
+        { id:'4.2.1', text:`Identify all interested parties relevant to the ISMS`, action:`Run interested-party identification workshop`, doc:`Interested Party Register`, tag:'m', sub:[
+          { id:'4.2.1a', text:`Customers and clients` , action:`Engage account management to list all relevant customers`, doc:`Interested Party Register`},
+          { id:'4.2.1b', text:`Regulatory and government bodies` , action:`Consult legal/compliance to identify regulators`, doc:`Interested Party Register`},
+          { id:'4.2.1c', text:`Shareholders and investors` , action:`Engage board/finance for shareholder/investor list`, doc:`Interested Party Register`},
+          { id:'4.2.1d', text:`Suppliers, partners, and third-party vendors` , action:`Procurement to list all vendors and partners`, doc:`Interested Party Register / Supplier Register`},
+          { id:'4.2.1e', text:`Employees and contractors` },
+          { id:'4.2.1f', text:`Industry associations and certification bodies` },
+        ]},
+        { id:'4.2.2', text:`Determine the requirements of each interested party relevant to information security`, action:`Map requirements per interested party; classify type`, doc:`Requirements Register / Compliance Obligations Log`, tag:'m', sub:[
+          { id:'4.2.2a', text:`Legal and regulatory requirements` , action:`Legal team to compile all applicable statutes and regulations`, doc:`Legal & Regulatory Obligations Register`},
+          { id:'4.2.2b', text:`Contractual obligations and SLAs` },
+          { id:'4.2.2c', text:`Privacy and data protection obligations` },
+        ]},
+        { id:'4.2.3', text:`Determine which requirements will be addressed through the ISMS`, action:`Determine ISMS boundary based on requirements analysis`, doc:`ISMS Scope Document`, tag:'m', sub:[] },
+        { id:'4.2.4', text:`Document and maintain interested parties register`, action:`Maintain live register; review at each management cycle`, doc:`Interested Party Register (Controlled Document)`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c4.3', num:'4.3', title:`Determining the scope of the ISMS`,
+      items:[
+        { id:'4.3.1', text:`Consider external and internal issues (4.1) when determining scope`, action:`Cross-reference 4.1 findings against proposed ISMS boundary`, doc:`ISMS Scope Document`, tag:'m', sub:[] },
+        { id:'4.3.2', text:`Consider requirements of interested parties (4.2) when determining scope`, action:`Cross-reference 4.2 requirements against ISMS boundary`, doc:`ISMS Scope Document`, tag:'m', sub:[] },
+        { id:'4.3.3', text:`Consider interfaces and dependencies between activities performed by the organisation and those by other organisations`, action:`Map interfaces with third parties; document dependencies`, doc:`Interface and Dependency Register`, tag:'m', sub:[] },
+        { id:'4.3.4', text:`Define and document the ISMS scope as documented information`, action:`Draft, review, approve and publish ISMS scope statement`, doc:`ISMS Scope Document (Controlled Document)`, tag:'m', sub:[
+          { id:'4.3.4a', text:`Physical locations included in the scope` , action:`Physical walkthrough of sites; confirm which are in-scope`, doc:`ISMS Scope Document`},
+          { id:'4.3.4b', text:`Organisational units covered` , action:`Org chart review to confirm in-scope business units`, doc:`ISMS Scope Document`},
+          { id:'4.3.4c', text:`Information assets within scope` , action:`Asset inventory review to confirm in-scope assets`, doc:`Information Asset Register`},
+          { id:'4.3.4d', text:`Technologies and systems in scope` , action:`IT architecture review to confirm in-scope systems`, doc:`System and Network Diagram`},
+          { id:'4.3.4e', text:`Justification for any exclusions from scope` },
+        ]},
+      ]
+    },
+    {
+      id:'c4.4', num:'4.4', title:`Information security management system`,
+      items:[
+        { id:'4.4.1', text:`Establish the ISMS in accordance with ISO/IEC 27001 requirements`, action:`Establish ISMS framework; assign ISMS Manager`, doc:`ISMS Framework Document / Project Charter`, tag:'m', sub:[] },
+        { id:'4.4.2', text:`Implement the ISMS including all required processes and their interactions`, action:`Implement all ISMS processes; produce procedures`, doc:`ISMS Process Map / Procedure Library`, tag:'m', sub:[] },
+        { id:'4.4.3', text:`Maintain the ISMS through continual improvement and periodic reviews`, action:`Schedule annual ISMS review; produce improvement register`, doc:`Management Review Minutes / Improvement Register`, tag:'m', sub:[] },
+        { id:'4.4.4', text:`Continually improve the ISMS`, action:`Track continual improvement actions with owners and dates`, doc:`Continual Improvement Register`, tag:'m', sub:[] },
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// CLAUSE 5: LEADERSHIP
+// ══════════════════════════════════════════
+{
+  id:'c5', num:'Clause 5', title:`Leadership`,
+  desc:`Top management must demonstrate commitment to the ISMS, establish policy, and assign roles.`,
+  subclauses:[
+    {
+      id:'c5.1', num:'5.1', title:`Leadership and commitment`,
+      items:[
+        { id:'5.1.1', text:`Top management shall demonstrate leadership and commitment with respect to the ISMS`, action:`Present ISMS business case to board; obtain formal commitment`, doc:`Board / Executive Mandate / ISMS Charter`, tag:'m', sub:[
+          { id:'5.1.1a', text:`Ensure IS policy and objectives are established and compatible with organisational direction` , action:`Board to formally endorse IS Policy and ISMS Objectives`, doc:`IS Policy (signed by CEO/Board)`},
+          { id:'5.1.1b', text:`Ensure integration of ISMS requirements into the organisation's processes` , action:`Integrate ISMS activities into business process maps`, doc:`Business Process Map / ISMS Integration Plan`},
+          { id:'5.1.1c', text:`Ensure resources needed for the ISMS are available` , action:`Prepare and approve ISMS budget; obtain resource sign-off`, doc:`ISMS Budget Approval / Resource Plan`},
+          { id:'5.1.1d', text:`Communicate the importance of effective information security management` , action:`CEO/CISO to publish IS communication to all staff`, doc:`Staff Communication / IS Policy Bulletin`},
+          { id:'5.1.1e', text:`Ensure the ISMS achieves its intended outcomes` , action:`Define ISMS KPIs and review at management meetings`, doc:`ISMS Performance Dashboard / KPI Report`},
+          { id:'5.1.1f', text:`Direct persons to contribute to the effectiveness of the ISMS` , action:`Assign ISMS roles; brief all IS-responsible managers`, doc:`Roles & Responsibilities Matrix`},
+          { id:'5.1.1g', text:`Promote continual improvement` , action:`Board to mandate continual improvement programme`, doc:`Management Review Output / Improvement Plan`},
+          { id:'5.1.1h', text:`Support other relevant management roles to demonstrate leadership in their areas of responsibility` },
+        ]},
+      ]
+    },
+    {
+      id:'c5.2', num:'5.2', title:`Policy`,
+      items:[
+        { id:'5.2.1', text:`Establish an information security policy`, action:`Draft, peer-review, and obtain board approval for IS Policy`, doc:`Information Security Policy (Controlled Document)`, tag:'m', sub:[
+          { id:'5.2.1a', text:`Appropriate to the purpose of the organisation` , action:`Align IS Policy with business strategy document`, doc:`IS Policy / Strategic Alignment Note`},
+          { id:'5.2.1b', text:`Includes IS objectives or framework for setting them` , action:`Include IS Objectives or framework reference in policy`, doc:`IS Policy / IS Objectives Register`},
+          { id:'5.2.1c', text:`Includes commitment to satisfy applicable IS requirements` },
+          { id:'5.2.1d', text:`Includes commitment to continual improvement of the ISMS` },
+        ]},
+        { id:'5.2.2', text:`Communicate the IS policy within the organisation`, action:`Publish IS Policy on intranet; send to all staff via email`, doc:`IS Policy Communication Record / Distribution Log`, tag:'m', sub:[] },
+        { id:'5.2.3', text:`Make the IS policy available to interested parties as appropriate`, action:`Make IS Policy available on public website or upon request`, doc:`IS Policy (External Version if required)`, tag:'m', sub:[] },
+        { id:'5.2.4', text:`Review and update the IS policy periodically`, action:`Schedule annual policy review; record review and approval`, doc:`Policy Review Record / Version Control Log`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c5.3', num:'5.3', title:`Organisational roles, responsibilities and authorities`,
+      items:[
+        { id:'5.3.1', text:`Assign and communicate IS roles and responsibilities`, action:`Define IS roles in job descriptions; publish RACI matrix`, doc:`IS Roles & Responsibilities Matrix / RACI Chart`, tag:'m', sub:[
+          { id:'5.3.1a', text:`Appoint Information Security Manager (or equivalent role)` , action:`Formally appoint ISMS Manager/CISO; issue appointment letter`, doc:`ISMS Manager Appointment Letter / Job Description`},
+          { id:'5.3.1b', text:`Define responsibilities for asset owners` , action:`Assign asset owners for all critical information assets`, doc:`Information Asset Register (with Owners)`},
+          { id:'5.3.1c', text:`Define responsibilities for IT/security operations teams` , action:`IT team to confirm IS operational responsibilities`, doc:`IT/Security Responsibilities Document`},
+          { id:'5.3.1d', text:`Define responsibilities for HR regarding personnel security` , action:`HR to confirm personnel security responsibilities`, doc:`HR IS Responsibilities Policy`},
+          { id:'5.3.1e', text:`Define board/executive accountability for ISMS` },
+        ]},
+        { id:'5.3.2', text:`Ensure ISMS conforms to ISO/IEC 27001 — assign responsibility to report performance`, action:`Assign individual responsible for ISMS conformance reporting`, doc:`ISMS Performance Report / Management Review Pack`, tag:'m', sub:[] },
+        { id:'5.3.3', text:`Document and communicate all assigned IS roles and responsibilities`, action:`Publish and communicate IS responsibilities to all staff`, doc:`IS Roles & Responsibilities Document / Intranet Page`, tag:'m', sub:[] },
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// CLAUSE 6: PLANNING
+// ══════════════════════════════════════════
+{
+  id:'c6', num:'Clause 6', title:`Planning`,
+  desc:`Risk-based thinking: assess and treat information security risks, and plan to achieve IS objectives.`,
+  subclauses:[
+    {
+      id:'c6.1', num:'6.1', title:`Actions to address risks and opportunities`,
+      items:[
+        { id:'6.1.0', text:`When planning, consider issues from 4.1 and requirements from 4.2 to determine risks and opportunities`, action:`Review 4.1 and 4.2 outputs before risk planning sessions`, doc:`Risk Planning Input Summary`, tag:'m', sub:[] },
+        { id:'6.1.1', text:`Plan actions to address identified risks and opportunities`, action:`Plan risk and opportunity actions in risk treatment plan`, doc:`Risk Treatment Plan`, tag:'m', sub:[
+          { id:'6.1.1a', text:`Integrate actions into ISMS processes` , action:`Embed risk actions into operational procedures`, doc:`Operational Procedures / Process Documentation`},
+          { id:'6.1.1b', text:`Evaluate effectiveness of these actions` },
+        ]},
+      ]
+    },
+    {
+      id:'c6.1.2', num:'6.1.2', title:`Information security risk assessment`,
+      items:[
+        { id:'6.1.2.1', text:`Define and apply an information security risk assessment process`, action:`Define and document risk assessment methodology`, doc:`IS Risk Assessment Methodology / Risk Management Policy`, tag:'m', sub:[
+          { id:'6.1.2.1a', text:`Establish and maintain risk acceptance criteria` , action:`Document risk acceptance criteria; obtain board approval`, doc:`Risk Acceptance Criteria (Board-Approved)`},
+          { id:'6.1.2.1b', text:`Establish criteria for performing IS risk assessments` },
+          { id:'6.1.2.1c', text:`Ensure repeated risk assessments produce consistent, comparable results` },
+        ]},
+        { id:'6.1.2.2', text:`Identify information security risks`, action:`Execute risk identification workshops with asset/process owners`, doc:`IS Risk Register`, tag:'m', sub:[
+          { id:'6.1.2.2a', text:`Identify risks associated with loss of confidentiality, integrity, and availability of information` },
+          { id:'6.1.2.2b', text:`Identify risk owners` },
+        ]},
+        { id:'6.1.2.3', text:`Analyse information security risks`, action:`Risk score all identified risks using approved methodology`, doc:`IS Risk Register (Scored)`, tag:'m', sub:[
+          { id:'6.1.2.3a', text:`Assess potential consequences if risks are realised` , action:`Document potential consequences for each risk`, doc:`IS Risk Register`},
+          { id:'6.1.2.3b', text:`Assess the realistic likelihood of risks occurring` },
+          { id:'6.1.2.3c', text:`Determine levels of risk` },
+        ]},
+        { id:'6.1.2.4', text:`Evaluate information security risks`, action:`Compare all risk scores to acceptance criteria`, doc:`IS Risk Register / Risk Evaluation Report`, tag:'m', sub:[
+          { id:'6.1.2.4a', text:`Compare results with risk criteria` },
+          { id:'6.1.2.4b', text:`Prioritise risks for treatment` },
+        ]},
+        { id:'6.1.2.5', text:`Retain documented information on the risk assessment process and results`, action:`Save final risk assessment outputs as controlled documents`, doc:`IS Risk Assessment Report (Controlled Document)`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c6.1.3', num:'6.1.3', title:`Information security risk treatment`,
+      items:[
+        { id:'6.1.3.1', text:`Select appropriate risk treatment options (modify, retain, avoid, share)`, action:`Select treatment options for each risk; document rationale`, doc:`IS Risk Treatment Plan`, tag:'m', sub:[] },
+        { id:'6.1.3.2', text:`Determine all controls necessary for implementing chosen risk treatment options`, action:`Map selected controls from Annex A to each risk`, doc:`Control Selection Mapping / Risk Treatment Plan`, tag:'m', sub:[] },
+        { id:'6.1.3.3', text:`Compare controls determined with those in Annex A and verify no necessary controls have been omitted`, action:`Conduct Annex A gap check against selected controls`, doc:`Annex A Gap Analysis / SoA Working Document`, tag:'m', sub:[] },
+        { id:'6.1.3.4', text:`Produce a Statement of Applicability (SoA)`, action:`Produce and maintain Statement of Applicability`, doc:`Statement of Applicability (SoA) — Controlled Document`, tag:'m', sub:[
+          { id:'6.1.3.4a', text:`Include all Annex A controls` , action:`List all 93 Annex A controls in SoA`, doc:`Statement of Applicability`},
+          { id:'6.1.3.4b', text:`Justify inclusion of applicable controls` , action:`Record justification for each included control`, doc:`Statement of Applicability`},
+          { id:'6.1.3.4c', text:`Justify exclusion of non-applicable controls` },
+          { id:'6.1.3.4d', text:`State implementation status for each control` },
+        ]},
+        { id:'6.1.3.5', text:`Formulate an information security risk treatment plan`, action:`Produce risk treatment plan with owners and deadlines`, doc:`IS Risk Treatment Plan (Controlled Document)`, tag:'m', sub:[
+          { id:'6.1.3.5a', text:`Define actions, responsibilities, and deadlines` , action:`Define specific actions, owners, and target dates per risk`, doc:`IS Risk Treatment Plan`},
+          { id:'6.1.3.5b', text:`Obtain risk owners' approval of the risk treatment plan` },
+          { id:'6.1.3.5c', text:`Obtain risk owners' acceptance of residual risks` },
+        ]},
+        { id:'6.1.3.6', text:`Retain documented information on the risk treatment process and results`, action:`Archive all risk treatment documentation`, doc:`IS Risk Treatment Report (Controlled Document)`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c6.2', num:'6.2', title:`Information security objectives and planning to achieve them`,
+      items:[
+        { id:'6.2.1', text:`Establish IS objectives at relevant functions and levels`, action:`Define measurable IS objectives aligned to policy`, doc:`IS Objectives Register`, tag:'m', sub:[
+          { id:'6.2.1a', text:`Be consistent with the IS policy` , action:`Cross-check objectives against IS Policy statements`, doc:`IS Objectives Register / IS Policy`},
+          { id:'6.2.1b', text:`Be measurable (if practicable)` , action:`Add metrics/KPIs to each objective where feasible`, doc:`IS Objectives Register / KPI Dashboard`},
+          { id:'6.2.1c', text:`Take into account applicable IS requirements and risk treatment results` , action:`Ensure objectives reflect risk treatment priorities`, doc:`IS Objectives Register / Risk Treatment Plan`},
+          { id:'6.2.1d', text:`Be monitored and communicated` },
+          { id:'6.2.1e', text:`Be updated as appropriate` },
+        ]},
+        { id:'6.2.2', text:`Retain documented information on IS objectives`, action:`Document objectives; include in ISMS documentation set`, doc:`IS Objectives Register (Controlled Document)`, tag:'m', sub:[] },
+        { id:'6.2.3', text:`Determine how objectives will be achieved (what, resources, responsible, completion, evaluation)`, action:`For each objective, complete a planning table (what/who/when/how)`, doc:`IS Objectives Action Plan`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c6.3', num:'6.3', title:`Planning of changes`,
+      items:[
+        { id:'6.3.1', text:`When changes to the ISMS are needed, carry them out in a planned manner`, action:`Log all proposed ISMS changes; apply change management process`, doc:`ISMS Change Log / Change Request Form`, tag:'m', sub:[
+          { id:'6.3.1a', text:`Assess the purpose of changes and their potential consequences` , action:`Impact assessment for every proposed ISMS change`, doc:`Change Impact Assessment Record`},
+          { id:'6.3.1b', text:`Ensure integrity of the ISMS is maintained` , action:`Integrity check post-change; sign off by ISMS Manager`, doc:`Change Implementation Record`},
+          { id:'6.3.1c', text:`Ensure resources are available for changes` , action:`Confirm resource availability before authorising changes`, doc:`Resource Availability Confirmation`},
+          { id:'6.3.1d', text:`Ensure responsibilities are assigned or reassigned as necessary` , action:`Update RACI/responsibilities where changes affect roles`, doc:`Roles & Responsibilities Matrix (Updated)`},
+        ]},
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// CLAUSE 7: SUPPORT
+// ══════════════════════════════════════════
+{
+  id:'c7', num:'Clause 7', title:`Support`,
+  desc:`Provision of resources, competence, awareness, communication, and documented information management.`,
+  subclauses:[
+    {
+      id:'c7.1', num:'7.1', title:`Resources`,
+      items:[
+        { id:'7.1.1', text:`Determine and provide resources needed for the establishment, implementation, maintenance and continual improvement of the ISMS`, action:`Conduct ISMS resource planning exercise; obtain approval`, doc:`ISMS Resource Plan / Budget Approval`, tag:'m', sub:[
+          { id:'7.1.1a', text:`Budget allocation for security tools, training, and staffing` , action:`Submit and obtain approval for ISMS security budget`, doc:`Approved ISMS Budget`},
+          { id:'7.1.1b', text:`Technology infrastructure resources` , action:`IT infrastructure plan to support ISMS tools`, doc:`IT Resource Plan / Technology Roadmap`},
+          { id:'7.1.1c', text:`Human resources for security operations` , action:`HR to confirm security staffing levels`, doc:`Security Staffing Plan / Org Chart`},
+          { id:'7.1.1d', text:`External consultants or auditors as required` },
+        ]},
+      ]
+    },
+    {
+      id:'c7.2', num:'7.2', title:`Competence`,
+      items:[
+        { id:'7.2.1', text:`Determine necessary competence of persons doing IS work`, action:`Define competency requirements for each IS role`, doc:`IS Competency Framework / Job Descriptions`, tag:'m', sub:[] },
+        { id:'7.2.2', text:`Ensure persons are competent on the basis of education, training, or experience`, action:`Verify credentials and experience for all IS staff`, doc:`CV Review / Certificate Verification Records`, tag:'m', sub:[] },
+        { id:'7.2.3', text:`Take actions to acquire necessary competence and evaluate effectiveness`, action:`Conduct competency gap analysis; produce training plan`, doc:`Training Needs Analysis / Training Plan`, tag:'m', sub:[
+          { id:'7.2.3a', text:`Conduct competency gap analysis across all IS roles` , action:`Assess each IS role against competency framework`, doc:`Competency Gap Analysis Report`},
+          { id:'7.2.3b', text:`Provide training programmes to fill identified gaps` , action:`Schedule and deliver targeted training programmes`, doc:`Training Calendar / Training Attendance Records`},
+          { id:'7.2.3c', text:`Obtain certifications (CISSP, CISM, ISO 27001 Lead Implementer, etc.) where appropriate` },
+        ]},
+        { id:'7.2.4', text:`Retain documented information as evidence of competence (training records, CVs, certificates)`, action:`Maintain training records and certificates for all IS personnel`, doc:`Training Records Register / Competency Evidence File`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c7.3', num:'7.3', title:`Awareness`,
+      items:[
+        { id:'7.3.1', text:`Persons doing work under the organisation's control shall be aware of:`, action:`Launch IS awareness programme; communicate policy to all staff`, doc:`IS Awareness Programme / Policy Acknowledgement Log`, tag:'m', sub:[
+          { id:'7.3.1a', text:`The IS policy` , action:`Distribute IS Policy to all staff; collect signed acknowledgement`, doc:`Policy Acknowledgement Log`},
+          { id:'7.3.1b', text:`Their contribution to the effectiveness of the ISMS` , action:`Communicate ISMS goals and how staff contribute`, doc:`IS Awareness Training Materials`},
+          { id:'7.3.1c', text:`The implications of not conforming with ISMS requirements` },
+          { id:'7.3.1d', text:`Their personal responsibilities related to information security` },
+        ]},
+        { id:'7.3.2', text:`Implement an information security awareness and training programme`, action:`Design and deliver IS awareness programme across the organisation`, doc:`IS Awareness Programme Plan / Training Completion Records`, tag:'m', sub:[
+          { id:'7.3.2a', text:`Onboarding security training for new employees` , action:`Mandatory IS training module for all new starters`, doc:`Onboarding IS Training Record`},
+          { id:'7.3.2b', text:`Annual refresher training for all staff` , action:`Annual IS refresher for all staff; track completion`, doc:`Annual Training Completion Report`},
+          { id:'7.3.2c', text:`Role-specific training for IS-critical functions` , action:`Deliver technical IS training to security and IT roles`, doc:`Specialist Training Records`},
+          { id:'7.3.2d', text:`Phishing simulation exercises` , action:`Run phishing simulations; report results to management`, doc:`Phishing Simulation Report`},
+          { id:'7.3.2e', text:`Track and record training completion` },
+        ]},
+      ]
+    },
+    {
+      id:'c7.4', num:'7.4', title:`Communication`,
+      items:[
+        { id:'7.4.1', text:`Determine the need for internal and external IS communications`, action:`Define IS communication plan covering all relevant audiences`, doc:`IS Communication Plan`, tag:'m', sub:[
+          { id:'7.4.1a', text:`What to communicate` , action:`Define topics/content for each communication type`, doc:`IS Communication Plan`},
+          { id:'7.4.1b', text:`When to communicate` , action:`Set schedule/triggers for each communication`, doc:`IS Communication Plan`},
+          { id:'7.4.1c', text:`With whom to communicate` },
+          { id:'7.4.1d', text:`How to communicate` },
+          { id:'7.4.1e', text:`Who communicates` },
+        ]},
+        { id:'7.4.2', text:`Establish internal ISMS communication procedures (incident reporting, policy updates)`, action:`Draft internal ISMS communication SOP`, doc:`Internal IS Communication Procedure`, tag:'m', sub:[] },
+        { id:'7.4.3', text:`Establish external ISMS communication procedures (regulators, media, customers)`, action:`Draft external IS communication SOP; align with crisis plan`, doc:`External IS Communication Procedure / Crisis Comms Plan`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c7.5', num:'7.5', title:`Documented information`,
+      items:[
+        { id:'7.5.1', text:`Determine documented information required by ISO/IEC 27001`, action:`Identify all mandatory ISMS records; create document index`, doc:`ISMS Document Index / Master Document List`, tag:'m', sub:[
+          { id:'7.5.1a', text:`Scope of the ISMS (4.3)` , action:`Create and maintain ISMS Scope Document`, doc:`ISMS Scope Document`},
+          { id:'7.5.1b', text:`IS Policy (5.2)` , action:`Maintain current approved version of IS Policy`, doc:`Information Security Policy`},
+          { id:'7.5.1c', text:`IS Risk Assessment process and results (6.1.2)` , action:`Retain all risk assessment records as controlled documents`, doc:`IS Risk Assessment Report`},
+          { id:'7.5.1d', text:`IS Risk Treatment plan and results (6.1.3)` , action:`Retain all risk treatment records as controlled documents`, doc:`IS Risk Treatment Plan`},
+          { id:'7.5.1e', text:`IS Objectives (6.2)` , action:`Maintain current IS Objectives Register`, doc:`IS Objectives Register`},
+          { id:'7.5.1f', text:`Evidence of competence (7.2)` , action:`Retain all competency evidence (CVs, certs, training records)`, doc:`Competency Evidence Register`},
+          { id:'7.5.1g', text:`Statement of Applicability (6.1.3)` , action:`Maintain current Statement of Applicability`, doc:`Statement of Applicability (SoA)`},
+          { id:'7.5.1h', text:`Operational planning and control evidence (8.1)` , action:`Retain records of operational process outputs`, doc:`Operational Process Records`},
+          { id:'7.5.1i', text:`Monitoring and measurement results (9.1)` , action:`Retain all monitoring and measurement results`, doc:`IS Performance / Monitoring Reports`},
+          { id:'7.5.1j', text:`Internal audit programme and results (9.2)` , action:`Retain audit programme and individual audit reports`, doc:`Internal Audit Programme / Audit Reports`},
+          { id:'7.5.1k', text:`Management review results (9.3)` },
+          { id:'7.5.1l', text:`Nonconformities and corrective actions (10.1)` },
+        ]},
+        { id:'7.5.2', text:`Implement document control procedures`, action:`Implement document control procedure; apply to all ISMS docs`, doc:`Document Control Procedure`, tag:'m', sub:[
+          { id:'7.5.2a', text:`Identification (title, author, version, date)` , action:`Apply consistent naming and metadata to all documents`, doc:`Document Naming Convention / Document Template`},
+          { id:'7.5.2b', text:`Format and media used` },
+          { id:'7.5.2c', text:`Review and approval process` },
+        ]},
+        { id:'7.5.3', text:`Control documented information — availability, distribution, access, retrieval, storage, change control, retention, disposition`, action:`Implement document management system or SharePoint library`, doc:`Document Management System / Document Repository`, tag:'m', sub:[
+          { id:'7.5.3a', text:`Define access controls for ISMS documentation` , action:`Define access permissions for ISMS document repository`, doc:`Document Access Control Matrix`},
+          { id:'7.5.3b', text:`Protect documented information from loss of confidentiality, improper use, or loss of integrity` , action:`Apply encryption and backup to sensitive ISMS documents`, doc:`Document Security Controls Record`},
+          { id:'7.5.3c', text:`Define retention periods and disposal procedures for records` , action:`Define and document retention periods and disposal method`, doc:`Records Retention Schedule / Disposal Log`},
+          { id:'7.5.3d', text:`Maintain version history and change log for all controlled documents` , action:`Enable version history and maintain change log for all docs`, doc:`Version Control Log / Document Change History`},
+        ]},
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// CLAUSE 8: OPERATION
+// ══════════════════════════════════════════
+{
+  id:'c8', num:'Clause 8', title:`Operation`,
+  desc:`Plan and control the processes needed to meet IS requirements; implement risk treatment; manage changes.`,
+  subclauses:[
+    {
+      id:'c8.1', num:'8.1', title:`Operational planning and control`,
+      items:[
+        { id:'8.1.1', text:`Plan, implement, control, and maintain processes needed to meet IS requirements`, action:`Operationalise ISMS processes; assign process owners`, doc:`ISMS Operational Procedures / Process Register`, tag:'m', sub:[
+          { id:'8.1.1a', text:`Establish criteria for the processes` },
+          { id:'8.1.1b', text:`Implement control of the processes in accordance with the criteria` },
+        ]},
+        { id:'8.1.2', text:`Retain documented information to confirm processes carried out as planned`, action:`Retain output records for all operational ISMS processes`, doc:`Operational Records / Process Evidence Log`, tag:'m', sub:[] },
+        { id:'8.1.3', text:`Control planned changes and review unintended changes — take action on adverse effects`, action:`Log all changes; review unintended changes; record mitigations`, doc:`Change Log / Unintended Change Review Record`, tag:'m', sub:[] },
+        { id:'8.1.4', text:`Ensure externally provided processes, products, and services that are relevant to the ISMS are controlled`, action:`Extend ISMS controls to all relevant outsourced services`, doc:`Supplier Control Register / Third-Party IS Assessment`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c8.2', num:'8.2', title:`Information security risk assessment`,
+      items:[
+        { id:'8.2.1', text:`Perform IS risk assessments at planned intervals or when significant changes are proposed`, action:`Schedule and conduct risk assessments at defined intervals`, doc:`IS Risk Assessment Report (Updated)`, tag:'m', sub:[
+          { id:'8.2.1a', text:`At least annually as part of management review cycle` , action:`Include risk assessment as standing item in management review`, doc:`Management Review Agenda / Risk Review Record`},
+          { id:'8.2.1b', text:`When significant changes occur to systems, processes, or organisation` , action:`Trigger ad-hoc risk assessment upon significant change`, doc:`Change-Triggered Risk Assessment Record`},
+          { id:'8.2.1c', text:`After significant security incidents` },
+          { id:'8.2.1d', text:`When new threats or vulnerabilities are identified` },
+        ]},
+        { id:'8.2.2', text:`Retain documented information of risk assessment results`, action:`Archive all risk assessment outputs as controlled records`, doc:`IS Risk Assessment Records (Archived)`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c8.3', num:'8.3', title:`Information security risk treatment`,
+      items:[
+        { id:'8.3.1', text:`Implement the IS risk treatment plan`, action:`Execute risk treatment actions per approved treatment plan`, doc:`Risk Treatment Implementation Records`, tag:'m', sub:[] },
+        { id:'8.3.2', text:`Retain documented information of risk treatment results`, action:`Archive all risk treatment outputs as controlled records`, doc:`IS Risk Treatment Records (Archived)`, tag:'m', sub:[] },
+        { id:'8.3.3', text:`Monitor progress of risk treatment plan implementation`, action:`Track progress against treatment plan; report to management`, doc:`Risk Treatment Progress Report / KPI Dashboard`, tag:'m', sub:[] },
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// CLAUSE 9: PERFORMANCE EVALUATION
+// ══════════════════════════════════════════
+{
+  id:'c9', num:'Clause 9', title:`Performance Evaluation`,
+  desc:`Monitor, measure, analyse, and evaluate the ISMS through audits and management reviews.`,
+  subclauses:[
+    {
+      id:'c9.1', num:'9.1', title:`Monitoring, measurement, analysis and evaluation`,
+      items:[
+        { id:'9.1.1', text:`Determine what needs to be monitored and measured`, action:`Define ISMS monitoring framework; assign measurement owners`, doc:`ISMS Monitoring Framework / Measurement Plan`, tag:'m', sub:[
+          { id:'9.1.1a', text:`IS processes and controls` },
+          { id:'9.1.1b', text:`Achievement of IS objectives` },
+          { id:'9.1.1c', text:`ISMS overall performance` },
+        ]},
+        { id:'9.1.2', text:`Determine methods for monitoring, measurement, analysis, and evaluation`, action:`Define how each metric will be collected, by whom, and when`, doc:`Measurement & Monitoring Plan`, tag:'m', sub:[
+          { id:'9.1.2a', text:`Define KPIs and security metrics` , action:`Define and document IS KPIs and security metrics`, doc:`IS KPI Register`},
+          { id:'9.1.2b', text:`Define measurement frequency` , action:`Set measurement frequency for each metric`, doc:`Measurement & Monitoring Plan`},
+          { id:'9.1.2c', text:`Define who analyses and evaluates results` },
+          { id:'9.1.2d', text:`Define when results will be analysed and evaluated` },
+        ]},
+        { id:'9.1.3', text:`Evaluate IS performance and effectiveness of the ISMS`, action:`Produce regular IS performance reports; identify trends`, doc:`IS Performance Report (Monthly/Quarterly)`, tag:'m', sub:[] },
+        { id:'9.1.4', text:`Retain documented information as evidence of monitoring and measurement results`, action:`Retain all monitoring and measurement records`, doc:`IS Monitoring & Measurement Records`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c9.2', num:'9.2', title:`Internal audit`,
+      items:[
+        { id:'9.2.1', text:`Conduct internal audits at planned intervals`, action:`Plan and conduct internal ISMS audits per audit programme`, doc:`Internal Audit Report`, tag:'m', sub:[
+          { id:'9.2.1a', text:`Confirm ISMS conforms to organisation's own requirements for the ISMS` , action:`Verify conformance against own ISMS requirements`, doc:`Internal Audit Report (Clause 4-10 Assessment)`},
+          { id:'9.2.1b', text:`Confirm ISMS conforms to ISO/IEC 27001 requirements` },
+          { id:'9.2.1c', text:`Confirm ISMS is effectively implemented and maintained` },
+        ]},
+        { id:'9.2.2', text:`Plan, establish, implement, and maintain an audit programme`, action:`Establish, document, and maintain internal audit programme`, doc:`Internal Audit Programme / Schedule`, tag:'m', sub:[
+          { id:'9.2.2a', text:`Define audit frequency, methods, responsibilities, and reporting` , action:`Define audit frequency, methods, and responsibilities`, doc:`Internal Audit Programme`},
+          { id:'9.2.2b', text:`Consider importance of processes and results of previous audits` , action:`Review prior audit results when planning new audits`, doc:`Prior Audit Reports / Audit Programme`},
+          { id:'9.2.2c', text:`Define audit criteria and scope for each audit` , action:`Define scope and criteria for each audit engagement`, doc:`Audit Scope and Criteria Document`},
+          { id:'9.2.2d', text:`Select auditors and conduct audits ensuring objectivity and impartiality` , action:`Select and brief independent qualified auditors`, doc:`Auditor Appointment / Briefing Record`},
+          { id:'9.2.2e', text:`Report audit results to relevant management` },
+        ]},
+        { id:'9.2.3', text:`Retain documented information as evidence of the audit programme and audit results`, action:`Retain complete audit programme and all individual audit reports`, doc:`Internal Audit Records (Controlled)`, tag:'m', sub:[] },
+        { id:'9.2.4', text:`Take corrective action without undue delay for nonconformities found in audit`, action:`Raise corrective actions for all audit findings; track closure`, doc:`Corrective Action Register`, tag:'m', sub:[] },
+      ]
+    },
+    {
+      id:'c9.3', num:'9.3', title:`Management review`,
+      items:[
+        { id:'9.3.1', text:`Top management shall review the ISMS at planned intervals`, action:`Schedule annual management review of ISMS`, doc:`Management Review Minutes / ISMS Review Record`, tag:'m', sub:[] },
+        { id:'9.3.2', text:`Management review inputs shall include:`, action:`Compile management review input pack from all sources`, doc:`Management Review Input Pack`, tag:'m', sub:[
+          { id:'9.3.2a', text:`Status of actions from previous management reviews` , action:`Prepare status update on prior management review actions`, doc:`Management Review Action Tracker`},
+          { id:'9.3.2b', text:`Changes in external and internal issues relevant to the ISMS` , action:`Prepare summary of changes to internal/external context`, doc:`Context Change Summary`},
+          { id:'9.3.2c', text:`Feedback on IS performance (nonconformities, monitoring results, audit results, fulfilment of IS objectives)` , action:`Prepare IS performance summary (nonconformities, audits, KPIs)`, doc:`IS Performance Report`},
+          { id:'9.3.2d', text:`Feedback from interested parties` , action:`Gather and summarise feedback from interested parties`, doc:`Interested Party Feedback Log`},
+          { id:'9.3.2e', text:`Results of risk assessment and status of risk treatment plan` },
+          { id:'9.3.2f', text:`Opportunities for continual improvement` },
+        ]},
+        { id:'9.3.3', text:`Management review outputs shall include decisions related to:`, action:`Document all decisions made at management review`, doc:`Management Review Minutes`, tag:'m', sub:[
+          { id:'9.3.3a', text:`Opportunities for continual improvement` },
+          { id:'9.3.3b', text:`Any need for changes to the ISMS (including resource needs)` },
+        ]},
+        { id:'9.3.4', text:`Retain documented information as evidence of management review results`, action:`Retain signed management review minutes as controlled records`, doc:`Management Review Minutes (Controlled Document)`, tag:'m', sub:[] },
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// CLAUSE 10: IMPROVEMENT
+// ══════════════════════════════════════════
+{
+  id:'c10', num:'Clause 10', title:`Improvement`,
+  desc:`Manage nonconformities, corrective actions, and drive continual improvement of the ISMS.`,
+  subclauses:[
+    {
+      id:'c10.1', num:'10.1', title:`Continual improvement`,
+      items:[
+        { id:'10.1.1', text:`Continually improve the suitability, adequacy, and effectiveness of the ISMS`, action:`Maintain an active improvement register; review at each cycle`, doc:`Continual Improvement Register`, tag:'m', sub:[
+          { id:'10.1.1a', text:`Maintain an improvement register or log` , action:`Log all improvement ideas and initiatives centrally`, doc:`Continual Improvement Register`},
+          { id:'10.1.1b', text:`Define improvement initiatives with owners and timelines` , action:`Assign owner and target date to each improvement initiative`, doc:`Continual Improvement Register / Action Tracker`},
+          { id:'10.1.1c', text:`Review and communicate improvements across the organisation` },
+        ]},
+      ]
+    },
+    {
+      id:'c10.2', num:'10.2', title:`Nonconformity and corrective action`,
+      items:[
+        { id:'10.2.1', text:`When a nonconformity occurs, react appropriately`, action:`Log each nonconformity immediately; initiate containment`, doc:`Nonconformity & Corrective Action Register`, tag:'m', sub:[
+          { id:'10.2.1a', text:`Take action to control and correct the nonconformity` },
+          { id:'10.2.1b', text:`Deal with the consequences` },
+        ]},
+        { id:'10.2.2', text:`Evaluate need for corrective action to eliminate the cause`, action:`Perform root cause analysis for each nonconformity`, doc:`Root Cause Analysis Report / Corrective Action Record`, tag:'m', sub:[
+          { id:'10.2.2a', text:`Review the nonconformity` , action:`Document full description of the nonconformity`, doc:`Nonconformity Record`},
+          { id:'10.2.2b', text:`Determine the root cause(s)` },
+          { id:'10.2.2c', text:`Determine if similar nonconformities exist or could potentially occur elsewhere` },
+        ]},
+        { id:'10.2.3', text:`Implement corrective action needed`, action:`Implement corrective action; assign owner and deadline`, doc:`Corrective Action Plan / Action Tracker`, tag:'m', sub:[] },
+        { id:'10.2.4', text:`Review effectiveness of corrective actions taken`, action:`Verify corrective action is effective; close or re-raise`, doc:`Corrective Action Effectiveness Review Record`, tag:'m', sub:[] },
+        { id:'10.2.5', text:`Make changes to the ISMS if necessary`, action:`Update ISMS documents and processes reflecting improvements`, doc:`Updated ISMS Documents / Change Log`, tag:'m', sub:[] },
+        { id:'10.2.6', text:`Retain documented information as evidence of the nature of nonconformities and corrective actions`, action:`Retain all nonconformity and corrective action records`, doc:`Nonconformity & Corrective Action Register (Controlled)`, tag:'m', sub:[] },
+      ]
+    },
+  ]
+},
+
+// ══════════════════════════════════════════
+// ANNEX A — THEME 1: ORGANISATIONAL CONTROLS (A.5)
+// ══════════════════════════════════════════
+{
+  id:'cA5', num:'Annex A — Theme 1', title:`Organisational Controls`,
+  desc:`37 controls covering policies, roles, asset management, access control, supplier relationships, and incident management.`,
+  subclauses:[
+    {
+      id:'cA5.g', num:'A.5', title:`Organisational Controls (A.5.1 – A.5.37)`,
+      items:[
+        { id:'A5.1', text:`A.5.1 — Policies for information security`, action:`Draft, approve and communicate IS Policy suite`, doc:`Information Security Policy (+ Topic-Specific Policies)`, tag:'m', sub:[
+          { id:'A5.1a', text:`Define, approve, publish, and communicate IS policies` , action:`Define policy hierarchy; draft all required policies`, doc:`IS Policy Suite / Policy Register`},
+          { id:'A5.1b', text:`Align IS policies with the organisation's strategic direction` },
+          { id:'A5.1c', text:`Review IS policies at planned intervals and when significant changes occur` },
+        ]},
+        { id:'A5.2', text:`A.5.2 — Information security roles and responsibilities`, action:`Define IS roles in job descriptions; assign responsibilities`, doc:`IS Roles & Responsibilities Matrix`, tag:'m', sub:[
+          { id:'A5.2a', text:`Define IS roles in job descriptions and accountability frameworks` },
+          { id:'A5.2b', text:`Assign IS responsibilities for all information assets` },
+        ]},
+        { id:'A5.3', text:`A.5.3 — Segregation of duties`, action:`Conduct duties-conflict analysis; implement segregation`, doc:`Segregation of Duties Matrix / Access Control Policy`, tag:'m', sub:[
+          { id:'A5.3a', text:`Identify conflicting duties and areas of responsibility` },
+          { id:'A5.3b', text:`Implement controls to segregate conflicting duties` },
+        ]},
+        { id:'A5.4', text:`A.5.4 — Management responsibilities`, action:`Management to mandate IS compliance; include in performance reviews`, doc:`Management Directive / IS Policy Acknowledgement Record`, tag:'m', sub:[
+          { id:'A5.4a', text:`Require all personnel to apply IS in accordance with policies and procedures` },
+        ]},
+        { id:'A5.5', text:`A.5.5 — Contact with authorities`, action:`Identify and document contacts with all relevant authorities`, doc:`Authority Contact Register / IS Communication Plan`, tag:'m', sub:[
+          { id:'A5.5a', text:`Identify appropriate contacts with relevant authorities (law enforcement, regulators, etc.)` },
+          { id:'A5.5b', text:`Establish and maintain contact with authorities` },
+        ]},
+        { id:'A5.6', text:`A.5.6 — Contact with special interest groups`, action:`Join and actively engage relevant IS special interest groups`, doc:`Membership Records / IS Intelligence Log`, tag:'r', sub:[
+          { id:'A5.6a', text:`Maintain memberships in industry groups and security forums` },
+        ]},
+        { id:'A5.7', text:`A.5.7 — Threat intelligence`, action:`Implement threat intelligence collection and analysis process`, doc:`Threat Intelligence Procedure / Threat Intelligence Report`, tag:'m', sub:[
+          { id:'A5.7a', text:`Collect information about threats and analyse to produce threat intelligence` },
+          { id:'A5.7b', text:`Share relevant threat intelligence with other organisations` },
+        ]},
+        { id:'A5.8', text:`A.5.8 — Information security in project management`, action:`Embed IS into project methodology; run IS risk in all projects`, doc:`Project IS Risk Assessment / IS in SDLC Procedure`, tag:'m', sub:[
+          { id:'A5.8a', text:`Integrate IS into all project types throughout the project lifecycle` },
+          { id:'A5.8b', text:`Include IS risk assessments in project risk management` },
+        ]},
+        { id:'A5.9', text:`A.5.9 — Inventory of information and other associated assets`, action:`Create and maintain information asset inventory`, doc:`Information Asset Register`, tag:'m', sub:[
+          { id:'A5.9a', text:`Identify and compile an inventory of all information assets` , action:`Survey all departments; compile complete asset list`, doc:`Information Asset Register`},
+          { id:'A5.9b', text:`Assign owners to all information assets` },
+          { id:'A5.9c', text:`Maintain and review the asset inventory regularly` },
+        ]},
+        { id:'A5.10', text:`A.5.10 — Acceptable use of information and other associated assets`, action:`Define and communicate acceptable use policy for all assets`, doc:`Acceptable Use Policy`, tag:'m', sub:[
+          { id:'A5.10a', text:`Identify, document, and implement rules for acceptable use of assets` },
+          { id:'A5.10b', text:`Communicate acceptable use policy to all personnel` },
+        ]},
+        { id:'A5.11', text:`A.5.11 — Return of assets`, action:`Define asset return checklist; enforce upon all terminations`, doc:`Asset Return Procedure / Asset Return Checklist`, tag:'m', sub:[
+          { id:'A5.11a', text:`Define procedure for return of assets on termination or change of employment` },
+          { id:'A5.11b', text:`Include return of assets in off-boarding checklist` },
+        ]},
+        { id:'A5.12', text:`A.5.12 — Classification of information`, action:`Define information classification scheme; apply to all information`, doc:`Information Classification Policy / Classification Scheme`, tag:'m', sub:[
+          { id:'A5.12a', text:`Define an information classification scheme` },
+          { id:'A5.12b', text:`Classify information according to legal requirements, value, criticality, and sensitivity` },
+        ]},
+        { id:'A5.13', text:`A.5.13 — Labelling of information`, action:`Implement information labelling procedure`, doc:`Information Labelling Procedure / Labelling Standards`, tag:'m', sub:[
+          { id:'A5.13a', text:`Develop and implement labelling procedures consistent with classification scheme` },
+          { id:'A5.13b', text:`Apply labels to all information assets (physical and digital)` },
+        ]},
+        { id:'A5.14', text:`A.5.14 — Information transfer`, action:`Define and implement information transfer controls`, doc:`Information Transfer Policy / Transfer Agreements`, tag:'m', sub:[
+          { id:'A5.14a', text:`Define transfer rules for all types of transfer (electronic, physical, verbal)` , action:`Document transfer rules for all transfer types in policy`, doc:`Information Transfer Policy`},
+          { id:'A5.14b', text:`Implement NDAs/confidentiality agreements for transfers with third parties` },
+          { id:'A5.14c', text:`Protect information in transit (encryption, secure channels)` },
+        ]},
+        { id:'A5.15', text:`A.5.15 — Access control`, action:`Define and implement access control policy`, doc:`Access Control Policy`, tag:'m', sub:[
+          { id:'A5.15a', text:`Define and implement access control policy based on business and IS requirements` },
+          { id:'A5.15b', text:`Apply need-to-know and least-privilege principles` },
+        ]},
+        { id:'A5.16', text:`A.5.16 — Identity management`, action:`Implement identity management lifecycle controls`, doc:`Identity Management Procedure / User Provisioning Records`, tag:'m', sub:[
+          { id:'A5.16a', text:`Define an identity management lifecycle (create, maintain, disable, delete)` },
+          { id:'A5.16b', text:`Ensure unique identifiers for each individual user` },
+        ]},
+        { id:'A5.17', text:`A.5.17 — Authentication information`, action:`Define and enforce authentication information management policy`, doc:`Authentication Management Policy / Password Policy`, tag:'m', sub:[
+          { id:'A5.17a', text:`Control allocation of secret authentication information` , action:`Define process for provisioning authentication credentials`, doc:`Authentication Management Procedure`},
+          { id:'A5.17b', text:`Enforce password/authentication policies (complexity, expiry, history)` },
+          { id:'A5.17c', text:`Require users to change initial/temporary authentication information` },
+        ]},
+        { id:'A5.18', text:`A.5.18 — Access rights`, action:`Implement formal access provisioning, review and revocation process`, doc:`Access Rights Management Procedure / Access Review Records`, tag:'m', sub:[
+          { id:'A5.18a', text:`Provision access rights based on access control policy` , action:`Provision access based on role and business need; obtain approvals`, doc:`Access Request & Approval Records`},
+          { id:'A5.18b', text:`Review access rights at regular intervals` },
+          { id:'A5.18c', text:`Revoke access rights upon termination or role change` },
+        ]},
+        { id:'A5.19', text:`A.5.19 — Information security in supplier relationships`, action:`Assess and manage IS risks in all supplier relationships`, doc:`Supplier IS Risk Assessment / Supplier Register`, tag:'m', sub:[
+          { id:'A5.19a', text:`Define and implement processes to manage supplier IS risks` },
+          { id:'A5.19b', text:`Establish supplier IS requirements before onboarding` },
+        ]},
+        { id:'A5.20', text:`A.5.20 — Addressing information security within supplier agreements`, action:`Include IS clauses in all supplier contracts`, doc:`Supplier Agreements / Contract IS Addendum`, tag:'m', sub:[
+          { id:'A5.20a', text:`Include IS requirements in supplier contracts and agreements` , action:`Develop standard IS contract addendum; apply to all suppliers`, doc:`Standard IS Contract Addendum / Supplier Agreements`},
+          { id:'A5.20b', text:`Include right to audit and service level requirements` },
+          { id:'A5.20c', text:`Include incident notification requirements` },
+        ]},
+        { id:'A5.21', text:`A.5.21 — Managing information security in the ICT supply chain`, action:`Manage IS risks across the ICT supply chain`, doc:`ICT Supply Chain Risk Assessment / Supplier IS Clause`, tag:'m', sub:[
+          { id:'A5.21a', text:`Define processes to manage IS risks associated with the ICT product and service supply chain` , action:`Define supply chain IS risk process; apply to all ICT procurement`, doc:`ICT Supply Chain Risk Management Procedure`},
+          { id:'A5.21b', text:`Address hardware and software integrity in the supply chain` },
+        ]},
+        { id:'A5.22', text:`A.5.22 — Monitoring, review and change management of supplier services`, action:`Monitor and review all supplier service delivery against SLAs`, doc:`Supplier Review Reports / Supplier Performance Dashboard`, tag:'m', sub:[
+          { id:'A5.22a', text:`Regularly monitor and review supplier service delivery` },
+          { id:'A5.22b', text:`Manage changes to supplier services including changes to agreements` },
+        ]},
+        { id:'A5.23', text:`A.5.23 — Information security for use of cloud services`, action:`Define cloud security lifecycle from acquisition to exit`, doc:`Cloud Security Policy / Cloud Risk Assessment`, tag:'m', sub:[
+          { id:'A5.23a', text:`Establish processes for acquisition, use, management, and exit from cloud services` , action:`Document cloud acquisition, management, and exit procedures`, doc:`Cloud Security Procedure`},
+          { id:'A5.23b', text:`Define security requirements for cloud service use` , action:`Define IS requirements for all cloud services`, doc:`Cloud Security Requirements / SLA`},
+          { id:'A5.23c', text:`Assess cloud providers against IS requirements before onboarding` },
+        ]},
+        { id:'A5.24', text:`A.5.24 — Information security incident management planning and preparation`, action:`Develop and maintain IS incident management plan`, doc:`IS Incident Management Policy & Procedure / IRP`, tag:'m', sub:[
+          { id:'A5.24a', text:`Define and implement an IS incident management process` , action:`Define and document IS incident management procedure`, doc:`IS Incident Response Procedure`},
+          { id:'A5.24b', text:`Assign roles and responsibilities for incident management` },
+          { id:'A5.24c', text:`Develop and test an incident response plan` },
+        ]},
+        { id:'A5.25', text:`A.5.25 — Assessment and decision on information security events`, action:`Implement event triage and classification process`, doc:`IS Event/Incident Classification Procedure / Incident Log`, tag:'m', sub:[
+          { id:'A5.25a', text:`Assess IS events and decide if they are to be classified as incidents` },
+          { id:'A5.25b', text:`Implement point of contact for reporting IS events` },
+        ]},
+        { id:'A5.26', text:`A.5.26 — Response to information security incidents`, action:`Respond to confirmed IS incidents per documented procedures`, doc:`Incident Response Report / Post-Incident Review`, tag:'m', sub:[
+          { id:'A5.26a', text:`Respond to IS incidents in accordance with documented procedures` , action:`Follow documented IRP for all confirmed incidents`, doc:`IS Incident Response Procedure / Incident Log`},
+          { id:'A5.26b', text:`Contain, eradicate, and recover from IS incidents` },
+          { id:'A5.26c', text:`Collect and preserve evidence of IS incidents` },
+        ]},
+        { id:'A5.27', text:`A.5.27 — Learning from information security incidents`, action:`Conduct post-incident reviews; capture lessons learned`, doc:`Post-Incident Review Report / Lessons Learned Register`, tag:'m', sub:[
+          { id:'A5.27a', text:`Conduct post-incident reviews and document lessons learned` },
+          { id:'A5.27b', text:`Use incident knowledge to improve controls and reduce future risk` },
+        ]},
+        { id:'A5.28', text:`A.5.28 — Collection of evidence`, action:`Implement evidence collection and preservation procedure`, doc:`Digital Evidence Handling Procedure / Chain of Custody Log`, tag:'m', sub:[
+          { id:'A5.28a', text:`Define and apply procedures for identification, collection, and preservation of evidence` , action:`Define legally sound evidence collection methodology`, doc:`Digital Evidence Procedure / Forensic Standards`},
+          { id:'A5.28b', text:`Ensure evidence is legally admissible and chain of custody maintained` },
+        ]},
+        { id:'A5.29', text:`A.5.29 — Information security during disruption`, action:`Define IS continuity controls for disruption scenarios`, doc:`IS Continuity Plan / BCP IS Annex`, tag:'m', sub:[
+          { id:'A5.29a', text:`Plan for maintaining IS at an appropriate level during disruptions` },
+          { id:'A5.29b', text:`Test IS controls during disruption exercises` },
+        ]},
+        { id:'A5.30', text:`A.5.30 — ICT readiness for business continuity`, action:`Define ICT readiness plan; test business continuity capabilities`, doc:`ICT Business Continuity Plan / BCP Test Report`, tag:'m', sub:[
+          { id:'A5.30a', text:`Plan, implement, maintain, and test ICT readiness for business continuity` , action:`Document ICT continuity requirements and recovery objectives`, doc:`ICT Continuity Plan (RTO/RPO defined)`},
+          { id:'A5.30b', text:`Define Recovery Time Objectives (RTOs) and Recovery Point Objectives (RPOs)` },
+        ]},
+        { id:'A5.31', text:`A.5.31 — Legal, statutory, regulatory and contractual requirements`, action:`Identify and maintain register of all applicable legal requirements`, doc:`Legal & Regulatory Compliance Register`, tag:'m', sub:[
+          { id:'A5.31a', text:`Identify and document all relevant legal, statutory, regulatory, and contractual requirements` , action:`Legal/compliance review to identify all applicable laws`, doc:`Legal & Regulatory Compliance Register`},
+          { id:'A5.31b', text:`Define the organisation's approach to meeting these requirements` },
+        ]},
+        { id:'A5.32', text:`A.5.32 — Intellectual property rights`, action:`Implement intellectual property protection controls`, doc:`IP Rights Register / Software Asset Management Policy`, tag:'m', sub:[
+          { id:'A5.32a', text:`Implement procedures to protect intellectual property rights` },
+          { id:'A5.32b', text:`Maintain register of proprietary software and licensing` },
+        ]},
+        { id:'A5.33', text:`A.5.33 — Protection of records`, action:`Implement records protection and retention controls`, doc:`Records Management Policy / Records Retention Schedule`, tag:'m', sub:[
+          { id:'A5.33a', text:`Protect records from loss, destruction, falsification, unauthorised access, and unauthorised release` , action:`Apply storage and access controls to all ISMS records`, doc:`Records Access Control Matrix / Records Storage Standards`},
+          { id:'A5.33b', text:`Define retention periods and disposal procedures for each record type` },
+        ]},
+        { id:'A5.34', text:`A.5.34 — Privacy and protection of personal identifiable information (PII)`, action:`Implement PII identification and protection controls`, doc:`Privacy Policy / Data Protection Register / DPIA`, tag:'m', sub:[
+          { id:'A5.34a', text:`Identify applicable privacy and PII protection requirements` },
+          { id:'A5.34b', text:`Implement privacy policy and controls for PII processing` },
+        ]},
+        { id:'A5.35', text:`A.5.35 — Independent review of information security`, action:`Conduct independent review of ISMS at planned intervals`, doc:`Independent IS Review Report / Third-Party Audit Report`, tag:'m', sub:[
+          { id:'A5.35a', text:`Review IS implementation and controls at planned intervals or following significant changes` , action:`Schedule independent internal or third-party ISMS review`, doc:`IS Review Programme / Audit Calendar`},
+          { id:'A5.35b', text:`Conduct independent (external) IS reviews or audits periodically` },
+        ]},
+        { id:'A5.36', text:`A.5.36 — Compliance with policies, rules and standards for information security`, action:`Monitor compliance with IS policies across the organisation`, doc:`IS Compliance Assessment Report / Audit Report`, tag:'m', sub:[
+          { id:'A5.36a', text:`Regularly review compliance with IS policies, rules, and standards` },
+          { id:'A5.36b', text:`Manage non-compliance findings with corrective actions` },
+        ]},
+        { id:'A5.37', text:`A.5.37 — Documented operating procedures`, action:`Document and publish all operating procedures for IS facilities`, doc:`IS Operating Procedures Library / SOPs`, tag:'m', sub:[
+          { id:'A5.37a', text:`Document and make available operating procedures for IS activities` , action:`Document procedures for all critical IS operational activities`, doc:`Standard Operating Procedures (SOPs)`},
+          { id:'A5.37b', text:`Review and update operating procedures when changes occur` , action:`Publish SOPs on accessible platform; notify relevant staff`, doc:`SOP Distribution / Intranet Publication Record`},
+        ]},
+      ]
+    }
+  ]
+},
+
+// ══════════════════════════════════════════
+// ANNEX A — THEME 2: PEOPLE CONTROLS (A.6)
+// ══════════════════════════════════════════
+{
+  id:'cA6', num:'Annex A — Theme 2', title:`People Controls`,
+  desc:`8 controls addressing personnel security from pre-employment screening through to termination and remote working.`,
+  subclauses:[
+    {
+      id:'cA6.g', num:'A.6', title:`People Controls (A.6.1 – A.6.8)`,
+      items:[
+        { id:'A6.1', text:`A.6.1 — Screening`, action:`Implement pre-employment screening for all new personnel`, doc:`Screening Policy / Background Check Records`, tag:'m', sub:[
+          { id:'A6.1a', text:`Carry out background verification checks on all candidates for employment` , action:`Define screening scope for all employment types`, doc:`Screening Policy`},
+          { id:'A6.1b', text:`Verify identity, employment history, qualifications, and criminal record (where legally permitted)` , action:`Conduct background verification checks (criminal, credit, qualifications)`, doc:`Background Check Report / Screening Consent Form`},
+          { id:'A6.1c', text:`Apply proportionate checks based on role sensitivity and access to information` },
+        ]},
+        { id:'A6.2', text:`A.6.2 — Terms and conditions of employment`, action:`Include IS responsibilities in all employment contracts`, doc:`Employment Contract / IS Terms Addendum`, tag:'m', sub:[
+          { id:'A6.2a', text:`State IS responsibilities in employment contracts` , action:`Issue IS terms with all employment contracts; collect signatures`, doc:`Signed Employment Contracts / IS Terms Acknowledgement`},
+          { id:'A6.2b', text:`Include confidentiality and non-disclosure obligations` },
+          { id:'A6.2c', text:`Include policy compliance obligations` },
+        ]},
+        { id:'A6.3', text:`A.6.3 — Information security awareness, education and training`, action:`Deliver mandatory IS awareness training to all personnel`, doc:`IS Awareness Training Programme / Training Records`, tag:'m', sub:[
+          { id:'A6.3a', text:`Deliver IS awareness training for all new employees and contractors` , action:`Deliver role-appropriate IS awareness training to all staff`, doc:`Training Completion Records`},
+          { id:'A6.3b', text:`Deliver regular refresher training for all personnel` , action:`Include policy, standards, legal obligations in awareness content`, doc:`IS Awareness Training Materials`},
+          { id:'A6.3c', text:`Provide role-specific IS training relevant to job function` },
+          { id:'A6.3d', text:`Track training completion and maintain records` },
+        ]},
+        { id:'A6.4', text:`A.6.4 — Disciplinary process`, action:`Implement formal IS disciplinary procedure`, doc:`IS Disciplinary Policy / Disciplinary Procedure`, tag:'m', sub:[
+          { id:'A6.4a', text:`Have a formal disciplinary process for IS policy violations` },
+          { id:'A6.4b', text:`Communicate disciplinary process to all personnel` },
+        ]},
+        { id:'A6.5', text:`A.6.5 — Responsibilities after termination or change of employment`, action:`Define post-employment IS obligations; include in contracts`, doc:`Employment Contract / Post-Employment IS Obligations Policy`, tag:'m', sub:[
+          { id:'A6.5a', text:`Define and communicate IS responsibilities continuing after termination` },
+          { id:'A6.5b', text:`Include post-termination IS obligations in employment contracts` },
+        ]},
+        { id:'A6.6', text:`A.6.6 — Confidentiality or non-disclosure agreements`, action:`Obtain signed NDAs from all staff and relevant third parties`, doc:`NDA Policy / Signed NDA Register`, tag:'m', sub:[
+          { id:'A6.6a', text:`Identify confidentiality/NDA requirements for personnel and external parties` },
+          { id:'A6.6b', text:`Review and update NDAs at planned intervals` },
+        ]},
+        { id:'A6.7', text:`A.6.7 — Remote working`, action:`Define and enforce remote working IS controls`, doc:`Remote Working Policy / Remote Access Security Standard`, tag:'m', sub:[
+          { id:'A6.7a', text:`Define and implement a remote working security policy` , action:`Draft remote working IS policy; obtain management approval`, doc:`Remote Working IS Policy`},
+          { id:'A6.7b', text:`Provide secure access mechanisms for remote workers (VPN, MFA)` , action:`Obtain management approval and communicate policy`, doc:`Remote Working Policy Distribution Record`},
+          { id:'A6.7c', text:`Ensure physical security of information at remote locations` },
+          { id:'A6.7d', text:`Define rules for use of personal devices for work (BYOD policy)` },
+        ]},
+        { id:'A6.8', text:`A.6.8 — Information security event reporting`, action:`Establish IS event reporting mechanism; communicate to all staff`, doc:`IS Event Reporting Procedure / Incident Reporting Channel`, tag:'m', sub:[
+          { id:'A6.8a', text:`Provide a mechanism for personnel to report IS events and weaknesses` , action:`Ensure all staff know their obligation to report IS events`, doc:`IS Awareness Training Materials / IS Event Reporting Policy`},
+          { id:'A6.8b', text:`Train personnel to recognise and report IS events` , action:`Publish IS event reporting procedure to all staff`, doc:`IS Event Reporting Procedure`},
+          { id:'A6.8c', text:`Ensure reporting mechanism is simple and accessible` , action:`Publicise IS event reporting contact details across the organisation`, doc:`IS Event Reporting Contact Card / Intranet Page`},
+        ]},
+      ]
+    }
+  ]
+},
+
+// ══════════════════════════════════════════
+// ANNEX A — THEME 3: PHYSICAL CONTROLS (A.7)
+// ══════════════════════════════════════════
+{
+  id:'cA7', num:'Annex A — Theme 3', title:`Physical Controls`,
+  desc:`14 controls covering physical security perimeters, equipment protection, clear desk, and secure disposal.`,
+  subclauses:[
+    {
+      id:'cA7.g', num:'A.7', title:`Physical Controls (A.7.1 – A.7.14)`,
+      items:[
+        { id:'A7.1', text:`A.7.1 — Physical security perimeters`, action:`Define physical security perimeters; implement perimeter controls`, doc:`Physical Security Policy / Site Security Plan`, tag:'m', sub:[
+          { id:'A7.1a', text:`Define physical security perimeters for areas containing information assets` },
+          { id:'A7.1b', text:`Implement physical barriers (walls, card-controlled entry gates, manned receptions)` },
+        ]},
+        { id:'A7.2', text:`A.7.2 — Physical entry`, action:`Implement physical entry controls and access management`, doc:`Physical Access Control Policy / Access Log`, tag:'m', sub:[
+          { id:'A7.2a', text:`Control entry to secure areas with authentication (card, PIN, biometric)` , action:`Define and implement physical access rights lifecycle`, doc:`Physical Access Management Procedure`},
+          { id:'A7.2b', text:`Maintain entry logs for secure areas` },
+          { id:'A7.2c', text:`Control visitor access — escort, register, and badge visitors` },
+        ]},
+        { id:'A7.3', text:`A.7.3 — Securing offices, rooms and facilities`, action:`Physically secure all offices and sensitive facilities`, doc:`Physical Security Policy / Site Security Assessment`, tag:'m', sub:[
+          { id:'A7.3a', text:`Design and apply physical security to offices and facilities` },
+          { id:'A7.3b', text:`Lock sensitive areas when unoccupied` },
+        ]},
+        { id:'A7.4', text:`A.7.4 — Physical security monitoring`, action:`Deploy and maintain physical surveillance and monitoring system`, doc:`CCTV Policy / Surveillance System Specification`, tag:'m', sub:[
+          { id:'A7.4a', text:`Implement CCTV monitoring of physical premises` , action:`Deploy CCTV, guards, or alarms across all premises`, doc:`CCTV System / Guard Deployment Record`},
+          { id:'A7.4b', text:`Monitor and review CCTV footage as appropriate` },
+          { id:'A7.4c', text:`Implement intrusion detection / alarm systems` },
+        ]},
+        { id:'A7.5', text:`A.7.5 — Protecting against physical and environmental threats`, action:`Implement environmental threat protection for IS facilities`, doc:`Environmental Risk Assessment / Site Protection Plan`, tag:'m', sub:[
+          { id:'A7.5a', text:`Identify physical and environmental threats (flood, fire, earthquake, etc.)` },
+          { id:'A7.5b', text:`Implement protection measures proportionate to identified threats` },
+        ]},
+        { id:'A7.6', text:`A.7.6 — Working in secure areas`, action:`Define and enforce secure area working rules`, doc:`Secure Area Working Policy / Secure Area Entry Register`, tag:'m', sub:[
+          { id:'A7.6a', text:`Define procedures for working in secure areas` },
+          { id:'A7.6b', text:`Restrict use of photographic/recording devices in secure areas` },
+        ]},
+        { id:'A7.7', text:`A.7.7 — Clear desk and clear screen`, action:`Define and enforce clear desk and clear screen policy`, doc:`Clear Desk & Clear Screen Policy`, tag:'m', sub:[
+          { id:'A7.7a', text:`Implement clear desk policy for papers and removable storage media` },
+          { id:'A7.7b', text:`Implement clear screen policy and automatic screen lock` },
+        ]},
+        { id:'A7.8', text:`A.7.8 — Equipment siting and protection`, action:`Site all equipment to minimise viewing and environmental risk`, doc:`Equipment Siting Policy / Data Centre Physical Security Plan`, tag:'m', sub:[
+          { id:'A7.8a', text:`Site equipment to minimise unauthorised access and environmental risks` },
+          { id:'A7.8b', text:`Protect equipment from power failures and electrical interference` },
+        ]},
+        { id:'A7.9', text:`A.7.9 — Security of assets off-premises`, action:`Implement off-premises asset security controls`, doc:`Off-Premises Asset Policy / Mobile Device Management Record`, tag:'m', sub:[
+          { id:'A7.9a', text:`Apply security controls to off-premises assets proportionate to risks` },
+          { id:'A7.9b', text:`Define rules for taking equipment off site` },
+        ]},
+        { id:'A7.10', text:`A.7.10 — Storage media`, action:`Implement removable storage media lifecycle management policy`, doc:`Removable Media Policy / Media Handling Procedure`, tag:'m', sub:[
+          { id:'A7.10a', text:`Manage removable storage media throughout acquisition, use, transport, and disposal lifecycle` },
+          { id:'A7.10b', text:`Authorise use of removable storage media and apply controls` },
+        ]},
+        { id:'A7.11', text:`A.7.11 — Supporting utilities`, action:`Maintain and test all supporting utility systems`, doc:`Supporting Utilities Maintenance Log / Test Record`, tag:'m', sub:[
+          { id:'A7.11a', text:`Protect equipment from power failures with UPS and backup power` },
+          { id:'A7.11b', text:`Ensure adequate cooling, ventilation, and environmental controls for equipment` },
+        ]},
+        { id:'A7.12', text:`A.7.12 — Cabling security`, action:`Implement physical cabling security controls`, doc:`Cabling Security Standard / Site Cabling Plan`, tag:'m', sub:[
+          { id:'A7.12a', text:`Protect power and telecommunications cabling from interception or damage` },
+          { id:'A7.12b', text:`Label and document all network cabling` },
+        ]},
+        { id:'A7.13', text:`A.7.13 — Equipment maintenance`, action:`Implement equipment maintenance programme`, doc:`Equipment Maintenance Policy / Maintenance Log`, tag:'m', sub:[
+          { id:'A7.13a', text:`Carry out maintenance of equipment in accordance with supplier specifications` , action:`Schedule maintenance per manufacturer specification for all equipment`, doc:`Equipment Maintenance Schedule / Service Records`},
+          { id:'A7.13b', text:`Maintain maintenance logs for all equipment` },
+          { id:'A7.13c', text:`Ensure only authorised personnel carry out equipment maintenance` },
+        ]},
+        { id:'A7.14', text:`A.7.14 — Secure disposal or re-use of equipment`, action:`Implement secure disposal and re-use procedure for all equipment`, doc:`Secure Disposal Policy / Disposal Certificate`, tag:'m', sub:[
+          { id:'A7.14a', text:`Verify all storage media has been securely wiped or destroyed before disposal` , action:`Define disposal/re-use procedures for all asset types`, doc:`Secure Disposal Procedure`},
+          { id:'A7.14b', text:`Use certified data destruction processes and obtain certificates` , action:`Securely erase/destroy all storage media before disposal`, doc:`Media Destruction/Sanitisation Record`},
+          { id:'A7.14c', text:`Sanitise equipment before re-use within or outside the organisation` , action:`Remove all organisational markings before equipment disposal`, doc:`Disposal Checklist / Sanitisation Record`},
+        ]},
+      ]
+    }
+  ]
+},
+
+// ══════════════════════════════════════════
+// ANNEX A — THEME 4: TECHNOLOGICAL CONTROLS (A.8)
+// ══════════════════════════════════════════
+{
+  id:'cA8', num:'Annex A — Theme 4', title:`Technological Controls`,
+  desc:`34 controls covering user endpoints, access management, cryptography, vulnerability management, monitoring, secure development, and more.`,
+  subclauses:[
+    {
+      id:'cA8.g', num:'A.8', title:`Technological Controls (A.8.1 – A.8.34)`,
+      items:[
+        { id:'A8.1', text:`A.8.1 — User endpoint devices`, action:`Implement endpoint device management policy and controls`, doc:`Endpoint Device Policy / MDM Configuration Record`, tag:'m', sub:[
+          { id:'A8.1a', text:`Define and implement endpoint security policy and configuration baseline` , action:`Draft and approve mobile/endpoint device policy`, doc:`Endpoint Device Policy`},
+          { id:'A8.1b', text:`Apply controls for MDM (Mobile Device Management)` },
+          { id:'A8.1c', text:`Enforce auto-lock, encryption, and remote wipe on endpoints` },
+        ]},
+        { id:'A8.2', text:`A.8.2 — Privileged access rights`, action:`Implement privileged access management (PAM) controls`, doc:`Privileged Access Management Policy / PAM Tool Records`, tag:'m', sub:[
+          { id:'A8.2a', text:`Restrict and control allocation of privileged access rights` , action:`Define criteria and process for assigning privileged access`, doc:`Privileged Access Policy`},
+          { id:'A8.2b', text:`Review privileged access rights at regular intervals` },
+          { id:'A8.2c', text:`Implement Privileged Access Management (PAM) tooling where appropriate` },
+        ]},
+        { id:'A8.3', text:`A.8.3 — Information access restriction`, action:`Implement information access restriction controls`, doc:`Access Control Policy / Access Rights Register`, tag:'m', sub:[
+          { id:'A8.3a', text:`Restrict access to information and application functions per access control policy` },
+          { id:'A8.3b', text:`Implement role-based access controls (RBAC)` },
+        ]},
+        { id:'A8.4', text:`A.8.4 — Access to source code`, action:`Implement source code access control and audit logging`, doc:`Source Code Access Control Policy / Source Control Audit Log`, tag:'m', sub:[
+          { id:'A8.4a', text:`Restrict access to source code, development tools, and libraries` },
+          { id:'A8.4b', text:`Apply version control and change management to source code` },
+        ]},
+        { id:'A8.5', text:`A.8.5 — Secure authentication`, action:`Implement secure authentication controls on all systems`, doc:`Authentication Policy / System Configuration Evidence`, tag:'m', sub:[
+          { id:'A8.5a', text:`Implement secure authentication technologies and procedures` , action:`Suppress all confidential info from pre-login screens`, doc:`System Login Screen Configuration Record`},
+          { id:'A8.5b', text:`Implement Multi-Factor Authentication (MFA) for critical systems` },
+          { id:'A8.5c', text:`Enforce session timeout and re-authentication policies` },
+        ]},
+        { id:'A8.6', text:`A.8.6 — Capacity management`, action:`Implement capacity management process and monitoring`, doc:`Capacity Management Policy / Capacity Reports`, tag:'m', sub:[
+          { id:'A8.6a', text:`Monitor and tune resource use; project future capacity needs` },
+          { id:'A8.6b', text:`Conduct capacity planning reviews` },
+        ]},
+        { id:'A8.7', text:`A.8.7 — Protection against malware`, action:`Deploy and maintain anti-malware protection across all systems`, doc:`Malware Protection Policy / AV/EDR Configuration Records`, tag:'m', sub:[
+          { id:'A8.7a', text:`Deploy and maintain anti-malware software on all applicable systems` , action:`Draft and approve malware protection policy`, doc:`Malware Protection Policy`},
+          { id:'A8.7b', text:`Ensure malware definitions are regularly updated` },
+          { id:'A8.7c', text:`Implement user awareness on malware and phishing threats` },
+        ]},
+        { id:'A8.8', text:`A.8.8 — Management of technical vulnerabilities`, action:`Implement vulnerability management process`, doc:`Vulnerability Management Policy / Vulnerability Scan Reports`, tag:'m', sub:[
+          { id:'A8.8a', text:`Obtain timely information about technical vulnerabilities in systems` , action:`Define roles and responsibilities for vulnerability management`, doc:`Vulnerability Management Policy`},
+          { id:'A8.8b', text:`Assess the organisation's exposure to identified vulnerabilities` , action:`Define scope and frequency of vulnerability assessments`, doc:`Vulnerability Management Policy / Scan Schedule`},
+          { id:'A8.8c', text:`Implement appropriate measures to address vulnerabilities (patching, mitigations)` },
+          { id:'A8.8d', text:`Conduct regular vulnerability scans and penetration tests` },
+        ]},
+        { id:'A8.9', text:`A.8.9 — Configuration management`, action:`Implement secure configuration management for all systems`, doc:`Configuration Management Policy / Baseline Configuration Records`, tag:'m', sub:[
+          { id:'A8.9a', text:`Define, document, implement, and monitor secure baseline configurations` },
+          { id:'A8.9b', text:`Manage changes to configurations through change management process` },
+        ]},
+        { id:'A8.10', text:`A.8.10 — Information deletion`, action:`Implement information deletion policy and controls`, doc:`Information Deletion Policy / Data Deletion Records`, tag:'m', sub:[
+          { id:'A8.10a', text:`Delete information stored in IT systems, devices, and media when no longer required` },
+          { id:'A8.10b', text:`Implement data deletion procedures aligned with retention policies` },
+        ]},
+        { id:'A8.11', text:`A.8.11 — Data masking`, action:`Implement data masking controls for sensitive data`, doc:`Data Masking Policy / Masking Implementation Evidence`, tag:'m', sub:[
+          { id:'A8.11a', text:`Mask, pseudonymise, or anonymise sensitive data (especially PII) in non-production environments` },
+        ]},
+        { id:'A8.12', text:`A.8.12 — Data leakage prevention`, action:`Implement data leakage prevention controls`, doc:`DLP Policy / DLP Solution Configuration Records`, tag:'m', sub:[
+          { id:'A8.12a', text:`Apply DLP controls to channels where data leakage is possible (email, USB, cloud uploads)` },
+          { id:'A8.12b', text:`Monitor and alert on potential data leakage events` },
+        ]},
+        { id:'A8.13', text:`A.8.13 — Information backup`, action:`Implement and test information backup controls`, doc:`Backup Policy / Backup and Restore Test Records`, tag:'m', sub:[
+          { id:'A8.13a', text:`Define and implement backup policy covering all critical information` , action:`Draft and implement backup policy covering all data types`, doc:`Backup Policy`},
+          { id:'A8.13b', text:`Apply 3-2-1 backup strategy (3 copies, 2 media types, 1 offsite)` , action:`Configure scheduled backups per policy; verify completion`, doc:`Backup Schedule / Backup Job Logs`},
+          { id:'A8.13c', text:`Test restoration of backups regularly` },
+          { id:'A8.13d', text:`Protect backups from unauthorised access, corruption, and destruction` },
+        ]},
+        { id:'A8.14', text:`A.8.14 — Redundancy of information processing facilities`, action:`Implement ICT redundancy for all critical systems`, doc:`Redundancy Architecture Document / Availability Specifications`, tag:'m', sub:[
+          { id:'A8.14a', text:`Implement redundancy to meet availability requirements` },
+          { id:'A8.14b', text:`Test redundancy and failover regularly` },
+        ]},
+        { id:'A8.15', text:`A.8.15 — Logging`, action:`Implement logging and log management across all systems`, doc:`Logging Policy / SIEM Configuration / Log Archive`, tag:'m', sub:[
+          { id:'A8.15a', text:`Produce, store, protect, and analyse logs of activities, exceptions, faults, and IS events` , action:`Define log review process and timelines; assign responsibility`, doc:`Log Review Procedure / Log Management Policy`},
+          { id:'A8.15b', text:`Implement centralised log management (SIEM)` },
+          { id:'A8.15c', text:`Define log retention periods aligned with legal and regulatory requirements` },
+        ]},
+        { id:'A8.16', text:`A.8.16 — Monitoring activities`, action:`Implement network and system monitoring for anomalous behaviour`, doc:`Monitoring Policy / SIEM/IDS Configuration Record`, tag:'m', sub:[
+          { id:'A8.16a', text:`Monitor networks, systems, and applications for anomalous behaviour` },
+          { id:'A8.16b', text:`Define monitoring scope, frequency, and escalation procedures` },
+        ]},
+        { id:'A8.17', text:`A.8.17 — Clock synchronisation`, action:`Implement clock synchronisation across all IS systems`, doc:`NTP Configuration Standard / Clock Sync Audit Record`, tag:'m', sub:[
+          { id:'A8.17a', text:`Synchronise all clocks of information processing systems to agreed time sources` },
+          { id:'A8.17b', text:`Ensure accurate timestamps for audit logs and forensic purposes` },
+        ]},
+        { id:'A8.18', text:`A.8.18 — Use of privileged utility programs`, action:`Restrict and control use of privileged utility programs`, doc:`Privileged Utility Control Policy / Utility Use Log`, tag:'m', sub:[
+          { id:'A8.18a', text:`Restrict use of utility programs capable of overriding system/application controls` , action:`Maintain an inventory of all authorised privileged utilities`, doc:`Privileged Utility Inventory`},
+          { id:'A8.18b', text:`Log and monitor use of privileged utility programs` },
+        ]},
+        { id:'A8.19', text:`A.8.19 — Installation of software on operational systems`, action:`Implement secure software installation controls`, doc:`Software Installation Policy / Change Management Records`, tag:'m', sub:[
+          { id:'A8.19a', text:`Define and implement procedures for controlling software installation` , action:`Define and enforce software installation policy`, doc:`Software Installation Policy`},
+          { id:'A8.19b', text:`Restrict software installation to authorised personnel` },
+          { id:'A8.19c', text:`Maintain a software inventory / application whitelist` },
+        ]},
+        { id:'A8.20', text:`A.8.20 — Networks security`, action:`Implement network security management controls`, doc:`Network Security Policy / Network Architecture Document`, tag:'m', sub:[
+          { id:'A8.20a', text:`Secure, manage, and control networks to protect information systems` , action:`Maintain current approved network architecture diagram`, doc:`Network Architecture Diagram (Approved)`},
+          { id:'A8.20b', text:`Implement network segmentation and firewall controls` },
+          { id:'A8.20c', text:`Document network architecture and data flows` },
+        ]},
+        { id:'A8.21', text:`A.8.21 — Security of network services`, action:`Implement network services security management`, doc:`Network Services Security Policy / SIEM/IDS Records`, tag:'m', sub:[
+          { id:'A8.21a', text:`Identify security mechanisms, service levels, and management requirements for all network services` , action:`Define network security management policy and procedures`, doc:`Network Security Policy`},
+          { id:'A8.21b', text:`Include network security requirements in supplier/provider agreements` },
+        ]},
+        { id:'A8.22', text:`A.8.22 — Segregation of networks`, action:`Implement network segmentation and access controls`, doc:`Network Segmentation Policy / Firewall Rule Set`, tag:'m', sub:[
+          { id:'A8.22a', text:`Segregate groups of services, users, and systems on networks` },
+          { id:'A8.22b', text:`Implement VLANs, DMZs, and network access controls` },
+        ]},
+        { id:'A8.23', text:`A.8.23 — Web filtering`, action:`Implement web filtering to restrict malicious/unapproved content`, doc:`Web Filtering Policy / Web Proxy Configuration Record`, tag:'m', sub:[
+          { id:'A8.23a', text:`Manage access to external websites to reduce exposure to malicious content` },
+          { id:'A8.23b', text:`Implement web proxy or DNS filtering` },
+        ]},
+        { id:'A8.24', text:`A.8.24 — Use of cryptography`, action:`Implement cryptography policy and key management controls`, doc:`Cryptography Policy / Key Management Procedure`, tag:'m', sub:[
+          { id:'A8.24a', text:`Define and implement a cryptography policy` , action:`Define and implement cryptography policy covering all use cases`, doc:`Cryptography Policy`},
+          { id:'A8.24b', text:`Encrypt sensitive information in transit and at rest` , action:`Define secure key management lifecycle; restrict key access`, doc:`Key Management Procedure / HSM Configuration Record`},
+          { id:'A8.24c', text:`Implement key management procedures` },
+          { id:'A8.24d', text:`Use approved, industry-standard cryptographic algorithms` },
+        ]},
+        { id:'A8.25', text:`A.8.25 — Secure development life cycle`, action:`Implement secure software development lifecycle (SSDLC)`, doc:`Secure Development Policy / SSDLC Framework`, tag:'m', sub:[
+          { id:'A8.25a', text:`Establish and apply rules for secure development of software and systems` },
+          { id:'A8.25b', text:`Integrate IS into SDLC from requirements through retirement` },
+        ]},
+        { id:'A8.26', text:`A.8.26 — Application security requirements`, action:`Define and apply application security requirements`, doc:`Application Security Requirements / Security Requirements Spec`, tag:'m', sub:[
+          { id:'A8.26a', text:`Identify and approve IS requirements for application development or acquisition` , action:`Capture IS requirements at project inception for all applications`, doc:`Security Requirements Specification`},
+          { id:'A8.26b', text:`Include input validation, output encoding, and authentication requirements` },
+        ]},
+        { id:'A8.27', text:`A.8.27 — Secure system architecture and engineering principles`, action:`Define and apply secure system architecture and engineering principles`, doc:`Secure Engineering Policy / Architecture Review Records`, tag:'m', sub:[
+          { id:'A8.27a', text:`Define, document, maintain, and apply secure engineering and architecture principles` },
+          { id:'A8.27b', text:`Apply security by design, defence in depth, and zero trust principles` },
+        ]},
+        { id:'A8.28', text:`A.8.28 — Secure coding`, action:`Implement secure coding practices across all development`, doc:`Secure Coding Policy / Code Review / SAST/DAST Reports`, tag:'m', sub:[
+          { id:'A8.28a', text:`Apply secure coding principles to software development` , action:`Define and enforce secure development policy and procedures`, doc:`Secure Development Policy`},
+          { id:'A8.28b', text:`Conduct code reviews, SAST, and DAST as part of development process` },
+          { id:'A8.28c', text:`Train developers on secure coding practices (OWASP, etc.)` },
+        ]},
+        { id:'A8.29', text:`A.8.29 — Security testing in development and acceptance`, action:`Implement security testing in development and acceptance`, doc:`Security Test Plan / VAPT Reports / Acceptance Test Records`, tag:'m', sub:[
+          { id:'A8.29a', text:`Define and implement security testing processes in development lifecycle` },
+          { id:'A8.29b', text:`Conduct penetration testing and security reviews before acceptance` },
+        ]},
+        { id:'A8.30', text:`A.8.30 — Outsourced development`, action:`Direct and monitor all outsourced development activities`, doc:`Outsourced Development Policy / Third-Party Dev Assessment`, tag:'m', sub:[
+          { id:'A8.30a', text:`Supervise and monitor outsourced software development` , action:`Define IP ownership and software licensing in outsourced dev contracts`, doc:`Outsourced Development Contract`},
+          { id:'A8.30b', text:`Include security requirements and code ownership rights in outsourcing contracts` },
+        ]},
+        { id:'A8.31', text:`A.8.31 — Separation of development, test and production environments`, action:`Implement separation of development, test, and production environments`, doc:`Environment Separation Policy / Access Control Records`, tag:'m', sub:[
+          { id:'A8.31a', text:`Separate development, test, and production environments` },
+          { id:'A8.31b', text:`Prevent use of production data in test/development environments` },
+        ]},
+        { id:'A8.32', text:`A.8.32 — Change management`, action:`Implement formal change management across all IS changes`, doc:`Change Management Policy / Change Request Records`, tag:'m', sub:[
+          { id:'A8.32a', text:`Define and apply change management procedures for IS-relevant changes` , action:`Define and enforce formal change management policy and procedure`, doc:`Change Management Policy`},
+          { id:'A8.32b', text:`Assess IS implications of all changes before implementation` },
+          { id:'A8.32c', text:`Maintain change records with IS assessment documentation` },
+        ]},
+        { id:'A8.33', text:`A.8.33 — Test information`, action:`Protect and manage all test data appropriately`, doc:`Test Data Management Policy / Data Protection Records`, tag:'m', sub:[
+          { id:'A8.33a', text:`Select, protect, and manage test information appropriately` },
+          { id:'A8.33b', text:`Anonymise or mask sensitive data used in testing` },
+        ]},
+        { id:'A8.34', text:`A.8.34 — Protection of information systems during audit testing`, action:`Plan and agree all IS audit and testing activities with management`, doc:`System Audit Plan / Audit Test Agreement / Audit Report`, tag:'m', sub:[
+          { id:'A8.34a', text:`Plan and agree audit tests to minimise disruptions to operational processes` , action:`Define and publish system audit and assurance programme`, doc:`System Audit Plan`},
+          { id:'A8.34b', text:`Restrict access to audit tools to prevent misuse` , action:`Maintain register of all applicable privacy laws and regulations`, doc:`Legal & Regulatory Compliance Register`},
+        ]},
+      ]
+    }
+  ]
+},
+
+];
+
+// ═══════════════════════════════════════════════════════
+// STATE & RENDERING
+// ═══════════════════════════════════════════════════════
+
+let state = {}; // id -> true/false
+
+function getAllIds() {
+  const ids = [];
+  STANDARD.forEach(clause => {
+    clause.subclauses.forEach(sc => {
+      sc.items.forEach(item => {
+        ids.push(item.id);
+        item.sub.forEach(s => ids.push(s.id));
+      });
+    });
+  });
+  return ids;
+}
+
+function countClauseIds(clause) {
+  const ids = [];
+  clause.subclauses.forEach(sc => {
+    sc.items.forEach(item => {
+      ids.push(item.id);
+      item.sub.forEach(s => ids.push(s.id));
+    });
+  });
+  return ids;
+}
+
+function updateProgress() {
+  const all = getAllIds();
+  const done = all.filter(id => state[id]).length;
+  const pct = all.length > 0 ? Math.round(done / all.length * 100) : 0;
+
+  document.getElementById('gFill').style.width = pct + '%';
+  document.getElementById('gDone').textContent = done;
+  document.getElementById('gTotal').textContent = all.length;
+  document.getElementById('gPct').textContent = pct + '%';
+  document.getElementById('h-done').textContent = done;
+  document.getElementById('h-pct').textContent = pct + '%';
+
+  // per-clause progress bars
+  STANDARD.forEach(clause => {
+    const ids = countClauseIds(clause);
+    const d = ids.filter(id => state[id]).length;
+    const el = document.getElementById('cprog-' + clause.id);
+    const et = document.getElementById('cprog-txt-' + clause.id);
+    if (el) el.style.width = (ids.length ? Math.round(d/ids.length*100) : 0) + '%';
+    if (et) et.textContent = d + '/' + ids.length;
+  });
+}
+
+// Comments state: { id: { text, ref } }
+let comments = {};
+
+function toggle(id, e) {
+  e.stopPropagation();
+  state[id] = !state[id];
+  const el = document.getElementById('chk-' + id);
+  if (el) el.classList.toggle('done', state[id]);
+  updateProgress();
+}
+
+function toggleComment(id) {
+  const panel = document.getElementById('cpanel-' + id);
+  const btn   = document.getElementById('cbtn-' + id);
+  const wrap  = document.getElementById('chk-' + id);
+  if (!panel) return;
+  const isOpen = panel.classList.contains('open');
+  panel.classList.toggle('open', !isOpen);
+  btn.classList.toggle('active', !isOpen);
+  wrap.classList.toggle('comment-open', !isOpen);
+  if (!isOpen) {
+    // focus textarea when opening
+    const ta = document.getElementById('ctext-' + id);
+    if (ta) setTimeout(() => ta.focus(), 50);
+  }
+}
+
+function onCommentInput(id) {
+  const ta  = document.getElementById('ctext-' + id);
+  const cnt = document.getElementById('ccount-' + id);
+  const wrap = document.getElementById('chk-' + id);
+  const btn  = document.getElementById('cbtn-' + id);
+  if (!ta) return;
+  const val = ta.value;
+  if (!comments[id]) comments[id] = {};
+  comments[id].text = val;
+  if (cnt) cnt.textContent = val.length + ' char' + (val.length !== 1 ? 's' : '');
+  const hasNote = val.trim().length > 0 || (comments[id].ref && comments[id].ref.trim().length > 0);
+  if (wrap) wrap.classList.toggle('has-comment', hasNote);
+  if (btn)  btn.classList.toggle('has-note', hasNote);
+}
+
+function onRefInput(id) {
+  const inp  = document.getElementById('cref-' + id);
+  const wrap = document.getElementById('chk-' + id);
+  const btn  = document.getElementById('cbtn-' + id);
+  if (!inp) return;
+  if (!comments[id]) comments[id] = {};
+  comments[id].ref = inp.value;
+  const hasNote = inp.value.trim().length > 0 || (comments[id].text && comments[id].text.trim().length > 0);
+  if (wrap) wrap.classList.toggle('has-comment', hasNote);
+  if (btn)  btn.classList.toggle('has-note', hasNote);
+}
+
+function clearComment(id) {
+  const ta  = document.getElementById('ctext-' + id);
+  const ref = document.getElementById('cref-' + id);
+  const cnt = document.getElementById('ccount-' + id);
+  const wrap = document.getElementById('chk-' + id);
+  const btn  = document.getElementById('cbtn-' + id);
+  if (ta)  ta.value = '';
+  if (ref) ref.value = '';
+  if (cnt) cnt.textContent = '0 chars';
+  if (comments[id]) comments[id] = {};
+  if (wrap) wrap.classList.remove('has-comment');
+  if (btn)  btn.classList.remove('has-note');
+}
+
+function toggleSection(id) {
+  const hd = document.getElementById('hd-' + id);
+  const body = document.getElementById('body-' + id);
+  if (!hd || !body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  hd.classList.toggle('open', !isOpen);
+}
+
+function expandAll() {
+  document.querySelectorAll('.sc-body, .ctrl-body').forEach(el => el.classList.add('open'));
+  document.querySelectorAll('.subclause-hd, .ctrl-hd').forEach(el => el.classList.add('open'));
+}
+function collapseAll() {
+  document.querySelectorAll('.sc-body, .ctrl-body').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.subclause-hd, .ctrl-hd').forEach(el => el.classList.remove('open'));
+}
+function markAllDone() {
+  getAllIds().forEach(id => { state[id] = true; });
+  document.querySelectorAll('.chk-item-wrap').forEach(el => el.classList.add('done'));
+  updateProgress();
+}
+function resetAll() {
+  if (!confirm('Reset all checkboxes and clear all comments/remarks?')) return;
+  state = {};
+  comments = {};
+  document.querySelectorAll('.chk-item-wrap').forEach(el => el.classList.remove('done','has-comment','comment-open'));
+  document.querySelectorAll('.comment-panel').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.comment-btn').forEach(el => el.classList.remove('active','has-note'));
+  document.querySelectorAll('.comment-textarea').forEach(el => el.value = '');
+  document.querySelectorAll('.ref-input').forEach(el => el.value = '');
+  document.querySelectorAll('.char-count').forEach(el => el.textContent = '0 chars');
+  updateProgress();
+}
+
+// ── RENDER ──
+function renderCheckItem(item, isSubctrl) {
+  const wrapCls = isSubctrl ? 'chk-item-wrap subctrl-wrap' : 'chk-item-wrap';
+  const tagHtml = !isSubctrl && item.tag
+    ? `<span class="tag tag-${item.tag}">${item.tag === 'm' ? 'Mandatory' : item.tag === 'r' ? 'Recommended' : 'Procedural'}</span>`
+    : '';
+  const placeholder = isSubctrl
+    ? 'Add a remark, gap note, or action reference for this sub-control...'
+    : 'Describe the gap, non-conformity, corrective action, or reference document...';
+  // Build action / document meta chips
+  const actionChip = item.action
+    ? `<span class="meta-chip chip-action"><span class="meta-chip-label">⚡ Action:</span><span class="meta-chip-text">${item.action}</span></span>`
+    : '';
+  const docChip = item.doc
+    ? `<span class="meta-chip chip-doc"><span class="meta-chip-label">📄 Document:</span><span class="meta-chip-text">${item.doc}</span></span>`
+    : '';
+  const metaStrip = (actionChip || docChip)
+    ? `<div class="item-meta">${actionChip}${docChip}</div>`
+    : '';
+  return `
+    <div class="${wrapCls}" id="chk-${item.id}">
+      <div class="chk-main-row" onclick="toggle('${item.id}', event)">
+        <div class="chk-box">
+          <svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <span class="chk-label">${item.text}</span>
+        ${tagHtml}
+        <div class="chk-actions" onclick="event.stopPropagation()">
+          <div class="status-dot" title="Has comments/remarks"></div>
+          <button class="comment-btn" id="cbtn-${item.id}" onclick="toggleComment('${item.id}')" title="Add comment / remark">
+            <svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 2h10v8H8.5L7 12L5.5 10H2V2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              <line x1="4" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+              <line x1="4" y1="7.5" x2="8" y2="7.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      ${metaStrip}
+      <div class="comment-panel" id="cpanel-${item.id}">
+        <div class="comment-header">
+          <span class="comment-label">✦ Remarks &amp; References</span>
+          <div class="comment-meta">
+            <span class="char-count" id="ccount-${item.id}">0 chars</span>
+            <button class="comment-clear" onclick="clearComment('${item.id}')">Clear</button>
+          </div>
+        </div>
+        <textarea
+          class="comment-textarea"
+          id="ctext-${item.id}"
+          placeholder="${placeholder}"
+          oninput="onCommentInput('${item.id}')"
+          onclick="event.stopPropagation()"
+        ></textarea>
+        <div class="ref-row">
+          <span class="ref-label">Ref:</span>
+          <input
+            class="ref-input"
+            id="cref-${item.id}"
+            type="text"
+            placeholder="Document ref, ticket #, policy name, target date..."
+            oninput="onRefInput('${item.id}')"
+            onclick="event.stopPropagation()"
+          />
+        </div>
+      </div>
+    </div>
+    ${item.sub && item.sub.length ? item.sub.map(s => renderCheckItem(s, true)).join('') : ''}
+  `;
+}
+
+function renderSubclause(sc) {
+  return `
+    <div class="subclause-block">
+      <div class="subclause-hd" id="hd-${sc.id}" onclick="toggleSection('${sc.id}')">
+        <span class="sc-num">${sc.num}</span>
+        <span class="sc-title">${sc.title}</span>
+        <span class="sc-arrow">▶</span>
+      </div>
+      <div class="sc-body" id="body-${sc.id}">
+        <div class="item-list">
+          ${sc.items.map(item => renderCheckItem(item, false)).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderClause(clause) {
+  return `
+    <div class="clause-block" id="${clause.id}">
+      <div class="clause-hd">
+        <span class="clause-num">${clause.num}</span>
+        <span class="clause-title">${clause.title}</span>
+      </div>
+      <p class="clause-desc">${clause.desc}</p>
+      <div class="clause-progress">
+        <div class="c-prog-bar"><div class="c-prog-fill" id="cprog-${clause.id}"></div></div>
+        <span class="c-prog-txt" id="cprog-txt-${clause.id}">0/0</span>
+      </div>
+      ${clause.subclauses.map(renderSubclause).join('')}
+    </div>
+  `;
+}
+
+function buildNav() {
+  const nav = document.getElementById('navWrap');
+  nav.innerHTML = STANDARD.map(c =>
+    `<button class="nav-pill" onclick="document.getElementById('${c.id}').scrollIntoView({behavior:'smooth',block:'start'})">${c.num}</button>`
+  ).join('');
+}
+
+// ── EXPORT COMMENTS ──
+function exportComments() {
+  const lines = [];
+  lines.push('ISO/IEC 27001:2022 — Remarks & References Export');
+  lines.push('Generated: ' + new Date().toLocaleString());
+  lines.push('='.repeat(60));
+  lines.push('');
+
+  let hasAny = false;
+  STANDARD.forEach(clause => {
+    let clauseLines = [];
+    clause.subclauses.forEach(sc => {
+      sc.items.forEach(item => {
+        const allItems = [item, ...(item.sub || [])];
+        allItems.forEach(it => {
+          const c = comments[it.id];
+          const checked = state[it.id] ? '[✓]' : '[ ]';
+          const hasComment = c && (c.text || c.ref);
+          if (hasComment) {
+            hasAny = true;
+            clauseLines.push('  ' + checked + ' ' + it.id + ' — ' + it.text);
+            if (c.text && c.text.trim()) {
+              clauseLines.push('    Remark : ' + c.text.trim().replace(/\n/g, '\n             '));
+            }
+            if (c.ref && c.ref.trim()) {
+              clauseLines.push('    Ref    : ' + c.ref.trim());
+            }
+            clauseLines.push('');
+          }
+        });
+      });
+    });
+    if (clauseLines.length) {
+      lines.push('▸ ' + clause.num + ': ' + clause.title);
+      lines.push('-'.repeat(50));
+      lines.push(...clauseLines);
+    }
+  });
+
+  if (!hasAny) {
+    alert('No remarks or references have been added yet.');
+    return;
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ISO27001_Remarks_' + new Date().toISOString().slice(0,10) + '.txt';
+  a.click();
+}
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', () => {
+  const all = getAllIds();
+  document.getElementById('h-total').textContent = all.length;
+  document.getElementById('main').innerHTML = STANDARD.map(renderClause).join('');
+  buildNav();
+  updateProgress();
+});
+</script>
+</body>
+</html>

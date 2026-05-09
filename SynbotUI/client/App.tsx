@@ -45,6 +45,8 @@ import FinanceVendorPayments from "./pages/FinanceVendorPayments";
 import FinanceBudget from "./pages/FinanceBudget";
 import Login from "./pages/Login";
 import RiderTrack from "./pages/RiderTrack";
+import ReportWizard from "./pages/ReportWizard";
+import ReportLibrary from "./pages/ReportLibrary";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -112,6 +114,8 @@ const App = () => (
                 <Route path="/staff/time-tracker" element={<StaffTimeTracker />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/reports/new" element={<ReportWizard />} />
+                <Route path="/reports" element={<ReportLibrary />} />
               </Route>
               <Route path="/rider-track/:token" element={<RiderTrack />} />
               <Route path="*" element={<NotFound />} />
