@@ -177,8 +177,6 @@ ENV_PROCUREMENT_DAILY_DELAY_COST = "PROCUREMENT_DAILY_DELAY_COST"
 
 # Optional future integrations
 ENV_SAGE_API_KEY = "SAGE_API_KEY"
-ENV_HF_API_URL = "HF_API_URL"
-ENV_HF_API_KEY = "HF_API_KEY"
 
 # ---------------------------------------------------------------------------
 # QMS / Compliance Table Names

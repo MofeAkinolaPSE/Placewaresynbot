@@ -4,7 +4,6 @@ uvicorn[standard]
 python-dotenv
 requests
 pyyaml
-fastembed                    # local 384-dim embeddings for RAG Q&A vector search (no external API)
 PyJWT>=2.8.0
 cryptography
 passlib[bcrypt]
