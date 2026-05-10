@@ -100,23 +100,18 @@ async def _fetch_from_bridge(path: str, limit: int = 2000) -> List[Dict[str, Any
     return data if isinstance(data, list) else []
 
 
-async def _upsert_to_supabase(table: str, rows: List[Dict[str, Any]]) -> int:
+def _upsert_to_supabase(table: str, rows: List[Dict[str, Any]], pk: str = "id") -> int:
     """
-    Upsert rows into the Supabase cache table.
+    Upsert rows into the cache table using the correct primary key column.
     Returns number of rows upserted.
     """
     if not rows:
         return 0
-    # Supabase upsert — on_conflict relies on primary key defined in the table
     try:
-        await db.table(table).upsert(rows, on_conflict="sage_id").execute()
-    except Exception:
-        # Fallback: try with 'id' as conflict target
-        try:
-            await db.table(table).upsert(rows, on_conflict="id").execute()
-        except Exception as exc:
-            logger.error("Supabase upsert to %s failed: %s", table, exc)
-            raise
+        db.table(table).upsert(rows, on_conflict=pk).execute()
+    except Exception as exc:
+        logger.error("Supabase upsert to %s failed: %s", table, exc)
+        raise
     return len(rows)
 
 
@@ -133,12 +128,12 @@ async def schedule_entity_sync(entity_type: str) -> None:
     logger.info("Syncing entity_type=%s from Sage Bridge", entity_type)
     try:
         rows = await _fetch_from_bridge(mapping["bridge_path"])
-        count = await _upsert_to_supabase(mapping["cache_table"], rows)
+        count = _upsert_to_supabase(mapping["cache_table"], rows, pk=mapping["pk"])
         logger.info("Sync complete: entity=%s rows=%d", entity_type, count)
-        await _record_sync_timestamp(entity_type)
+        _record_sync_timestamp(entity_type)
     except Exception as exc:
         logger.error("Sync failed for %s: %s", entity_type, exc)
-        await _log_sync_error(entity_type, str(exc))
+        _log_sync_error(entity_type, str(exc))
 
 
 async def run_full_historical_migration() -> Dict[str, Any]:
@@ -174,10 +169,10 @@ async def run_full_historical_migration() -> Dict[str, Any]:
                     break
                 offset += page_size
 
-            count = await _upsert_to_supabase(mapping["cache_table"], all_rows)
+            count = _upsert_to_supabase(mapping["cache_table"], all_rows, pk=mapping["pk"])
             summary[entity_type] = count
             logger.info("Historical migration: %s → %d rows", entity_type, count)
-            await _record_sync_timestamp(entity_type)
+            _record_sync_timestamp(entity_type)
 
         except Exception as exc:
             logger.error("Historical migration failed for %s: %s", entity_type, exc)
@@ -187,11 +182,11 @@ async def run_full_historical_migration() -> Dict[str, Any]:
     return {"migrated": summary, "errors": errors}
 
 
-async def _record_sync_timestamp(entity_type: str) -> None:
+def _record_sync_timestamp(entity_type: str) -> None:
     """Update the sync_timestamps table so we know when each entity was last synced."""
     try:
         import datetime
-        await db.table("placeware_sage_sync_timestamps").upsert({
+        db.table("placeware_sage_sync_timestamps").upsert({
             "entity_type": entity_type,
             "last_synced_at": datetime.datetime.utcnow().isoformat() + "Z",
         }, on_conflict="entity_type").execute()
@@ -199,10 +194,10 @@ async def _record_sync_timestamp(entity_type: str) -> None:
         logger.debug("Could not record sync timestamp: %s", exc)
 
 
-async def _log_sync_error(entity_type: str, error_message: str) -> None:
+def _log_sync_error(entity_type: str, error_message: str) -> None:
     """Insert a failure record into the sync log."""
     try:
-        await db.table("placeware_sage_sync_log").insert({
+        db.table("placeware_sage_sync_log").insert({
             "entity_type": entity_type,
             "direction": "sage_to_synbot",
             "status": "failed",
