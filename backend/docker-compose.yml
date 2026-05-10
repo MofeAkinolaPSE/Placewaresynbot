@@ -9,7 +9,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin1234
+      # Use POSTGRES_PASSWORD from .env in production (docker-compose.prod.yml enforces it).
+      # The fallback 'admin1234' is for local dev only — change before going live.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin1234}
       POSTGRES_DB: synbot_demo
     init: true
     ports:

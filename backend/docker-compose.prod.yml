@@ -1,0 +1,73 @@
+# docker-compose.prod.yml — Production overrides for PlacewareBot
+#
+# PURPOSE:
+#   Supplements docker-compose.yml with production-grade settings:
+#   - Multiple uvicorn workers (4) for concurrent request handling
+#   - Memory limits to prevent runaway containers
+#   - Structured JSON logging with rotation
+#   - PG password read from env (not hardcoded)
+#
+# USAGE:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# REQUIRED ENV VARS (add to backend/.env):
+#   POSTGRES_PASSWORD=<strong_password>
+#
+# The GitHub Actions deploy workflow uses this file automatically.
+
+services:
+
+  db:
+    environment:
+      # Override the dev default — POSTGRES_PASSWORD must be set in .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ERROR: POSTGRES_PASSWORD must be set in .env}
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  backend:
+    # Run 4 concurrent uvicorn workers to handle parallel requests.
+    # Entrypoint still runs migrations first (exec "$@" passes this command through).
+    command:
+      - uvicorn
+      - app:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --workers
+      - "4"
+      - --timeout-graceful-shutdown
+      - "30"
+    deploy:
+      resources:
+        limits:
+          memory: 1500m
+        reservations:
+          memory: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "7"
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"

@@ -1,0 +1,108 @@
+name: Deploy to Production VM
+
+# Triggered on every push to main or manually from the Actions tab.
+# Requires a GitHub Actions self-hosted runner installed on the Ubuntu VM.
+# See scripts/install-runner.sh for one-command runner setup.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force Docker image rebuild (--no-cache)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  # ── Job 1: Run tests first (reuses existing CI job logic) ──────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run tests
+        working-directory: backend
+        run: pytest -q
+
+  # ── Job 2: Deploy to VM via self-hosted runner ─────────────────────────────
+  deploy:
+    needs: test
+    runs-on: [self-hosted, linux, placeware-vm]
+
+    steps:
+      - name: Pull latest code
+        run: |
+          cd "$HOME/Placewaresynbot"
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Determine build flags
+        id: flags
+        run: |
+          if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            echo "build_args=--no-cache" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_args=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Docker images
+        working-directory: ${{ env.HOME }}/Placewaresynbot/backend
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.prod.yml \
+            build ${{ steps.flags.outputs.build_args }}
+
+      - name: Deploy containers (rolling restart)
+        working-directory: ${{ env.HOME }}/Placewaresynbot/backend
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.prod.yml \
+            up -d --remove-orphans
+
+      - name: Wait for backend health
+        run: |
+          echo "Waiting up to 90s for backend to become healthy..."
+          for i in $(seq 1 18); do
+            if curl -sf http://localhost:8000/ > /dev/null 2>&1; then
+              echo "Backend healthy after ${i}x5s"
+              break
+            fi
+            sleep 5
+          done
+          curl -f http://localhost:8000/ || {
+            echo "FAILED: Backend not healthy after 90s"
+            docker compose -f "$HOME/Placewaresynbot/backend/docker-compose.yml" logs backend --tail 50
+            exit 1
+          }
+
+      - name: Wait for frontend health
+        run: |
+          curl -sf http://localhost/ > /dev/null || {
+            echo "FAILED: Frontend not responding"
+            docker compose -f "$HOME/Placewaresynbot/backend/docker-compose.yml" logs frontend --tail 30
+            exit 1
+          }
+          echo "Frontend healthy"
+
+      - name: Prune unused Docker images
+        run: docker image prune -f
+
+      - name: Deployment summary
+        run: |
+          echo "=== Deployment complete ==="
+          docker compose \
+            -f "$HOME/Placewaresynbot/backend/docker-compose.yml" \
+            ps

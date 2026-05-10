@@ -128,7 +128,12 @@ class SageDataWatcher:
 
 
 def _push_webhook(entity_type: str) -> None:
-    """Fire-and-forget HTTP POST to SynBot's webhook endpoint."""
+    """
+    POST a change-event webhook to SynBot with exponential backoff retry.
+
+    Retries up to 3 times on network errors or non-2xx responses before
+    giving up.  Total max wait: ~14s (1s + 4s + 8s delays + request time).
+    """
     settings = get_settings()
     url = settings.SYNBOT_WEBHOOK_URL
     if not url:
@@ -139,19 +144,40 @@ def _push_webhook(entity_type: str) -> None:
         "event": "data_changed",
         "entity_type": entity_type,
     }
-    headers = {}
+    headers: dict[str, str] = {}
     if settings.SYNBOT_WEBHOOK_KEY:
         headers["X-Webhook-Key"] = settings.SYNBOT_WEBHOOK_KEY
 
-    try:
-        with httpx.Client(timeout=10) as client:
-            resp = client.post(url, json=payload, headers=headers)
-            if resp.status_code not in (200, 202, 204):
-                logger.warning(
-                    "Webhook push for %s returned HTTP %d", entity_type, resp.status_code
-                )
-    except Exception as exc:
-        logger.error("Webhook push failed for %s: %s", entity_type, exc)
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with httpx.Client(timeout=10) as client:
+                resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code in (200, 202, 204):
+                if attempt > 1:
+                    logger.info(
+                        "Webhook for %s succeeded on attempt %d.", entity_type, attempt
+                    )
+                return
+            logger.warning(
+                "Webhook for %s returned HTTP %d (attempt %d/%d).",
+                entity_type, resp.status_code, attempt, max_attempts,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Webhook push failed for %s (attempt %d/%d): %s",
+                entity_type, attempt, max_attempts, exc,
+            )
+
+        if attempt < max_attempts:
+            delay = 2 ** attempt   # 2s, 4s
+            logger.info("Retrying webhook for %s in %ds...", entity_type, delay)
+            time.sleep(delay)
+
+    logger.error(
+        "Webhook for %s failed after %d attempts — SynBot may be down.",
+        entity_type, max_attempts,
+    )
 
 
 # Module-level singleton
