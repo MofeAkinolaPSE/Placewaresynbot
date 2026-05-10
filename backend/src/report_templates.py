@@ -18,6 +18,9 @@ Usage:
 """
 from __future__ import annotations
 
+# Increment this whenever the section schema or scope-field contract changes.
+TEMPLATE_VERSION: str = "2025-05-09"
+
 from typing import Any, Dict, List
 
 # ── Section schema ─────────────────────────────────────────────────────────────

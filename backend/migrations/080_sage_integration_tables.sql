@@ -194,20 +194,29 @@ ALTER TABLE sage_accounts_cache             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sage_employees_cache            ENABLE ROW LEVEL SECURITY;
 
 -- Authenticated users can read cache tables
+-- DROP IF EXISTS makes this migration idempotent on re-runs.
+DROP POLICY IF EXISTS sage_cache_read ON sage_customers_cache;
 CREATE POLICY sage_cache_read ON sage_customers_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_vendors_cache;
 CREATE POLICY sage_cache_read ON sage_vendors_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_inventory_cache;
 CREATE POLICY sage_cache_read ON sage_inventory_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_invoices_cache;
 CREATE POLICY sage_cache_read ON sage_invoices_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_sales_orders_cache;
 CREATE POLICY sage_cache_read ON sage_sales_orders_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_purchase_orders_cache;
 CREATE POLICY sage_cache_read ON sage_purchase_orders_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_accounts_cache;
 CREATE POLICY sage_cache_read ON sage_accounts_cache
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_cache_read ON sage_employees_cache;
 CREATE POLICY sage_cache_read ON sage_employees_cache
     FOR SELECT TO authenticated USING (true);
 
@@ -215,7 +224,9 @@ CREATE POLICY sage_cache_read ON sage_employees_cache
 -- Supabase service role bypasses RLS by default — no insert policy needed.
 
 -- Sync log: authenticated users can read their own entries; service role writes all
+DROP POLICY IF EXISTS sage_sync_log_read ON placeware_sage_sync_log;
 CREATE POLICY sage_sync_log_read ON placeware_sage_sync_log
     FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS sage_sync_ts_read ON placeware_sage_sync_timestamps;
 CREATE POLICY sage_sync_ts_read ON placeware_sage_sync_timestamps
     FOR SELECT TO authenticated USING (true);
