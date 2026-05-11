@@ -1,0 +1,62 @@
+# ── PlacewareBot — Nginx Ingress (external entry point) ──────────────────
+#
+# Traffic flow:
+#   Internet → VM port 80/443 → Nginx Ingress Controller → frontend Service
+#   frontend nginx pod then proxies /chat, /api, etc. → backend Service
+#
+# Rate limiting on the Ingress adds a first layer of protection BEFORE
+# requests even reach the pods. The nginx.conf inside the frontend pod
+# applies a second, finer-grained layer per route.
+#
+# Prerequisites (handled by install-k3s.sh):
+#   - Nginx Ingress Controller deployed in the cluster
+#   - metrics-server deployed (for HPA)
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: placeware-ingress
+  namespace: placeware
+  labels:
+    app.kubernetes.io/part-of: placewarebot
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+
+    # ── Global rate limiting (Ingress layer) ─────────────────────────────
+    # 60 requests/minute per IP — matches RATE_LIMIT env var in the app
+    nginx.ingress.kubernetes.io/limit-rps: "1"          # 1 req/s sustained = 60/min
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "20"  # burst up to 20 req/s
+
+    # ── Connection limits ─────────────────────────────────────────────────
+    # Max 20 concurrent connections per IP to prevent connection exhaustion
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+
+    # ── Body size ─────────────────────────────────────────────────────────
+    # Reject payloads over 10MB (chat messages + file uploads are small)
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # ── Proxy timeouts (DeepSeek LLM can be slow) ─────────────────────────
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+
+    # ── Security headers ──────────────────────────────────────────────────
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Referrer-Policy: strict-origin";
+
+spec:
+  rules:
+    # Replace with your VM's domain name or IP address
+    # For IP-only access, remove the host field entirely
+    - host: placeware.local   # <REPLACE — or remove for IP-only access>
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

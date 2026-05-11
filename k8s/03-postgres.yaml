@@ -1,0 +1,125 @@
+# ── PlacewareBot — PostgreSQL 18 + pgvector StatefulSet ──────────────────
+# StatefulSet ensures stable pod identity and ordered restart, which is
+# required for single-node Postgres to safely persist data across pod restarts.
+# The PVC survives pod deletion — data is NOT lost on redeploy.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data-pvc
+  namespace: placeware
+  labels:
+    app: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # K3s ships with local-path provisioner — no StorageClass config needed.
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: placeware
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: placewarebot
+spec:
+  serviceName: db
+  replicas: 1  # Postgres does not scale horizontally without extensions (e.g. Citus)
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      # Prevent the DB pod from being evicted under memory pressure
+      priorityClassName: system-cluster-critical
+
+      containers:
+        - name: postgres
+          # Custom image built from backend/db/Dockerfile (Postgres 18 + pgvector)
+          # Build & import command is in k8s/install-k3s.sh
+          image: placeware-postgres:18
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: placeware-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: placeware-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - synbot_demo
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - synbot_demo
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data-pvc
+
+---
+# Service named "db" so DATABASE_URL (postgresql://postgres:...@db:5432/...)
+# resolves correctly via K8s cluster DNS — no config changes needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: placeware
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+  clusterIP: None  # Headless service — direct pod DNS for StatefulSet

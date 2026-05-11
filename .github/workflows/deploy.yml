@@ -12,7 +12,7 @@ on:
       force_rebuild:
         description: 'Force Docker image rebuild (--no-cache)'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
@@ -35,12 +35,83 @@ jobs:
         working-directory: backend
         run: pytest -q
 
-  # ── Job 2: Deploy to VM via self-hosted runner ─────────────────────────────
+  # ── Job 2: Security scanning (runs parallel to test) ───────────────────────
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies + Bandit
+        run: pip install -r backend/requirements.txt bandit
+
+      - name: SAST scan (Bandit)
+        # -ll = medium severity and above; --exit-zero = warn only (tighten after first review)
+        run: |
+          bandit -r backend/src -ll -f json -o bandit-report.json || true
+          bandit -r backend/src -ll --exit-zero
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-sast-report
+          path: bandit-report.json
+          retention-days: 30
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.51.4
+
+      - name: Trivy filesystem vulnerability scan
+        # Scans requirements.txt for library CVEs — no Docker build needed.
+        # Exits 1 (blocks deploy) if any CRITICAL unfixed CVEs are found.
+        run: |
+          trivy fs \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --vuln-type library \
+            --severity CRITICAL \
+            --format table \
+            backend/
+
+  # ── Job 3: Deploy to VM via self-hosted runner ─────────────────────────────
   deploy:
-    needs: test
+    needs: [test, security]
     runs-on: [self-hosted, linux, placeware-vm]
 
     steps:
+      - name: Write .env from GitHub Secrets
+        # Injects all secrets onto the VM — eliminates manually-maintained .env file.
+        # Add each variable to: GitHub repo → Settings → Secrets and variables → Actions.
+        run: |
+          cat > "$HOME/Placewaresynbot/backend/.env" << 'ENVEOF'
+          DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_MODEL=${{ secrets.DEEPSEEK_MODEL }}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+          EMAIL_PASS=${{ secrets.EMAIL_PASS }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL=postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@db:5432/synbot_demo
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+          SAGE_BRIDGE_URL=${{ secrets.SAGE_BRIDGE_URL }}
+          SAGE_BRIDGE_KEY=${{ secrets.SAGE_BRIDGE_KEY }}
+          SAGE_BRIDGE_WEBHOOK_SECRET=${{ secrets.SAGE_BRIDGE_WEBHOOK_SECRET }}
+          HF_TOKEN=${{ secrets.HF_TOKEN }}
+          GRAFANA_PASSWORD=${{ secrets.GRAFANA_PASSWORD }}
+          SAGE_MOCK=0
+          DEV_TOKEN_ENABLED=0
+          ENVEOF
+          chmod 600 "$HOME/Placewaresynbot/backend/.env"
+
       - name: Pull latest code
         run: |
           cd "$HOME/Placewaresynbot"
@@ -57,16 +128,16 @@ jobs:
           fi
 
       - name: Build Docker images
-        working-directory: ${{ env.HOME }}/Placewaresynbot/backend
         run: |
+          cd "$HOME/Placewaresynbot/backend"
           docker compose \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
             build ${{ steps.flags.outputs.build_args }}
 
       - name: Deploy containers (rolling restart)
-        working-directory: ${{ env.HOME }}/Placewaresynbot/backend
         run: |
+          cd "$HOME/Placewaresynbot/backend"
           docker compose \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
@@ -90,12 +161,13 @@ jobs:
 
       - name: Wait for frontend health
         run: |
-          curl -sf http://localhost/ > /dev/null || {
-            echo "FAILED: Frontend not responding"
+          # -k = accept self-signed cert; -L = follow 80→43 redirect
+          curl -sfkL https://localhost/ > /dev/null || {
+            echo "FAILED: Frontend not responding on HTTPS"
             docker compose -f "$HOME/Placewaresynbot/backend/docker-compose.yml" logs frontend --tail 30
             exit 1
           }
-          echo "Frontend healthy"
+          echo "Frontend healthy (HTTPS)"
 
       - name: Prune unused Docker images
         run: docker image prune -f

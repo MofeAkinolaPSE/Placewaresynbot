@@ -1,0 +1,12 @@
+[Unit]
+Description=PlacewareBot daily PostgreSQL backup timer
+Requires=placeware-backup.service
+
+[Timer]
+# Run daily at 02:00 UTC (3:00 AM WAT / Nigeria time)
+OnCalendar=*-*-* 02:00:00
+RandomizedDelaySec=300   # ±5 min jitter to avoid thundering-herd on multiple VMs
+Persistent=true           # Run immediately if the last scheduled run was missed
+
+[Install]
+WantedBy=timers.target

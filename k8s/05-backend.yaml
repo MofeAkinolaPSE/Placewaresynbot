@@ -1,0 +1,190 @@
+# ── PlacewareBot — FastAPI Backend Deployment + Service ───────────────────
+#
+# Key decisions:
+#  - Starts with 2 replicas; HPA (06-backend-hpa.yaml) scales 2–8 on CPU load
+#  - Bypasses entrypoint.sh migration step (04-migration-job.yaml does that)
+#  - 4 uvicorn workers per pod = effectively 8–32 concurrent workers cluster-wide
+#  - Rolling update strategy: zero-downtime deploys
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: placeware
+  labels:
+    app: backend
+    app.kubernetes.io/part-of: placewarebot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Keep at least 1 pod serving during updates
+      maxUnavailable: 1
+      # Allow 1 extra pod during rollout to maintain capacity
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # Graceful shutdown — give uvicorn time to drain in-flight requests
+      terminationGracePeriodSeconds: 30
+
+      # Wait for Postgres before starting (belt-and-suspenders alongside migration Job)
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for database..."
+              until nc -z db 5432; do
+                echo "  db:5432 not ready — sleeping 3s"
+                sleep 3
+              done
+              echo "Database ready."
+
+      containers:
+        - name: backend
+          image: placeware-backend:latest
+          imagePullPolicy: IfNotPresent
+          # Bypass entrypoint.sh — migrations already ran via Job
+          command: ["uvicorn"]
+          args:
+            - "app:app"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--workers"
+            - "4"
+            - "--timeout-graceful-shutdown"
+            - "30"
+          ports:
+            - containerPort: 8000
+              name: http
+
+          # ── Environment — non-sensitive (ConfigMap) ──────────────────────
+          envFrom:
+            - configMapRef:
+                name: placeware-config
+
+          # ── Environment — sensitive (Secret) ────────────────────────────
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: DATABASE_URL
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: DEEPSEEK_API_KEY
+            - name: EMAIL_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: EMAIL_FROM
+            - name: EMAIL_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: EMAIL_PASS
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: JWT_SECRET
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: WEBHOOK_SECRET
+            - name: AT_REST_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: AT_REST_KEY
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: ADMIN_PASSWORD
+            - name: SAGE_BRIDGE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: SAGE_BRIDGE_KEY
+            - name: TERMII_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: TERMII_API_KEY
+            - name: WIDGET_SITE_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: placeware-secrets
+                  key: WIDGET_SITE_KEYS
+
+          # ── Resource limits ───────────────────────────────────────────────
+          # Per pod: 4 workers × ~200MB = ~800MB typical; capped at 1.5GB
+          # HPA will scale pods before the CPU limit is hit
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1500Mi"
+
+          # ── Health checks ─────────────────────────────────────────────────
+          # Readiness: pod receives traffic only when the app is ready
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Liveness: restart pod if it becomes unresponsive
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+
+---
+# Service named "backend" — frontend nginx.conf uses proxy_pass http://backend:8000
+# which resolves via K8s cluster DNS automatically. No nginx config change needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: placeware
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP

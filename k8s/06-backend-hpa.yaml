@@ -1,0 +1,57 @@
+# ── PlacewareBot — Backend Horizontal Pod Autoscaler ─────────────────────
+#
+# Behaviour:
+#   - Minimum 2 replicas at all times (zero downtime if 1 pod crashes)
+#   - Scales up when average CPU across all backend pods exceeds 70%
+#   - Scales down gradually (default stabilization window: 5 min) to avoid flapping
+#   - Maximum 8 replicas — size this to your VM RAM budget:
+#       8 replicas × 1.5GB limit = 12GB peak; adjust maxReplicas if VM has less RAM
+#
+# Requires: metrics-server installed (included in install-k3s.sh)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: placeware
+  labels:
+    app: backend
+    app.kubernetes.io/part-of: placewarebot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    # Primary signal: CPU utilisation
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Secondary signal: memory — prevents OOM before CPU threshold is reached
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      # React quickly during a traffic spike — stabilize for 30s before adding pods
+      stabilizationWindowSeconds: 30
+      policies:
+        # Add at most 2 pods per 60-second window
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      # Be conservative scaling down — wait 5 min to avoid flapping after spike
+      stabilizationWindowSeconds: 300
+      policies:
+        # Remove at most 1 pod per 120-second window
+        - type: Pods
+          value: 1
+          periodSeconds: 120

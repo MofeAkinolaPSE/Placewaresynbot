@@ -1,0 +1,35 @@
+# ── PlacewareBot — Non-sensitive configuration ────────────────────────────
+# These values are safe to commit. Sensitive keys live in 01-secrets.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: placeware-config
+  namespace: placeware
+data:
+  # ── LLM ───────────────────────────────────────────────────────────────────
+  LLM_PROVIDER: "deepseek"
+  LLM_SERVICE_URL: "https://api.deepseek.com/chat/completions"
+  DEEPSEEK_MODEL: "deepseek-chat"
+
+  # ── Email ─────────────────────────────────────────────────────────────────
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+
+  # ── Termii ────────────────────────────────────────────────────────────────
+  TERMII_SENDER_ID: "Placeware"
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+  # NEVER set to 1 in production — disables all auth
+  DEV_TOKEN_ENABLED: "0"
+  RATE_LIMIT: "60"
+  JWT_AUDIENCE: ""
+
+  # ── Database (non-secret parts) ───────────────────────────────────────────
+  POSTGRES_USER: "postgres"
+  POSTGRES_DB: "synbot_demo"
+
+  # ── Sage Bridge ───────────────────────────────────────────────────────────
+  # SAGE_MOCK=1 → use fake data (safe). Set to 0 when bridge is live.
+  SAGE_MOCK: "1"
+  # Replace with your Windows machine LAN IP — run `ip route` on Ubuntu to find it
+  SAGE_BRIDGE_URL: "http://WINDOWS_DESKTOP_LAN_IP:7070"

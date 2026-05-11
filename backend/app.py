@@ -343,6 +343,11 @@ load_dotenv(override=True)
 
 app = FastAPI()
 
+# Prometheus metrics — exposes /metrics for Grafana scraping (internal network only).
+# Tracks request rate, latency histograms (P50/P95/P99), and error rates per endpoint.
+from prometheus_fastapi_instrumentator import Instrumentator as _Instrumentator
+_Instrumentator().instrument(app).expose(app, include_in_schema=False)
+
 # ── Pending email draft store (confirmation-before-send flow) ─────────────────
 # Keyed by user_id (or IP fallback). Draft expires after 10 minutes.
 # Structure: { user_key → {subject, body, to_email, department, original_request, expires_at} }

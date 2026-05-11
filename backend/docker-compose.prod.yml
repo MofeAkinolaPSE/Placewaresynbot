@@ -20,7 +20,7 @@ services:
   db:
     environment:
       # Override the dev default — POSTGRES_PASSWORD must be set in .env
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ERROR: POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?ERROR: POSTGRES_PASSWORD must be set in .env}"
     deploy:
       resources:
         limits:

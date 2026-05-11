@@ -1,4 +1,4 @@
-# ── Stage 1: Install dependencies ──────────────────────────────────────────
+# ── Stage 1: Install Python dependencies ───────────────────────────────────
 FROM python:3.11-slim AS builder
 
 WORKDIR /backend
@@ -6,7 +6,27 @@ WORKDIR /backend
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user --timeout 120 -r requirements.txt
 
-# ── Stage 2: Runtime image ─────────────────────────────────────────────────
+# ── Stage 2: Download ONNX embedding model (baked in; no runtime download) ─
+# Model: sentence-transformers/all-MiniLM-L6-v2 (384-dim, ~23 MB)
+# Downloaded once at build time — zero startup latency, works fully offline.
+# To swap model: change the URLs below and rebuild. The embed_proxy.py
+# implementation handles both pooled and non-pooled ONNX exports.
+FROM python:3.11-slim AS model_downloader
+
+RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /models
+
+RUN wget -q --retry-connrefused --waitretry=5 --tries=3 \
+    "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx" \
+    -O model.onnx
+
+RUN wget -q --retry-connrefused --waitretry=5 --tries=3 \
+    "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json" \
+    -O tokenizer.json
+
+# ── Stage 3: Runtime image ──────────────────────────────────────────────────
 FROM python:3.11-slim
 
 WORKDIR /backend
@@ -14,6 +34,9 @@ WORKDIR /backend
 # Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
+
+# Copy baked-in ONNX model and tokenizer from model_downloader stage
+COPY --from=model_downloader /models/ ./src/models/
 
 # Install curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
