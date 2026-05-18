@@ -84,37 +84,57 @@ jobs:
   deploy:
     needs: [test, security]
     runs-on: [self-hosted, linux, placeware-vm]
+    env:
+      # Explicit path avoids $HOME linter false-positives and works for any
+      # runner user (root or a named service account).
+      DEPLOY_DIR: /home/runner/Placewaresynbot
 
     steps:
       - name: Write .env from GitHub Secrets
         # Injects all secrets onto the VM — eliminates manually-maintained .env file.
         # Add each variable to: GitHub repo → Settings → Secrets and variables → Actions.
+        #
+        # SECURITY: secrets are bound to step env vars so GitHub can mask them
+        # in logs and they are never raw-interpolated into the shell script
+        # string (prevents shell metacharacter injection — OWASP A03).
+        env:
+          _DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          _DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
+          _EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          _EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          _POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          _JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          _ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          _ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          _SAGE_BRIDGE_URL: ${{ secrets.SAGE_BRIDGE_URL }}
+          _SAGE_BRIDGE_KEY: ${{ secrets.SAGE_BRIDGE_KEY }}
+          _SAGE_BRIDGE_WEBHOOK_SECRET: ${{ secrets.SAGE_BRIDGE_WEBHOOK_SECRET }}
+          _GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
         run: |
-          cat > "$HOME/Placewaresynbot/backend/.env" << 'ENVEOF'
-          DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK_MODEL=${{ secrets.DEEPSEEK_MODEL }}
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
-          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
-          EMAIL_PASS=${{ secrets.EMAIL_PASS }}
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL=postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@db:5432/synbot_demo
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
-          ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
-          SAGE_BRIDGE_URL=${{ secrets.SAGE_BRIDGE_URL }}
-          SAGE_BRIDGE_KEY=${{ secrets.SAGE_BRIDGE_KEY }}
-          SAGE_BRIDGE_WEBHOOK_SECRET=${{ secrets.SAGE_BRIDGE_WEBHOOK_SECRET }}
-          HF_TOKEN=${{ secrets.HF_TOKEN }}
-          GRAFANA_PASSWORD=${{ secrets.GRAFANA_PASSWORD }}
-          SAGE_MOCK=0
-          DEV_TOKEN_ENABLED=0
-          ENVEOF
-          chmod 600 "$HOME/Placewaresynbot/backend/.env"
+          # printf '%s' prevents backslash-sequence interpretation in secret values.
+          {
+            printf 'DEEPSEEK_API_KEY=%s\n'            "$_DEEPSEEK_API_KEY"
+            printf 'DEEPSEEK_MODEL=%s\n'              "$_DEEPSEEK_MODEL"
+            printf 'EMAIL_FROM=%s\n'                  "$_EMAIL_FROM"
+            printf 'EMAIL_PASS=%s\n'                  "$_EMAIL_PASS"
+            printf 'POSTGRES_PASSWORD=%s\n'           "$_POSTGRES_PASSWORD"
+            printf 'DATABASE_URL=postgresql://postgres:%s@db:5432/synbot_demo\n' "$_POSTGRES_PASSWORD"
+            printf 'JWT_SECRET=%s\n'                  "$_JWT_SECRET"
+            printf 'ADMIN_EMAIL=%s\n'                 "${_ADMIN_EMAIL:-}"
+            printf 'ADMIN_PASSWORD=%s\n'              "$_ADMIN_PASSWORD"
+            printf 'SAGE_BRIDGE_URL=%s\n'             "$_SAGE_BRIDGE_URL"
+            printf 'SAGE_BRIDGE_KEY=%s\n'             "$_SAGE_BRIDGE_KEY"
+            printf 'SAGE_BRIDGE_WEBHOOK_SECRET=%s\n'  "$_SAGE_BRIDGE_WEBHOOK_SECRET"
+            printf 'HF_TOKEN=%s\n'                    "$_HF_TOKEN"
+            printf 'GRAFANA_PASSWORD=%s\n'            "$_GRAFANA_PASSWORD"
+            printf 'SAGE_MOCK=0\n'
+            printf 'DEV_TOKEN_ENABLED=0\n'
+          } > "$DEPLOY_DIR/backend/.env"
+          chmod 600 "$DEPLOY_DIR/backend/.env"
 
       - name: Pull latest code
         run: |
-          cd "$HOME/Placewaresynbot"
+          cd "$DEPLOY_DIR"
           git fetch origin main
           git reset --hard origin/main
 
@@ -129,7 +149,7 @@ jobs:
 
       - name: Build Docker images
         run: |
-          cd "$HOME/Placewaresynbot/backend"
+          cd "$DEPLOY_DIR/backend"
           docker compose \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
@@ -137,7 +157,7 @@ jobs:
 
       - name: Deploy containers (rolling restart)
         run: |
-          cd "$HOME/Placewaresynbot/backend"
+          cd "$DEPLOY_DIR/backend"
           docker compose \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
@@ -155,7 +175,7 @@ jobs:
           done
           curl -f http://localhost:8000/ || {
             echo "FAILED: Backend not healthy after 90s"
-            docker compose -f "$HOME/Placewaresynbot/backend/docker-compose.yml" logs backend --tail 50
+            docker compose -f "$DEPLOY_DIR/backend/docker-compose.yml" logs backend --tail 50
             exit 1
           }
 
@@ -164,7 +184,7 @@ jobs:
           # -k = accept self-signed cert; -L = follow 80→43 redirect
           curl -sfkL https://localhost/ > /dev/null || {
             echo "FAILED: Frontend not responding on HTTPS"
-            docker compose -f "$HOME/Placewaresynbot/backend/docker-compose.yml" logs frontend --tail 30
+            docker compose -f "$DEPLOY_DIR/backend/docker-compose.yml" logs frontend --tail 30
             exit 1
           }
           echo "Frontend healthy (HTTPS)"
@@ -176,5 +196,5 @@ jobs:
         run: |
           echo "=== Deployment complete ==="
           docker compose \
-            -f "$HOME/Placewaresynbot/backend/docker-compose.yml" \
+            -f "$DEPLOY_DIR/backend/docker-compose.yml" \
             ps
