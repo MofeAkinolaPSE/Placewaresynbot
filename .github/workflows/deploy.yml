@@ -126,19 +126,20 @@ jobs:
   deploy:
     needs: [test, security]
     runs-on: [self-hosted, linux, placeware-vm]
-    env:
-      # Explicit path avoids $HOME linter false-positives and works for any
-      # runner user (root or a named service account).
-      DEPLOY_DIR: /home/runner/Placewaresynbot
 
     steps:
+      # Checkout to $GITHUB_WORKSPACE — works for any runner user (moeakin,
+      # runner, root, etc.) without hardcoding a home directory path.
+      - uses: actions/checkout@v4
+
       - name: Write .env from GitHub Secrets
-        # Injects all secrets onto the VM — eliminates manually-maintained .env file.
-        # Add each variable to: GitHub repo → Settings → Secrets and variables → Actions.
+        # Injects all secrets into the checked-out workspace — eliminates any
+        # manually-maintained .env file on the VM.
+        # Add each variable: GitHub repo → Settings → Secrets and variables → Actions.
         #
-        # SECURITY: secrets are bound to step env vars so GitHub can mask them
-        # in logs and they are never raw-interpolated into the shell script
-        # string (prevents shell metacharacter injection — OWASP A03).
+        # SECURITY: secrets are bound to step env vars so GitHub masks them in
+        # logs and they are never raw-interpolated into shell strings
+        # (prevents metacharacter injection — OWASP A03).
         env:
           _DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           _DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
@@ -151,9 +152,11 @@ jobs:
           _SAGE_BRIDGE_URL: ${{ secrets.SAGE_BRIDGE_URL }}
           _SAGE_BRIDGE_KEY: ${{ secrets.SAGE_BRIDGE_KEY }}
           _SAGE_BRIDGE_WEBHOOK_SECRET: ${{ secrets.SAGE_BRIDGE_WEBHOOK_SECRET }}
+          _HF_TOKEN: ${{ secrets.HF_TOKEN }}
           _GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
         run: |
           # printf '%s' prevents backslash-sequence interpretation in secret values.
+          # $GITHUB_WORKSPACE is always set by the runner — no hardcoded paths.
           {
             printf 'DEEPSEEK_API_KEY=%s\n'            "$_DEEPSEEK_API_KEY"
             printf 'DEEPSEEK_MODEL=%s\n'              "$_DEEPSEEK_MODEL"
@@ -171,14 +174,8 @@ jobs:
             printf 'GRAFANA_PASSWORD=%s\n'            "$_GRAFANA_PASSWORD"
             printf 'SAGE_MOCK=0\n'
             printf 'DEV_TOKEN_ENABLED=0\n'
-          } > "$DEPLOY_DIR/backend/.env"
-          chmod 600 "$DEPLOY_DIR/backend/.env"
-
-      - name: Pull latest code
-        run: |
-          cd "$DEPLOY_DIR"
-          git fetch origin main
-          git reset --hard origin/main
+          } > "$GITHUB_WORKSPACE/backend/.env"
+          chmod 600 "$GITHUB_WORKSPACE/backend/.env"
 
       - name: Determine build flags
         id: flags
@@ -196,7 +193,7 @@ jobs:
         run: |
           IMAGE_TAG="${{ github.sha }}"
           BUILD_ARGS="${{ steps.flags.outputs.build_args }}"
-          cd "$DEPLOY_DIR/backend"
+          cd "$GITHUB_WORKSPACE/backend"
           docker build $BUILD_ARGS \
             -t "localhost:5000/placeware-backend:$IMAGE_TAG" \
             -t "localhost:5000/placeware-backend:latest" \
@@ -209,7 +206,7 @@ jobs:
         run: |
           IMAGE_TAG="${{ github.sha }}"
           BUILD_ARGS="${{ steps.flags.outputs.build_args }}"
-          cd "$DEPLOY_DIR/SynbotUI"
+          cd "$GITHUB_WORKSPACE/SynbotUI"
           docker build $BUILD_ARGS \
             -t "localhost:5000/placeware-frontend:$IMAGE_TAG" \
             -t "localhost:5000/placeware-frontend:latest" \
@@ -226,7 +223,7 @@ jobs:
         # If health check fails → Swarm auto-rolls back to previous image.
         run: |
           IMAGE_TAG="${{ github.sha }}"
-          cd "$DEPLOY_DIR/backend"
+          cd "$GITHUB_WORKSPACE/backend"
           IMAGE_TAG="$IMAGE_TAG" docker stack deploy \
             --with-registry-auth \
             --prune \
