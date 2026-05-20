@@ -183,6 +183,85 @@ jobs:
           }
           echo "Registry healthy at localhost:5000."
 
+      # ── Postgres corruption auto-recovery ────────────────────────────────────
+
+      - name: Auto-recover corrupt Postgres volume (if detected)
+        # Detects Postgres WAL corruption (PANIC in logs) that occurs after an
+        # unclean VM shutdown and automatically removes the broken named volume.
+        # The subsequent docker stack deploy then creates a fresh empty volume
+        # and Postgres initialises cleanly from scratch.
+        #
+        # Safety contract:
+        #  - Skips entirely on first deploy (volume does not exist yet).
+        #  - Only removes the volume when the PANIC/corruption string is
+        #    confirmed in service or container logs — never on a healthy volume.
+        #  - Scales the db service to 0 first so Docker releases the volume lock
+        #    before we attempt removal.
+        run: |
+          VOLUME_NAME="placeware_db_data"
+          CORRUPT=0
+
+          # First deploy — volume doesn't exist yet, nothing to check.
+          if ! docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+            echo "Volume $VOLUME_NAME not found — first deploy, skipping recovery check."
+            exit 0
+          fi
+
+          # ── Check Swarm service logs (if service is already running) ──────────
+          if docker service inspect placeware_db >/dev/null 2>&1; then
+            if docker service logs placeware_db --tail 200 2>&1 \
+                | grep -qE "PANIC|could not locate a valid checkpoint|invalid page (header|in block)"; then
+              echo "Postgres corruption detected in Swarm service logs."
+              CORRUPT=1
+            fi
+          fi
+
+          # ── Also check any stopped containers still holding the volume ────────
+          if [ "$CORRUPT" = "0" ]; then
+            CONTAINERS=$(docker ps -a --filter "volume=$VOLUME_NAME" --format '{{.ID}}')
+            for cid in $CONTAINERS; do
+              if docker logs "$cid" 2>&1 \
+                  | grep -qE "PANIC|could not locate a valid checkpoint|invalid page (header|in block)"; then
+                echo "Postgres corruption detected in stopped container $cid."
+                CORRUPT=1
+                break
+              fi
+            done
+          fi
+
+          if [ "$CORRUPT" = "0" ]; then
+            echo "Postgres volume $VOLUME_NAME is healthy — skipping recovery."
+            exit 0
+          fi
+
+          echo "=== AUTO-RECOVERY: corrupt Postgres volume detected ==="
+
+          # Scale the db Swarm service to 0 to release the volume lock gracefully.
+          if docker service inspect placeware_db >/dev/null 2>&1; then
+            echo "Scaling placeware_db to 0 replicas to release volume lock..."
+            docker service update --replicas 0 placeware_db || true
+            sleep 10
+          fi
+
+          # Force-remove any remaining stopped containers still pinning the volume.
+          CONTAINERS=$(docker ps -a --filter "volume=$VOLUME_NAME" --format '{{.ID}}')
+          for cid in $CONTAINERS; do
+            echo "Force-removing container $cid (held volume lock)..."
+            docker rm -f "$cid" || true
+          done
+
+          # Remove the corrupt volume — Swarm recreates it clean on next deploy.
+          echo "Removing corrupt volume $VOLUME_NAME..."
+          if docker volume rm "$VOLUME_NAME"; then
+            echo "Volume removed. Fresh Postgres will initialise on deploy."
+          else
+            echo "ERROR: Volume removal failed. Remaining holders:"
+            docker ps -a --filter "volume=$VOLUME_NAME" || true
+            exit 1
+          fi
+
+          echo "=== AUTO-RECOVERY complete ==="
+
       # ── Secrets injection ────────────────────────────────────────────────────
 
       - name: Write .env from GitHub Secrets
