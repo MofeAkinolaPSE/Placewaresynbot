@@ -3,6 +3,14 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /backend
 
+# psycopg2-binary bundles libpq but may need gcc/libpq-dev to compile from
+# source when a pre-built wheel is unavailable for the target architecture
+# (e.g. ARM64). Installing them here ensures pip always succeeds.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user --timeout 120 -r requirements.txt
 
@@ -34,12 +42,17 @@ WORKDIR /backend
 # Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
+# Ensure Python resolves user site-packages even in minimal/non-interactive envs
+ENV PYTHONPATH=/root/.local/lib/python3.11/site-packages
 
 # Copy baked-in ONNX model and tokenizer from model_downloader stage
 COPY --from=model_downloader /models/ ./src/models/
 
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# libpq5  — runtime shared-library dependency for psycopg2-binary's bundled .so
+# curl    — used by the healthcheck in docker-compose.yml
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy application source
