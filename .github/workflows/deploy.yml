@@ -189,26 +189,55 @@ jobs:
             echo "build_args=" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build Docker images
+      - name: Build and push backend image to local registry
+        # Builds with git SHA tag for traceability, also tags :latest for fallback.
+        # localhost:5000 is the private registry started by deploy/init-swarm.sh —
+        # images never leave the client server LAN.
         run: |
+          IMAGE_TAG="${{ github.sha }}"
+          BUILD_ARGS="${{ steps.flags.outputs.build_args }}"
           cd "$DEPLOY_DIR/backend"
-          docker compose \
-            -f docker-compose.yml \
-            -f docker-compose.prod.yml \
-            build ${{ steps.flags.outputs.build_args }}
+          docker build $BUILD_ARGS \
+            -t "localhost:5000/placeware-backend:$IMAGE_TAG" \
+            -t "localhost:5000/placeware-backend:latest" \
+            .
+          docker push "localhost:5000/placeware-backend:$IMAGE_TAG"
+          docker push "localhost:5000/placeware-backend:latest"
+          echo "Backend image pushed: localhost:5000/placeware-backend:$IMAGE_TAG"
 
-      - name: Deploy containers (rolling restart)
+      - name: Build and push frontend image to local registry
         run: |
+          IMAGE_TAG="${{ github.sha }}"
+          BUILD_ARGS="${{ steps.flags.outputs.build_args }}"
+          cd "$DEPLOY_DIR/SynbotUI"
+          docker build $BUILD_ARGS \
+            -t "localhost:5000/placeware-frontend:$IMAGE_TAG" \
+            -t "localhost:5000/placeware-frontend:latest" \
+            .
+          docker push "localhost:5000/placeware-frontend:$IMAGE_TAG"
+          docker push "localhost:5000/placeware-frontend:latest"
+          echo "Frontend image pushed: localhost:5000/placeware-frontend:$IMAGE_TAG"
+
+      - name: Rolling deploy via Docker Swarm
+        # docker stack deploy detects the image change and performs a rolling update:
+        #   1. Starts new container (new image)
+        #   2. Waits for health check to pass (start_period: 90s)
+        #   3. Stops old container  ← zero downtime window
+        # If health check fails → Swarm auto-rolls back to previous image.
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
           cd "$DEPLOY_DIR/backend"
-          docker compose \
-            -f docker-compose.yml \
-            -f docker-compose.prod.yml \
-            up -d --remove-orphans
+          IMAGE_TAG="$IMAGE_TAG" docker stack deploy \
+            --with-registry-auth \
+            --prune \
+            -c docker-compose.swarm.yml \
+            placeware
+          echo "Stack deploy triggered. Swarm is performing rolling update..."
 
-      - name: Wait for backend health
+      - name: Wait for backend health (post-deploy)
         run: |
-          echo "Waiting up to 90s for backend to become healthy..."
-          for i in $(seq 1 18); do
+          echo "Waiting up to 120s for backend rolling update to complete..."
+          for i in $(seq 1 24); do
             if curl -sf http://localhost:8000/ > /dev/null 2>&1; then
               echo "Backend healthy after ${i}x5s"
               break
@@ -216,17 +245,16 @@ jobs:
             sleep 5
           done
           curl -f http://localhost:8000/ || {
-            echo "FAILED: Backend not healthy after 90s"
-            docker compose -f "$DEPLOY_DIR/backend/docker-compose.yml" logs backend --tail 50
+            echo "FAILED: Backend not healthy after 120s"
+            docker service logs placeware_backend --tail 50 || true
             exit 1
           }
 
-      - name: Wait for frontend health
+      - name: Wait for frontend health (post-deploy)
         run: |
-          # -k = accept self-signed cert; -L = follow 80→43 redirect
           curl -sfkL https://localhost/ > /dev/null || {
             echo "FAILED: Frontend not responding on HTTPS"
-            docker compose -f "$DEPLOY_DIR/backend/docker-compose.yml" logs frontend --tail 30
+            docker service logs placeware_frontend --tail 30 || true
             exit 1
           }
           echo "Frontend healthy (HTTPS)"
@@ -236,7 +264,7 @@ jobs:
 
       - name: Deployment summary
         run: |
-          echo "=== Deployment complete ==="
-          docker compose \
-            -f "$DEPLOY_DIR/backend/docker-compose.yml" \
-            ps
+          echo "=== Deployment complete (Swarm rolling update) ==="
+          docker stack ps placeware --no-trunc
+          echo ""
+          echo "Image tag: ${{ github.sha }}"
