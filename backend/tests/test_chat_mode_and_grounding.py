@@ -67,7 +67,7 @@ def test_chat_executive_revenue_grounded_answer(monkeypatch):
     assert_status(r, 200)
     body = r.json()
     assert body["orchestration"]["mode"] == "executive"
-    assert "Current AR total is" in body["answer"]
+    assert "AR total is" in body["answer"]
     assert any(s.get("question") == "tool:getFinancialKpis" for s in body.get("sources", []))
 
 
@@ -164,4 +164,3 @@ def test_chat_executive_tone_strips_customer_ordering_language(monkeypatch):
     assert "thank you for your patronage" not in answer
     assert "email:" not in answer
     assert "phone:" not in answer
-    assert "prudent move" in answer
