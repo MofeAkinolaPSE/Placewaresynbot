@@ -3,14 +3,6 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /backend
 
-# psycopg2-binary bundles libpq but may need gcc/libpq-dev to compile from
-# source when a pre-built wheel is unavailable for the target architecture
-# (e.g. ARM64). Installing them here ensures pip always succeeds.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user --timeout 120 -r requirements.txt
 
