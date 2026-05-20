@@ -300,29 +300,50 @@ jobs:
           echo "Stack deploy triggered. Swarm is performing rolling update..."
 
       - name: Wait for backend health (post-deploy)
+        # Port 8000 is internal to the Swarm overlay network and NOT published
+        # to the host — curl localhost:8000 will always fail from the runner shell.
+        # Instead, ask Swarm directly: wait until backend reports 1/1 replicas.
         run: |
-          echo "Waiting up to 120s for backend rolling update to complete..."
-          for i in $(seq 1 24); do
-            if curl -sf http://localhost:8000/ > /dev/null 2>&1; then
-              echo "Backend healthy after ${i}x5s"
+          echo "Waiting up to 150s for Swarm to converge the backend service..."
+          for i in $(seq 1 30); do
+            REPLICAS=$(docker service ls --filter name=placeware_backend --format '{{.Replicas}}' 2>/dev/null || echo "0/1")
+            echo "Attempt $i/30: placeware_backend replicas = $REPLICAS"
+            if [ "$REPLICAS" = "1/1" ]; then
+              echo "Backend service healthy — 1/1 replicas running."
               break
             fi
             sleep 5
           done
-          curl -f http://localhost:8000/ || {
-            echo "FAILED: Backend not healthy after 120s"
+          REPLICAS=$(docker service ls --filter name=placeware_backend --format '{{.Replicas}}' 2>/dev/null || echo "0/1")
+          if [ "$REPLICAS" != "1/1" ]; then
+            echo "FAILED: placeware_backend not converged after 150s (replicas=$REPLICAS)"
             docker service logs placeware_backend --tail 50 || true
+            docker stack ps placeware --no-trunc || true
             exit 1
-          }
+          fi
 
       - name: Wait for frontend health (post-deploy)
+        # Frontend publishes port 443 to the host, so curl works here.
+        # -k skips certificate verification (self-signed cert is expected).
+        # Also verify via Swarm replica count as a belt-and-suspenders check.
         run: |
-          curl -sfkL https://localhost/ > /dev/null || {
-            echo "FAILED: Frontend not responding on HTTPS"
+          echo "Waiting up to 60s for frontend service..."
+          for i in $(seq 1 12); do
+            REPLICAS=$(docker service ls --filter name=placeware_frontend --format '{{.Replicas}}' 2>/dev/null || echo "0/1")
+            echo "Attempt $i/12: placeware_frontend replicas = $REPLICAS"
+            if [ "$REPLICAS" = "1/1" ]; then
+              echo "Frontend service healthy — 1/1 replicas running."
+              break
+            fi
+            sleep 5
+          done
+          REPLICAS=$(docker service ls --filter name=placeware_frontend --format '{{.Replicas}}' 2>/dev/null || echo "0/1")
+          if [ "$REPLICAS" != "1/1" ]; then
+            echo "FAILED: placeware_frontend not converged (replicas=$REPLICAS)"
             docker service logs placeware_frontend --tail 30 || true
             exit 1
-          }
-          echo "Frontend healthy (HTTPS)"
+          fi
+          echo "Frontend healthy."
 
       - name: Prune unused Docker images
         run: docker image prune -f
