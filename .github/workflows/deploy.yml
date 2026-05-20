@@ -132,6 +132,59 @@ jobs:
       # runner, root, etc.) without hardcoding a home directory path.
       - uses: actions/checkout@v4
 
+      # ── Bootstrap (idempotent — fast no-op on every deploy after the first) ──
+
+      - name: Ensure Docker Swarm is initialized
+        # First deploy: initializes a single-node swarm on the VM.
+        # Subsequent deploys: checks state and skips in < 1 second.
+        run: |
+          STATE=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo "inactive")
+          if [ "$STATE" != "active" ]; then
+            echo "Swarm not active (state=$STATE) — initializing single-node swarm..."
+            docker swarm init --advertise-addr 127.0.0.1
+            echo "Swarm initialized."
+          else
+            echo "Swarm already active — skipping init."
+          fi
+
+      - name: Ensure local Docker registry is running
+        # The private registry at localhost:5000 must be running before images
+        # can be pushed to it. Images are stored in a named volume (registry_data)
+        # and survive VM reboots. The registry is bound to 127.0.0.1 only —
+        # it is never reachable from outside the VM.
+        #
+        # First deploy:      creates the container + volume.
+        # Container stopped: starts it.
+        # Already running:   skips in < 1 second.
+        run: |
+          RUNNING=$(docker inspect placeware-registry --format '{{.State.Running}}' 2>/dev/null || echo "missing")
+          if [ "$RUNNING" = "true" ]; then
+            echo "Registry already running at localhost:5000 — skipping."
+          elif [ "$RUNNING" = "false" ]; then
+            echo "Registry container exists but stopped — starting it..."
+            docker start placeware-registry
+            sleep 2
+          else
+            echo "Registry container missing — creating it..."
+            docker volume create registry_data 2>/dev/null || true
+            docker run -d \
+              --name placeware-registry \
+              --restart always \
+              -p 127.0.0.1:5000:5000 \
+              -v registry_data:/var/lib/registry \
+              registry:2
+            sleep 2
+          fi
+          # Verify the registry responds before proceeding to the build steps.
+          curl -sf http://localhost:5000/v2/ || {
+            echo "ERROR: Registry at localhost:5000 not responding after start attempt."
+            docker logs placeware-registry --tail 20 || true
+            exit 1
+          }
+          echo "Registry healthy at localhost:5000."
+
+      # ── Secrets injection ────────────────────────────────────────────────────
+
       - name: Write .env from GitHub Secrets
         # Injects all secrets into the checked-out workspace — eliminates any
         # manually-maintained .env file on the VM.
