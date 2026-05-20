@@ -269,14 +269,29 @@ jobs:
           echo "Frontend image pushed: localhost:5000/placeware-frontend:$IMAGE_TAG"
 
       - name: Rolling deploy via Docker Swarm
-        # docker stack deploy detects the image change and performs a rolling update:
-        #   1. Starts new container (new image)
-        #   2. Waits for health check to pass (start_period: 90s)
-        #   3. Stops old container  ← zero downtime window
-        # If health check fails → Swarm auto-rolls back to previous image.
+        # docker stack deploy resolves ${VAR} placeholders in compose files from
+        # the SHELL ENVIRONMENT — it does NOT read .env files automatically
+        # (unlike 'docker compose up'). We source .env first so every variable
+        # referenced in docker-compose.swarm.yml (POSTGRES_PASSWORD, IMAGE_TAG,
+        # etc.) is available for interpolation.
+        #
+        # Rolling update sequence (zero downtime):
+        #   1. New container starts on new image
+        #   2. Health check passes (start_period: 90s)
+        #   3. Old container stops
+        # Auto-rollback if health check fails.
         run: |
           IMAGE_TAG="${{ github.sha }}"
           cd "$GITHUB_WORKSPACE/backend"
+
+          # Export every variable in .env into the current shell so docker stack
+          # deploy can interpolate them. set -a auto-exports all assignments;
+          # set +a restores normal behaviour after sourcing.
+          set -a
+          # shellcheck source=/dev/null
+          source .env
+          set +a
+
           IMAGE_TAG="$IMAGE_TAG" docker stack deploy \
             --with-registry-auth \
             --prune \
