@@ -302,7 +302,7 @@ jobs:
             printf 'SAGE_BRIDGE_URL=%s\n'             "$_SAGE_BRIDGE_URL"
             printf 'SAGE_BRIDGE_KEY=%s\n'             "$_SAGE_BRIDGE_KEY"
             printf 'SAGE_BRIDGE_WEBHOOK_SECRET=%s\n'  "$_SAGE_BRIDGE_WEBHOOK_SECRET"
-            printf 'HF_TOKEN=%s\n'                    "$_HF_TOKEN"
+            printf 'HF_TOKEN=%s\n'                   "$_HF_TOKEN"
             printf 'GRAFANA_PASSWORD=%s\n'            "$_GRAFANA_PASSWORD"
             printf 'SAGE_MOCK=0\n'
             printf 'DEV_TOKEN_ENABLED=0\n'
@@ -347,6 +347,116 @@ jobs:
           docker push "localhost:5000/placeware-frontend:latest"
           echo "Frontend image pushed: localhost:5000/placeware-frontend:$IMAGE_TAG"
 
+      # ── Pre-deploy environment checks (idempotent) ──────────────────────────
+
+      - name: Ensure Postgres image is built on this node
+        # placeware-postgres:18 is built from ./db/Dockerfile on the VM itself —
+        # it is NOT pushed to the local registry (one-node cluster, no need).
+        # Rebuild whenever the image is missing (first deploy, node rebuild, prune).
+        run: |
+          if docker image inspect placeware-postgres:18 >/dev/null 2>&1; then
+            echo "placeware-postgres:18 already exists on this node — skipping build."
+          else
+            echo "placeware-postgres:18 not found — building from db/Dockerfile..."
+            docker build -t placeware-postgres:18 "$GITHUB_WORKSPACE/backend/db"
+            echo "Postgres image built successfully."
+          fi
+
+      - name: Ensure TLS certificate exists for frontend
+        # Two modes:
+        #   A) DOMAIN secret is set → obtain/renew a browser-trusted Let's Encrypt cert.
+        #      Requires port 80 reachable from internet. certbot uses webroot mode so
+        #      nginx stays running (no downtime). Cert auto-renews via systemd timer.
+        #   B) DOMAIN not set → generate a self-signed cert (browsers will warn).
+        #      Safe for internal testing; upgrade to mode A before client demos.
+        #
+        # Add DOMAIN (e.g. placeware.yourdomain.com) and LE_EMAIL to GitHub Secrets
+        # to switch the entire pipeline to trusted certs on the next push.
+        env:
+          _DOMAIN:   ${{ secrets.DOMAIN }}
+          _LE_EMAIL: ${{ secrets.LE_EMAIL }}
+        run: |
+          CERT_DIR="/etc/ssl/placeware"
+          WEBROOT="/var/www/certbot"
+
+          if [ -n "$_DOMAIN" ]; then
+            # ── Mode A: Let's Encrypt (trusted CA cert) ───────────────────────
+            echo "DOMAIN secret is set — using Let's Encrypt for $_DOMAIN"
+
+            # Install certbot if missing
+            if ! command -v certbot &>/dev/null; then
+              echo "Installing certbot..."
+              sudo apt-get update -qq
+              sudo apt-get install -y certbot
+            fi
+
+            # Ensure webroot exists (nginx serves ACME challenge from here)
+            sudo mkdir -p "$WEBROOT"
+
+            # Request or renew cert (--keep-until-expiring = no-op if valid > 30d)
+            EMAIL_FLAG=""
+            if [ -n "$_LE_EMAIL" ]; then
+              EMAIL_FLAG="--email $_LE_EMAIL"
+            else
+              EMAIL_FLAG="--register-unsafely-without-email"
+            fi
+
+            sudo certbot certonly \
+              --webroot \
+              --webroot-path "$WEBROOT" \
+              --domain "$_DOMAIN" \
+              $EMAIL_FLAG \
+              --agree-tos \
+              --non-interactive \
+              --keep-until-expiring
+
+            LE_LIVE="/etc/letsencrypt/live/$_DOMAIN"
+            sudo mkdir -p "$CERT_DIR"
+            sudo cp -f "$LE_LIVE/fullchain.pem" "$CERT_DIR/cert.pem"
+            sudo cp -f "$LE_LIVE/privkey.pem"   "$CERT_DIR/key.pem"
+            sudo chmod 644 "$CERT_DIR/cert.pem"
+            sudo chmod 640 "$CERT_DIR/key.pem"
+            EXPIRY=$(sudo openssl x509 -noout -enddate -in "$CERT_DIR/cert.pem" | cut -d= -f2)
+            echo "Let's Encrypt cert installed (expires: $EXPIRY)."
+
+            # Install renewal deploy hook so nginx reloads after auto-renewal.
+            # The hook script lives in deploy/cert-renewal-hook.sh in the repo —
+            # avoids heredocs which break YAML literal block scalar parsing.
+            HOOK="/etc/letsencrypt/renewal-hooks/deploy/placeware-reload.sh"
+            if [ ! -f "$HOOK" ]; then
+              sudo mkdir -p "$(dirname "$HOOK")"
+              sudo cp "$GITHUB_WORKSPACE/deploy/cert-renewal-hook.sh" "$HOOK"
+              sudo chmod +x "$HOOK"
+              echo "Renewal deploy hook installed."
+            fi
+
+            # Enable daily renewal check via systemd (best effort — may not exist)
+            sudo systemctl enable certbot.timer 2>/dev/null && \
+            sudo systemctl start  certbot.timer 2>/dev/null || \
+            echo "Tip: Add cron for renewal: '0 3 * * * certbot renew --quiet'"
+
+          else
+            # ── Mode B: Self-signed fallback (browser will warn) ──────────────
+            if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/key.pem" ]; then
+              echo "TLS cert already exists at $CERT_DIR — skipping self-signed generation."
+            else
+              echo "No DOMAIN secret and no cert found — generating self-signed cert."
+              echo "Set the DOMAIN GitHub secret to get a browser-trusted cert automatically."
+              VM_IP=$(hostname -I | awk '{print $1}')
+              sudo mkdir -p "$CERT_DIR"
+              sudo openssl req -x509 -nodes \
+                -newkey rsa:2048 \
+                -keyout "$CERT_DIR/key.pem" \
+                -out    "$CERT_DIR/cert.pem" \
+                -days   825 \
+                -subj   "/CN=placeware/O=Placeware/C=NG" \
+                -addext "subjectAltName=IP:${VM_IP},IP:127.0.0.1,DNS:localhost"
+              sudo chmod 640 "$CERT_DIR/key.pem"
+              sudo chmod 644 "$CERT_DIR/cert.pem"
+              echo "Self-signed TLS cert generated for IP $VM_IP."
+            fi
+          fi
+
       - name: Rolling deploy via Docker Swarm
         # docker stack deploy resolves ${VAR} placeholders in compose files from
         # the SHELL ENVIRONMENT — it does NOT read .env files automatically
@@ -377,6 +487,28 @@ jobs:
             -c docker-compose.swarm.yml \
             placeware
           echo "Stack deploy triggered. Swarm is performing rolling update..."
+
+      - name: Wait for Postgres to be ready
+        # Backend crashes on startup if it reaches Postgres before pg_isready.
+        # Swarm ignores depends_on — we must gate here before checking backend.
+        run: |
+          echo "Waiting up to 90s for placeware_db to pass its health check..."
+          for i in $(seq 1 18); do
+            REPLICAS=$(docker service ls --filter name=placeware_db --format '{{.Replicas}}' 2>/dev/null || echo "0/1")
+            echo "Attempt $i/18: placeware_db replicas = $REPLICAS"
+            if [ "$REPLICAS" = "1/1" ]; then
+              echo "Postgres is up — 1/1 replicas running."
+              break
+            fi
+            sleep 5
+          done
+          REPLICAS=$(docker service ls --filter name=placeware_db --format '{{.Replicas}}' 2>/dev/null || echo "0/1")
+          if [ "$REPLICAS" != "1/1" ]; then
+            echo "ERROR: Postgres did not converge after 90s (replicas=$REPLICAS)"
+            docker service logs placeware_db --tail 50 || true
+            docker stack ps placeware --no-trunc || true
+            exit 1
+          fi
 
       - name: Wait for backend health (post-deploy)
         # Port 8000 is internal to the Swarm overlay network and NOT published
