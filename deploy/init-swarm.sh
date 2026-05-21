@@ -122,10 +122,20 @@ cd "$BACKEND_DIR"
 
 # docker stack deploy does NOT automatically read .env files for variable
 # interpolation. Export backend/.env values into the current shell first.
-set -a
-# shellcheck source=/dev/null
-source .env
-set +a
+# Parse only valid KEY=VALUE rows so banner text or malformed lines in .env
+# do not crash deployment.
+while IFS= read -r env_line || [ -n "$env_line" ]; do
+    case "$env_line" in
+        ''|'#'*) continue ;;
+    esac
+    if [[ "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+        export "$env_line"
+    else
+        warn "Ignoring non-assignment line in backend/.env: $env_line"
+    fi
+done < .env
+
+[ -n "${POSTGRES_PASSWORD:-}" ] || error "POSTGRES_PASSWORD is missing after loading backend/.env"
 
 IMAGE_TAG="$IMAGE_TAG" docker stack deploy \
     --with-registry-auth \

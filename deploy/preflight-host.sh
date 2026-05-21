@@ -76,6 +76,16 @@ fi
 if [[ -f "$BACKEND_DIR/.env" ]]; then
   pass "backend/.env exists"
 
+  # Detect malformed lines early (anything non-empty that is not comment or KEY=VALUE).
+  while IFS= read -r env_line || [ -n "$env_line" ]; do
+    case "$env_line" in
+      ''|'#'*) continue ;;
+    esac
+    if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      fail "backend/.env malformed line (not KEY=VALUE): $env_line"
+    fi
+  done < "$BACKEND_DIR/.env"
+
   REQUIRED_ENV_KEYS=(
     DEEPSEEK_API_KEY
     DEEPSEEK_MODEL
