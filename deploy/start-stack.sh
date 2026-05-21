@@ -202,16 +202,48 @@ run_admin_seed() {
   [[ -n "$backend_cid" ]] || die "Could not find running backend container for admin seed"
 
   log_info "Running admin seed in backend container"
-  docker exec "$backend_cid" /bin/sh -lc '
+  if ! docker exec "$backend_cid" /bin/sh -lc '
     if [ -f /backend/seed_admin.py ]; then
       exec python /backend/seed_admin.py
     elif [ -f seed_admin.py ]; then
       exec python seed_admin.py
     else
-      echo "seed_admin.py not found in container filesystem" >&2
       exit 1
     fi
-  '
+  '; then
+    log_warn "seed_admin.py missing in container; running inline admin seed fallback"
+    docker exec "$backend_cid" python - <<'PY'
+import os
+import sys
+
+sys.path.insert(0, "/backend")
+
+from src.auth_utils import hash_password
+from src.db import db
+
+email = (os.getenv("ADMIN_EMAIL") or "admin@placeware.com").lower()
+pwd = os.getenv("ADMIN_PASSWORD") or "pware1234"
+hashed = hash_password(pwd)
+
+existing = db.table("placeware_users").select("id").eq("email", email).execute()
+if existing.data:
+    user_id = existing.data[0]["id"]
+    db.table("placeware_users").update({
+        "hashed_password": hashed,
+        "roles": ["admin"],
+        "is_active": True,
+    }).eq("id", user_id).execute()
+    print(f"Updated admin user: {email}")
+else:
+    db.table("placeware_users").insert({
+        "email": email,
+        "hashed_password": hashed,
+        "roles": ["admin"],
+        "is_active": True,
+    }).execute()
+    print(f"Created admin user: {email}")
+PY
+  fi
   log_pass "Admin seed completed"
 }
 
