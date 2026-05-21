@@ -13,6 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKEND_DIR="$REPO_ROOT/backend"
+STRICT_SSH_CHECKS="${STRICT_SSH_CHECKS:-1}"
 
 PASS_COUNT=0
 WARN_COUNT=0
@@ -55,7 +56,11 @@ fi
 if command -v sshd >/dev/null 2>&1; then
   pass "OpenSSH server binary detected"
 else
-  fail "OpenSSH server binary not found (install openssh-server before hardening)"
+  if [[ "$STRICT_SSH_CHECKS" == "1" ]]; then
+    fail "OpenSSH server binary not found (install openssh-server before hardening)"
+  else
+    warn "OpenSSH server binary not found (non-strict mode for redeploy)"
+  fi
 fi
 
 if [[ -f /etc/ssh/sshd_config ]]; then
@@ -69,7 +74,11 @@ if systemctl list-unit-files 2>/dev/null | grep -qE '^ssh\.service'; then
 elif systemctl list-unit-files 2>/dev/null | grep -qE '^sshd\.service'; then
   pass "Detected SSH service unit: sshd.service"
 else
-  fail "No ssh/sshd systemd service unit found"
+  if [[ "$STRICT_SSH_CHECKS" == "1" ]]; then
+    fail "No ssh/sshd systemd service unit found"
+  else
+    warn "No ssh/sshd systemd service unit found (non-strict mode for redeploy)"
+  fi
 fi
 
 # Backend env contract checks

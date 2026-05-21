@@ -276,15 +276,19 @@ else
   log_info "Dependency install skipped (--install-deps not provided)."
 fi
 
-ensure_ssh_service_unit
-
-run_cmd "Run preflight checks" bash "$REPO_ROOT/deploy/preflight-host.sh"
-
 DO_HARDENING=0
 if [[ "$SKIP_HARDENING" -eq 1 ]]; then
   DO_HARDENING=0
 elif [[ "$MODE" == "first-run" || "$RUN_HARDENING" -eq 1 ]]; then
   DO_HARDENING=1
+fi
+
+if [[ "$DO_HARDENING" -eq 1 ]]; then
+  ensure_ssh_service_unit
+  run_cmd "Run preflight checks (strict SSH mode)" env STRICT_SSH_CHECKS=1 bash "$REPO_ROOT/deploy/preflight-host.sh"
+else
+  log_info "Skipping SSH auto-fix because hardening is not scheduled in this run."
+  run_cmd "Run preflight checks (non-strict SSH mode)" env STRICT_SSH_CHECKS=0 bash "$REPO_ROOT/deploy/preflight-host.sh"
 fi
 
 if [[ "$DO_HARDENING" -eq 1 ]]; then
