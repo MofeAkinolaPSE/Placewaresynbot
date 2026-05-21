@@ -24,6 +24,7 @@ CONNECTIVITY_MODE=""
 RUN_LETSENCRYPT=0
 LE_DOMAIN=""
 LE_EMAIL=""
+SKIP_DB_CHECK=0
 
 PASS_COUNT=0
 WARN_COUNT=0
@@ -57,6 +58,7 @@ Options:
   --letsencrypt                Run deploy/setup-letsencrypt.sh after deploy
   --letsencrypt-domain DOMAIN  Domain passed to setup-letsencrypt
   --letsencrypt-email EMAIL    Email passed to setup-letsencrypt
+  --skip-db-check              Skip post-deploy DB readiness checks (not recommended)
   --non-interactive            No prompts. Required checks fail if confirmation is needed
   --yes                        Assume "yes" for prompts (still blocks on hard failures)
   -h, --help                   Show this help
@@ -97,6 +99,82 @@ run_cmd() {
   log_info "$label"
   "$@"
   log_pass "$label"
+}
+
+get_service_container_id() {
+  local service_name="$1"
+  docker ps \
+    --filter "label=com.docker.swarm.service.name=${service_name}" \
+    --format '{{.ID}}' \
+    | head -1
+}
+
+wait_for_service_replicas() {
+  local service_name="$1"
+  local expected="$2"
+  local attempts="${3:-24}"
+  local delay_secs="${4:-5}"
+  local replicas=""
+
+  for i in $(seq 1 "$attempts"); do
+    replicas=$(docker service ls --filter "name=${service_name}" --format '{{.Replicas}}' 2>/dev/null || echo "0/0")
+    if [[ "$replicas" == "$expected" ]]; then
+      return 0
+    fi
+    log_info "Waiting for ${service_name} replicas=${expected} (current=${replicas}, attempt ${i}/${attempts})"
+    sleep "$delay_secs"
+  done
+
+  log_warn "Service ${service_name} did not converge to ${expected}; current=${replicas}"
+  return 1
+}
+
+post_deploy_db_check() {
+  log_info "Running post-deploy DB readiness checks"
+
+  wait_for_service_replicas "placeware_db" "1/1" 24 5 || {
+    docker service ps placeware_db --no-trunc || true
+    docker service logs placeware_db --tail 80 || true
+    die "DB service failed readiness check"
+  }
+
+  wait_for_service_replicas "placeware_backend" "1/1" 30 5 || {
+    docker service ps placeware_backend --no-trunc || true
+    docker service logs placeware_backend --tail 120 || true
+    die "Backend service failed readiness check"
+  }
+
+  local backend_cid
+  backend_cid="$(get_service_container_id "placeware_backend")"
+  [[ -n "$backend_cid" ]] || die "Could not find running backend container for DB connectivity probe"
+
+  docker exec "$backend_cid" python - <<'PY'
+import os
+from urllib.parse import urlparse
+
+import psycopg2
+
+dsn = os.getenv("DATABASE_URL", "")
+if not dsn:
+    raise SystemExit("DATABASE_URL missing inside backend container")
+
+parsed = urlparse(dsn)
+host = parsed.hostname or ""
+if host == "db":
+    # Explicitly verify overlay DNS resolution for the db service name.
+    import socket
+    socket.getaddrinfo("db", 5432)
+
+conn = psycopg2.connect(dsn)
+cur = conn.cursor()
+cur.execute("SELECT 1")
+cur.fetchone()
+cur.close()
+conn.close()
+print("DB connectivity probe succeeded")
+PY
+
+  log_pass "Post-deploy DB readiness checks"
 }
 
 has_ssh_service_unit() {
@@ -222,6 +300,9 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || die "Missing value for --letsencrypt-email"
       LE_EMAIL="$1"
       ;;
+    --skip-db-check)
+      SKIP_DB_CHECK=1
+      ;;
     --non-interactive)
       NON_INTERACTIVE=1
       ;;
@@ -314,6 +395,12 @@ else
 fi
 
 run_cmd "Initialize swarm/build/deploy stack" bash "$REPO_ROOT/deploy/init-swarm.sh"
+
+if [[ "$SKIP_DB_CHECK" -eq 1 ]]; then
+  log_warn "Skipping DB readiness checks (--skip-db-check)."
+else
+  post_deploy_db_check
+fi
 
 if [[ "$RUN_LETSENCRYPT" -eq 1 ]]; then
   if [[ -n "$LE_DOMAIN" && -n "$LE_EMAIL" ]]; then
