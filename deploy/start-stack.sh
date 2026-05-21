@@ -99,6 +99,30 @@ run_cmd() {
   log_pass "$label"
 }
 
+has_ssh_service_unit() {
+  systemctl list-unit-files 2>/dev/null | grep -qE '^ssh\.service|^sshd\.service'
+}
+
+ensure_ssh_service_unit() {
+  if has_ssh_service_unit; then
+    log_pass "SSH service unit present (ssh/sshd)"
+    return 0
+  fi
+
+  log_warn "SSH service unit missing. Attempting automatic fix (install openssh-server)."
+
+  command -v apt-get >/dev/null 2>&1 || die "apt-get not found. Install openssh-server manually for this distro."
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y --no-install-recommends openssh-server
+
+  systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1 || true
+
+  has_ssh_service_unit || die "Automatic fix failed: ssh/sshd service unit still missing after openssh-server install."
+  log_pass "SSH service unit auto-fixed"
+}
+
 install_dependencies() {
   log_info "Dependency install requested. Installing runtime prerequisites."
   export DEBIAN_FRONTEND=noninteractive
@@ -251,6 +275,8 @@ if [[ "$INSTALL_DEPS" -eq 1 ]]; then
 else
   log_info "Dependency install skipped (--install-deps not provided)."
 fi
+
+ensure_ssh_service_unit
 
 run_cmd "Run preflight checks" bash "$REPO_ROOT/deploy/preflight-host.sh"
 
