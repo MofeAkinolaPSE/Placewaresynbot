@@ -647,18 +647,39 @@ async def _seed_superadmin():
             logging.info("ADMIN_EMAIL/ADMIN_PASSWORD not set; skipping admin seed.")
             return
 
+        hashed = hash_password(admin_password)
         existing = db.table("placeware_users").select("id").eq("email", admin_email).limit(1).execute()
         if existing.data:
-            logging.info(f"Superadmin {admin_email} already exists; skipping seed.")
+            user_id = existing.data[0]["id"]
+            db.table("placeware_users").update({
+                "hashed_password": hashed,
+                "roles": ["admin"],
+                "is_active": True,
+            }).eq("id", user_id).execute()
+            logging.info(f"Superadmin {admin_email} already exists; reconciled credentials and role.")
             return
 
-        hashed = hash_password(admin_password)
-        db.table("placeware_users").insert({
-            "email": admin_email,
-            "hashed_password": hashed,
-            "roles": ["admin"],
-            "is_active": True,
-        }).execute()
+        try:
+            db.table("placeware_users").insert({
+                "email": admin_email,
+                "hashed_password": hashed,
+                "roles": ["admin"],
+                "is_active": True,
+            }).execute()
+        except Exception as insert_exc:
+            msg = str(insert_exc).lower()
+            if "duplicate key" not in msg and "already exists" not in msg:
+                raise
+            # Another worker inserted first; reconcile to desired state.
+            existing = db.table("placeware_users").select("id").eq("email", admin_email).limit(1).execute()
+            if not existing.data:
+                raise
+            user_id = existing.data[0]["id"]
+            db.table("placeware_users").update({
+                "hashed_password": hashed,
+                "roles": ["admin"],
+                "is_active": True,
+            }).eq("id", user_id).execute()
         logging.info(f"Superadmin {admin_email} seeded successfully.")
     except Exception as e:
         logging.warning(f"Auto-seed superadmin failed: {e}")

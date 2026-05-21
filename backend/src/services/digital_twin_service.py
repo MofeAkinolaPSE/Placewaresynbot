@@ -133,14 +133,21 @@ def ensure_nodes_seeded() -> None:
         )
         if existing.data:
             continue
-        db.table(TABLE_TWIN_NODES).insert({
-            "node_key": defn["node_key"],
-            "component": defn["component"],
-            "label": defn["label"],
-            "expected_state": defn["expected_state"],
-            "actual_state": {},
-            "health_status": TwinHealthStatus.UNKNOWN.value,
-        }).execute()
+        try:
+            db.table(TABLE_TWIN_NODES).insert({
+                "node_key": defn["node_key"],
+                "component": defn["component"],
+                "label": defn["label"],
+                "expected_state": defn["expected_state"],
+                "actual_state": {},
+                "health_status": TwinHealthStatus.UNKNOWN.value,
+            }).execute()
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "duplicate key" in msg or "already exists" in msg:
+                # Another worker seeded this node first.
+                continue
+            raise
 
     # Upsert dependency edges
     for src, tgt in DEPENDENCY_EDGES:
@@ -153,12 +160,19 @@ def ensure_nodes_seeded() -> None:
             .execute()
         )
         if not existing.data:
-            db.table(TABLE_TWIN_DEPENDENCY_EDGES).insert({
-                "source_key": src,
-                "target_key": tgt,
-                "direction": "forward",
-                "weight": 1.0,
-            }).execute()
+            try:
+                db.table(TABLE_TWIN_DEPENDENCY_EDGES).insert({
+                    "source_key": src,
+                    "target_key": tgt,
+                    "direction": "forward",
+                    "weight": 1.0,
+                }).execute()
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "duplicate key" in msg or "already exists" in msg:
+                    # Concurrent insert race; safe to ignore.
+                    continue
+                raise
 
 
 # ---------------------------------------------------------------------------
