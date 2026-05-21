@@ -25,6 +25,8 @@ RUN_LETSENCRYPT=0
 LE_DOMAIN=""
 LE_EMAIL=""
 SKIP_DB_CHECK=0
+RESET_DB=0
+SEED_ADMIN=0
 
 PASS_COUNT=0
 WARN_COUNT=0
@@ -59,6 +61,8 @@ Options:
   --letsencrypt-domain DOMAIN  Domain passed to setup-letsencrypt
   --letsencrypt-email EMAIL    Email passed to setup-letsencrypt
   --skip-db-check              Skip post-deploy DB readiness checks (not recommended)
+  --reset-db                   Destroy and recreate Postgres volume before deploy (DATA LOSS)
+  --seed-admin                 Run backend/seed_admin.py in running backend container
   --non-interactive            No prompts. Required checks fail if confirmation is needed
   --yes                        Assume "yes" for prompts (still blocks on hard failures)
   -h, --help                   Show this help
@@ -163,6 +167,43 @@ ensure_app_database_exists() {
   log_warn "Application database '${db_name}' missing. Creating it now..."
   docker exec "$db_cid" psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${db_name}\""
   log_pass "Application database created (${db_name})"
+}
+
+reset_db_state() {
+  log_warn "DB reset requested. This will permanently delete Postgres data volume contents."
+
+  if [[ "$ASSUME_YES" -ne 1 && "$NON_INTERACTIVE" -eq 1 ]]; then
+    die "--reset-db in non-interactive mode requires --yes"
+  fi
+
+  if ! confirm "Proceed with destructive DB reset for volume placeware_db_data?"; then
+    die "DB reset cancelled by user"
+  fi
+
+  if docker service inspect placeware_db >/dev/null 2>&1; then
+    log_info "Scaling placeware_db to 0 replicas before volume removal"
+    docker service update --replicas 0 placeware_db >/dev/null 2>&1 || true
+    sleep 8
+  fi
+
+  local holders
+  holders="$(docker ps -a --filter volume=placeware_db_data --format '{{.ID}}')"
+  if [[ -n "$holders" ]]; then
+    echo "$holders" | xargs -r docker rm -f >/dev/null 2>&1 || true
+  fi
+
+  docker volume rm placeware_db_data >/dev/null 2>&1 || true
+  log_pass "DB volume reset completed"
+}
+
+run_admin_seed() {
+  local backend_cid
+  backend_cid="$(get_service_container_id "placeware_backend")"
+  [[ -n "$backend_cid" ]] || die "Could not find running backend container for admin seed"
+
+  log_info "Running admin seed in backend container"
+  docker exec "$backend_cid" python seed_admin.py
+  log_pass "Admin seed completed"
 }
 
 wait_for_service_replicas() {
@@ -361,6 +402,12 @@ while [[ $# -gt 0 ]]; do
     --skip-db-check)
       SKIP_DB_CHECK=1
       ;;
+    --reset-db)
+      RESET_DB=1
+      ;;
+    --seed-admin)
+      SEED_ADMIN=1
+      ;;
     --non-interactive)
       NON_INTERACTIVE=1
       ;;
@@ -415,6 +462,11 @@ else
   log_info "Dependency install skipped (--install-deps not provided)."
 fi
 
+if [[ "$RESET_DB" -eq 1 ]]; then
+  reset_db_state
+  SEED_ADMIN=1
+fi
+
 DO_HARDENING=0
 if [[ "$SKIP_HARDENING" -eq 1 ]]; then
   DO_HARDENING=0
@@ -458,6 +510,10 @@ if [[ "$SKIP_DB_CHECK" -eq 1 ]]; then
   log_warn "Skipping DB readiness checks (--skip-db-check)."
 else
   post_deploy_db_check
+fi
+
+if [[ "$SEED_ADMIN" -eq 1 ]]; then
+  run_admin_seed
 fi
 
 if [[ "$RUN_LETSENCRYPT" -eq 1 ]]; then

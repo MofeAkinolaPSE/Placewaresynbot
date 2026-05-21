@@ -125,6 +125,12 @@ class TableQuery:
         conn = self.client.pool.getconn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
+            JSONB_ARRAY_COLUMNS = {
+                "required_components",
+                "integration_points",
+                "signal_ids",
+            }
+
             def _is_numeric_list(lst):
                 """Check if list contains numeric values (embedding) vs strings (text array)."""
                 return lst and all(isinstance(x, (int, float)) for x in lst)
@@ -141,8 +147,8 @@ class TableQuery:
                             emb_text = '[' + ','.join(map(str, v)) + ']'
                             vals.append(emb_text)
                             placeholders.append('%s::vector')
-                        elif v and isinstance(v[0], dict):
-                            # List of dicts (e.g., sources JSONB array) → serialize as JSONB
+                        elif c in JSONB_ARRAY_COLUMNS or (v and isinstance(v[0], dict)):
+                            # JSONB array fields -> serialize as JSONB
                             import json as _json
                             vals.append(_json.dumps(v))
                             placeholders.append('%s::jsonb')
@@ -194,6 +200,10 @@ class TableQuery:
                             emb_text = '[' + ','.join(map(str, v)) + ']'
                             set_parts.append(f"{c} = %s::vector")
                             params.append(emb_text)
+                        elif c in JSONB_ARRAY_COLUMNS or (v and isinstance(v[0], dict)):
+                            import json as _json
+                            set_parts.append(f"{c} = %s::jsonb")
+                            params.append(_json.dumps(v))
                         else:
                             set_parts.append(f"{c} = %s")
                             params.append(list(v))
