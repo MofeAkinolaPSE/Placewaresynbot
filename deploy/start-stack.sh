@@ -331,6 +331,51 @@ PY
   log_pass "Admin seed completed"
 }
 
+verify_admin_auth_probe() {
+  local backend_cid
+  backend_cid="$(get_service_container_id "placeware_backend")"
+  [[ -n "$backend_cid" ]] || die "Could not find running backend container for auth probe"
+
+  log_info "Running runtime admin auth probe against /token"
+  docker exec "$backend_cid" python - <<'PY'
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+
+email = (os.getenv("ADMIN_EMAIL") or "admin@placeware.com").strip().lower()
+password = os.getenv("ADMIN_PASSWORD") or "pware1234"
+
+body = urllib.parse.urlencode({
+    "username": email,
+    "password": password,
+}).encode("utf-8")
+
+req = urllib.request.Request(
+    "http://127.0.0.1:8000/token",
+    data=body,
+    method="POST",
+    headers={"Content-Type": "application/x-www-form-urlencoded"},
+)
+
+try:
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+        token = payload.get("access_token")
+        if not token:
+            raise SystemExit("Auth probe failed: no access_token in /token response")
+except urllib.error.HTTPError as exc:
+    detail = exc.read().decode("utf-8", "ignore")
+    raise SystemExit(f"Auth probe failed for {email}: HTTP {exc.code} {detail}")
+except Exception as exc:
+    raise SystemExit(f"Auth probe failed for {email}: {exc}")
+
+print(f"Admin auth probe passed for {email}")
+PY
+  log_pass "Runtime admin auth probe"
+}
+
 wait_for_service_replicas() {
   local service_name="$1"
   local expected="$2"
@@ -650,6 +695,12 @@ fi
 
 if [[ "$SEED_ADMIN" -eq 1 ]]; then
   run_admin_seed
+fi
+
+if ! verify_admin_auth_probe; then
+  log_warn "Runtime admin auth probe failed. Attempting automatic admin reseed + one retry."
+  run_admin_seed
+  verify_admin_auth_probe || die "Admin auth still failing after reseed. Check ADMIN_EMAIL/ADMIN_PASSWORD and backend logs for reason=invalid_user|inactive_user|bad_password"
 fi
 
 if [[ "$RUN_LETSENCRYPT" -eq 1 ]]; then
