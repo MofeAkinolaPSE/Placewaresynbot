@@ -119,6 +119,14 @@ fi
 # ─── 6. Deploy the Swarm stack ───────────────────────────────────────────────
 info "Deploying Placeware Swarm stack..."
 cd "$BACKEND_DIR"
+
+# docker stack deploy does NOT automatically read .env files for variable
+# interpolation. Export backend/.env values into the current shell first.
+set -a
+# shellcheck source=/dev/null
+source .env
+set +a
+
 IMAGE_TAG="$IMAGE_TAG" docker stack deploy \
     --with-registry-auth \
     --prune \
