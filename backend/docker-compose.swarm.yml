@@ -26,6 +26,11 @@ services:
     init: true
     volumes:
       - db_data:/var/lib/postgresql
+    networks:
+      default:
+        aliases:
+          - db
+          - placeware_db
     healthcheck:
       # Check server readiness only; app DB existence is validated separately
       # by deploy/start-stack.sh to avoid unhealthy loops on reused volumes.
