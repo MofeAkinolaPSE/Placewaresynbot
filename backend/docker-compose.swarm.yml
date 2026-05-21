@@ -27,7 +27,9 @@ services:
     volumes:
       - db_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d synbot_demo"]
+      # Check server readiness only; app DB existence is validated separately
+      # by deploy/start-stack.sh to avoid unhealthy loops on reused volumes.
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -109,6 +109,62 @@ get_service_container_id() {
     | head -1
 }
 
+get_backend_env_value() {
+  local key="$1"
+  if [[ ! -f "$BACKEND_DIR/.env" ]]; then
+    return 0
+  fi
+  grep -E "^${key}=" "$BACKEND_DIR/.env" | tail -1 | cut -d'=' -f2-
+}
+
+infer_app_db_name() {
+  local db_url
+  db_url="$(get_backend_env_value "DATABASE_URL")"
+
+  if [[ -n "$db_url" ]]; then
+    python3 - <<PY
+from urllib.parse import urlparse
+u = urlparse(${db_url@Q})
+name = (u.path or '').lstrip('/')
+print(name or 'synbot_demo')
+PY
+    return 0
+  fi
+
+  local pg_db
+  pg_db="$(get_backend_env_value "POSTGRES_DB")"
+  if [[ -n "$pg_db" ]]; then
+    echo "$pg_db"
+  else
+    echo "synbot_demo"
+  fi
+}
+
+ensure_app_database_exists() {
+  local db_name
+  db_name="$(infer_app_db_name)"
+
+  if [[ ! "$db_name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+    die "Refusing to validate DB with unexpected name: $db_name"
+  fi
+
+  local db_cid
+  db_cid="$(get_service_container_id "placeware_db")"
+  [[ -n "$db_cid" ]] || die "Could not find running DB container for database existence probe"
+
+  local exists
+  exists="$(docker exec "$db_cid" psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" | tr -d '[:space:]')"
+
+  if [[ "$exists" == "1" ]]; then
+    log_pass "Application database exists (${db_name})"
+    return 0
+  fi
+
+  log_warn "Application database '${db_name}' missing. Creating it now..."
+  docker exec "$db_cid" psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${db_name}\""
+  log_pass "Application database created (${db_name})"
+}
+
 wait_for_service_replicas() {
   local service_name="$1"
   local expected="$2"
@@ -137,6 +193,8 @@ post_deploy_db_check() {
     docker service logs placeware_db --tail 80 || true
     die "DB service failed readiness check"
   }
+
+  ensure_app_database_exists
 
   wait_for_service_replicas "placeware_backend" "1/1" 30 5 || {
     docker service ps placeware_backend --no-trunc || true
