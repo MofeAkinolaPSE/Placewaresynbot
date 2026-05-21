@@ -109,12 +109,13 @@ docker tag  "localhost:5000/placeware-frontend:$IMAGE_TAG" "localhost:5000/place
 docker push "localhost:5000/placeware-frontend:latest"
 info "Frontend image pushed."
 
-# Build the custom postgres image (not in rolling update — built once)
-if ! docker image inspect "placeware-postgres:18" &>/dev/null; then
-    info "Building custom postgres image..."
-    docker build -t placeware-postgres:18 "$BACKEND_DIR/db"
-    info "Postgres image built."
-fi
+# Build and push the custom postgres image to local registry for Swarm digest consistency
+info "Building postgres image..."
+docker build -t "localhost:5000/placeware-postgres:$IMAGE_TAG" "$BACKEND_DIR/db"
+docker push "localhost:5000/placeware-postgres:$IMAGE_TAG"
+docker tag  "localhost:5000/placeware-postgres:$IMAGE_TAG" "localhost:5000/placeware-postgres:18"
+docker push "localhost:5000/placeware-postgres:18"
+info "Postgres image pushed."
 
 # ─── 6. Deploy the Swarm stack ───────────────────────────────────────────────
 info "Deploying Placeware Swarm stack..."

@@ -18,7 +18,7 @@ services:
 
   # ── PostgreSQL — stable through app deploys, never rolling-updated ───────────
   db:
-    image: placeware-postgres:18          # Built locally on VM — never pushed to registry
+    image: localhost:5000/placeware-postgres:18  # Pinned to local registry for Swarm consistency
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set in .env}
