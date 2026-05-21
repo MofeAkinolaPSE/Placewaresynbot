@@ -64,9 +64,9 @@ else
   warn "OpenSSH config not found at /etc/ssh/sshd_config (set SSHD_CONFIG override if using a custom path)"
 fi
 
-if systemctl list-unit-files 2>/dev/null | grep -q '^ssh\\.service'; then
+if systemctl list-unit-files 2>/dev/null | grep -qE '^ssh\.service'; then
   pass "Detected SSH service unit: ssh.service"
-elif systemctl list-unit-files 2>/dev/null | grep -q '^sshd\\.service'; then
+elif systemctl list-unit-files 2>/dev/null | grep -qE '^sshd\.service'; then
   pass "Detected SSH service unit: sshd.service"
 else
   fail "No ssh/sshd systemd service unit found"
