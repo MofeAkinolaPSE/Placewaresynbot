@@ -641,20 +641,20 @@ async def _seed_superadmin():
         from src.db import db
         from src.auth_utils import hash_password
 
-        admin_email = os.getenv("ADMIN_EMAIL")
+        admin_email = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
         admin_password = os.getenv("ADMIN_PASSWORD")
         if not admin_email or not admin_password:
             logging.info("ADMIN_EMAIL/ADMIN_PASSWORD not set; skipping admin seed.")
             return
 
-        existing = db.table("placeware_users").select("id").eq("email", admin_email.lower()).limit(1).execute()
+        existing = db.table("placeware_users").select("id").eq("email", admin_email).limit(1).execute()
         if existing.data:
             logging.info(f"Superadmin {admin_email} already exists; skipping seed.")
             return
 
         hashed = hash_password(admin_password)
         db.table("placeware_users").insert({
-            "email": admin_email.lower(),
+            "email": admin_email,
             "hashed_password": hashed,
             "roles": ["admin"],
             "is_active": True,
@@ -5119,11 +5119,18 @@ async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     username = normalize_email(form_data.username)
     rate_limit(request, key=f"auth:{username}")
     user = get_user_by_email(username)
-    if not user or not user.get("is_active"):
+    if not user:
+        logging.warning("Auth login failed: reason=invalid_user email=%s", username)
+        audit_event("auth_login_failed", {"email": username, "reason": "invalid_user"})
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not user.get("is_active"):
+        logging.warning("Auth login failed: reason=inactive_user email=%s user_id=%s", username, user.get("id"))
         audit_event("auth_login_failed", {"email": username, "reason": "invalid_user"})
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not verify_password(form_data.password, user.get("hashed_password", "")):
+        logging.warning("Auth login failed: reason=bad_password email=%s user_id=%s", username, user.get("id"))
         audit_event("auth_login_failed", {"email": username, "reason": "bad_password"})
         raise HTTPException(status_code=401, detail="Invalid credentials")
 

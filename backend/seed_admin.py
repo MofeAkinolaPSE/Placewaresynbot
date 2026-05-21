@@ -7,11 +7,11 @@ def seed_admin():
     
     load_dotenv()
     
-    email = os.getenv("ADMIN_EMAIL", "admin@placeware.com")
+    email = (os.getenv("ADMIN_EMAIL") or "admin@placeware.com").strip().lower()
     pwd = os.getenv("ADMIN_PASSWORD", "pware1234")
     hashed = hash_password(pwd)
     
-    print(f"Checking if {email} exists...")
+    print(f"Checking if normalized admin email {email} exists...")
     existing = client.table("placeware_users").select("id").eq("email", email).execute()
     
     if existing.data:
