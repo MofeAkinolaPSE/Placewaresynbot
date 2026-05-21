@@ -169,6 +169,55 @@ ensure_app_database_exists() {
   log_pass "Application database created (${db_name})"
 }
 
+ensure_required_schema_tables() {
+  local db_name="$1"
+  local db_cid
+  db_cid="$(get_service_container_id "placeware_db")"
+  [[ -n "$db_cid" ]] || die "Could not find running DB container for schema checks"
+
+  local missing
+  missing="$(docker exec "$db_cid" psql -U postgres -d "$db_name" -tAc "
+    WITH required(name) AS (
+      VALUES ('placeware_users'), ('placeware_audit_logs')
+    )
+    SELECT r.name
+    FROM required r
+    LEFT JOIN information_schema.tables t
+      ON t.table_schema = 'public' AND t.table_name = r.name
+    WHERE t.table_name IS NULL
+    ORDER BY r.name;
+  " | tr -d '\r')"
+
+  if [[ -z "$(echo "$missing" | tr -d '[:space:]')" ]]; then
+    log_pass "Required schema tables are present (placeware_users, placeware_audit_logs)"
+    return 0
+  fi
+
+  log_warn "Missing required schema tables in ${db_name}: $(echo "$missing" | xargs)"
+  return 1
+}
+
+run_backend_migrations() {
+  local backend_cid
+  backend_cid="$(get_service_container_id "placeware_backend")"
+  [[ -n "$backend_cid" ]] || die "Could not find running backend container for migration run"
+
+  log_info "Applying backend migrations inside running container"
+  docker exec "$backend_cid" python /backend/scripts/apply_migrations.py
+  log_pass "Backend migrations applied"
+}
+
+repair_schema_if_missing() {
+  local db_name="$1"
+  local db_cid
+  db_cid="$(get_service_container_id "placeware_db")"
+  [[ -n "$db_cid" ]] || die "Could not find running DB container for schema repair"
+
+  log_warn "Attempting baseline schema bootstrap from 000_full_schema_with_rls.sql"
+  cat "$BACKEND_DIR/migrations/000_full_schema_with_rls.sql" | docker exec -i "$db_cid" psql -U postgres -d "$db_name" -v ON_ERROR_STOP=1 >/dev/null
+  log_pass "Baseline schema bootstrap applied"
+}
+
 reset_db_state() {
   log_warn "DB reset requested. This will permanently delete Postgres data volume contents."
 
@@ -348,6 +397,17 @@ cur.close()
 conn.close()
 print("DB connectivity probe succeeded")
 PY
+
+  local db_name
+  db_name="$(infer_app_db_name)"
+
+  run_backend_migrations
+
+  if ! ensure_required_schema_tables "$db_name"; then
+    repair_schema_if_missing "$db_name"
+    run_backend_migrations
+    ensure_required_schema_tables "$db_name" || die "Required tables missing after remediation. Check DATABASE_URL target and schema_migrations consistency."
+  fi
 
   log_pass "Post-deploy DB readiness checks"
 }
