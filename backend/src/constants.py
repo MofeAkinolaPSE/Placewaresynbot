@@ -283,7 +283,7 @@ LLM_SPACE_URL = os.getenv(ENV_LLM_SPACE_URL, "")
 LLM_SPACE_API_NAME = os.getenv(ENV_LLM_SPACE_API_NAME, "/predict")
 LLM_SPACE_API_KEY = os.getenv(ENV_LLM_SPACE_API_KEY, "")
 DEEPSEEK_API_KEY = os.getenv(ENV_DEEPSEEK_API_KEY, "")
-SAGE_MOCK = os.getenv(ENV_SAGE_MOCK, "1") not in ("0", "false", "False")
+SAGE_MOCK = os.getenv(ENV_SAGE_MOCK, "false") not in ("0", "false", "False")
 JWT_SECRET = os.getenv(ENV_JWT_SECRET, "change-me-for-prod-replace-with-32plus-chars")
 
 # Webhook secret used to verify provider callbacks (HMAC-SHA256)

@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     # All ODBC and SDK calls return realistic fake data from mock_data.py.
     # Flip to false at the client site once company path + DSN are confirmed.
     SAGE_MOCK: bool = Field(
-        default=True,
-        description="Return mock data instead of hitting Pervasive/SDK (safe for local dev/testing)",
+        default=False,
+        description="Return mock data instead of hitting Pervasive/SDK. Must be explicitly set to true for dev/test.",
     )
 
     class Config:

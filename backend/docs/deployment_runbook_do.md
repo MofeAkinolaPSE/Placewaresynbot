@@ -2,6 +2,43 @@
 
 Purpose: production deployment checklist for hosting app services on a DigitalOcean VPS Droplet with a managed database, while reducing cutover risk.
 
+## 0) Current Go-Live Operator Flow (VM + Sage Bridge)
+
+This is the operational flow to use for the current Swarm deployment model in this repository.
+
+1. Prepare secrets and environment files
+- VM host: create and validate `backend/.env` from `backend/.env.example`.
+- Sage Windows host: create and validate `sage-bridge/.env` from `sage-bridge/.env.example`.
+- Ensure these key pairs match exactly:
+  - `backend/.env` `SAGE_BRIDGE_KEY` == `sage-bridge/.env` `BRIDGE_API_KEY`
+  - `backend/.env` `SAGE_BRIDGE_WEBHOOK_SECRET` == `sage-bridge/.env` `SYNBOT_WEBHOOK_KEY`
+
+2. Start Sage and the bridge on Windows host
+- Open Sage 50 client first.
+- From `sage-bridge/`, run:
+  - `python main.py`
+
+3. Bootstrap and deploy on Ubuntu VM host
+- From repo root, run:
+  - First install: `sudo bash deploy/start-stack.sh --first-run --install-deps`
+  - Rerun/redeploy: `sudo bash deploy/start-stack.sh --redeploy`
+
+4. Connectivity gate (required by default in first-run)
+- On Sage Windows host run:
+  - `python test_connectivity.py --skip-write`
+- `deploy/start-stack.sh` enforces a phase-4 confirmation gate before final completion.
+
+5. Optional trusted TLS cutover
+- Keep self-signed default for immediate go-live.
+- Switch to trusted certificate when DNS/public routing is ready:
+  - `sudo bash deploy/setup-letsencrypt.sh [domain] [email]`
+
+6. Rollback commands
+- `docker stack ps placeware`
+- `docker service logs placeware_backend --tail 80`
+- `docker service logs placeware_frontend --tail 40`
+- `docker stack rm placeware`
+
 ## 1) Target Architecture
 - App host: DigitalOcean Droplet (Ubuntu LTS), running FastAPI as a systemd service.
 - Reverse proxy: Nginx (TLS termination + request limits).
