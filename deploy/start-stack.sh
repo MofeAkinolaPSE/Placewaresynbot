@@ -201,6 +201,10 @@ run_admin_seed() {
   backend_cid="$(get_service_container_id "placeware_backend")"
   [[ -n "$backend_cid" ]] || die "Could not find running backend container for admin seed"
 
+  local target_email
+  target_email="$(docker exec "$backend_cid" /bin/sh -lc 'printf "%s" "${ADMIN_EMAIL:-admin@placeware.com}"' | tr '[:upper:]' '[:lower:]')"
+  [[ -n "$target_email" ]] || target_email="admin@placeware.com"
+
   log_info "Running admin seed in backend container"
   if ! docker exec "$backend_cid" /bin/sh -lc '
     if [ -f /backend/seed_admin.py ]; then
@@ -244,6 +248,20 @@ else:
     print(f"Created admin user: {email}")
 PY
   fi
+
+  docker exec "$backend_cid" python - <<PY
+import sys
+sys.path.insert(0, "/backend")
+from src.db import get_user_by_email
+
+target = ${target_email@Q}
+user = get_user_by_email(target)
+if not user:
+    raise SystemExit(f"Admin seed verification failed: user not found for {target}")
+print(f"Admin seed verification passed for {target}")
+PY
+
+  log_info "Admin login email: ${target_email}"
   log_pass "Admin seed completed"
 }
 
