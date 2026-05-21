@@ -166,7 +166,7 @@ const SageImport = () => {
     refetchInterval: 30_000,
   });
 
-  const jobs = historyData?.jobs ?? [];
+  const jobs = historyData?.data ?? [];
 
   // ── File selection ────────────────────────────────────────────────────────
 

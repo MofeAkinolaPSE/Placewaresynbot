@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "client/main.tsx",
+    "server/index.ts",
+    "server/node-build.ts"
+  ],
+  "project": [
+    "client/**/*.{ts,tsx}",
+    "server/**/*.ts",
+    "shared/**/*.ts",
+    "vite.config.ts",
+    "vite.config.server.ts"
+  ],
+  "ignore": [
+    "dist/**",
+    "src/**",
+    "netlify/**"
+  ]
+}

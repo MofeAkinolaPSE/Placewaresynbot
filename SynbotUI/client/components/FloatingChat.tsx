@@ -103,11 +103,12 @@ const FloatingChat = () => {
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
       setMessages((prev) => [...prev, botMsg]);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : "Failed to get response";
       const errorMsg: Message = {
         id: messages.length + 1,
         type: "bot",
-        content: `Error: ${e?.message || "Failed to get response"}`,
+        content: `Error: ${errorMessage}`,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
       setMessages((prev) => [...prev, errorMsg]);

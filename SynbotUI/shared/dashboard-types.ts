@@ -23,7 +23,15 @@ export interface InventoryDashboardData {
     out_of_stock_count: number;
   };
   critical_items: InventorySummaryItem[];
-  recent_movements: any[]; // Todo: define movement type
+  recent_movements: InventoryMovement[];
+}
+
+export interface InventoryMovement {
+  id: string | number;
+  sku: string;
+  quantity_change: number;
+  movement_type: string;
+  occurred_at: string;
 }
 
 // Phase 2: Staff & Ops
@@ -37,12 +45,22 @@ export interface StaffMember {
 }
 
 export interface TimesheetEntry {
-  id: number;
-  staff: { full_name: string };
+  id: number | string;
+  staff?: { full_name?: string | null };
+  staff_id?: string | number | null;
   date: string;
   hours_worked: number;
   department: string;
   activity_note?: string;
+}
+
+export interface StaffDirectoryEntry {
+  staff_id?: string | number;
+  full_name: string;
+  email: string;
+  department?: string;
+  role?: string;
+  status?: string;
 }
 
 export interface WorkforceDashboardData {

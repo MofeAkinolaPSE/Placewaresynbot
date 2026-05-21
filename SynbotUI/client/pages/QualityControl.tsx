@@ -1136,7 +1136,7 @@ function NafdacTab() {
 
   const updateRecallMut = useMutation({
     mutationFn: (r: Recall) => api.qc.updateRecallStatus(r.id, {
-      status: newRecallStatus,
+      status: newRecallStatus as "initiated" | "in_progress" | "completed" | "closed",
       notes:  recallNotes.trim() || undefined,
     }),
     onSuccess: () => {

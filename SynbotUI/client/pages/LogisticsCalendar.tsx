@@ -376,7 +376,7 @@ export default function LogisticsCalendar() {
   // Mutations
   // -------------------------------------------------------------------------
   const createMutation = useMutation({
-    mutationFn: (payload: Record<string, any>) => api.calendar.create(payload),
+    mutationFn: (payload: Parameters<typeof api.calendar.create>[0]) => api.calendar.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["logistics-events"] });
       queryClient.invalidateQueries({ queryKey: ["logistics-alerts"] });

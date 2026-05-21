@@ -8,11 +8,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Substitute the actual deploy user here (e.g. ubuntu, moe, etc.)
-# To find your username: whoami
-User=ubuntu
-
-ExecStart=/home/ubuntu/Placewaresynbot/scripts/watchdog.sh
+# Run as root because the watchdog executes Docker commands.
+ExecStart=/bin/bash -lc 'for p in /opt/placeware/deploy/watchdog.sh /home/*/Placewaresynbot/deploy/watchdog.sh; do if [ -x "$p" ]; then exec /bin/bash "$p"; fi; done; echo "Watchdog script not found in expected paths."; exit 1'
 
 # Restart the watchdog itself if it crashes
 Restart=on-failure

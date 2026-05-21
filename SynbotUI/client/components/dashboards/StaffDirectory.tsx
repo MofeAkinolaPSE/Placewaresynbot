@@ -10,6 +10,13 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { StaffDirectoryEntry } from "@shared/dashboard-types";
+
+function isStaffDirectoryEntry(staff: unknown): staff is StaffDirectoryEntry {
+  if (!staff || typeof staff !== "object") return false;
+  const candidate = staff as Partial<StaffDirectoryEntry>;
+  return typeof candidate.full_name === "string" && typeof candidate.email === "string";
+}
 
 export function StaffDirectory() {
   const isMobile = useIsMobile();
@@ -22,15 +29,9 @@ export function StaffDirectory() {
     queryFn: () => api.staff.snapshot(),
   });
 
-  // Backend response shape is { data: [...] } from staff router
-  // But wait, staff router in staff_ops.py:
-  // "return {"data": get_staff_by_department(department)}"
-  // And api-client.ts says: "return res.json().then(d => d.data)"
-  // So staffList here should be the array itself.
-
-  const liveRows = Array.isArray(staffList) ? (staffList as any[]) : [];
-  const snapRows = Array.isArray(snapshotList) ? (snapshotList as any[]) : [];
-  const rows: any[] = liveRows.length > 0 ? liveRows : snapRows;
+  const liveRows = Array.isArray(staffList) ? (staffList as StaffDirectoryEntry[]) : [];
+  const snapRows = Array.isArray(snapshotList) ? (snapshotList as StaffDirectoryEntry[]) : [];
+  const rows: StaffDirectoryEntry[] = liveRows.length > 0 ? liveRows : snapRows;
   const usingSnapshot = liveRows.length === 0 && snapRows.length > 0;
 
   if (!isLoading && !staffError && !snapshotError && !Array.isArray(staffList) && !Array.isArray(snapshotList)) {
@@ -57,7 +58,7 @@ export function StaffDirectory() {
       )}
       {isMobile ? (
         <div className="space-y-3 p-4">
-          {rows.filter((staff: any) => typeof staff?.full_name === "string" && typeof staff?.email === "string").map((staff) => (
+          {rows.filter(isStaffDirectoryEntry).map((staff) => (
             <div key={staff.staff_id ?? staff.email} className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium text-foreground">{staff.full_name}</p>
@@ -96,7 +97,7 @@ export function StaffDirectory() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.filter((staff: any) => typeof staff?.full_name === "string" && typeof staff?.email === "string").map((staff) => (
+              {rows.filter(isStaffDirectoryEntry).map((staff) => (
                 <TableRow key={staff.staff_id ?? staff.email}>
                   <TableCell className="sticky left-0 z-10 bg-background font-medium">{staff.full_name}</TableCell>
                   <TableCell>{staff.email}</TableCell>

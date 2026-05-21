@@ -11,10 +11,38 @@
 
 set -euo pipefail
 
-SSHD_CONFIG="/etc/ssh/sshd_config"
-BACKUP="${SSHD_CONFIG}.bak.$(date +%Y%m%d_%H%M%S)"
+# Resolve OpenSSH server binary and config path dynamically.
+SSHD_BIN="$(command -v sshd || true)"
+SSHD_CONFIG="${SSHD_CONFIG:-/etc/ssh/sshd_config}"
+BACKUP=""
+SSH_SERVICE=""
 
 echo "[harden-ssh] Checking prerequisites..."
+
+if [[ -z "$SSHD_BIN" ]]; then
+    echo "ERROR: 'sshd' not found. OpenSSH server is not installed."
+    echo "Install it first, then rerun: sudo apt-get update && sudo apt-get install -y openssh-server"
+    exit 1
+fi
+
+if [[ ! -f "$SSHD_CONFIG" ]]; then
+    echo "ERROR: OpenSSH config not found at $SSHD_CONFIG"
+    echo "If your distro uses a different location, rerun with:"
+    echo "  sudo SSHD_CONFIG=/path/to/sshd_config bash deploy/harden-ssh.sh"
+    exit 1
+fi
+
+if systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.service'; then
+    SSH_SERVICE="ssh"
+elif systemctl list-unit-files 2>/dev/null | grep -q '^sshd\.service'; then
+    SSH_SERVICE="sshd"
+else
+    echo "ERROR: Could not find ssh or sshd systemd service unit."
+    echo "Check available units with: systemctl list-unit-files | grep -E 'ssh|sshd'"
+    exit 1
+fi
+
+BACKUP="${SSHD_CONFIG}.bak.$(date +%Y%m%d_%H%M%S)"
 
 # Safety check: ensure a non-root user with SSH keys exists
 SUDO_USER_HOME=$(getent passwd "${SUDO_USER:-}" | cut -d: -f6 2>/dev/null || true)
@@ -62,10 +90,10 @@ apply_setting "UsePAM"                     "yes"
 apply_setting "Protocol"                   "2"
 
 echo "[harden-ssh] Validating configuration..."
-sshd -t  # Dry-run test — aborts if config is invalid
+"$SSHD_BIN" -t -f "$SSHD_CONFIG"  # Dry-run test — aborts if config is invalid
 
 echo "[harden-ssh] Restarting SSH service..."
-systemctl restart sshd
+systemctl restart "$SSH_SERVICE"
 
 echo "[harden-ssh] Done. Summary of applied settings:"
 grep -E "^(PasswordAuthentication|PermitRootLogin|MaxAuthTries|LoginGraceTime|X11Forwarding|AllowTcpForwarding)" "$SSHD_CONFIG"

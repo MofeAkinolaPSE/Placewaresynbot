@@ -177,9 +177,13 @@ export default function FinanceAR() {
     setPlPdfLoading(true);
     try {
       const { authClient } = await import("@/lib/auth-client");
-      const token = await authClient.getToken();
+      let token = authClient.getAccessToken();
+      if (!token) {
+        const refreshed = await authClient.refresh();
+        if (refreshed) token = authClient.getAccessToken();
+      }
       const url = apiUrl(api.finance.plPdfUrl(plPeriod || undefined));
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
       const a = document.createElement("a");
@@ -213,9 +217,13 @@ export default function FinanceAR() {
     setPayrollPdfLoading(true);
     try {
       const { authClient } = await import("@/lib/auth-client");
-      const token = await authClient.getToken();
+      let token = authClient.getAccessToken();
+      if (!token) {
+        const refreshed = await authClient.refresh();
+        if (refreshed) token = authClient.getAccessToken();
+      }
       const url = apiUrl(api.finance.payrollPdfUrl(payrollPeriod || undefined));
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
       const a = document.createElement("a");

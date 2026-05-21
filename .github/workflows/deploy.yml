@@ -14,6 +14,16 @@ on:
         required: false
         default: false
         type: boolean
+      domain:
+        description: "Optional public domain for Let's Encrypt (e.g. app.example.com)"
+        required: false
+        default: ''
+        type: string
+      le_email:
+        description: "Optional email for Let's Encrypt registration/expiry notices"
+        required: false
+        default: ''
+        type: string
 
 jobs:
   # ── Job 1: Run tests first (reuses existing CI job logic) ──────────────────
@@ -131,6 +141,53 @@ jobs:
       # Checkout to $GITHUB_WORKSPACE — works for any runner user (moeakin,
       # runner, root, etc.) without hardcoding a home directory path.
       - uses: actions/checkout@v4
+
+      - name: Preflight - validate required deploy secrets
+        # Fail fast before any build/deploy work if critical secrets are unset.
+        # This prevents mid-pipeline failures during image build, runtime boot,
+        # SMTP delivery, or DB auth.
+        env:
+          _DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          _DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
+          _EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          _EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          _POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          _JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          _ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          _SAGE_BRIDGE_URL: ${{ secrets.SAGE_BRIDGE_URL }}
+          _SAGE_BRIDGE_KEY: ${{ secrets.SAGE_BRIDGE_KEY }}
+          _SAGE_BRIDGE_WEBHOOK_SECRET: ${{ secrets.SAGE_BRIDGE_WEBHOOK_SECRET }}
+          _GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
+        run: |
+          missing=0
+
+          require_non_empty() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "ERROR: Required GitHub secret '$name' is missing or empty."
+              missing=1
+            fi
+          }
+
+          require_non_empty "DEEPSEEK_API_KEY" "$_DEEPSEEK_API_KEY"
+          require_non_empty "DEEPSEEK_MODEL" "$_DEEPSEEK_MODEL"
+          require_non_empty "EMAIL_FROM" "$_EMAIL_FROM"
+          require_non_empty "EMAIL_PASS" "$_EMAIL_PASS"
+          require_non_empty "POSTGRES_PASSWORD" "$_POSTGRES_PASSWORD"
+          require_non_empty "JWT_SECRET" "$_JWT_SECRET"
+          require_non_empty "ADMIN_PASSWORD" "$_ADMIN_PASSWORD"
+          require_non_empty "SAGE_BRIDGE_URL" "$_SAGE_BRIDGE_URL"
+          require_non_empty "SAGE_BRIDGE_KEY" "$_SAGE_BRIDGE_KEY"
+          require_non_empty "SAGE_BRIDGE_WEBHOOK_SECRET" "$_SAGE_BRIDGE_WEBHOOK_SECRET"
+          require_non_empty "GRAFANA_PASSWORD" "$_GRAFANA_PASSWORD"
+
+          if [ "$missing" -ne 0 ]; then
+            echo "One or more required deploy secrets are missing. Aborting deployment."
+            exit 1
+          fi
+
+          echo "Preflight passed: required deploy secrets are present."
 
       # ── Bootstrap (idempotent — fast no-op on every deploy after the first) ──
 
@@ -284,7 +341,6 @@ jobs:
           _SAGE_BRIDGE_URL: ${{ secrets.SAGE_BRIDGE_URL }}
           _SAGE_BRIDGE_KEY: ${{ secrets.SAGE_BRIDGE_KEY }}
           _SAGE_BRIDGE_WEBHOOK_SECRET: ${{ secrets.SAGE_BRIDGE_WEBHOOK_SECRET }}
-          _HF_TOKEN: ${{ secrets.HF_TOKEN }}
           _GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
         run: |
           # printf '%s' prevents backslash-sequence interpretation in secret values.
@@ -302,7 +358,6 @@ jobs:
             printf 'SAGE_BRIDGE_URL=%s\n'             "$_SAGE_BRIDGE_URL"
             printf 'SAGE_BRIDGE_KEY=%s\n'             "$_SAGE_BRIDGE_KEY"
             printf 'SAGE_BRIDGE_WEBHOOK_SECRET=%s\n'  "$_SAGE_BRIDGE_WEBHOOK_SECRET"
-            printf 'HF_TOKEN=%s\n'                   "$_HF_TOKEN"
             printf 'GRAFANA_PASSWORD=%s\n'            "$_GRAFANA_PASSWORD"
             printf 'SAGE_MOCK=0\n'
             printf 'DEV_TOKEN_ENABLED=0\n'
@@ -370,11 +425,12 @@ jobs:
         #   B) DOMAIN not set → generate a self-signed cert (browsers will warn).
         #      Safe for internal testing; upgrade to mode A before client demos.
         #
-        # Add DOMAIN (e.g. placeware.yourdomain.com) and LE_EMAIL to GitHub Secrets
-        # to switch the entire pipeline to trusted certs on the next push.
+        # Optional manual inputs for cert provisioning on workflow_dispatch.
+        # On push triggers these resolve to empty strings and the workflow
+        # falls back to self-signed cert mode.
         env:
-          _DOMAIN:   ${{ secrets.DOMAIN }}
-          _LE_EMAIL: ${{ secrets.LE_EMAIL }}
+          _DOMAIN:   ${{ github.event.inputs.domain || '' }}
+          _LE_EMAIL: ${{ github.event.inputs.le_email || '' }}
         run: |
           CERT_DIR="/etc/ssl/placeware"
           WEBROOT="/var/www/certbot"

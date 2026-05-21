@@ -34,10 +34,17 @@ function ReportRenderer({ content }: { content: string }) {
     try {
       const { authClient } = await import("@/lib/auth-client");
       const { apiUrl } = await import("@/lib/api-base");
-      const token = await authClient.getToken();
+      let token = authClient.getAccessToken();
+      if (!token) {
+        const refreshed = await authClient.refresh();
+        if (refreshed) token = authClient.getAccessToken();
+      }
       const res = await fetch(apiUrl("/reports/generate/docx"), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ intent_text: content.slice(0, 200) }),
       });
       if (!res.ok) throw new Error(await res.text());

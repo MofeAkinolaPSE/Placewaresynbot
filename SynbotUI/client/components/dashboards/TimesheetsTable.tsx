@@ -9,6 +9,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { TimesheetEntry } from "@shared/dashboard-types";
+
+function isTimesheetEntry(row: unknown): row is TimesheetEntry {
+  if (!row || typeof row !== "object") return false;
+  const candidate = row as Partial<TimesheetEntry>;
+  return (
+    (typeof candidate.id === "number" || typeof candidate.id === "string") &&
+    typeof candidate.date === "string" &&
+    typeof candidate.department === "string" &&
+    Number.isFinite(Number(candidate.hours_worked))
+  );
+}
 
 export function TimesheetsTable() {
   const isMobile = useIsMobile();
@@ -21,13 +33,7 @@ export function TimesheetsTable() {
   const payloadValid = Array.isArray(data);
   const dataError = !isLoading && (error || !payloadValid);
 
-  const rows = (payloadValid ? data : []).filter((row: any) =>
-    row &&
-    (typeof row.id === "number" || typeof row.id === "string") &&
-    typeof row.date === "string" &&
-    typeof row.department === "string" &&
-    Number.isFinite(Number(row.hours_worked))
-  );
+  const rows: TimesheetEntry[] = (payloadValid ? data : []).filter(isTimesheetEntry);
   const malformedCount = (payloadValid ? data.length : 0) - rows.length;
 
   return (
@@ -53,7 +59,7 @@ export function TimesheetsTable() {
       {isMobile ? (
         <div className="space-y-3 p-4">
           {rows.length > 0 ? (
-            rows.map((row: any) => (
+            rows.map((row) => (
               <div key={row.id} className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-semibold text-foreground">
@@ -92,7 +98,7 @@ export function TimesheetsTable() {
             </TableHeader>
             <TableBody>
               {rows.length > 0 ? (
-                rows.map((row: any) => (
+                rows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.date}

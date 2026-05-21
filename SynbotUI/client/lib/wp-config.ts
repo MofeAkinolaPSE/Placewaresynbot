@@ -12,7 +12,7 @@ export function getSynbotConfig(): SynbotConfig {
   
   // 1. Try global window config (injected by WP/backend)
   try {
-    const w = window as unknown as { SYNBOT_CONFIG?: SynbotConfig };
+      const w = window as Window & { SYNBOT_CONFIG?: SynbotConfig };
     if (w.SYNBOT_CONFIG) {
        return w.SYNBOT_CONFIG;
     }

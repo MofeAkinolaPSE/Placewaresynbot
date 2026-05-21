@@ -1061,11 +1061,18 @@ function QueueTab() {
                 onClick={async () => {
                   try {
                     const { authClient } = await import("@/lib/auth-client");
-                    const token = await authClient.getToken();
+                    let token = authClient.getAccessToken();
+                    if (!token) {
+                      const refreshed = await authClient.refresh();
+                      if (refreshed) token = authClient.getAccessToken();
+                    }
                     const { apiUrl } = await import("@/lib/api-base");
                     const res = await fetch(apiUrl("/reports/generate/docx"), {
                       method: "POST",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                      headers: {
+                        "Content-Type": "application/json",
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
                       body: JSON.stringify({ report_type: "frontdesk", intent_text: "generate daily frontdesk operations report" }),
                     });
                     if (!res.ok) throw new Error(await res.text());

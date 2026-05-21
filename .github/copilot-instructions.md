@@ -19,7 +19,7 @@ Purpose: FastAPI RAG backend + (legacy) WordPress plugin + optional Gradio/HF em
 - Update WP plugin slug, REST namespace, option keys, CSS variable prefix.
 
 ## Environment / Secrets (present)
-`.env` in `backend/` expects: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `SUPABASE_URL`, `SUPABASE_KEY`, `EMAIL_FROM`, `EMAIL_PASS`, `HF_TOKEN` (and future: `HF_API_URL`, `HF_API_KEY`, `SAGE_API_KEY`). Never commit real keys (current file contains live-looking values—sanitize before pushing!). Provide a `.env.example` during refactor.
+`.env` in `backend/` expects: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `SUPABASE_URL`, `SUPABASE_KEY`, `EMAIL_FROM`, `EMAIL_PASS` (and future: `HF_API_URL`, `HF_API_KEY`, `SAGE_API_KEY`). Never commit real keys (current file contains live-looking values—sanitize before pushing!). Provide a `.env.example` during refactor.
 
 ## Retrieval & Embedding Contract
 - Embedding length must be exactly 384; validation in `/chat` rejects otherwise.
