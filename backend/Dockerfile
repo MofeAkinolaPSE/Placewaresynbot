@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy application source
 COPY app.py .
+COPY seed_admin.py .
 COPY src/ ./src/
 COPY config.yaml .
 COPY config/ ./config/

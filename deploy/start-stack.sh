@@ -202,7 +202,16 @@ run_admin_seed() {
   [[ -n "$backend_cid" ]] || die "Could not find running backend container for admin seed"
 
   log_info "Running admin seed in backend container"
-  docker exec "$backend_cid" python seed_admin.py
+  docker exec "$backend_cid" /bin/sh -lc '
+    if [ -f /backend/seed_admin.py ]; then
+      exec python /backend/seed_admin.py
+    elif [ -f seed_admin.py ]; then
+      exec python seed_admin.py
+    else
+      echo "seed_admin.py not found in container filesystem" >&2
+      exit 1
+    fi
+  '
   log_pass "Admin seed completed"
 }
 
