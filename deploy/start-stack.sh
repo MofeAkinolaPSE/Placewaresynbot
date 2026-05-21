@@ -250,15 +250,32 @@ PY
   fi
 
   docker exec "$backend_cid" python - <<PY
+import hashlib
+import os
 import sys
+
 sys.path.insert(0, "/backend")
+
+from src.auth_utils import verify_password
 from src.db import get_user_by_email
 
 target = ${target_email@Q}
 user = get_user_by_email(target)
 if not user:
     raise SystemExit(f"Admin seed verification failed: user not found for {target}")
-print(f"Admin seed verification passed for {target}")
+
+pwd_env = os.getenv("ADMIN_PASSWORD")
+admin_pwd = pwd_env or "pware1234"
+source = "env" if pwd_env else "default"
+
+if not verify_password(admin_pwd, user.get("hashed_password", "")):
+    raise SystemExit(
+        f"Admin seed password verification failed for {target}. "
+        f"Check ADMIN_PASSWORD and rerun seeding."
+    )
+
+marker = hashlib.sha256(f"{target}|{source}|{user.get('id','')}".encode("utf-8")).hexdigest()[:12]
+print(f"Admin password verification passed for {target} (source={source}, marker={marker})")
 PY
 
   log_info "Admin login email: ${target_email}"
