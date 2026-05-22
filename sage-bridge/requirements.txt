@@ -9,3 +9,4 @@ watchdog>=4.0.0
 # pythonnet — must target .NET Framework for the Sage 50 SDK
 # Requires .NET Framework 4.x on the Windows host
 pythonnet>=3.0.3
+requests>=2.31.0

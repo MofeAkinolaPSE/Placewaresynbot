@@ -139,6 +139,12 @@ def _push_webhook(entity_type: str) -> None:
     if not url:
         return
 
+    verify_tls: bool | str = True
+    if settings.BRIDGE_INSECURE_SKIP_VERIFY:
+        verify_tls = False
+    elif settings.BRIDGE_CA_CERT_PATH:
+        verify_tls = settings.BRIDGE_CA_CERT_PATH
+
     payload = {
         "source": "sage_bridge",
         "event": "data_changed",
@@ -151,7 +157,7 @@ def _push_webhook(entity_type: str) -> None:
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            with httpx.Client(timeout=10) as client:
+            with httpx.Client(timeout=10, verify=verify_tls) as client:
                 resp = client.post(url, json=payload, headers=headers)
             if resp.status_code in (200, 202, 204):
                 if attempt > 1:

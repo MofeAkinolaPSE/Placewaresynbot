@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import time
+from urllib.parse import urlparse
 from typing import Any, Dict, Optional, Tuple
 
 import requests
@@ -36,13 +38,18 @@ BRIDGE_API_KEY = os.getenv("BRIDGE_API_KEY", "")
 # Webhook URL points to nginx on port 80 — backend port 8000 is not LAN-exposed
 SYNBOT_URL     = os.getenv("SYNBOT_WEBHOOK_URL", "")
 SYNBOT_KEY     = os.getenv("SYNBOT_WEBHOOK_KEY", "")
+BRIDGE_CA_CERT_PATH = os.getenv("BRIDGE_CA_CERT_PATH", "").strip()
+BRIDGE_INSECURE_SKIP_VERIFY = os.getenv("BRIDGE_INSECURE_SKIP_VERIFY", "false").lower() in ("1", "true", "yes")
 # Local .env hint — real answer comes from bridge /sync/status in check_sage_connectivity()
 _SAGE_MOCK_ENV = os.getenv("SAGE_MOCK", "false").lower() in ("true", "1")
 TIMEOUT        = 10  # seconds
 
 # Derive VM base URL: strip /sage/webhook suffix, fall back to whole URL
 if SYNBOT_URL:
-    VM_BASE_URL = SYNBOT_URL.removesuffix("/sage/webhook").rstrip("/")
+    if SYNBOT_URL.endswith("/sage/webhook"):
+        VM_BASE_URL = SYNBOT_URL[: -len("/sage/webhook")].rstrip("/")
+    else:
+        VM_BASE_URL = SYNBOT_URL.rstrip("/")
 else:
     VM_BASE_URL = ""
 
@@ -81,17 +88,22 @@ def _get(url: str, key: Optional[str] = None, params: Optional[Dict] = None,
          timeout: int = TIMEOUT) -> Tuple[bool, int, Any]:
     """GET returning (success, status_code, parsed_body)."""
     headers = {"X-Bridge-API-Key": key} if key else {}
+    verify_tls: bool | str = True
+    if BRIDGE_INSECURE_SKIP_VERIFY:
+        verify_tls = False
+    elif BRIDGE_CA_CERT_PATH:
+        verify_tls = BRIDGE_CA_CERT_PATH
     try:
-        r = requests.get(url, headers=headers, params=params or {}, timeout=timeout)
+        r = requests.get(url, headers=headers, params=params or {}, timeout=timeout, verify=verify_tls)
         try:
             body = r.json()
         except Exception:
             body = r.text
         return r.status_code < 400, r.status_code, body
-    except requests.ConnectionError:
-        return False, 0, "connection refused"
-    except requests.Timeout:
-        return False, 0, "timed out"
+    except requests.ConnectionError as exc:
+        return False, 0, f"connection_error: {exc}"
+    except requests.Timeout as exc:
+        return False, 0, f"timeout: {exc}"
     except Exception as exc:
         return False, 0, str(exc)
 
@@ -101,19 +113,48 @@ def _post(url: str, payload: Dict, key: Optional[str] = None,
     headers = {"Content-Type": "application/json"}
     if key:
         headers["X-Bridge-API-Key"] = key
+    verify_tls: bool | str = True
+    if BRIDGE_INSECURE_SKIP_VERIFY:
+        verify_tls = False
+    elif BRIDGE_CA_CERT_PATH:
+        verify_tls = BRIDGE_CA_CERT_PATH
     try:
-        r = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        r = requests.post(url, json=payload, headers=headers, timeout=timeout, verify=verify_tls)
         try:
             body = r.json()
         except Exception:
             body = r.text
         return r.status_code < 400, r.status_code, body
-    except requests.ConnectionError:
-        return False, 0, "connection refused"
-    except requests.Timeout:
-        return False, 0, "timed out"
+    except requests.ConnectionError as exc:
+        return False, 0, f"connection_error: {exc}"
+    except requests.Timeout as exc:
+        return False, 0, f"timeout: {exc}"
     except Exception as exc:
         return False, 0, str(exc)
+
+
+def _get_installed_odbc_dsns() -> Dict[str, str]:
+    try:
+        import pyodbc
+        return pyodbc.dataSources() or {}
+    except Exception:
+        return {}
+
+
+def _vm_network_probe(base_url: str) -> Tuple[bool, str]:
+    try:
+        parsed = urlparse(base_url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if not host:
+            return False, "invalid VM url host"
+
+        resolved_ip = socket.gethostbyname(host)
+        with socket.create_connection((host, port), timeout=4):
+            pass
+        return True, f"dns={host}->{resolved_ip}, tcp={host}:{port} reachable"
+    except Exception as exc:
+        return False, str(exc)
 
 
 def _section(title: str) -> None:
@@ -166,6 +207,10 @@ def check_sage_connectivity():
     if isinstance(body, dict):
         odbc = body.get("odbc_connected", None)
         sdk  = body.get("sdk_connected", None)
+        odbc_error = str(body.get("odbc_error") or "")
+        sdk_error = str(body.get("sdk_error") or "")
+        configured_dsn = str(body.get("sage_odbc_dsn") or os.getenv("SAGE_ODBC_DSN", "")).strip()
+        conn_str_set = bool(body.get("sage_odbc_conn_str_configured", False))
         # Use what the running bridge actually reports, not just what .env says
         mock = body.get("mock_mode", _SAGE_MOCK_ENV)
         global SAGE_MOCK
@@ -175,10 +220,27 @@ def check_sage_connectivity():
             _p("SAGE_MOCK=true — Sage connectivity skipped (mock data in use)", True,
                "Set SAGE_MOCK=false and restart bridge for live Sage test", warn=False)
         else:
+            dsns = _get_installed_odbc_dsns()
+            configured_present = configured_dsn in dsns if configured_dsn else False
+            _p(
+                "Configured ODBC DSN exists on this machine",
+                configured_present or conn_str_set,
+                (
+                    f"configured_dsn={configured_dsn or '(empty)'}; "
+                    f"visible_dsns={sorted(dsns.keys())[:12]}"
+                ) if not (configured_present or conn_str_set) else (
+                    f"configured_dsn={configured_dsn}; conn_str_override={conn_str_set}"
+                ),
+            )
             _p("ODBC connected to Pervasive/Sage 50", odbc is True,
-               "odbc_connected=false → check SAGE_ODBC_DSN and Pervasive driver" if not odbc else "")
+               (
+                   f"odbc_connected=false; dsn={configured_dsn or '(empty)'}; "
+                   f"error={odbc_error or 'not returned'}"
+               ) if not odbc else "")
             _p("SDK session open (Sage.Peachtree.API.dll)", sdk is True,
-               "sdk_connected=false → check SAGE_API_DLL_PATH and SAGE_COMPANY_PATH" if not sdk else "",
+               (
+                   f"sdk_connected=false; error={sdk_error or 'not returned'}"
+               ) if not sdk else "",
                warn=(sdk is False))  # warn not fail — ODBC alone is enough for most ops
 
         company = body.get("sage_company_path", "")
@@ -207,8 +269,11 @@ def check_entity_pull():
         elif ok and isinstance(body, dict) and body.get("items"):
             _p(f"GET {path} → list", True, f"{len(body['items'])} record(s) returned")
         else:
+            detail = str(body)
+            if isinstance(body, dict):
+                detail = str(body.get("detail") or body)
             _p(f"GET {path} → list", False,
-               f"code={code} body={str(body)[:120]}")
+               f"code={code} detail={detail[:220]}")
 
 
 # ── Check 5: VM backend reachable from this machine ──────────────────────────
@@ -226,8 +291,10 @@ def check_vm_reachable():
     if ok:
         _p("VM backend root endpoint reachable", True, f"code={code}")
     else:
-          _p("VM backend root endpoint reachable", False,
-              f"code={code} detail={body}  →  Is VM running? Is nginx on port 80 accessible from this LAN?")
+        probe_ok, probe_detail = _vm_network_probe(VM_BASE_URL)
+        probe_suffix = f"; network_probe={probe_detail}"
+        _p("VM backend root endpoint reachable", False,
+            f"code={code} detail={body}{probe_suffix}  →  Is VM running? Is nginx on port 80 accessible from this LAN?")
 
 
 # ── Check 6: VM webhook endpoint ─────────────────────────────────────────────
@@ -247,22 +314,28 @@ def check_vm_webhook():
         "event": "ping_test",
         "source": "test_connectivity.py",
     }
-    headers_extra = {"X-Webhook-Secret": SYNBOT_KEY}
+    headers_extra = {"X-Webhook-Key": SYNBOT_KEY}
 
     try:
+        verify_tls: bool | str = True
+        if BRIDGE_INSECURE_SKIP_VERIFY:
+            verify_tls = False
+        elif BRIDGE_CA_CERT_PATH:
+            verify_tls = BRIDGE_CA_CERT_PATH
         r = requests.post(SYNBOT_URL, json=payload,
                           headers={**headers_extra, "Content-Type": "application/json"},
-                          timeout=TIMEOUT)
+                          timeout=TIMEOUT, verify=verify_tls)
         # 200 or 202 = received; 422 = schema mismatch but reachable
         reachable = r.status_code in (200, 202, 204, 422)
         _p(f"POST {SYNBOT_URL} → accepted", reachable,
            f"code={r.status_code}" + (f" body={r.text[:100]}" if not reachable else ""),
            warn=(r.status_code == 422))
-    except requests.ConnectionError:
-          _p("POST to VM webhook reachable", False,
-              "connection refused — check VM IP and that nginx (port 80) is accessible from this LAN")
-    except requests.Timeout:
-        _p("POST to VM webhook reachable", False, "timed out")
+    except requests.ConnectionError as exc:
+        probe_ok, probe_detail = _vm_network_probe(VM_BASE_URL) if VM_BASE_URL else (False, "vm base url not configured")
+        _p("POST to VM webhook reachable", False,
+            f"connection_error={exc}; network_probe={probe_detail}")
+    except requests.Timeout as exc:
+        _p("POST to VM webhook reachable", False, f"timeout={exc}")
 
 
 # ── Check 7: Write round-trip (optional) ─────────────────────────────────────

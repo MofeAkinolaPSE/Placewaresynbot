@@ -62,6 +62,16 @@ class Settings(BaseSettings):
         description="Shared secret that SynBot expects on incoming webhook requests",
     )
 
+    # ── TLS verification for VM webhook calls ───────────────────────────────
+    BRIDGE_CA_CERT_PATH: str = Field(
+        default="",
+        description="Optional CA/cert PEM path for HTTPS verification (e.g. C:/Temp/placeware-vm.cer)",
+    )
+    BRIDGE_INSECURE_SKIP_VERIFY: bool = Field(
+        default=False,
+        description="Set true only for temporary diagnostics to skip TLS verification",
+    )
+
     # ── File Watcher ──────────────────────────────────────────────────────────
     WATCHER_POLL_SECONDS: int = Field(
         default=60,

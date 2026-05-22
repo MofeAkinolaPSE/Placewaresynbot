@@ -29,22 +29,28 @@ def sync_status(request: Request, _: None = _auth):
     settings = get_settings()
     odbc_ok = False
     sdk_ok = False
+    odbc_error = ""
+    sdk_error = ""
     try:
         odbc.fetch_all("company", limit=1)
         odbc_ok = True
-    except Exception:
-        pass
+    except Exception as exc:
+        odbc_error = str(exc)
     try:
         sdk.sdk_get_company_info()
         sdk_ok = True
-    except Exception:
-        pass
+    except Exception as exc:
+        sdk_error = str(exc)
 
     return {
         "bridge_version": "1.0.0",
         "sage_company_path": settings.SAGE_COMPANY_PATH,
+        "sage_odbc_dsn": settings.SAGE_ODBC_DSN,
+        "sage_odbc_conn_str_configured": bool(settings.SAGE_ODBC_CONN_STR),
         "odbc_connected": odbc_ok,
         "sdk_connected": sdk_ok,
+        "odbc_error": odbc_error,
+        "sdk_error": sdk_error,
         "last_sync": _last_sync,
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
     }

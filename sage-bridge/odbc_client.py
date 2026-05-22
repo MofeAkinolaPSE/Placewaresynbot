@@ -161,19 +161,21 @@ def fetch_all(
     if not table:
         raise ValueError(f"Unknown table key: {table_key!r}. Known: {list(TABLE_MAP)}")
 
-    sql = f"SELECT * FROM {table}"
+    # Pervasive SQL on older Sage installs does not support FETCH FIRST/OFFSET.
+    # Use TOP for limit and apply offset client-side for compatibility.
+    fetch_count = max(limit + max(offset, 0), 1)
+    sql = f"SELECT TOP {fetch_count} * FROM {table}"
     if where:
         sql += f" WHERE {where}"
-    # Pervasive PSQL syntax for pagination
-    sql += f" FETCH FIRST {limit} ROWS ONLY"
-    if offset:
-        sql += f" OFFSET {offset} ROWS"  # Pervasive v10+ supports this
 
     logger.debug("ODBC query: %s | params: %s", sql, params)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(sql, params or ())
-        return _rows_to_dicts(cursor)
+        rows = _rows_to_dicts(cursor)
+        if offset > 0:
+            rows = rows[offset:]
+        return rows[:limit]
 
 
 def fetch_one(

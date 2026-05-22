@@ -14,7 +14,8 @@ Notes:
 param(
     [switch]$SkipWrite,
     [switch]$OnlyTest,
-    [int]$BridgeStartTimeoutSeconds = 45
+    [int]$BridgeStartTimeoutSeconds = 45,
+    [string]$LogDir = "logs"
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,11 +48,20 @@ function Test-BridgeHealth {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
+if (-not (Test-Path $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir | Out-Null
+}
+
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$logPath = Join-Path $LogDir "bridge_start_and_test_$timestamp.log"
+Start-Transcript -Path $logPath -Append | Out-Null
+
 $py = Get-PythonCommand
 $pyCmd = $py.Cmd
 $pyPrefix = $py.Args
 
 Write-Step "Working directory: $scriptDir"
+Write-Step "Log file: $logPath"
 
 $bridgeAlreadyRunning = Test-BridgeHealth
 $startedProcess = $null
@@ -94,18 +104,24 @@ if ($SkipWrite) {
     $testArgs += "--skip-write"
 }
 
-& $pyCmd @testArgs
-$exitCode = $LASTEXITCODE
+try {
+    & $pyCmd @testArgs
+    $exitCode = $LASTEXITCODE
 
-if ($exitCode -eq 0) {
-    Write-Host "[start-and-test] Connectivity checks passed." -ForegroundColor Green
-}
-else {
-    Write-Host "[start-and-test] Connectivity checks failed (exit code: $exitCode)." -ForegroundColor Red
-}
+    if ($exitCode -eq 0) {
+        Write-Host "[start-and-test] Connectivity checks passed." -ForegroundColor Green
+    }
+    else {
+        Write-Host "[start-and-test] Connectivity checks failed (exit code: $exitCode)." -ForegroundColor Red
+    }
 
-if ($startedProcess -and -not $startedProcess.HasExited) {
-    Write-Host "[start-and-test] Bridge started by this script remains running (PID: $($startedProcess.Id))." -ForegroundColor Yellow
+    if ($startedProcess -and -not $startedProcess.HasExited) {
+        Write-Host "[start-and-test] Bridge started by this script remains running (PID: $($startedProcess.Id))." -ForegroundColor Yellow
+    }
+}
+finally {
+    Stop-Transcript | Out-Null
+    Write-Host "[start-and-test] Full transcript saved to: $logPath" -ForegroundColor Cyan
 }
 
 exit $exitCode
