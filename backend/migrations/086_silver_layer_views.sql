@@ -22,6 +22,12 @@ CREATE INDEX IF NOT EXISTS idx_sage_cust_cid_ts
 CREATE INDEX IF NOT EXISTS idx_sage_vend_vid_ts
     ON sage_vendors_snapshot (vendor_id, imported_at DESC);
 
+-- ── Backfill missing columns on sage_items_snapshot ─────────────────────────
+-- These were mapped by _map_items but omitted from the original table DDL.
+ALTER TABLE sage_items_snapshot
+    ADD COLUMN IF NOT EXISTS expiry_date  DATE,
+    ADD COLUMN IF NOT EXISTS batch_number TEXT;
+
 -- ── v_inventory ───────────────────────────────────────────────────────────────
 -- Silver view: deduplicates sage_items_snapshot (catalog) and joins with
 -- sage_inventory_snapshot (stock qty, summed across warehouses for latest batch).

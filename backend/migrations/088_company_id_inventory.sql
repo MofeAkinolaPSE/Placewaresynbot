@@ -18,8 +18,11 @@ CREATE INDEX IF NOT EXISTS idx_sage_inventory_company
 UPDATE sage_items_snapshot SET company_id = 'PlacewareNig' WHERE company_id IS NULL;
 UPDATE sage_inventory_snapshot SET company_id = 'PlacewareNig' WHERE company_id IS NULL;
 
--- Re-create v_inventory to include company_id (supersedes migration 086 version)
-CREATE OR REPLACE VIEW v_inventory AS
+-- Re-create v_inventory to include company_id (supersedes migration 086 version).
+-- Must drop dependent view first — CREATE OR REPLACE cannot reorder columns.
+DROP VIEW IF EXISTS v_ar_invoice_lines;
+DROP VIEW IF EXISTS v_inventory;
+CREATE VIEW v_inventory AS
 WITH latest_items AS (
     SELECT DISTINCT ON (item_id, COALESCE(company_id, 'default'))
         item_id AS sku,
@@ -67,3 +70,25 @@ SELECT
     COALESCE(sa.has_sage_qty, FALSE) AS has_sage_qty
 FROM latest_items li
 LEFT JOIN stock_agg sa ON sa.sku = li.sku;
+
+-- Recreate v_ar_invoice_lines now that v_inventory exists again with the new schema.
+CREATE OR REPLACE VIEW v_ar_invoice_lines AS
+WITH latest_batch AS (
+    SELECT batch_id
+    FROM sage_invoice_lines_snapshot
+    ORDER BY imported_at DESC
+    LIMIT 1
+)
+SELECT
+    l.invoice_id,
+    l.line_id,
+    l.item_id,
+    i.name          AS item_name,
+    l.quantity,
+    l.unit_price,
+    l.discount,
+    l.line_total,
+    l.gross_profit
+FROM sage_invoice_lines_snapshot l
+JOIN latest_batch lb ON l.batch_id = lb.batch_id
+LEFT JOIN v_inventory i ON i.sku = l.item_id;

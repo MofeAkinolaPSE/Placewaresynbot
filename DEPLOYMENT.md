@@ -445,43 +445,70 @@ Should show your actual password, not a placeholder.
 
 ---
 
-## DEPLOY — Trigger the First Deployment
+## DEPLOY — First Deployment via Docker Compose
+
+> We use `docker compose` directly for the first deployment. It is simpler and works perfectly
+> on Docker Desktop + WSL2. The `start-stack.sh` script is designed for bare Linux servers
+> and tries to configure SSH/UFW/fail2ban — none of which apply here. Skip it.
 
 ---
 
-### Step 9 — Push Code From Your Dev Laptop
+### Step 9 — Build and Start the App
 
-Switch back to **your dev laptop** (outside of RDP). In the terminal inside the project folder:
+In the **Ubuntu terminal**, navigate to the backend folder and bring everything up:
 
 ```bash
-git push origin main
+cd ~/Placewaresynbot/backend
+docker compose up -d --build
 ```
 
-This single command triggers everything. Here is what happens automatically on the server:
+- `--build` — builds the Docker images fresh (required on first run)
+- `-d` — runs all containers in the background so you get your terminal back
 
-1. GitHub detects the push → starts the `deploy.yml` pipeline
-2. The runner on the server picks up the job within ~10 seconds
-3. Pipeline **overwrites** `backend/.env` with values from your GitHub Secrets (replaces the one you created in Step 8)
-4. Docker Swarm is initialized (the container cluster manager)
-5. A local image registry is started at `localhost:5000`
-6. Backend and frontend Docker images are built — **takes 5–8 min first time**
-7. Images are deployed via `docker stack deploy`
-8. Pipeline waits for health checks: Postgres → Backend → Frontend
-9. Admin user is created using your `ADMIN_EMAIL` + `ADMIN_PASSWORD` secrets
+**What you will see:** Docker downloading base images then building layer by layer.
+This takes **5–8 minutes** on first run. A lot of text is normal — only red `ERROR` lines are a problem.
 
-**Watch it happen:**
-GitHub → your repo → **Actions tab** → click the running workflow → click the job → watch the live log.
-
-**First deployment takes 8–12 minutes.** Wait for:
+**Watch the build progress live (optional — open a second terminal tab):**
+```bash
+docker compose logs -f
 ```
-✅ Postgres healthy
-✅ Backend healthy
-✅ Frontend healthy
-✅ Admin user seeded
-🚀 Stack deployed successfully
+Press **Ctrl+C** to stop watching. The containers keep running.
+
+**When the build finishes, confirm everything is up:**
+```bash
+docker compose ps
 ```
 
-If you see a red ❌, scroll up in the log to find the error line and check the Troubleshooting section at the bottom.
+Expected — all containers showing `Up` or `healthy`:
+```
+NAME                    STATUS
+backend-db-1            Up (healthy)
+chat-backend.v1         Up (healthy)
+placeware-frontend.v1   Up (healthy)
+```
+
+If any container shows `Exit` or `Restarting`, run:
+```bash
+docker compose logs backend
+```
+Paste the last 20 lines here and we will fix it.
+
+---
+
+### Step 9b — Seed the Admin User
+
+After the containers are healthy, create the admin account so you can log in:
+
+```bash
+docker compose exec backend python seed_admin.py
+```
+
+Expected output:
+```
+Admin user created: your@email.com
+```
+
+If it says "Admin already exists" — that is fine, the account is already there.
 
 ---
 
