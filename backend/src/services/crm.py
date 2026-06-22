@@ -104,11 +104,23 @@ def get_crm_stats(client: DBClient = db) -> Dict[str, Any]:
     # 3. Risk Score (Avg)
     risks = risk_scores(client).get("customers", [])
     avg_risk = sum(r["risk_score"] for r in risks) / len(risks) if risks else 0
-    
+
+    # 4. Customer master count (from live customers table, not AR snapshot)
+    try:
+        cust_res = client.table("customers").select("id, client_type").execute()
+        cust_rows = cust_res.data or []
+        customer_count = len(cust_rows)
+        active_customers = customer_count  # all records are active clients
+    except Exception:
+        customer_count = 0
+        active_customers = 0
+
     return {
         "pipeline_value": pipeline_val,
         "active_opps": len([r for r in rows if r.get("status") in ["Open", "Pipeline", "Pending"]]),
         "win_rate": win_rate,
         "avg_risk_score": avg_risk,
-        "recent_deals": rows[:5]
+        "recent_deals": rows[:5],
+        "customer_count": customer_count,
+        "active_customers": active_customers,
     }

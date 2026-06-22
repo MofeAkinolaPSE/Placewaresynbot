@@ -88,6 +88,12 @@ services:
       # bind-mount /etc/letsencrypt/live/<domain> instead (see gen-tls-cert.sh).
       - ssl_certs:/etc/ssl/placeware:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || curl -f http://localhost/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       certs-init:
         condition: service_completed_successfully

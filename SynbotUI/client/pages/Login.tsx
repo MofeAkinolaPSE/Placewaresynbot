@@ -148,7 +148,7 @@ const Login = () => {
             transition={{ duration: 0.5, delay: 0.25 }}
             className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/75"
           >
-            Welcome to Warebot
+            Welcome to ACE
           </motion.p>
 
           <motion.h1

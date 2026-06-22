@@ -218,6 +218,34 @@ def get_inventory_summary(limit: int = 50, client: DBClient = db) -> List[Dict[s
             "status": "In Stock" if current_qty > 0 else "Out of Stock",
         })
 
+    # ── Step 4: enrich with sage_items_snapshot metadata ────────────────────
+    # sage_items_snapshot has category, cost_price, selling_price, expiry_date,
+    # batch_number, reorder_level — none of which are in sage_inventory_snapshot.
+    try:
+        items_resp = client.table("sage_items_snapshot").select(
+            "item_id, category, unit, cost_price, selling_price, "
+            "reorder_level, expiry_date, batch_number"
+        ).order("imported_at", desc=True).limit(2000).execute()
+        # Build lookup: item_id → metadata (first/latest per item_id)
+        item_meta: Dict[str, Dict[str, Any]] = {}
+        for r in (items_resp.data or []):
+            key = r.get("item_id") or ""
+            if key and key not in item_meta:
+                item_meta[key] = r
+        # Merge into results — match on sku == item_id
+        for row in results:
+            meta = item_meta.get(row["sku"]) or item_meta.get(row["name"])
+            if meta:
+                row["category"]      = meta.get("category") or ""
+                row["unit"]          = meta.get("unit") or ""
+                row["cost_price"]    = float(meta.get("cost_price") or 0)
+                row["selling_price"] = float(meta.get("selling_price") or 0)
+                row["reorder_level"] = float(meta.get("reorder_level") or 0)
+                row["expiry_date"]   = meta.get("expiry_date") or None
+                row["batch_number"]  = meta.get("batch_number") or ""
+    except Exception as e:
+        logger.warning(f"sage_items_snapshot enrichment failed (non-fatal): {e}")
+
     logger.info(f"get_inventory_summary: returned {len(results)} SKUs from sage_inventory_snapshot")
     return results
 
@@ -278,15 +306,19 @@ def get_latest_batch_sku_count(client: DBClient = db) -> int:
     return count_resp.count or 0
 
 
-def _parse_date(value: Optional[str]) -> Optional[datetime]:
+def _parse_date(value) -> Optional[datetime]:
     if not value:
         return None
+    import datetime as _dt
+    if isinstance(value, _dt.datetime):
+        return value
+    if isinstance(value, _dt.date):
+        return datetime(value.year, value.month, value.day)
     try:
-        # Prefer ISO 8601 (YYYY-MM-DD or full timestamp)
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except Exception:
         try:
-            return datetime.strptime(value, "%Y-%m-%d")
+            return datetime.strptime(str(value), "%Y-%m-%d")
         except Exception:
             return None
 
@@ -324,9 +356,40 @@ def get_expiring_inventory(thresholds: List[int] | None = None, client: DBClient
             .execute()
     except Exception as e:
         logger.error(f"Expiring inventory query failed: {e}")
-        # If expiry_date column is missing, skip gracefully
         return {"items": [], "summary": {"batch_id": batch_id, "count": 0, "note": "expiry_date column missing"}}
     rows = resp.data or []
+
+    # 2b) If sage_inventory_snapshot lacks expiry data, pull from sage_items_snapshot
+    # (expiry_date was added to sage_items_snapshot in Tier 2, not to sage_inventory_snapshot)
+    rows_have_expiry = any(r.get("expiry_date") for r in rows)
+    if not rows_have_expiry:
+        try:
+            items_resp = client.table("sage_items_snapshot")\
+                .select("item_id, item_name, expiry_date, batch_number")\
+                .order("imported_at", desc=True)\
+                .limit(2000)\
+                .execute()
+            # Deduplicate by item_id
+            seen_ids: set = set()
+            fallback_rows = []
+            for r in (items_resp.data or []):
+                if not r.get("expiry_date"):
+                    continue
+                key = r.get("item_id") or ""
+                if key and key not in seen_ids:
+                    seen_ids.add(key)
+                    fallback_rows.append({
+                        "sku":         r.get("item_id") or "",
+                        "name":        r.get("item_name") or "",
+                        "quantity":    0,
+                        "expiry_date": r.get("expiry_date"),
+                        "batch_id":    batch_id,
+                    })
+            if fallback_rows:
+                logger.info(f"Expiry fallback: using {len(fallback_rows)} rows from sage_items_snapshot")
+                rows = fallback_rows
+        except Exception as e:
+            logger.warning(f"sage_items_snapshot expiry fallback failed (non-fatal): {e}")
     now = datetime.utcnow()
     items: List[Dict[str, Any]] = []
 

@@ -1,5 +1,5 @@
 """
-Weekly Report Scheduler — Warebot
+Weekly Report Scheduler — ACE
 =======================================
 Runs a background thread that fires every Monday at 08:00 WAT (UTC+1).
 Generates the current week's sales report and emails it to the configured
@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 _WAT_OFFSET = dt.timedelta(hours=1)   # West Africa Time = UTC+1
 _SEND_HOUR  = 8                         # 08:00 WAT
+
+# File-based exclusive lock — ensures only one uvicorn worker runs the scheduler
+# when the app starts with --workers N. The lock is held for the process lifetime;
+# it is released automatically when the process exits.
+_SCHEDULER_LOCK_PATH = os.path.join(os.environ.get("TMPDIR", "/tmp"), "placeware_scheduler.lock")
+_scheduler_lock_fd = None
 
 
 def _next_monday_8am() -> float:
@@ -154,11 +160,11 @@ REP ACTIVITY
 {rep_activity_text}
 
 ---
-Generated automatically by Warebot at {report_data['generated_at'][:19]} UTC.
+Generated automatically by ACE at {report_data['generated_at'][:19]} UTC.
 Confidential — for authorised personnel only.
 """.strip()
 
-    subject = f"[Warebot] Weekly Sales Report — {report_data['week_start']} to {report_data['week_end']}"
+    subject = f"[ACE] Weekly Sales Report — {report_data['week_start']} to {report_data['week_end']}"
 
     # ── Send emails ────────────────────────────────────────────────────────
     try:
@@ -207,12 +213,32 @@ def _scheduler_loop() -> None:
 def start_scheduler() -> None:
     """
     Start the weekly report email scheduler in a daemon background thread.
-    Call this once during FastAPI app startup.
-    Safe to call multiple times — only one thread will be created.
+    Uses a file-based exclusive lock so only one uvicorn worker process
+    runs the scheduler when the app starts with --workers N.
     """
+    global _scheduler_lock_fd
+
     if os.getenv("WEEKLY_REPORT_ENABLED", "1") in ("0", "false", "False"):
         logger.info("Weekly report scheduler disabled (WEEKLY_REPORT_ENABLED=0)")
         return
+
+    # Acquire exclusive lock — non-blocking. Workers that lose the race skip.
+    try:
+        import fcntl  # Linux/macOS (Docker container is always Linux)
+        _scheduler_lock_fd = open(_SCHEDULER_LOCK_PATH, "w")
+        fcntl.flock(_scheduler_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        logger.info("Scheduler: another worker holds the scheduler lock — skipping (PID %s)", os.getpid())
+        if _scheduler_lock_fd:
+            try:
+                _scheduler_lock_fd.close()
+            except Exception:
+                pass
+            _scheduler_lock_fd = None
+        return
+    except ImportError:
+        # Windows (dev only) — fcntl not available, skip locking
+        pass
 
     thread = threading.Thread(
         target=_scheduler_loop,
@@ -220,4 +246,4 @@ def start_scheduler() -> None:
         daemon=True,   # killed when main process exits
     )
     thread.start()
-    logger.info("Weekly report scheduler thread started (PID background daemon)")
+    logger.info("Weekly report scheduler started (PID %s holds lock)", os.getpid())

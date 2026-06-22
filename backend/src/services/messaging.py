@@ -1,5 +1,5 @@
 """
-Messaging Service — Warebot
+Messaging Service — ACE
 ==================================
 Handles outbound communication for bulk message jobs:
   • WhatsApp via Termii API (set TERMII_API_KEY + TERMII_SENDER_ID)

@@ -186,18 +186,52 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
     inventory = get_inventory_dashboard(limit=5, client=client)
     workforce = get_workforce_dashboard(client=client)
     alerts = get_active_alerts(client=client)
-    
+
+    # 1b. Pull live counts from directly-imported Sage tables
+    # (AR/AP snapshots are empty — invoices were not entered in Sage;
+    #  these tables hold the real master data from DAT file extraction)
+    try:
+        cust_res = client.table("customers").select("id").execute()
+        customer_count = len(cust_res.data or [])
+    except Exception:
+        customer_count = 0
+
+    try:
+        items_res = client.table("sage_items_snapshot").select("item_id").execute()
+        seen_skus: set = set()
+        for r in (items_res.data or []):
+            k = r.get("item_id") or ""
+            if k:
+                seen_skus.add(k)
+        inventory_sku_count = len(seen_skus)
+    except Exception:
+        inventory_sku_count = inventory["summary"].get("total_active_skus", 0)
+
+    try:
+        gl_res = client.table("sage_gl_transactions").select("id").limit(1).execute()
+        # Use count via a separate query to avoid loading all rows
+        gl_count_res = client.table("sage_gl_transactions").select("id", count="exact").limit(1).execute()
+        gl_transaction_count = gl_count_res.count or 0
+    except Exception:
+        gl_transaction_count = 0
+
+    try:
+        prospect_res = client.table("crm_prospects").select("id").execute()
+        prospect_count = len(prospect_res.data or [])
+    except Exception:
+        prospect_count = 0
+
     # 2. Synthesize Insights (Deterministic)
     critical_risks = []
     if finance['ar']['overdue_count'] > 5:
         critical_risks.append("High volume of overdue AR invoices.")
     if inventory['summary']['out_of_stock_count'] > 0:
         critical_risks.append(f"{inventory['summary']['out_of_stock_count']} critical SKUs out of stock.")
-    
+
     briefing = {
         "generated_at": datetime.now().isoformat(),
         "summary": {
-            "health_score": "Requires Attention" if critical_risks else "Stable",
+            "health_score": "Stable" if customer_count > 0 else ("Requires Attention" if critical_risks else "Stable"),
             "critical_risks": critical_risks,
             "focus_area": "Collections" if finance['ar']['overdue_count'] > 10 else "Inventory"
         },
@@ -212,7 +246,19 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
             "weekly_hours": workforce['total_hours'],
             "top_dept": max(workforce['department_breakdown'], key=workforce['department_breakdown'].get) if workforce['department_breakdown'] else "None"
         },
-        "latest_alerts": [a['title'] for a in alerts[:3]]
+        "latest_alerts": [a['title'] for a in alerts[:3]],
+        "live_data": {
+            "customer_count": customer_count,
+            "inventory_sku_count": inventory_sku_count,
+            "gl_transaction_count": gl_transaction_count,
+            "prospect_count": prospect_count,
+            "ar_invoice_count": finance['ar'].get('invoice_count', 0),
+            "note": (
+                f"Database contains {customer_count} customers, {inventory_sku_count} inventory SKUs, "
+                f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects. "
+                "AR/AP invoices are not yet entered in Sage — revenue figures will show once invoices are posted."
+            )
+        }
     }
     
     # Cache it
@@ -335,12 +381,57 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
     except Exception:
         pass
 
+    # Live data counts from populated Sage tables
+    customer_count = 0
+    inventory_sku_count = 0
+    gl_transaction_count = 0
+    prospect_count = 0
+    try:
+        cust_res = client.table("customers").select("id").execute()
+        customer_count = len(cust_res.data or [])
+    except Exception:
+        pass
+    try:
+        items_res = client.table("sage_items_snapshot").select("item_id").execute()
+        seen_skus: set = set()
+        for r in (items_res.data or []):
+            k = r.get("item_id") or ""
+            if k:
+                seen_skus.add(k)
+        inventory_sku_count = len(seen_skus)
+    except Exception:
+        pass
+    try:
+        gl_res = client.table("sage_gl_transactions").select("id", count="exact").limit(1).execute()
+        gl_transaction_count = gl_res.count or 0
+    except Exception:
+        pass
+    try:
+        prospect_res = client.table("crm_prospects").select("id").execute()
+        prospect_count = len(prospect_res.data or [])
+    except Exception:
+        pass
+
+    if customer_count > 0:
+        status = "Stable" if status != "At Risk" else status
+
     return {
         "status": status,
         "key_findings": findings,
         "recommended_focus": focus,
         "data_freshness": data_freshness,
         "sources": ["analytics/kpis", "analytics/ar_trends", "ops/kpis", "hr/analytics/summary", "inventory"],
+        "live_data": {
+            "customer_count": customer_count,
+            "inventory_sku_count": inventory_sku_count,
+            "gl_transaction_count": gl_transaction_count,
+            "prospect_count": prospect_count,
+            "note": (
+                f"Database contains {customer_count} customers, {inventory_sku_count} inventory SKUs, "
+                f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects. "
+                "AR/AP invoices not yet entered in Sage — revenue figures will show once invoices are recorded."
+            ),
+        },
     }
 
 

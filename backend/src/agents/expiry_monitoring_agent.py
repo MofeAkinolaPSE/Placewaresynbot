@@ -18,7 +18,7 @@ class ExpiryMonitoringAgent(BaseAgent):
         if not executor:
             return {"results": [], "query_count": 0}
         if not specs:
-            specs = [{"type": "inventory_batches_all"}]
+            specs = [{"type": "inventory_expiring"}]
         return batch_query(executor, specs, parallel=parallel)
 
     def analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:

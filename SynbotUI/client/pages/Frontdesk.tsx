@@ -209,7 +209,7 @@ function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
   <div style="font-size:11px;color:#999">Name &amp; Title</div>
 </div>
 <div class="footer">
-  This is a computer-generated invoice from Warebot · Placeware Limited<br>
+  This is a computer-generated invoice from ACE · Placeware Limited<br>
   NAFDAC Compliance · All transactions are subject to audit review
 </div>
 <div class="no-print" style="margin-top:24px;text-align:center">

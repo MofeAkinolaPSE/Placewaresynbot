@@ -1,7 +1,7 @@
 """
 sage_csv_import.py — POST /sage/import/csv
 
-Accepts multipart CSV file uploads for each of the 10 Warebot
+Accepts multipart CSV file uploads for each of the 10 ACE
 data-package file types and persists them to their corresponding
 Supabase snapshot tables.
 
@@ -24,6 +24,7 @@ import datetime
 import io
 import logging
 import uuid
+import zipfile
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -36,6 +37,60 @@ from src.middleware import verify_jwt, require_role
 logger = logging.getLogger("sage_csv_import")
 
 router = APIRouter(prefix="/sage/import", tags=["sage-import"])
+
+
+def _sync_placeware_invoices(batch_id: str) -> None:
+    """Upsert placeware_invoices from a freshly-imported sage_ar_snapshot batch.
+
+    Called automatically after every sales_invoices CSV import so that
+    placeware_invoices stays in sync without a separate manual step.
+    """
+    rows = (
+        db.table("sage_ar_snapshot")
+        .select("invoice_id, customer_id, date, due_date, amount, balance, status")
+        .eq("batch_id", batch_id)
+        .execute()
+        .data or []
+    )
+    if not rows:
+        return
+
+    # Bulk-fetch customer names once to avoid N+1 queries
+    cust_ids = list({r["customer_id"] for r in rows if r.get("customer_id")})
+    name_map: dict[str, str] = {}
+    if cust_ids:
+        custs = (
+            db.table("v_customers")
+            .select("customer_id, name")
+            .in_("customer_id", cust_ids)
+            .execute()
+            .data or []
+        )
+        name_map = {c["customer_id"]: c["name"] for c in custs}
+
+    upsert_rows = [
+        {
+            "invoice_id":    r["invoice_id"],
+            "customer_id":   r.get("customer_id"),
+            "customer_name": name_map.get(r.get("customer_id") or "", None),
+            "invoice_date":  r.get("date"),
+            "due_date":      r.get("due_date"),
+            "total_amount":  r.get("amount"),
+            "outstanding":   r.get("balance"),
+            "status":        r.get("status") or "open",
+            "synced_from":   "sage_50",
+            "updated_at":    datetime.datetime.utcnow().replace(
+                tzinfo=datetime.timezone.utc
+            ).isoformat(),
+        }
+        for r in rows
+        if r.get("invoice_id")
+    ]
+    if upsert_rows:
+        db.table("placeware_invoices").upsert(
+            upsert_rows, on_conflict="invoice_id"
+        ).execute()
+
 
 # ---------------------------------------------------------------------------
 # Auth helper
@@ -83,13 +138,13 @@ def _safe_date(val: Optional[str]) -> Optional[str]:
 # -- individual mapper functions --------------------------------------------
 
 def _map_chart_of_accounts(row: Dict[str, str]) -> Dict[str, Any]:
-    account_id = row.get("account_id", "").strip()
+    account_id = (row.get("account_id") or row.get("account_no") or row.get("id") or "").strip()
     if not account_id:
         raise ValueError("account_id is required")
     return {
         "account_id": account_id,
-        "account_code": row.get("account_code", "").strip() or account_id,
-        "account_name": row.get("account_name", "").strip() or "Unknown",
+        "account_code": (row.get("account_code") or row.get("account_no") or account_id).strip(),
+        "account_name": (row.get("account_name") or row.get("account_description") or row.get("description") or row.get("name") or "Unknown").strip(),
         "account_type": row.get("account_type", "").strip() or None,
         "parent_account_id": row.get("parent_account_id", "").strip() or None,
         "description": row.get("description", "").strip() or None,
@@ -98,12 +153,12 @@ def _map_chart_of_accounts(row: Dict[str, str]) -> Dict[str, Any]:
 
 
 def _map_vendors(row: Dict[str, str]) -> Dict[str, Any]:
-    vendor_id = row.get("vendor_id", "").strip()
+    vendor_id = (row.get("vendor_id") or row.get("vendor_no") or row.get("id") or "").strip()
     if not vendor_id:
         raise ValueError("vendor_id is required")
     return {
         "vendor_id": vendor_id,
-        "vendor_name": row.get("vendor_name", "").strip() or "Unknown",
+        "vendor_name": (row.get("vendor_name") or row.get("name") or row.get("company_name") or "Unknown").strip(),
         "contact_name": row.get("contact_name", "").strip() or None,
         "email": row.get("email", "").strip() or None,
         "phone": row.get("phone", "").strip() or None,
@@ -113,20 +168,17 @@ def _map_vendors(row: Dict[str, str]) -> Dict[str, Any]:
         "country": row.get("country", "").strip() or None,
         "payment_terms": row.get("payment_terms", "").strip() or None,
         "tax_id": row.get("tax_id", "").strip() or None,
-        "bank_details": row.get("bank_details", "").strip() or None,
-        "current_balance": _safe_float(row.get("current_balance")),
-        "created_date": _safe_date(row.get("created_date")),
         "status": row.get("status", "active").strip() or "active",
     }
 
 
 def _map_customers(row: Dict[str, str]) -> Dict[str, Any]:
-    customer_id = row.get("customer_id", "").strip()
+    customer_id = (row.get("customer_id") or row.get("customer_no") or row.get("id") or "").strip()
     if not customer_id:
         raise ValueError("customer_id is required")
     return {
         "customer_id": customer_id,
-        "name": row.get("name", "").strip() or "Unknown",
+        "name": (row.get("name") or row.get("customer_name") or row.get("company_name") or "Unknown").strip(),
         "email": row.get("email", "").strip() or None,
         "phone": row.get("phone", "").strip() or None,
         "status": row.get("status", "active").strip() or "active",
@@ -134,20 +186,36 @@ def _map_customers(row: Dict[str, str]) -> Dict[str, Any]:
 
 
 def _map_items(row: Dict[str, str]) -> Dict[str, Any]:
-    item_id = row.get("item_id", "").strip()
+    def _first(*keys: str) -> str:
+        for k in keys:
+            v = row.get(k)
+            if v is not None and str(v).strip() not in ("", "None", "N/A", "null"):
+                return str(v).strip()
+        return ""
+
+    item_id = _first("item_id", "code", "item_code", "stock_code", "sku", "id")
     if not item_id:
         raise ValueError("item_id is required")
     return {
         "item_id": item_id,
-        "item_name": row.get("item_name", "").strip() or "Unknown",
-        "category": row.get("category", "").strip() or None,
-        "unit": row.get("unit", "").strip() or None,
-        "cost_price": _safe_float(row.get("cost_price")),
-        "selling_price": _safe_float(row.get("selling_price")),
-        "vat_category": row.get("vat_category", "").strip() or None,
-        "reorder_level": _safe_float(row.get("reorder_level")),
-        "preferred_vendor_id": row.get("preferred_vendor_id", "").strip() or None,
-        "is_active": _safe_bool(row.get("is_active"), default=True),
+        "item_name": _first("item_name", "description", "name", "stock_description") or "Unknown",
+        "category": _first("category", "item_category", "item_class", "product_category", "group") or None,
+        "unit": _first("unit", "unit_of_measure", "uom", "uom_code") or None,
+        "cost_price": _safe_float(
+            row.get("cost_price") or row.get("standard_cost") or row.get("unit_cost")
+            or row.get("average_cost") or row.get("cost")
+        ),
+        "selling_price": _safe_float(
+            row.get("selling_price") or row.get("sale_price")
+            or row.get("unit_price") or row.get("price")
+        ),
+        "vat_category": _first("vat_category", "tax_code", "tax_type", "vat_code") or None,
+        "reorder_level": _safe_float(row.get("reorder_level") or row.get("minimum_quantity") or row.get("reorder_point")),
+        "preferred_vendor_id": _first("preferred_vendor_id", "vendor_id", "pref_vendor") or None,
+        "expiry_date": _safe_date(row.get("expiry_date") or row.get("expiry")),
+        "batch_number": _first("batch_number", "batch", "lot_number", "lot_code") or None,
+        "is_active": _safe_bool(row.get("is_active") or row.get("active"), default=True),
+        "company_id": row.get("company_id") or None,
     }
 
 
@@ -161,13 +229,14 @@ def _map_stock_on_hand(row: Dict[str, str]) -> Dict[str, Any]:
         # CSV may not have item_name; fall back to description or item_id
         "name": (
             row.get("item_name", "").strip()
+            or row.get("item_description", "").strip()
             or row.get("description", "").strip()
             or item_id
         ),
         # Support both Sage Classic (quantity_on_hand) and Sage 200 (quantity_available)
-        "quantity": _safe_float(row.get("quantity_on_hand") or row.get("quantity_available")),
-        "unit_cost": _safe_float(row.get("unit_cost") or row.get("average_cost")),
-        "valuation": _safe_float(row.get("total_value") or row.get("stock_value")),
+        "quantity": _safe_float(row.get("quantity_on_hand") or row.get("quantity_available") or row.get("qty_on_hand") or row.get("qty")),
+        "unit_cost": _safe_float(row.get("unit_cost") or row.get("average_cost") or row.get("cost") or row.get("cost_price")),
+        "valuation": _safe_float(row.get("total_value") or row.get("stock_value") or row.get("valuation") or row.get("total_cost")),
         "updated_at": _safe_date(row.get("last_updated")) or datetime.datetime.utcnow().isoformat(),
         "warehouse_id": row.get("warehouse_id", "").strip() or None,
         "reorder_level": _safe_float(row.get("reorder_level")),
@@ -200,14 +269,14 @@ def _map_purchase_orders(row: Dict[str, str]) -> Dict[str, Any]:
 
 def _map_sales_invoices(row: Dict[str, str]) -> Dict[str, Any]:
     """Maps sales_invoices.csv → sage_ar_snapshot columns."""
-    invoice_id = row.get("invoice_id", "").strip()
-    customer_id = row.get("customer_id", "").strip()
+    invoice_id = (row.get("invoice_id") or row.get("invoice_no") or row.get("inv_no") or "").strip()
+    customer_id = (row.get("customer_id") or row.get("customer_no") or row.get("account_id") or "").strip()
     if not invoice_id:
         raise ValueError("invoice_id is required")
     if not customer_id:
         raise ValueError("customer_id is required")
-    raw_date = _safe_date(row.get("invoice_date")) or datetime.date.today().isoformat()
-    net_amount = _safe_float(row.get("net_amount"))
+    raw_date = _safe_date(row.get("invoice_date") or row.get("date")) or datetime.date.today().isoformat()
+    net_amount = _safe_float(row.get("net_amount") or row.get("amount") or row.get("total_amount") or row.get("invoice_amount") or row.get("net_amount_due"))
     status = row.get("status", "unpaid").strip().lower()
     # AR balance: for paid invoices it's 0; for unpaid/partial it's net_amount
     balance = 0.0 if status == "paid" else net_amount
@@ -514,6 +583,7 @@ async def upload_csv(
     request: Request,
     file_type: str = Form(..., description="One of the supported file_type slugs, e.g. 'sales_invoices'"),
     file: UploadFile = File(..., description="UTF-8 encoded CSV file"),
+    company_id: Optional[str] = Form(None, description="Company tag for multi-company setups, e.g. 'PlacewareNig'"),
 ):
     # ── 0. Auth ──────────────────────────────────────────────────────────────
     user = _require_import_role(request)   # ← capture return value
@@ -557,13 +627,26 @@ async def upload_csv(
     reader = csv.DictReader(io.StringIO(content))
     if reader.fieldnames is None:
         raise HTTPException(status_code=400, detail="CSV has no header row")
+    # Normalise headers so Sage 50 exports like "Quantity on Hand" or "Unit Cost"
+    # match the mapper's snake_case keys ("quantity_on_hand", "unit_cost").
+    reader.fieldnames = [
+        h.strip().lower().replace(" ", "_").replace("-", "_")
+        for h in reader.fieldnames
+    ]
 
     mapped_rows: List[Dict[str, Any]] = []
     validation_errors: List[Dict[str, Any]] = []
 
     for line_num, raw_row in enumerate(reader, start=2):  # line 1 is header
         try:
-            mapped = mapper(dict(raw_row))
+            raw_dict = dict(raw_row)
+            # Inject company_id from Form param so mappers can pick it up
+            if company_id and "company_id" not in raw_dict:
+                raw_dict["company_id"] = company_id
+            mapped = mapper(raw_dict)
+            # Ensure company_id is set on item/stock rows even if mapper didn't handle it
+            if company_id and file_type in ("items", "stock_on_hand") and not mapped.get("company_id"):
+                mapped["company_id"] = company_id
             mapped_rows.append(mapped)
         except (ValueError, KeyError) as exc:
             validation_errors.append({"line": line_num, "error": str(exc)})
@@ -625,6 +708,14 @@ async def upload_csv(
         }).eq("id", job_id).execute()
     except Exception as exc:
         logger.warning(f"upload_csv: job status update failed: {exc}")
+
+    # ── 6a. Auto-populate placeware_invoices on AR import ────────────────────
+    if file_type == "sales_invoices" and rows_inserted > 0:
+        try:
+            _sync_placeware_invoices(batch_id)
+            logger.info(f"upload_csv: synced placeware_invoices from batch={batch_id}")
+        except Exception as exc:
+            logger.warning(f"upload_csv: placeware_invoices sync failed (non-fatal): {exc}")
 
     # ── 6b. Mirror purchase orders into AP snapshot ───────────────────────────
     # AP data originates from purchase_orders.csv — open POs represent payables.
@@ -734,3 +825,306 @@ async def upload_csv(
         raise HTTPException(status_code=500, detail=response)
 
     return JSONResponse(status_code=200, content=response)
+
+
+# ---------------------------------------------------------------------------
+# Batch ZIP upload  POST /sage/import/batch
+# ---------------------------------------------------------------------------
+# Accepts a ZIP produced by sage50_extractor.py (or assembled manually).
+# Each CSV inside the ZIP is matched to a file_type by filename stem.
+# e.g.  customers.csv         → file_type "customers"
+#       sales_invoices.csv    → file_type "sales_invoices"
+#       gl_journal_entries.csv → file_type "gl_journal_entries"
+# All recognised files are imported in a single shared batch_id so they
+# can be traced together.  Unrecognised files are skipped (logged).
+# ---------------------------------------------------------------------------
+
+# Filename stem → file_type mapping (case-insensitive).
+# The extractor uses exact file_type slugs as filenames, but we also
+# accept common alternatives for hand-assembled ZIPs.
+_FILENAME_ALIASES: Dict[str, str] = {
+    # canonical names (extractor output)
+    "chart_of_accounts": "chart_of_accounts",
+    "vendors": "vendors",
+    "customers": "customers",
+    "items": "items",
+    "stock_on_hand": "stock_on_hand",
+    "purchase_orders": "purchase_orders",
+    "sales_invoices": "sales_invoices",
+    "sales_invoice_lines": "sales_invoice_lines",
+    "inventory_transactions": "inventory_transactions",
+    "gl_journal_entries": "gl_journal_entries",
+    "staff": "staff",
+    "hr_payroll": "hr_payroll",
+    # common Sage export name variants
+    "customer": "customers",
+    "vendor": "vendors",
+    "supplier": "vendors",
+    "suppliers": "vendors",
+    "inventory": "stock_on_hand",
+    "stock": "stock_on_hand",
+    "invoice": "sales_invoices",
+    "invoices": "sales_invoices",
+    "ar_invoices": "sales_invoices",
+    "ar_invoice": "sales_invoices",
+    "invoice_lines": "sales_invoice_lines",
+    "invoice_items": "sales_invoice_lines",
+    "po": "purchase_orders",
+    "purchase_order": "purchase_orders",
+    "gl": "gl_journal_entries",
+    "journal": "gl_journal_entries",
+    "journal_entries": "gl_journal_entries",
+    "general_ledger": "gl_journal_entries",
+    "coa": "chart_of_accounts",
+    "accounts": "chart_of_accounts",
+    "employee": "staff",
+    "employees": "staff",
+    "payroll": "hr_payroll",
+}
+
+
+def _stem(filename: str) -> str:
+    """Return lowercase stem of a filename (no directory, no extension)."""
+    name = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]  # strip any path
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return stem.lower().replace(" ", "_").replace("-", "_")
+
+
+@router.post("/batch")
+async def upload_batch_zip(
+    request: Request,
+    file: UploadFile = File(..., description="ZIP archive from sage50_extractor.py or hand-assembled"),
+):
+    """Import a ZIP bundle of Sage 50 CSV exports in one request.
+
+    The ZIP should contain one CSV per data entity, named by file_type slug
+    (e.g. customers.csv, sales_invoices.csv).  All CSVs share a single
+    batch_id so the full export is traceable as one ingestion event.
+
+    Roles: admin, finance, management
+    """
+    user = _require_import_role(request)
+    actor = user.get("sub", "unknown")
+
+    # -- validate upload
+    filename = (file.filename or "upload.zip").lower()
+    if not filename.endswith(".zip"):
+        raise HTTPException(status_code=415, detail="Only .zip files are accepted")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(raw_bytes) > 200 * 1024 * 1024:  # 200 MB cap
+        raise HTTPException(status_code=413, detail="ZIP exceeds 200 MB limit")
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="File is not a valid ZIP archive")
+
+    # -- shared batch context
+    batch_id = str(uuid.uuid4())
+    imported_at = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
+
+    job_id = create_import_job(
+        domain="sage",
+        batch_id=batch_id,
+        imported_at=imported_at,
+        metadata={
+            "source": "batch_zip_upload",
+            "original_filename": file.filename,
+            "actor": actor,
+        },
+        status="running",
+    )
+
+    # -- process each CSV inside the ZIP
+    results: List[Dict[str, Any]] = []
+    all_cache_tags: set = set()
+    total_inserted = 0
+    total_errors = 0
+
+    for zip_entry in zf.namelist():
+        # skip directories and the manifest
+        if zip_entry.endswith("/") or _stem(zip_entry) == "manifest":
+            continue
+        if not zip_entry.lower().endswith(".csv"):
+            continue
+
+        file_type = _FILENAME_ALIASES.get(_stem(zip_entry))
+        if file_type is None:
+            logger.info(f"upload_batch_zip: skipping unrecognised file '{zip_entry}'")
+            results.append({"file": zip_entry, "status": "skipped", "reason": "unrecognised filename"})
+            continue
+
+        if file_type not in _REGISTRY:
+            results.append({"file": zip_entry, "status": "skipped", "reason": f"no mapper for {file_type}"})
+            continue
+
+        target_table, mapper = _REGISTRY[file_type]
+
+        try:
+            raw_csv_bytes = zf.read(zip_entry)
+        except Exception as exc:
+            results.append({"file": zip_entry, "file_type": file_type, "status": "error", "reason": str(exc)})
+            total_errors += 1
+            continue
+
+        # decode
+        try:
+            content = raw_csv_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                content = raw_csv_bytes.decode("latin-1")
+            except UnicodeDecodeError as exc:
+                results.append({"file": zip_entry, "file_type": file_type, "status": "error", "reason": f"decode error: {exc}"})
+                total_errors += 1
+                continue
+
+        reader = csv.DictReader(io.StringIO(content))
+        if reader.fieldnames is None:
+            results.append({"file": zip_entry, "file_type": file_type, "status": "skipped", "reason": "no header row"})
+            continue
+        reader.fieldnames = [
+            h.strip().lower().replace(" ", "_").replace("-", "_")
+            for h in reader.fieldnames
+        ]
+
+        mapped_rows: List[Dict[str, Any]] = []
+        validation_errors: List[Dict[str, Any]] = []
+
+        for line_num, raw_row in enumerate(reader, start=2):
+            try:
+                mapped_rows.append(mapper(dict(raw_row)))
+            except (ValueError, KeyError) as exc:
+                validation_errors.append({"line": line_num, "error": str(exc)})
+                if len(validation_errors) >= 50:
+                    break
+
+        if not mapped_rows:
+            results.append({
+                "file": zip_entry, "file_type": file_type,
+                "status": "skipped", "reason": "no valid rows after mapping",
+                "validation_errors": validation_errors[:10],
+            })
+            continue
+
+        # insert snapshot
+        rows_inserted = 0
+        insert_error: Optional[str] = None
+        try:
+            rows_inserted = insert_snapshot(target_table, batch_id, imported_at, mapped_rows)
+            total_inserted += rows_inserted
+        except Exception as exc:
+            insert_error = str(exc)
+            total_errors += 1
+            logger.error(f"upload_batch_zip: insert failed for {file_type}: {exc}")
+
+        # AP mirror for purchase orders
+        if file_type == "purchase_orders" and rows_inserted > 0:
+            try:
+                ap_rows: List[Dict[str, Any]] = []
+                for po in mapped_rows:
+                    po_status = str(po.get("status") or "").lower()
+                    amount = float(po.get("total_amount") or po.get("net_amount") or 0)
+                    balance = amount if po_status in ("open", "pending", "partial") else 0.0
+                    ap_rows.append({
+                        "bill_id": po.get("po_id", ""),
+                        "vendor_id": po.get("vendor_id") or "unknown",
+                        "date": po.get("order_date") or imported_at[:10],
+                        "due_date": po.get("expected_delivery_date"),
+                        "amount": amount,
+                        "balance": balance,
+                        "status": po_status or "open",
+                    })
+                if ap_rows:
+                    insert_snapshot("sage_ap_snapshot", batch_id, imported_at, ap_rows)
+            except Exception as exc:
+                logger.warning(f"upload_batch_zip: AP mirror failed (non-fatal): {exc}")
+
+        # suppliers upsert for vendors
+        if file_type == "vendors" and rows_inserted > 0:
+            try:
+                supplier_rows = [
+                    {
+                        "external_vendor_id": v.get("vendor_id", ""),
+                        "name": v.get("vendor_name") or "Unknown",
+                        "contact_name": v.get("contact_name"),
+                        "contact_email": v.get("email"),
+                        "phone": v.get("phone"),
+                        "address": v.get("address"),
+                        "payment_terms": v.get("payment_terms"),
+                        "tax_id": v.get("tax_id"),
+                        "bank_details": v.get("bank_details"),
+                        "current_balance": v.get("current_balance"),
+                        "status": v.get("status") or "active",
+                    }
+                    for v in mapped_rows if v.get("vendor_id", "").strip()
+                ]
+                if supplier_rows:
+                    db.table("suppliers").upsert(supplier_rows, on_conflict="external_vendor_id").execute()
+            except Exception as exc:
+                logger.warning(f"upload_batch_zip: suppliers upsert failed (non-fatal): {exc}")
+
+        for tag in _CACHE_TAGS.get(file_type, []):
+            all_cache_tags.add(tag)
+
+        results.append({
+            "file": zip_entry,
+            "file_type": file_type,
+            "target_table": target_table,
+            "rows_inserted": rows_inserted,
+            "validation_error_count": len(validation_errors),
+            "status": "succeeded" if not insert_error else "failed",
+            **({"insert_error": insert_error} if insert_error else {}),
+        })
+
+    zf.close()
+
+    # -- finalise job record
+    final_status = "succeeded" if total_errors == 0 else ("partial_success" if total_inserted > 0 else "failed")
+    try:
+        db.table("placeware_import_jobs").update({
+            "status": final_status,
+            "row_count": total_inserted,
+            "finished_at": datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat(),
+            "counts": {r["file_type"]: r.get("rows_inserted", 0) for r in results if "file_type" in r},
+        }).eq("id", job_id).execute()
+    except Exception as exc:
+        logger.warning(f"upload_batch_zip: job status update failed: {exc}")
+
+    # -- bust caches
+    if all_cache_tags:
+        invalidate_cache_tags(*all_cache_tags)
+    if total_inserted > 0:
+        clear_cache()
+
+    # -- audit
+    audit_event(
+        "sage_batch_import",
+        {
+            "original_filename": file.filename,
+            "batch_id": batch_id,
+            "datasets": [r.get("file_type") for r in results if r.get("status") == "succeeded"],
+            "total_rows_inserted": total_inserted,
+            "actor": actor,
+            "status": final_status,
+        },
+        event_class="data_ingestion",
+        action="batch_zip_upload",
+        outcome=final_status,
+        actor_id=actor,
+    )
+
+    logger.info(
+        f"upload_batch_zip: batch={batch_id} status={final_status} "
+        f"inserted={total_inserted} errors={total_errors} actor={actor}"
+    )
+
+    return JSONResponse(status_code=200, content={
+        "batch_id": batch_id,
+        "status": final_status,
+        "total_rows_inserted": total_inserted,
+        "datasets": results,
+        "imported_at": imported_at,
+    })

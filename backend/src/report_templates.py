@@ -79,7 +79,7 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Deviation & CAPA Report",
         "keywords": ["deviation", "capa", "non-conformance", "nonconformance", "corrective action"],
         "tables": [
-            {"table": "placeware_deviation_reports", "select": "*", "order": "created_at", "limit": 50},
+            {"table": "deviation_reports", "select": "*", "order": "created_at", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "Report From", "date", required=True),
@@ -120,7 +120,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Equipment Maintenance & Calibration Report",
         "keywords": ["maintenance", "calibration", "equipment", "service schedule", "overdue maintenance"],
         "tables": [
-            {"table": "placeware_equipment_registry", "select": "*", "order": "next_maintenance_date", "limit": 50},
+            {"table": "equipment_registry", "select": "*", "order": "created_at", "limit": 50},
+            {"table": "maintenance_schedule", "select": "*", "order": "next_maintenance_date", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -160,7 +161,7 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Regulatory Compliance Report",
         "keywords": ["compliance", "sop", "nafdac", "qms", "regulatory", "standard operating"],
         "tables": [
-            {"table": "placeware_compliance_activities", "select": "*", "order": "due_date", "limit": 50},
+            {"table": "compliance_activity_log", "select": "*", "order": "scheduled_date", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -199,7 +200,7 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Audit Intelligence Report",
         "keywords": ["audit schedule", "overdue audit", "upcoming audit", "audit calendar", "audit review"],
         "tables": [
-            {"table": "audit_schedule", "select": "*", "limit": 50},
+            {"table": "audit_schedule", "select": "*", "order": "created_at", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "Schedule From", "date", required=True),
@@ -235,8 +236,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Financial Performance Report",
         "keywords": ["financial performance", "cashflow", "cash flow", "financial overview", "financial summary"],
         "tables": [
-            {"table": "sage_gl_journal_entries", "select": "*", "order": "transaction_date", "limit": 100},
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
+            {"table": "sage_gl_snapshot", "select": "*", "order": "period", "limit": 100},
+            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 100},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -316,10 +317,10 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Executive Business Health Report",
         "keywords": ["executive summary", "board report", "leadership brief", "business health", "kpi overview"],
         "tables": [
-            {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 50},
+            {"table": "opportunities", "select": "*", "order": "created_at", "limit": 50},
             {"table": "placeware_inventory_snapshot", "select": "*", "limit": 50},
-            {"table": "placeware_compliance_activities", "select": "*", "order": "due_date", "limit": 30},
-            {"table": "sage_payroll_snapshot", "select": "*", "order": "pay_period", "limit": 20},
+            {"table": "compliance_activity_log", "select": "*", "order": "scheduled_date", "limit": 30},
+            {"table": "sage_payroll_snapshot", "select": "*", "order": "period", "limit": 20},
         ],
         "is_executive": True,
         "scope_fields": [
@@ -367,8 +368,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "sales performance", "revenue report", "sales summary", "sales activity",
         ],
         "tables": [
-            {"table": "crm_sales_pipeline", "select": "*", "order": "created_at", "limit": 100},
-            {"table": "crm_lead_activity_log", "select": "*", "order": "created_at", "limit": 50},
+            {"table": "opportunities", "select": "*", "order": "created_at", "limit": 100},
+            {"table": "crm_interaction_log", "select": "*", "order": "occurred_at", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -412,8 +413,7 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "staff payroll", "payroll summary", "wages", "staff salary",
         ],
         "tables": [
-            {"table": "sage_payroll_snapshot", "select": "*", "order": "pay_period", "limit": 50},
-            {"table": "sage_hr_absences", "select": "*", "order": "absence_date", "limit": 50},
+            {"table": "sage_payroll_snapshot", "select": "*", "order": "period", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "Pay Period From", "date", required=True),
@@ -454,8 +454,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "net income", "profit & loss", "loss statement",
         ],
         "tables": [
-            {"table": "sage_gl_journal_entries", "select": "*", "order": "transaction_date", "limit": 100},
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
+            {"table": "sage_gl_snapshot", "select": "*", "order": "period", "limit": 100},
+            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 100},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -497,8 +497,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "overdue payments", "receivables", "ar report", "accounts receivable aging",
         ],
         "tables": [
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 100},
-            {"table": "sage_customers", "select": "*", "limit": 50},
+            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 100},
+            {"table": "sage_customers_snapshot", "select": "*", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "As At Date (From)", "date"),
@@ -539,7 +539,7 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "daily operations", "frontdesk summary", "daily frontdesk", "front desk report",
         ],
         "tables": [
-            {"table": "placeware_walk_ins", "select": "*", "order": "created_at", "limit": 100},
+            {"table": "frontdesk_walk_ins", "select": "*", "order": "created_at", "limit": 100},
             {"table": "placeware_invoices", "select": "*", "order": "created_at", "limit": 50},
         ],
         "scope_fields": [
@@ -577,8 +577,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "proforma invoice", "proforma", "invoice generation",
         ],
         "tables": [
-            {"table": "sage_sales_invoices", "select": "*", "order": "invoice_date", "limit": 10},
-            {"table": "sage_customers", "select": "*", "limit": 50},
+            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 10},
+            {"table": "sage_customers_snapshot", "select": "*", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("client_name", "Client / Company Name", "text", required=True),

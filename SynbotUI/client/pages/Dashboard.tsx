@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
+  Thermometer,
+  Target,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -124,6 +126,41 @@ const Dashboard = () => {
   const criticalAlerts = alerts.filter((a: any) => a.severity === "critical");
   const hasCritical = criticalAlerts.length > 0 && !alertDismissed;
 
+  const { data: crmDashData } = useQuery({
+    queryKey: ["dashboard-crm-count"],
+    queryFn: () => api.dashboard.crm(),
+  });
+  const customerCount = (crmDashData as any)?.customer_count ?? 0;
+
+  const { data: expiryAlertsData } = useQuery({
+    queryKey: ["dashboard-expiry-alerts"],
+    queryFn: () => api.qc.expiryAlerts(),
+  });
+  const expiryBuckets = (expiryAlertsData as any)?.buckets;
+  const nearExpiryCount = expiryBuckets
+    ? (expiryBuckets.expired?.length ?? 0) + (expiryBuckets.critical?.length ?? 0) + (expiryBuckets.high?.length ?? 0)
+    : null;
+
+  const { data: deviationsData } = useQuery({
+    queryKey: ["dashboard-cold-deviations"],
+    queryFn: () => api.qc.activeDeviations(),
+  });
+  const coldDeviationCount = Array.isArray(deviationsData)
+    ? (deviationsData as any[]).length
+    : (deviationsData as any)?.total ?? (deviationsData as any)?.count ?? null;
+
+  const { data: pipelineData } = useQuery({
+    queryKey: ["dashboard-prospect-pipeline"],
+    queryFn: () => api.dashboard.crm(),
+  });
+  const prospectPipeline = (pipelineData as any)?.pipeline_value ?? null;
+
+  const { data: poSummaryData } = useQuery({
+    queryKey: ["dashboard-po-summary"],
+    queryFn: () => api.procurement.purchaseOrdersSummary(),
+  });
+  const openPoCount = (poSummaryData as any)?.open_pos ?? null;
+
   // Detect if all data loaded but every value is genuinely zero/empty (no Sage import yet)
   const allLoaded = !financeLoading && !trendLoading && !stockLoading && !workforceLoading && !alertsLoading;
   const noSageData =
@@ -133,7 +170,8 @@ const Dashboard = () => {
     !workforceIsError &&
     (revenue === 0 || revenue === null) &&
     (totalSkus === 0 || totalSkus === null) &&
-    (activeWorkforce === 0 || activeWorkforce === null);
+    (activeWorkforce === 0 || activeWorkforce === null) &&
+    customerCount === 0;
 
   // KPI health helpers
   const stockHealthy = lowStockCount === 0;
@@ -301,6 +339,91 @@ const Dashboard = () => {
               )}
             </div>
             <div className="mt-2 text-xs text-muted-foreground">Staff members online</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Operational Alert Cards ─────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {/* Near-Expiry */}
+        <Card className={cn("border-l-4", nearExpiryCount !== null && nearExpiryCount > 0 ? "border-l-warning" : "border-l-success")}>
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardDescription className="text-xs font-medium uppercase tracking-wide">Near-Expiry Items</CardDescription>
+              <Package className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-3xl font-bold tabular-nums">
+              {nearExpiryCount !== null ? nearExpiryCount : <span className="text-base text-muted-foreground">—</span>}
+            </div>
+            <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium",
+              nearExpiryCount !== null && nearExpiryCount > 0 ? "text-warning" : "text-success"
+            )}>
+              <AlertCircle className="h-3 w-3" />
+              {nearExpiryCount !== null && nearExpiryCount > 0 ? `${nearExpiryCount} items need attention` : "All items OK"}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cold-Chain Deviations */}
+        <Card className={cn("border-l-4", coldDeviationCount !== null && coldDeviationCount > 0 ? "border-l-destructive" : "border-l-success")}>
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardDescription className="text-xs font-medium uppercase tracking-wide">Temp Deviations</CardDescription>
+              <Thermometer className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-3xl font-bold tabular-nums">
+              {coldDeviationCount !== null ? coldDeviationCount : <span className="text-base text-muted-foreground">—</span>}
+            </div>
+            <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium",
+              coldDeviationCount !== null && coldDeviationCount > 0 ? "text-destructive" : "text-success"
+            )}>
+              <Thermometer className="h-3 w-3" />
+              {coldDeviationCount !== null && coldDeviationCount > 0 ? "Active temperature breaches" : "All readings normal"}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Prospect Pipeline */}
+        <Card className="border-l-4 border-l-primary">
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardDescription className="text-xs font-medium uppercase tracking-wide">Prospect Pipeline</CardDescription>
+              <Target className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-3xl font-bold tabular-nums">
+              {prospectPipeline !== null
+                ? `₦${(Number(prospectPipeline) / 1_000_000).toFixed(1)}M`
+                : <span className="text-base text-muted-foreground">—</span>}
+            </div>
+            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <TrendingUp className="h-3 w-3" />
+              Total open opportunity value
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Open POs */}
+        <Card className="border-l-4 border-l-secondary">
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardDescription className="text-xs font-medium uppercase tracking-wide">Open Purchase Orders</CardDescription>
+              <Truck className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-3xl font-bold tabular-nums">
+              {openPoCount !== null ? openPoCount : <span className="text-base text-muted-foreground">—</span>}
+            </div>
+            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <Activity className="h-3 w-3" />
+              Pending procurement orders
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -615,7 +738,7 @@ const Dashboard = () => {
           <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🛡 Compliance</Badge>
         </Link>
         <Link to="/synbot">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🤖 Ask Warebot</Badge>
+          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🤖 Ask ACE</Badge>
         </Link>
       </div>
     </motion.div>

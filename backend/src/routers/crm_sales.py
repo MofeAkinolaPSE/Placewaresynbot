@@ -1,5 +1,5 @@
 """
-Sales CRM Pipeline Router — Warebot
+Sales CRM Pipeline Router — ACE
 =========================================
 Implements Tier-1 Sales & Business Development features derived from the
 April 2026 requirements-gathering form:
@@ -614,7 +614,7 @@ async def get_weekly_report(
 
 
 # ---------------------------------------------------------------------------
-# 8. Plain-language NLQ query (Ask Warebot)
+# 8. Plain-language NLQ query (Ask ACE)
 # ---------------------------------------------------------------------------
 
 # CRM context facts injected into the LLM prompt

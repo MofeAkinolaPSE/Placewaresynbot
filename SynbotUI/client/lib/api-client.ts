@@ -517,6 +517,9 @@ export const api = {
       const q = period ? `?period=${encodeURIComponent(period)}` : "";
       return fetchRaw<any>(`/finance/budget/variance${q}`);
     },
+
+    /** Chart of Accounts from Sage 50 snapshot */
+    coa: (limit = 500) => fetchRaw<any>(`/finance/coa?limit=${limit}`),
   },
   intelligence: {
     executiveSummary: () => fetchRaw<ExecutiveSummaryResponse>("/intelligence/executive_summary"),
@@ -532,6 +535,10 @@ export const api = {
   },
   crm: {
     riskScores: () => fetchRaw<any>("/crm/risk_scores"),
+    customers: (limit: number = 300) => fetchRaw<any>(`/crm/customers?limit=${limit}`),
+    customer360: (id: number) => fetchRaw<any>(`/crm/customers/${id}/360`),
+    updateCustomer: (id: number, patch: Record<string, any>) =>
+      sendJson<any>(`/crm/customers/${id}`, "PATCH", patch),
   },
   threads: {
     list: () => fetchRaw<any[]>("/threads"),
@@ -663,6 +670,14 @@ export const api = {
         "POST",
         payload ?? {},
       ),
+    purchaseOrders: (params?: { status?: string; vendor_id?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set("status", params.status);
+      if (params?.vendor_id) q.set("vendor_id", params.vendor_id);
+      if (params?.limit) q.set("limit", String(params.limit));
+      return fetchRaw<any[]>(`/procurement/purchase-orders${q.toString() ? `?${q}` : ""}`);
+    },
+    purchaseOrdersSummary: () => fetchRaw<any>("/procurement/purchase-orders/summary"),
   },
     ops: {
       kpis: () => fetchRaw<OpsKpis>("/ops/kpis"),
@@ -671,11 +686,10 @@ export const api = {
     },
   inventory: {
     stock: async (skus?: string[]) => {
-      // TODO: support skus param via POST body if needed
-      const data = await fetchRaw("/stock");
-      return data.stock as any[];
+      const data = await fetchRaw("/inventory/items");
+      return (data.data ?? data.stock ?? []) as any[];
     },
-    latestSnapshot: () => fetchJson<any[]>("/stock"),
+    latestSnapshot: () => fetchRaw<any>("/inventory/items").then(d => d.data ?? []),
     // simple search endpoint used by staff UI autocomplete
     search: (query: string) => fetchJson<any[]>(`/inventory?query=${encodeURIComponent(query)}`),
     recordMovement: (payload: {

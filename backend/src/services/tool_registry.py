@@ -14,9 +14,11 @@ from .sage_adapter.service import (
     ar_aging_buckets,
     latest_inventory_snapshot,
     inventory_by_skus,
+    get_invoices,
 )
 from .ops import kpis as ops_kpis, forecast_stock_turnover
 from .inventory import get_expiring_inventory
+from .crm import get_crm_stats
 
 logger = logging.getLogger("tool_registry")
 
@@ -181,6 +183,40 @@ class ToolRegistry:
         }
 
 
+SCHEMA_ALLOW_LIST = [
+    "customers", "suppliers", "crm_prospects", "customer_360",
+    "sage_items_snapshot", "sage_purchase_orders_snapshot", "sage_vendors_snapshot",
+    "sage_ar_snapshot", "sage_ap_snapshot", "sage_gl_snapshot", "sage_gl_transactions",
+    "temperature_logs", "placeware_storage_zones",
+    "inventory_items", "stock_levels", "inventory_movements",
+    "event_ledger", "opportunities", "supplier_deliveries",
+]
+
+
+def live_schema_summary() -> dict:
+    from ..db import db as _db
+    results = []
+    for table in SCHEMA_ALLOW_LIST:
+        try:
+            col_resp = _db.table("information_schema.columns").select(
+                "column_name, data_type"
+            ).eq("table_name", table).execute()
+            columns = [f"{r['column_name']} ({r['data_type']})" for r in (col_resp.data or [])]
+        except Exception:
+            columns = ["(columns unavailable)"]
+        try:
+            count_resp = _db.table(table).select("id", count="exact").limit(1).execute()
+            row_count = count_resp.count if count_resp.count is not None else len(count_resp.data or [])
+        except Exception:
+            row_count = "unknown"
+        results.append({
+            "table": table,
+            "row_count": row_count,
+            "columns": columns,
+        })
+    return {"tables": results, "total_tables": len(results)}
+
+
 def build_default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
 
@@ -338,6 +374,55 @@ def build_default_tool_registry() -> ToolRegistry:
             allowed_modes={"assistant", "audit"},
         ),
         get_chat_history,
+    )
+
+    registry.register(
+        ToolMetadata(
+            name="getInvoices",
+            description=(
+                "Retrieve Placeware AR invoices synced from Sage 50. "
+                "Returns invoice list with customer name, invoice date, total amount, "
+                "outstanding balance, and status. Use for questions about invoices, "
+                "billing, accounts receivable, overdue payments, or outstanding balances."
+            ),
+            department="finance",
+            source="services.sage_adapter.service.get_invoices",
+            required_roles={"admin", "management", "finance"},
+            allowed_modes={"assistant", "executive"},
+        ),
+        get_invoices,
+    )
+
+    registry.register(
+        ToolMetadata(
+            name="getCrmStats",
+            description=(
+                "Get live CRM stats: total customer count from the customers table, "
+                "pipeline value, win rate, and average risk score. "
+                "Use this for any question about how many customers, customer records, or CRM pipeline."
+            ),
+            department="crm",
+            source="services.crm.get_crm_stats",
+            required_roles={"admin", "management", "sales", "finance"},
+            allowed_modes={"assistant", "executive"},
+        ),
+        get_crm_stats,
+    )
+
+    registry.register(
+        ToolMetadata(
+            name="getLiveSchemaSummary",
+            description=(
+                "List real database tables with column names and row counts. "
+                "Use for questions about what data exists, what tables are available, "
+                "database structure, or what the system tracks."
+            ),
+            department="management",
+            source="services.tool_registry.live_schema_summary",
+            required_roles={"admin", "management"},
+            allowed_modes={"assistant", "executive"},
+        ),
+        live_schema_summary,
     )
 
     return registry

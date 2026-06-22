@@ -346,7 +346,7 @@ const SageImport = () => {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Sage CSV Import</h1>
         <p className="text-muted-foreground mt-2">
-          Import ERP data from Sage 50 into Warebot — all 10 document types supported.
+          Import ERP data from Sage 50 into ACE — all 10 document types supported.
         </p>
       </div>
 

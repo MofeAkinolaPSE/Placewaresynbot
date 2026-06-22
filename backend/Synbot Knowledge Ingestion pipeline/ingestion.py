@@ -40,7 +40,7 @@ DATABASE_URL = os.getenv("DATABASE_URL") or (
         password=os.getenv("POSTGRES_PASSWORD", "password"),
         host=os.getenv("POSTGRES_HOST", "localhost"),
         port=os.getenv("POSTGRES_PORT", "5432"),
-        dbname=os.getenv("POSTGRES_DB", "placeware"),
+        dbname=os.getenv("POSTGRES_DB", "synbot_demo"),
     )
 )
 

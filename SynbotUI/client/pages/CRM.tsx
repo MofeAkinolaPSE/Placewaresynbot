@@ -1,5 +1,16 @@
-import { TrendingUp, AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { TrendingUp, AlertTriangle, Pencil, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   LineChart,
   Line,
@@ -21,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -31,6 +42,25 @@ import { motionTransitions } from "@/lib/motion";
 const CRM = () => {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+
+  const [editCustomer, setEditCustomer] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [view360Customer, setView360Customer] = useState<any | null>(null);
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Record<string, any> }) =>
+      api.crm.updateCustomer(id, patch),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["crm-customers"] });
+      setEditCustomer(null);
+    },
+  });
+
+  const { data: customer360Data, isLoading: loading360 } = useQuery({
+    queryKey: ["customer-360", view360Customer?.id],
+    queryFn: () => api.crm.customer360(view360Customer!.id),
+    enabled: !!view360Customer?.id,
+  });
 
   useRealtimeChannel("workflow_updates", () => {
     void queryClient.invalidateQueries({ queryKey: ["crm-dashboard"] });
@@ -54,6 +84,12 @@ const CRM = () => {
     queryKey: ["crm-risk-scores"],
     queryFn: () => api.crm.riskScores(),
   });
+
+  const { data: customersRaw } = useQuery({
+    queryKey: ["crm-customers"],
+    queryFn: () => api.crm.customers(300),
+  });
+  const customersList: any[] = Array.isArray(customersRaw) ? customersRaw : [];
 
   const dataValid =
     !!fetchedData &&
@@ -107,21 +143,10 @@ const CRM = () => {
       sublabel: "Average (0-100 scale)",
     },
     {
-      label: "Sales Cycle",
-      value: (() => {
-        const deals = (data.recent_deals || []).filter(
-          (d: any) => d.close_date && d.created_date
-        );
-        if (!deals.length) return "N/A";
-        const total = deals.reduce((sum: number, d: any) => {
-          const diff =
-            new Date(d.close_date).getTime() - new Date(d.created_date).getTime();
-          return sum + diff / (1000 * 60 * 60 * 24);
-        }, 0);
-        return `${Math.round(total / deals.length)}d`;
-      })(),
+      label: "Customers",
+      value: String(data.customer_count ?? customersList.length ?? 0),
       change: "",
-      sublabel: "Avg days to close",
+      sublabel: `${data.active_customers ?? 0} active accounts`,
     },
   ];
 
@@ -504,6 +529,181 @@ const CRM = () => {
         </div>
         </CardContent>
       </Card>
+      {/* Customer List */}
+      <Card>
+        <CardHeader className="mb-2">
+          <CardTitle className="text-lg font-semibold text-foreground">
+            Customer Accounts
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            {customersList.length} customers from Sage 50
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[60px]">Code</TableHead>
+                  <TableHead className="min-w-[200px]">Name</TableHead>
+                  <TableHead className="min-w-[100px]">Type</TableHead>
+                  <TableHead className="min-w-[120px]">Phone</TableHead>
+                  <TableHead className="min-w-[180px]">Email</TableHead>
+                  <TableHead className="min-w-[100px]">Segment</TableHead>
+                  <TableHead className="min-w-[100px]">Region</TableHead>
+                  <TableHead className="min-w-[80px] text-right">Risk</TableHead>
+                  <TableHead className="min-w-[90px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {customersList.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                      {customersRaw === undefined ? "Loading..." : "No customers found"}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  customersList.map((c: any, i: number) => (
+                    <TableRow key={c.id ?? i}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {c.customer_code || c.id || "—"}
+                      </TableCell>
+                      <TableCell className="font-medium">{c.name || "—"}</TableCell>
+                      <TableCell>
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground capitalize">
+                          {c.client_type || c.facility_type || "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(c.contact_details as any)?.phone || c.phone || "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(c.contact_details as any)?.email || c.email || "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(c.contact_details as any)?.segment || "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(c.contact_details as any)?.region || "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {c.risk_score != null ? Number(c.risk_score).toFixed(0) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            title="Edit customer"
+                            onClick={() => { setEditCustomer(c); setEditForm({ credit_limit: c.credit_limit ?? "", payment_terms_days: c.payment_terms_days ?? "", facility_type: c.facility_type ?? "", client_type: c.client_type ?? "", last_ordered_at: c.last_ordered_at ?? "", storage_capacity: c.storage_capacity ?? "", competing_supplier: c.competing_supplier ?? "" }); }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            title="Customer 360"
+                            onClick={() => setView360Customer(c)}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+      {/* Customer Edit Modal */}
+      <Dialog open={!!editCustomer} onOpenChange={(o) => { if (!o) setEditCustomer(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Customer — {editCustomer?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            {[
+              { key: "client_type", label: "Client Type" },
+              { key: "facility_type", label: "Facility Type" },
+              { key: "credit_limit", label: "Credit Limit (₦)", type: "number" },
+              { key: "payment_terms_days", label: "Payment Terms (days)", type: "number" },
+              { key: "storage_capacity", label: "Storage Capacity", type: "number" },
+              { key: "competing_supplier", label: "Competing Supplier" },
+              { key: "last_ordered_at", label: "Last Ordered At", type: "date" },
+            ].map(({ key, label, type }) => (
+              <div key={key} className="grid grid-cols-3 items-center gap-2">
+                <Label className="text-right text-sm col-span-1">{label}</Label>
+                <Input
+                  type={type ?? "text"}
+                  className="col-span-2"
+                  value={editForm[key] ?? ""}
+                  onChange={(e) => setEditForm((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditCustomer(null)}>Cancel</Button>
+            <Button
+              disabled={updateMutation.isPending}
+              onClick={() => {
+                const patch: Record<string, any> = {};
+                for (const [k, v] of Object.entries(editForm)) {
+                  if (v !== "" && v != null) {
+                    patch[k] = (k === "credit_limit" || k === "storage_capacity")
+                      ? Number(v)
+                      : k === "payment_terms_days"
+                      ? parseInt(String(v), 10)
+                      : v;
+                  }
+                }
+                updateMutation.mutate({ id: editCustomer.id, patch });
+              }}
+            >
+              {updateMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Customer 360 Modal */}
+      <Dialog open={!!view360Customer} onOpenChange={(o) => { if (!o) setView360Customer(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Customer 360 — {view360Customer?.name}</DialogTitle>
+          </DialogHeader>
+          {loading360 ? (
+            <p className="text-sm text-muted-foreground py-4">Loading…</p>
+          ) : customer360Data ? (
+            <div className="grid grid-cols-2 gap-4 py-2">
+              {[
+                { label: "Total Purchases", value: customer360Data.total_purchases != null ? `₦${Number(customer360Data.total_purchases).toLocaleString()}` : "—" },
+                { label: "Lifetime Value", value: customer360Data.lifetime_value != null ? `₦${Number(customer360Data.lifetime_value).toLocaleString()}` : "—" },
+                { label: "Open Opportunities", value: customer360Data.open_opportunities ?? "—" },
+                { label: "Risk Score", value: customer360Data.risk_score != null ? Number(customer360Data.risk_score).toFixed(1) : "—" },
+                { label: "Credit Limit", value: view360Customer?.credit_limit ? `₦${Number(view360Customer.credit_limit).toLocaleString()}` : "—" },
+                { label: "Payment Terms", value: view360Customer?.payment_terms_days ? `${view360Customer.payment_terms_days} days` : "—" },
+                { label: "Facility Type", value: view360Customer?.facility_type || "—" },
+                { label: "Last Ordered", value: view360Customer?.last_ordered_at ? new Date(view360Customer.last_ordered_at).toLocaleDateString() : "—" },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded border p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-sm font-semibold mt-1">{value}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground py-4">No 360 data available for this customer yet.</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setView360Customer(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };

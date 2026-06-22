@@ -53,6 +53,10 @@ async def create_document(request: Request, payload: DocumentCreate):
 @router.post('/documents/{document_id}/upload-version')
 async def upload_version(request: Request, document_id: str, file: UploadFile = File(...)):
     verify_jwt(request)
+    # Reject document_id values that could escape the uploads directory
+    import re as _re
+    if not _re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', document_id):
+        raise HTTPException(status_code=422, detail='Invalid document_id')
     # generate version id
     version_id = str(uuid.uuid4())
     filename = file.filename
@@ -60,6 +64,11 @@ async def upload_version(request: Request, document_id: str, file: UploadFile = 
     size = len(contents)
     checksum = hashlib.sha256(contents).hexdigest()
     subdir = os.path.join(FILES_DIR, document_id)
+    # Guard against symlink/traversal attacks after joining
+    resolved = os.path.realpath(subdir)
+    base = os.path.realpath(FILES_DIR)
+    if not resolved.startswith(base + os.sep) and resolved != base:
+        raise HTTPException(status_code=422, detail='Invalid document_id')
     os.makedirs(subdir, exist_ok=True)
     storage_name = f"{version_id}_{filename}"
     storage_path = os.path.join(subdir, storage_name)

@@ -403,7 +403,7 @@ export default function SalesCRM() {
       setNlqAnswer(data?.answer ?? "No answer returned.");
     },
     onError: (e: any) => {
-      setNlqAnswer(`Error: ${e?.message ?? "Failed to query Warebot."}`);
+      setNlqAnswer(`Error: ${e?.message ?? "Failed to query ACE."}`);
     },
   });
 
@@ -555,7 +555,7 @@ export default function SalesCRM() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Sales CRM</h1>
-          <p className="text-sm text-muted-foreground">Pipeline � Reminders � Reports � Leaderboard � Warebot</p>
+          <p className="text-sm text-muted-foreground">Pipeline � Reminders � Reports � Leaderboard � ACE</p>
         </div>
         <Button onClick={() => setBulkOpen(true)} className="gap-2">
           <Send className="h-4 w-4" />
@@ -584,7 +584,7 @@ export default function SalesCRM() {
             <Trophy className="h-4 w-4" /> Leaderboard
           </TabsTrigger>
           <TabsTrigger value="query" className="gap-1.5">
-            <MessageSquare className="h-4 w-4" /> Ask Warebot
+            <MessageSquare className="h-4 w-4" /> Ask ACE
           </TabsTrigger>
           <TabsTrigger value="targets" className="gap-1.5">
             <TrendingUp className="h-4 w-4" /> Targets
@@ -855,7 +855,7 @@ export default function SalesCRM() {
           </motion.div>
         </TabsContent>
 
-        {/* Ask Warebot tab */}
+        {/* Ask ACE tab */}
         <TabsContent value="query" className="mt-4">
           <motion.div {...motionVariants.cardEnter} className="max-w-2xl space-y-4">
             <Card>
@@ -880,14 +880,14 @@ export default function SalesCRM() {
                 />
                 <Button disabled={nlqInput.trim().length < 3 || nlqMutation.isPending} onClick={() => nlqMutation.mutate(nlqInput.trim())} className="gap-2 w-full">
                   {nlqMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
-                  {nlqMutation.isPending ? "Thinking..." : "Ask Warebot"}
+                  {nlqMutation.isPending ? "Thinking..." : "Ask ACE"}
                 </Button>
               </CardContent>
             </Card>
 
             {nlqAnswer && (
               <Card className="border-primary/40">
-                <CardHeader className="pb-2"><CardTitle className="text-sm text-primary">Warebot</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-primary">ACE</CardTitle></CardHeader>
                 <CardContent><p className="text-sm whitespace-pre-wrap">{nlqAnswer}</p></CardContent>
               </Card>
             )}

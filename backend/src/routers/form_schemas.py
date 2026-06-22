@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from src.middleware import verify_jwt
 from src.services.schema_registry_service import list_schemas as list_registry_schemas, to_json_schema
 
 router = APIRouter()
@@ -73,13 +74,15 @@ def _registry_available() -> dict[str, dict]:
 
 
 @router.get('/schemas')
-async def list_schemas():
+async def list_schemas(request: Request):
+    verify_jwt(request)
     merged = {**AVAILABLE, **_registry_available()}
     return {"available": list(merged.keys())}
 
 
 @router.get('/schemas/{name}')
-async def get_schema(name: str):
+async def get_schema(name: str, request: Request):
+    verify_jwt(request)
     merged = {**AVAILABLE, **_registry_available()}
     schema = merged.get(name)
     if not schema:

@@ -1,0 +1,7 @@
+2026-06-16 20:39:54,210 INFO bridge starting — sage_company_path=C:\Users\DELL\AppData\Local\Temp\bellwether_extract backend_url=http://localhost:8000 company_id=PlacewareNig
+2026-06-16 20:39:54,210 INFO JRNLHDR.DAT changed (mtime=1781636663.3124843) — re-scanning
+2026-06-16 20:39:54,884 INFO fetched new JWT
+2026-06-16 20:39:55,216 INFO posted 109 header(s): succeeded
+2026-06-16 20:39:55,217 INFO single poll complete — 109 new invoice(s) synced
+2026-06-16 20:40:21,452 INFO bridge starting — sage_company_path=C:\Users\DELL\AppData\Local\Temp\bellwether_extract backend_url=http://localhost:8000 company_id=PlacewareNig
+2026-06-16 20:40:21,462 INFO single poll complete — 0 new invoice(s) synced

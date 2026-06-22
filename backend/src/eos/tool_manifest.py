@@ -320,6 +320,17 @@ DATA_INTENTS: Dict[str, Dict] = {
         "tools": ["getExecutiveSummary", "getRiskSignals", "getRecommendations"],
         "description": "Full executive overview across all business domains",
     },
+    "db_schema_inquiry": {
+        "keywords": [
+            "schema", "what tables", "what data do we have", "what data exists",
+            "full db scan", "database structure", "what columns", "what other data",
+            "what information is stored", "what does the database contain",
+            "list all tables", "data inventory", "what is in the database",
+        ],
+        "agents": [],
+        "tools": ["getLiveSchemaSummary"],
+        "description": "Live inventory of real database tables, columns, and row counts",
+    },
 }
 
 # Merged list of all intent type strings for the LLM parse prompt

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, Package, Search } from "lucide-react";
 import { InventoryDashboardData } from "@shared/dashboard-types";
@@ -14,6 +15,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const [stockSearch, setStockSearch] = useState("");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
 
   const { data: fetchedData, isLoading, error } = useQuery({
     queryKey: ["inventory-dashboard"],
@@ -60,13 +62,16 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
   const allStock: any[] = Array.isArray(allStockRows) ? allStockRows : [];
   const filteredStock = useMemo(() => {
     const q = stockSearch.trim().toLowerCase();
-    if (!q) return allStock;
-    return allStock.filter(
-      (r: any) =>
+    return allStock.filter((r: any) => {
+      const matchSearch =
+        !q ||
         String(r.sku ?? "").toLowerCase().includes(q) ||
-        String(r.name ?? r.item_name ?? "").toLowerCase().includes(q)
-    );
-  }, [allStock, stockSearch]);
+        String(r.name ?? r.item_name ?? "").toLowerCase().includes(q);
+      const matchCompany =
+        companyFilter === "all" || (r.company_id ?? "") === companyFilter;
+      return matchSearch && matchCompany;
+    });
+  }, [allStock, stockSearch, companyFilter]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -250,18 +255,33 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
       {/* Full Inventory Table */}
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base font-semibold">
-              Full Inventory ({allStock.length} SKUs)
-            </CardTitle>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search SKU or name…"
-                value={stockSearch}
-                onChange={(e) => setStockSearch(e.target.value)}
-                className="h-8 pl-8 text-xs"
-              />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="text-base font-semibold">
+                Full Inventory ({filteredStock.length}{filteredStock.length !== allStock.length ? ` / ${allStock.length}` : ""} SKUs)
+              </CardTitle>
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search SKU or name…"
+                  value={stockSearch}
+                  onChange={(e) => setStockSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs"
+                />
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              {(["all", "PlacewareNig", "PlacewarePha"] as const).map((c) => (
+                <Button
+                  key={c}
+                  size="sm"
+                  variant={companyFilter === c ? "default" : "outline"}
+                  className="h-7 text-xs px-3"
+                  onClick={() => setCompanyFilter(c)}
+                >
+                  {c === "all" ? "All Companies" : c}
+                </Button>
+              ))}
             </div>
           </div>
         </CardHeader>
@@ -281,17 +301,31 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
                         <p className="font-medium leading-tight">{r.sku}</p>
                         <p className="text-xs text-muted-foreground">{r.name ?? r.item_name ?? "—"}</p>
                       </div>
-                      <Badge variant={qty === 0 ? "destructive" : qty < 10 ? "outline" : "secondary"}>
-                        {qty === 0 ? "Out of Stock" : qty < 10 ? "Low Stock" : "In Stock"}
+                      <Badge variant={qty > 0 ? "default" : r.has_sage_qty ? "destructive" : "secondary"}>
+                        {qty > 0 ? "In Stock" : r.has_sage_qty ? "Out of Stock" : "No Qty Recorded"}
                       </Badge>
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                       <span className="text-muted-foreground">Qty on Hand</span>
                       <span className="font-semibold">{qty}</span>
-                      {r.unit_cost !== undefined && (
+                      {(r.unit_cost != null || r.cost_price != null) && (
                         <>
-                          <span className="text-muted-foreground">Unit Cost</span>
-                          <span>₦{Number(r.unit_cost).toLocaleString()}</span>
+                          <span className="text-muted-foreground">Cost Price</span>
+                          <span>₦{Number(r.unit_cost ?? r.cost_price).toLocaleString()}</span>
+                        </>
+                      )}
+                      {r.category && (
+                        <>
+                          <span className="text-muted-foreground">Category</span>
+                          <span>{r.category}</span>
+                        </>
+                      )}
+                      {r.expiry_date && (
+                        <>
+                          <span className="text-muted-foreground">Expiry</span>
+                          <span className={new Date(r.expiry_date) < new Date() ? "text-destructive font-semibold" : ""}>
+                            {new Date(r.expiry_date).toLocaleDateString()}
+                          </span>
                         </>
                       )}
                     </div>
@@ -299,7 +333,13 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
                 );
               })}
               {filteredStock.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">No matching items.</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  {stockSearch
+                    ? `No matching items for "${stockSearch}"`
+                    : companyFilter !== "all"
+                    ? `No items for ${companyFilter}`
+                    : "No inventory data available."}
+                </p>
               )}
             </div>
           ) : (
@@ -309,34 +349,61 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
                   <TableRow>
                     <TableHead className="sticky left-0 z-10 min-w-[130px] bg-muted/90">SKU</TableHead>
                     <TableHead className="min-w-[240px]">Name</TableHead>
-                    <TableHead className="min-w-[130px]">Qty on Hand</TableHead>
-                    <TableHead className="min-w-[130px]">Unit Cost</TableHead>
-                    <TableHead className="min-w-[130px]">Total Value</TableHead>
+                    <TableHead className="min-w-[110px]">Category</TableHead>
+                    <TableHead className="min-w-[110px]">Qty on Hand</TableHead>
+                    <TableHead className="min-w-[120px]">Cost Price</TableHead>
+                    <TableHead className="min-w-[120px]">Sell Price</TableHead>
+                    <TableHead className="min-w-[120px]">Total Value</TableHead>
+                    <TableHead className="min-w-[110px]">Expiry</TableHead>
+                    <TableHead className="min-w-[110px]">Batch</TableHead>
+                    <TableHead className="min-w-[110px]">Reorder Lvl</TableHead>
                     <TableHead className="min-w-[110px]">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredStock.map((r: any, idx: number) => {
                     const qty = Number(r.current_stock ?? r.quantity ?? 0);
-                    const unitCost = Number(r.unit_cost ?? 0);
+                    const unitCost = Number(r.unit_cost ?? r.cost_price ?? 0);
+                    const sellPrice = Number(r.selling_price ?? r.sell_price ?? 0);
                     const totalValue = qty * unitCost;
+                    const expiryRaw = r.expiry_date as string | null | undefined;
+                    const expiryDate = expiryRaw ? new Date(expiryRaw) : null;
+                    const isExpired = expiryDate ? expiryDate < new Date() : false;
+                    const reorderLevel = r.reorder_level != null ? Number(r.reorder_level) : null;
+                    const belowReorder = reorderLevel !== null && qty <= reorderLevel;
                     return (
                       <TableRow key={r.sku ?? idx}>
                         <TableCell className="sticky left-0 z-10 bg-background font-mono text-xs">{r.sku}</TableCell>
                         <TableCell>{r.name ?? r.item_name ?? "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.category || "—"}</TableCell>
                         <TableCell className="font-semibold tabular-nums">{qty.toLocaleString()}</TableCell>
                         <TableCell className="tabular-nums">
                           {unitCost > 0 ? `₦${unitCost.toLocaleString()}` : "—"}
                         </TableCell>
                         <TableCell className="tabular-nums">
+                          {sellPrice > 0 ? `₦${sellPrice.toLocaleString()}` : "—"}
+                        </TableCell>
+                        <TableCell className="tabular-nums">
                           {totalValue > 0 ? `₦${totalValue.toLocaleString()}` : "—"}
+                        </TableCell>
+                        <TableCell className={`text-xs ${isExpired ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                          {expiryDate ? expiryDate.toLocaleDateString() : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.batch_number || "—"}</TableCell>
+                        <TableCell className="text-xs tabular-nums">
+                          {reorderLevel !== null ? (
+                            <span className={belowReorder ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                              {reorderLevel.toLocaleString()}
+                              {belowReorder && " ⚠"}
+                            </span>
+                          ) : "—"}
                         </TableCell>
                         <TableCell>
                           <Badge
-                            variant={qty === 0 ? "destructive" : qty < 10 ? "outline" : "secondary"}
+                            variant={qty > 0 ? "default" : r.has_sage_qty ? "destructive" : "secondary"}
                             className={qty > 0 && qty < 10 ? "border-warning/70 text-warning" : ""}
                           >
-                            {qty === 0 ? "Out of Stock" : qty < 10 ? "Low Stock" : "In Stock"}
+                            {qty > 0 ? "In Stock" : r.has_sage_qty ? "Out of Stock" : "No Qty Recorded"}
                           </Badge>
                         </TableCell>
                       </TableRow>
@@ -344,8 +411,12 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
                   })}
                   {filteredStock.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
-                        No matching items for "{stockSearch}".
+                      <TableCell colSpan={11} className="py-6 text-center text-muted-foreground">
+                        {stockSearch
+                          ? `No matching items for "${stockSearch}"`
+                          : companyFilter !== "all"
+                          ? `No items for ${companyFilter}`
+                          : "No inventory data available."}
                       </TableCell>
                     </TableRow>
                   )}

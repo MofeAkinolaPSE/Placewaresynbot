@@ -3,6 +3,7 @@ from .constants import (
     MATCH_THRESHOLD,
 )
 from .db import db
+from .prompt_security import sanitize_rag_chunk
 
 
 class QnARetriever:
@@ -19,8 +20,11 @@ class QnARetriever:
             logging.info(f"Calling match_documents threshold={self.match_threshold} k={k}")
             results = db.rpc("match_documents", payload).execute()
             rows = results.data or []
-            logging.info(f"Supabase returned {len(rows)} rows")
-            return [(row.get("question"), row.get("answer")) for row in rows]
+            logging.info(f"Knowledge base (local DB) returned {len(rows)} rows")
+            return [
+                (sanitize_rag_chunk(row.get("question") or ""), sanitize_rag_chunk(row.get("answer") or ""))
+                for row in rows
+            ]
         except Exception as e:
             logging.error(f"QnARetriever error: {e}")
             return []  # Fallback path if retrieval fails

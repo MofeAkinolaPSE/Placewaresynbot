@@ -123,6 +123,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         { label: "Overview", href: "/operations" },
         { label: "Project Controls", href: "/operations/project-controls" },
         { label: "Suppliers", href: "/operations/suppliers" },
+        { label: "Purchase Orders", href: "/operations/purchase-orders" },
         { label: "Logistics Monitor", href: "/operations/logistics" },
       ],
     },
@@ -163,7 +164,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin"],
     },
     {
-      label: "Ask Warebot",
+      label: "Ask ACE",
       icon: MessageSquare,
       href: "/synbot",
       badge: "AI",
@@ -365,7 +366,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
             {/* Name + role */}
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm font-medium leading-tight">
-                Warebot
+                ACE
               </span>
               <span className="truncate text-[11px] capitalize text-sidebar-foreground/50 leading-tight">
                 {userRole}

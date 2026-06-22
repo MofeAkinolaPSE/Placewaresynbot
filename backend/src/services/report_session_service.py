@@ -288,8 +288,7 @@ def list_sessions(
                 "report_id, approved_by, approved_at, created_at, updated_at"
             )
             .order("created_at", desc=True)
-            .limit(limit)
-            .offset(offset)
+            .range(offset, offset + limit - 1)
         )
         if created_by:
             q = q.eq("created_by", str(created_by)[:200])

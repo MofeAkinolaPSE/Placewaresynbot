@@ -165,7 +165,7 @@ def _geocode_location(location: str) -> Optional[tuple[float, float]]:
         resp = requests.get(
             "https://nominatim.openstreetmap.org/search",
             params={"q": location, "format": "json", "limit": 1},
-            headers={"User-Agent": "Warebot/1.0 (contact@placeware.ng)"},
+            headers={"User-Agent": "ACE/1.0 (contact@placeware.ng)"},
             timeout=8,
         )
         resp.raise_for_status()
@@ -216,7 +216,7 @@ out center {limit};
         resp = requests.post(
             OVERPASS_API_URL,
             data={"data": query},
-            headers={"User-Agent": "Warebot/1.0 (contact@placeware.ng)"},
+            headers={"User-Agent": "ACE/1.0 (contact@placeware.ng)"},
             timeout=30,
         )
         resp.raise_for_status()

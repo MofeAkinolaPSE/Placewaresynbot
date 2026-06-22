@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import logging
-from src.middleware import verify_jwt, require_role
+from src.middleware import verify_jwt, require_role, rate_limit
 from src.agents.router import route_question, merge_insights
 from src.agent_registry import get_agent, list_agents
 from src.db import db
@@ -55,6 +55,10 @@ AGENT_DEFAULT_SPECS: Dict[str, List[Dict[str, Any]]] = {
         {"type": "revenue_by_product"},
         {"type": "revenue_by_customer"},
         {"type": "ar_aging"},
+        {"type": "customer_list"},
+    ],
+    "crm_intelligence": [
+        {"type": "customer_list"},
     ],
     "enterprise_risk": [
         {"type": "procurement_shipments_active"},
@@ -100,32 +104,59 @@ def create_db_executor():
             
             elif query_type == "inventory_expiring":
                 days = spec.get("days", 60)
-                result = db.table("placeware_inventory_snapshot").select("*").execute()
-                # Filter for expiring items in Python (Supabase limitations)
-                return result.data if hasattr(result, 'data') else []
+                # Merge placeware operational inventory + sage_items_snapshot (pharmaceutical)
+                rows = []
+                try:
+                    result = db.table("placeware_inventory_snapshot").select("*").execute()
+                    rows += result.data if hasattr(result, "data") else []
+                except Exception:
+                    pass
+                try:
+                    sage_res = (
+                        db.table("sage_items_snapshot")
+                        .select("item_id,item_name,expiry_date,batch_number")
+                        .not_.is_("expiry_date", "null")
+                        .order("expiry_date")
+                        .limit(500)
+                        .execute()
+                    )
+                    for r in sage_res.data if hasattr(sage_res, "data") else []:
+                        rows.append({
+                            "sku": r.get("item_id"),
+                            "product_id": r.get("item_id"),
+                            "name": r.get("item_name"),
+                            "batch_id": r.get("batch_number"),
+                            "expiry_date": r.get("expiry_date"),
+                            "best_before": r.get("expiry_date"),
+                            "qty_on_hand": 0,
+                        })
+                except Exception:
+                    pass
+                return rows
             
             elif query_type == "procurement_shipments_active":
                 result = db.table("placeware_shipments").select("*").in_("status", ["in_transit", "at_port", "under_clearance"]).execute()
                 return result.data if hasattr(result, 'data') else []
             
             elif query_type == "cold_chain_sensor_events_recent":
-                result = db.table("placeware_temperature_logs").select(
-                    "id, zone_id, temperature_c, humidity_pct, recorded_at, sensor_id, is_violation"
-                ).order("recorded_at", desc=True).limit(100).execute()
+                result = db.table("temperature_logs").select(
+                    "id, location, equipment_id, reading_celsius, min_threshold, max_threshold, logged_by, logged_at, is_deviation"
+                ).order("logged_at", desc=True).limit(100).execute()
                 rows = result.data if hasattr(result, 'data') else []
-                # Map to agent's expected column names
                 return [
                     {
-                        "sensor_id": r.get("sensor_id"),
-                        "timestamp": r.get("recorded_at"),
-                        "temperature_c": r.get("temperature_c"),
-                        "batch_id": r.get("zone_id"),  # use zone_id as reference
+                        "sensor_id": r.get("equipment_id") or r.get("location"),
+                        "timestamp": r.get("logged_at"),
+                        "temperature_c": r.get("reading_celsius"),
+                        "batch_id": r.get("location"),
+                        "is_deviation": r.get("is_deviation"),
                     }
                     for r in rows
                 ]
-            
+
             elif query_type == "inventory_batches_with_temp":
-                result = db.table("placeware_inventory_snapshot").select("*").execute()
+                # No FK links temperature_logs to inventory today; returning zone status is the most honest available signal.
+                result = db.table("placeware_storage_zones").select("*").execute()
                 return result.data if hasattr(result, 'data') else []
             
             elif query_type == "ar_aging":
@@ -186,7 +217,9 @@ def create_db_executor():
                 ]
             
             elif query_type == "temperature_violations_recent":
-                result = db.table("placeware_temperature_logs").select("*").eq("is_violation", True).order("recorded_at", desc=True).limit(50).execute()
+                result = db.table("temperature_logs").select(
+                    "id, location, equipment_id, reading_celsius, min_threshold, max_threshold, logged_by, logged_at, is_deviation"
+                ).eq("is_deviation", True).order("logged_at", desc=True).limit(50).execute()
                 return result.data if hasattr(result, 'data') else []
 
             # --- Revenue / Risk / Process agent queries ---
@@ -378,6 +411,22 @@ def create_db_executor():
                 ).limit(100).execute()
                 return result.data if hasattr(result, "data") else []
 
+            elif query_type == "customer_list":
+                result = db.table("customers").select(
+                    "id, name, customer_code, status, risk_score, contact_details"
+                ).order("name").limit(spec.get("limit", 300)).execute()
+                rows = result.data if hasattr(result, "data") else []
+                return [
+                    {
+                        "customer_id": r.get("customer_code") or str(r.get("id", "")),
+                        "name": r.get("name") or r.get("customer_code") or "",
+                        "status": r.get("status") or "active",
+                        "risk_score": r.get("risk_score") or 0,
+                        "phone": (r.get("contact_details") or {}).get("phone", ""),
+                    }
+                    for r in rows
+                ]
+
             else:
                 logger.warning(f"Unknown query type: {query_type}")
                 return []
@@ -417,6 +466,7 @@ async def api_list_agents(user=Depends(verify_jwt)):
 @router.post("/execute")
 async def api_execute_agents(payload: AgentExecRequest, request: Request, user=Depends(verify_jwt)):
     """Execute agents based on question routing - runs multiple agents and merges insights."""
+    rate_limit(request, key=f"agents:execute:{request.client.host if request.client else 'unknown'}", limit=30)
     user_ctx = getattr(request.state, "user", {}) or {}
     roles = set(user_ctx.get("roles") or [])
     actor_id = user_ctx.get("sub")
@@ -462,6 +512,7 @@ async def api_execute_agents(payload: AgentExecRequest, request: Request, user=D
 @router.post("/run/{agent_name}")
 async def api_run_single_agent(agent_name: str, request: Request, user=Depends(verify_jwt)):
     """Run a specific agent by name."""
+    rate_limit(request, key=f"agents:run:{request.client.host if request.client else 'unknown'}", limit=20)
     user_ctx = getattr(request.state, "user", {}) or {}
     roles = set(user_ctx.get("roles") or [])
     actor_id = user_ctx.get("sub")
@@ -497,7 +548,7 @@ async def api_run_single_agent(agent_name: str, request: Request, user=Depends(v
         }
     except Exception as e:
         logger.exception(f"Agent {agent_name} execution failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 def _get_default_specs_for_agent(agent_name: str) -> List[Dict[str, Any]]:

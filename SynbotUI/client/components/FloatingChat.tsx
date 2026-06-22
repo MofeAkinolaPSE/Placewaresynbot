@@ -21,7 +21,7 @@ const FloatingChat = () => {
     {
       id: 0,
       type: "bot",
-      content: "Hi! I'm Warebot, your AI assistant. Ask me anything about your business data, create tasks, or get executive insights.",
+      content: "Hi! I'm ACE, your AI assistant. Ask me anything about your business data, create tasks, or get executive insights.",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -168,7 +168,7 @@ const FloatingChat = () => {
                   <MessageSquare className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold">Warebot Assistant</h3>
+                  <h3 className="text-sm font-semibold">ACE Assistant</h3>
                   <p className="text-xs text-primary-foreground/80">Executive AI</p>
                 </div>
               </div>

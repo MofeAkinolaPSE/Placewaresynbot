@@ -1,5 +1,5 @@
 """
-Quick email credential smoke-test for PlacewareBot.
+Quick email credential smoke-test for ACE.
 Sends two test emails to the address in config.yaml (akinolamofe2@gmail.com):
   1. A plain-text lead notification (via db.send_lead_email path)
   2. A plain-text EOS summary notification (via messaging.send_email)
@@ -59,9 +59,9 @@ def _send(subject: str, body_html: str, body_text: str) -> None:
 # ── Test 1: Lead notification ─────────────────────────────────────────────────
 def test_lead_email():
     print("\n── Test 1: Lead notification email ──")
-    subject = "[PlacewareBot TEST] New Lead Received"
+    subject = "[ACE TEST] New Lead Received"
     body_text = (
-        "PlacewareBot – Test Lead Alert\n"
+        "ACE – Test Lead Alert\n"
         "================================\n"
         "Name   : Test User\n"
         "Email  : test@example.com\n"
@@ -70,7 +70,7 @@ def test_lead_email():
     )
     body_html = f"""
     <html><body>
-      <h2 style="color:#2c7be5;">PlacewareBot – Test Lead Alert</h2>
+      <h2 style="color:#2c7be5;">ACE – Test Lead Alert</h2>
       <p>This is an automated <strong>credential smoke-test</strong>. No action required.</p>
       <table cellpadding="6" style="border-collapse:collapse">
         <tr><td><b>Name</b></td><td>Test User</td></tr>
@@ -96,9 +96,9 @@ def test_lead_email():
 # ── Test 2: EOS summary notification ──────────────────────────────────────────
 def test_eos_email():
     print("\n── Test 2: EOS summary notification email ──")
-    subject = "[PlacewareBot TEST] EOS Daily Summary"
+    subject = "[ACE TEST] EOS Daily Summary"
     body_text = (
-        "PlacewareBot – EOS Summary (Test)\n"
+        "ACE – EOS Summary (Test)\n"
         "====================================\n"
         "Date    : 2026-04-26\n"
         "Orders  : 3 processed\n"
@@ -108,7 +108,7 @@ def test_eos_email():
     )
     body_html = f"""
     <html><body>
-      <h2 style="color:#2c7be5;">PlacewareBot – EOS Daily Summary (Test)</h2>
+      <h2 style="color:#2c7be5;">ACE – EOS Daily Summary (Test)</h2>
       <p>This is an automated <strong>credential smoke-test</strong>. No action required.</p>
       <table cellpadding="6" style="border-collapse:collapse">
         <tr><td><b>Date</b></td><td>2026-04-26</td></tr>
@@ -116,7 +116,7 @@ def test_eos_email():
         <tr><td><b>Leads Captured</b></td><td>2</td></tr>
         <tr><td><b>System Status</b></td><td style="color:green;">All systems operational</td></tr>
       </table>
-      <p style="color:#888;font-size:12px;">Sent by PlacewareBot · credential smoke-test</p>
+      <p style="color:#888;font-size:12px;">Sent by ACE · credential smoke-test</p>
     </body></html>"""
 
     try:
@@ -133,7 +133,7 @@ def test_eos_email():
 # ── Runner ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 55)
-    print("  PlacewareBot – Email Credential Smoke-Test")
+    print("  ACE – Email Credential Smoke-Test")
     print("=" * 55)
     _check_env()
 

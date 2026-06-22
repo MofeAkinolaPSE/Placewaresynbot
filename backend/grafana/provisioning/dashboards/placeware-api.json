@@ -5,7 +5,7 @@
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
   ],
   "annotations": { "list": [] },
-  "description": "PlacewareBot API — Request rate, latency (P50/P95/P99), error rate, active requests",
+  "description": "ACE API — Request rate, latency (P50/P95/P99), error rate, active requests",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -120,7 +120,7 @@
   "schemaVersion": 38,
   "tags": ["placeware", "fastapi", "production"],
   "time": { "from": "now-1h", "to": "now" },
-  "title": "PlacewareBot — API Overview",
+  "title": "ACE — API Overview",
   "uid": "placeware-api-v1",
   "version": 1
 }

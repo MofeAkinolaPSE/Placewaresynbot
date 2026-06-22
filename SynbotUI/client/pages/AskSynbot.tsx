@@ -51,7 +51,7 @@ function ReportRenderer({ content }: { content: string }) {
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `warebot_report_${new Date().toISOString().slice(0, 10)}.docx`;
+      a.download = `ace_report_${new Date().toISOString().slice(0, 10)}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -299,7 +299,7 @@ const AskSynbot = () => {
         </ScrollArea>
 
         <div className="border-t border-border/70 p-4 text-xs text-muted-foreground">
-          <p>Warebot v1.0</p>
+          <p>ACE v1.0</p>
           <p>Powered by Placeware AI</p>
         </div>
       </div>
@@ -391,8 +391,8 @@ const AskSynbot = () => {
           <div className="flex gap-3">
             <AlertCircle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
             <p className="text-xs text-warning">
-              <strong>Pharma Compliance Notice:</strong> Warebot analysis is for business intelligence only. 
-              For regulated decisions (formulary inclusions, pricing), consult subject matter experts and 
+              <strong>Pharma Compliance Notice:</strong> ACE analysis is for business intelligence only.
+              For regulated decisions (formulary inclusions, pricing), consult subject matter experts and
               regulatory compliance team.
             </p>
           </div>
@@ -410,7 +410,7 @@ const AskSynbot = () => {
                   handleSendMessage();
                 }
               }}
-              placeholder="Ask Warebot a question about your business..."
+              placeholder="Ask ACE a question about your business..."
               className="flex-1"
             />
             <Button onClick={handleSendMessage} size="icon" disabled={isSending}>

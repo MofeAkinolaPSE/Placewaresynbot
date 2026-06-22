@@ -1,5 +1,5 @@
 """
-Frontdesk Workflow Router — Warebot
+Frontdesk Workflow Router — ACE
 =========================================
 Implements the walk-in customer intake workflow:
   Walk-in Registration → Invoice Creation → QC Check → Finance Approval → Executive Notification

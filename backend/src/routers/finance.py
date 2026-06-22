@@ -1,5 +1,5 @@
 """
-Finance & Accounting Router — Warebot (Tier 1 + Tier 2)
+Finance & Accounting Router — ACE (Tier 1 + Tier 2)
 =============================================================
 Implements Finance & Accounting features derived from the April 2026
 requirements-gathering form (Finance Director: OGUNDOYIN OLUYEMI EMMANUEL):
@@ -57,8 +57,8 @@ _FINANCE_ROLES = {"admin", "finance", "management"}
 def _require_finance(request: Request) -> dict:
     """Decode JWT and enforce finance-tier role."""
     payload = verify_jwt(request)
-    role = (payload.get("role") or "").lower()
-    if role not in _FINANCE_ROLES:
+    roles = {str(r).lower() for r in payload.get("roles", [])}
+    if not roles & _FINANCE_ROLES:
         raise HTTPException(status_code=403, detail="Finance or management role required")
     return payload
 
@@ -1593,3 +1593,101 @@ def _next_month_str(period: str) -> str:
     if month == 12:
         return f"{year + 1}-01-01"
     return f"{year}-{month + 1:02d}-01"
+
+
+# ---------------------------------------------------------------------------
+# CHART OF ACCOUNTS  —  GET /finance/coa
+# ---------------------------------------------------------------------------
+@router.get("/coa")
+async def get_chart_of_accounts(request: Request, limit: int = Query(500, le=1000)):
+    """Return chart of accounts from Sage 50 snapshot."""
+    _require_finance(request)
+    try:
+        resp = (
+            db.table("v_chart_of_accounts")
+            .select("*")
+            .order("account_code")
+            .limit(limit)
+            .execute()
+        )
+        rows = resp.data or []
+        return {"data": rows, "total": len(rows)}
+    except Exception as e:
+        log.error("/finance/coa error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve chart of accounts")
+
+
+# ---------------------------------------------------------------------------
+# INVOICES  —  GET /finance/invoices  &  GET /finance/invoices/{invoice_id}
+# ---------------------------------------------------------------------------
+@router.get("/invoices")
+async def list_invoices(
+    request: Request,
+    limit: int = Query(200, le=500),
+    status: str = Query(None, description="Filter by status: open, paid, overdue"),
+):
+    """Return Placeware AR invoices (synced from Sage 50 on CSV import)."""
+    _require_finance(request)
+    try:
+        rows = (
+            db.table("placeware_invoices")
+            .select("*")
+            .order("invoice_date", desc=True)
+            .limit(limit)
+            .execute()
+            .data or []
+        )
+        if not rows:
+            # Fallback: read directly from Silver view if table not yet populated
+            rows = (
+                db.table("v_ar_invoices")
+                .select("*")
+                .limit(limit)
+                .execute()
+                .data or []
+            )
+        if status:
+            rows = [r for r in rows if (r.get("status") or "").lower() == status.lower()]
+        return {"data": rows, "total": len(rows)}
+    except Exception as e:
+        log.error("/finance/invoices error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve invoices")
+
+
+@router.get("/invoices/{invoice_id}")
+async def get_invoice_detail(request: Request, invoice_id: str):
+    """Return a single invoice with its line items."""
+    _require_finance(request)
+    try:
+        header_rows = (
+            db.table("placeware_invoices")
+            .select("*")
+            .eq("invoice_id", invoice_id)
+            .limit(1)
+            .execute()
+            .data or []
+        )
+        if not header_rows:
+            header_rows = (
+                db.table("v_ar_invoices")
+                .select("*")
+                .eq("invoice_id", invoice_id)
+                .limit(1)
+                .execute()
+                .data or []
+            )
+        if not header_rows:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        lines = (
+            db.table("v_ar_invoice_lines")
+            .select("*")
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data or []
+        )
+        return {"invoice": header_rows[0], "lines": lines}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("/finance/invoices/%s error: %s", invoice_id, e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve invoice detail")

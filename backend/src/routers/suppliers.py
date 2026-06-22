@@ -52,6 +52,15 @@ async def list_suppliers(request: Request):
         logger.error(f"list_suppliers: suppliers table query failed: {exc}")
         raise HTTPException(status_code=500, detail='Failed to load suppliers from DB')
 
+    # Fallback to Silver view when live suppliers table is empty
+    if not data:
+        try:
+            snap = db.table('v_vendors').select('*').limit(200).execute()
+            for r in (snap.data or []):
+                data.append(_snapshot_row_to_supplier(r))
+        except Exception as exc:
+            logger.warning(f"list_suppliers: v_vendors fallback failed: {exc}")
+
     try:
         actor = getattr(request.state, 'user', None)
         audit_event('list_suppliers', {'count': len(data)}, actor_id=(actor.get('sub') if actor else None), event_class='supplier', subject_type='suppliers')

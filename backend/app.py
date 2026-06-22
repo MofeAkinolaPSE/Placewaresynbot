@@ -195,6 +195,7 @@ async def update_order_status(request: Request, order_id: str, payload: OrderSta
     return {"order_id": order_id, "from": current_status, "to": new_status, "status": "updated"}
 from src.llm_client import LLMClient  # new microservice-based LLM abstraction (to be added)
 from src.middleware import verify_jwt, rate_limit, RequestTimingMiddleware
+from src.prompt_security import sanitize_user_input, wrap_user_content
 from src.db import (
     db,
     audit_event, 
@@ -445,11 +446,13 @@ from src.routers.frontdesk import router as frontdesk_router
 from src.routers.finance import router as finance_router
 from src.routers.qc import router as qc_router
 from src.routers.reports import router as reports_router
+from src.routers.purchase_orders import router as purchase_orders_router
 
 app.include_router(crm_sales_router)
 app.include_router(frontdesk_router)
 app.include_router(qc_router)
 app.include_router(finance_router)
+app.include_router(purchase_orders_router)
 app.include_router(reports_router)
 app.include_router(sage_csv_import_router)
 app.include_router(replenishment_router)
@@ -480,6 +483,9 @@ app.include_router(knowledge_router)
 app.include_router(maintenance_tracking_router)
 app.include_router(digital_twin_router)
 app.include_router(capability_discovery_router)
+
+from src.routers.controls import router as controls_router
+app.include_router(controls_router)
 
 # Sage 50 live integration routers
 from src.routers.sage_live import router as sage_live_router, webhook_router as sage_webhook_router
@@ -705,7 +711,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-logging.basicConfig(level=logging.INFO)
+_log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+logging.basicConfig(level=_log_level)
 retriever = QnARetriever(match_threshold=MATCH_THRESHOLD)
 MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024
 IMPORT_RETRY_BACKOFF_SECONDS = [1, 2]
@@ -974,20 +981,26 @@ def _build_chat_instruction(mode: str, question: str = "") -> str:
 
     # Internal (executive / assistant) mode
     base = (
-        f"You are {BOT_NAME}, an internal business copilot for {BOT_BRAND}. "
+        f"You are {BOT_NAME} — the Executive Orchestration Service (EOS) for {BOT_BRAND}. "
+        f"{BOT_NAME} is the operational codename for EOS: the AI intelligence layer that powers "
+        f"{BOT_BRAND}'s executive decision-making, operations, finance, CRM, compliance, and workflow automation. "
         "Use ONLY the provided backend context and tool results as source of truth. "
         "Do not invent numbers, trends, or claims not present in the context. "
-        "If a metric is missing, briefly say it is unavailable. "
+        "CRITICAL — data grounding rules: "
+        "(1) Never state a specific table name, column name, row count, or sample data value unless it appears verbatim in the ORCHESTRATION TOOL RESULTS or retrieved context for this turn. "
+        "If asked about database structure or contents and no tool result supplies it, say so explicitly — do not describe a plausible-sounding schema from memory. "
+        "(2) When inventory tool results show quantity=0 for all items, this means Sage recorded no stock movements — do NOT substitute fabricated quantities or invent SKU names. Report the actual zero values truthfully. "
+        "(3) Only state that an action was executed or that a workflow/task was dispatched if a matching successful entry is present in the ORCHESTRATION TOOL RESULTS for this turn. "
+        "If no such tool result exists, say plainly that you don't currently have a way to do that, rather than claiming it happened. "
+        "If a metric or capability is unavailable, say so clearly. "
         "Do NOT include customer support copy, ordering instructions, sales CTAs, or contact blocks. "
-        # ── EOS action capabilities (prevents LLM from saying "I can't") ────
-        f"You have FULL built-in ability to execute the following actions via {BOT_BRAND}'s EOS backend: "
+        # ── EOS action capabilities ────
+        f"As EOS, you can execute these actions when the tool results confirm they ran: "
         "sending emails to internal departments, scheduling and managing calendar meetings, "
         "creating workflow tasks, generating structured business reports (deviation, maintenance, "
-        "compliance, audit, financial, inventory, executive), and triggering inventory replenishment orders. "
-        "When the user asks you to perform any of these actions, CONFIRM that you are executing it and "
-        "report the result back. NEVER say you cannot send emails, cannot access the calendar, "
-        "cannot create tasks, or cannot generate reports — these capabilities are fully operational "
-        f"through {BOT_NAME}'s agent backend. "
+        "compliance, audit, financial, inventory, executive), triggering inventory replenishment orders, "
+        "running CRM intelligence queries, and orchestrating multi-step business workflows. "
+        "Report the result from ORCHESTRATION TOOL RESULTS. If the tool result is absent, say the action could not be confirmed rather than inventing a success narrative. "
     )
 
     if intent == "report":
@@ -1068,6 +1081,42 @@ def _enforce_mode_tone(answer: str, mode: str, question: str = "") -> str:
             )
 
     return text
+
+
+_SCHEMA_HALLUCINATION_PATTERNS = [
+    r"\|\s*\*\*\w+\*\*\s*\|",          # markdown table with bold column names
+    r"\d{1,4}\s+rows?\b",              # "847 rows", "1780 rows"
+    r"table:\s*`?\w+`?",               # "table: cold_chain_logs"
+    r"\bcolumns?:\s+\w+,\s*\w+",      # "columns: id, name, ..."
+]
+
+_SCHEMA_TRIGGER_WORDS = {
+    "schema", "table", "column", "database", "rows", "what data",
+    "data exist", "data we have", "db scan", "full scan",
+}
+
+
+def _check_hallucination_risk(answer: str, question: str, tool_outputs_empty: bool) -> str:
+    """Return a safe fallback if the answer looks like a fabricated schema dump with no tool grounding."""
+    import re as _re, logging as _log
+    if not tool_outputs_empty:
+        return answer
+    q_lower = (question or "").lower()
+    if not any(w in q_lower for w in _SCHEMA_TRIGGER_WORDS):
+        return answer
+    matched = sum(
+        1 for pat in _SCHEMA_HALLUCINATION_PATTERNS if _re.search(pat, answer, _re.IGNORECASE)
+    )
+    if matched >= 2:
+        _log.getLogger("ace.hallucination_guard").warning(
+            "Suppressed likely fabricated schema response (matched %d patterns, tool_outputs empty)", matched
+        )
+        return (
+            "I don't have a live connection to the database schema right now, so I can't confirm "
+            "what tables or columns exist. The data-inventory tool isn't available for this query. "
+            "For accurate schema information, please check the database directly or ask your system administrator."
+        )
+    return answer
 
 
 def _extract_email(text: str) -> str | None:
@@ -1183,7 +1232,11 @@ def _plan_tools(question: str, mode: str) -> list[tuple[str, dict[str, Any]]]:
     q = (question or "").lower()
     plan: list[tuple[str, dict[str, Any]]] = []
 
-    if any(k in q for k in ["inventory", "stock", "availability", "available", "sku"]):
+    if any(k in q for k in [
+        "inventory", "stock", "availability", "available", "sku",
+        "quantity", "qty", "on hand", "qoh", "stock level",
+        "how many units", "how much product", "current stock",
+    ]):
         skus = _extract_skus(question)
         if skus:
             plan.append(("getInventoryBySkus", {"skus": skus}))
@@ -1214,7 +1267,20 @@ def _plan_tools(question: str, mode: str) -> list[tuple[str, dict[str, Any]]]:
     if mode != "customer" and any(k in q for k in ["recommend", "action", "next step", "what should we do", "focus", "quarter", "priority"]):
         plan.append(("getRecommendations", {}))
 
-    if mode == "executive" or (mode != "customer" and any(k in q for k in ["executive", "overview", "health", "summary", "brief"])):
+    if mode != "customer" and any(k in q for k in ["customer", "client", "crm", "pipeline", "lead", "how many customer", "number of customer"]):
+        plan.append(("getCrmStats", {}))
+
+    if mode != "customer" and any(k in q for k in [
+        "invoice", "invoices", "billing", "ar invoice", "accounts receivable",
+        "outstanding", "overdue invoice", "unpaid", "payment due", "receivable",
+    ]):
+        plan.append(("getInvoices", {"limit": 20}))
+
+    if mode == "executive" or (mode != "customer" and any(k in q for k in [
+        "executive", "overview", "health", "summary", "brief",
+        "database", "live data", "data status", "data full", "tables", "how many",
+        "populate", "is the db", "is the data", "is your database",
+    ])):
         plan.append(("getExecutiveSummary", {}))
 
     # Dedupe while preserving first-seen order; keep orchestration lightweight.
@@ -3868,6 +3934,11 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
     if not question or not isinstance(question, str) or not question.strip():
         return JSONResponse({"error": "'question' must be a non-empty string."}, status_code=400)
 
+    try:
+        question = sanitize_user_input(question, context="chat")
+    except ValueError:
+        return JSONResponse({"error": "Message contains content that cannot be processed."}, status_code=400)
+
     roles = _normalize_roles(auth_payload)
     mode = _resolve_chat_mode(question=question, roles=roles, requested_mode=requested_mode)
     actor_id = (auth_payload or {}).get("sub") or (auth_payload or {}).get("id")
@@ -4135,6 +4206,11 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
             "Please ask a specific company or operations question and I will answer with available backend data."
         )
     answer = _enforce_mode_tone(answer=answer, mode=mode, question=question)
+    answer = _check_hallucination_risk(
+        answer=answer,
+        question=question,
+        tool_outputs_empty=not bool(tool_outputs),
+    )
     # answer = append_disclaimer(answer)  # Removed per user request: disclaimer at bottom of chat, not per response
     sources = []
     try:
@@ -5111,6 +5187,7 @@ async def audit_logs_endpoint(request: Request, limit: int = 50):
 
 @app.post("/auth/dev_token")
 async def auth_dev_token(request: Request, roles: list[str] = ["admin"]):
+    rate_limit(request, key=f"dev_token:{request.client.host if request.client else 'unknown'}", limit=3)
     if not DEV_TOKEN_ENABLED:
         raise HTTPException(status_code=403, detail="Dev token issuance disabled")
     # This issues a JWT for local testing of admin endpoints

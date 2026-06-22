@@ -228,7 +228,7 @@ export default function ReportWizard() {
   const updateScope = useMutation({
     mutationFn: () =>
       api.reports.updateScope(sessionId!, scopeData, notes || undefined),
-    onSuccess: () => setStep(2),
+    onSuccess: () => setStep(3),
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 

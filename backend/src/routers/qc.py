@@ -1,5 +1,5 @@
 """
-Quality Control Router — Warebot
+Quality Control Router — ACE
 ======================================
 Exposes all QC & compliance endpoints derived from the April 2026
 requirements survey (QA Officer + Receptionist respondents).

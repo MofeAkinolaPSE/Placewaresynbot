@@ -208,6 +208,8 @@ async def ingest_customers(payload: CustomerIngestPayload, request: Request):
         customer_dict = rec.model_dump()
 
         # --- sage_customers_snapshot upsert ---
+        # Non-fatal: snapshot table has no unique index on customer_id (batch upload
+        # owns that path). If this upsert fails, proceed to the CRM write anyway.
         try:
             sage_row = {
                 "customer_id": rec.customer_id,
@@ -217,12 +219,10 @@ async def ingest_customers(payload: CustomerIngestPayload, request: Request):
                 "status": rec.status or "active",
                 "imported_at": imported_at,
             }
-            db.table("sage_customers_snapshot").upsert(sage_row, on_conflict="customer_id").execute()
+            db.table("sage_customers_snapshot").insert(sage_row).execute()
             upserted_snapshot += 1
         except Exception as exc:
-            logger.warning(f"ingest_customers: sage_customers_snapshot upsert failed for {rec.customer_id}: {exc}")
-            skipped.append(rec.customer_id)
-            continue
+            logger.debug(f"ingest_customers: sage_customers_snapshot insert skipped for {rec.customer_id}: {exc}")
 
         # --- CRM customers table upsert ---
         try:

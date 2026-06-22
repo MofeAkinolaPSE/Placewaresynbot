@@ -7,7 +7,9 @@ from src.services.realtime import realtime_hub
 from src.cache import invalidate_cache_tags
 from src.services.oeis import process_operational_event
 from src.constants import TABLE_INVENTORY_EVENTS
-import os, json, hashlib
+import os, json, hashlib, logging
+
+logger = logging.getLogger(__name__)
 import datetime as dt
 
 LEDGER_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "event_ledger.jsonl")
@@ -43,19 +45,6 @@ def _get_item_by_id(item_id: str):
     return rows[0] if rows else None
 
 
-@router.get('/inventory/items')
-async def list_items(request: Request):
-    verify_jwt(request)
-    resp = db.table(TABLE_INV_ITEMS).select("*").order("created_at", desc=False).execute()
-    data = resp.data or []
-    try:
-        actor = getattr(request.state, 'user', None)
-        audit_event('list_inventory_items', {'count': len(data)}, actor_id=(actor.get('sub') if actor else None), event_class='inventory')
-    except Exception:
-        pass
-    return data
-
-
 @router.post('/inventory/items', status_code=201)
 async def create_item(request: Request, payload: InventoryItem):
     verify_jwt(request, required_role='ops')
@@ -70,7 +59,7 @@ async def create_item(request: Request, payload: InventoryItem):
             pass
         return {'status': 'created', 'item': created}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get('/inventory/stock')
@@ -86,60 +75,6 @@ async def list_stock(request: Request):
     return data
 
 
-@router.get('/inventory/summary')
-async def inventory_summary(request: Request):
-    verify_jwt(request)
-    # totals
-    stock_resp = db.table(TABLE_STOCK).select("item_id,quantity").execute()
-    stock = stock_resp.data or []
-    totals = {}
-    for s in stock:
-        item_id = s.get('item_id')
-        qty = float(s.get('quantity') or 0)
-        totals[item_id] = totals.get(item_id, 0) + qty
-
-    # movements last 30 days counts
-    now = dt.datetime.utcnow()
-    moves_resp = db.table(TABLE_MOVES).select("change,created_at").order("created_at", desc=True).limit(1000).execute()
-    moves = moves_resp.data or []
-    incoming = 0
-    outgoing = 0
-    for m in moves:
-        try:
-            ch = float(m.get('change') or 0)
-        except Exception:
-            ch = 0
-        ts = m.get('created_at')
-        if ts:
-            try:
-                t = dt.datetime.fromisoformat(ts.replace('Z', ''))
-            except Exception:
-                t = None
-            if t and (now - t).days <= 30:
-                if ch > 0:
-                    incoming += 1
-                elif ch < 0:
-                    outgoing += 1
-
-    reqs_resp = db.table(TABLE_REQUESTS).select("status").execute()
-    reqs = reqs_resp.data or []
-    pending_requests = len([r for r in reqs if r.get('status') == 'pending'])
-
-    # map item metadata
-    items_resp = db.table(TABLE_INV_ITEMS).select("id,sku,name").execute()
-    items = items_resp.data or []
-    item_map = {i.get('id'): i for i in items}
-
-    summary = {
-        'totals': totals,
-        'incoming_30d': incoming,
-        'outgoing_30d': outgoing,
-        'pending_requests': pending_requests,
-        'items': item_map,
-    }
-    return summary
-
-
 @router.post('/inventory/movements', status_code=201)
 async def create_movement(request: Request, payload: InventoryMovement):
     verify_jwt(request, required_role='ops')
@@ -150,7 +85,7 @@ async def create_movement(request: Request, payload: InventoryMovement):
         mv_resp = db.table(TABLE_MOVES).insert(m).execute()
         created = mv_resp.data[0] if mv_resp.data else m
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     # update stock_levels: decrement source and increment destination or apply to 'main'
     item_id = m.get('item_id')
@@ -298,7 +233,7 @@ async def create_request(request: Request, payload: InventoryRequest):
             pass
         return {'status': 'created', 'request': created}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get('/inventory/movements/incoming')

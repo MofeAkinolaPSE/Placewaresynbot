@@ -141,7 +141,7 @@ async def create_calendar_event(payload: CalendarEventCreate):
         return {"data": inserted, "status": "created"}
     except Exception as e:
         logger.error(f"Failed to create calendar event: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.patch("/events/{event_id}")
@@ -166,7 +166,7 @@ async def update_calendar_event(event_id: str, payload: CalendarEventUpdate):
         raise
     except Exception as e:
         logger.error(f"Failed to update calendar event {event_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/events/{event_id}")
@@ -181,7 +181,7 @@ async def delete_calendar_event(event_id: str):
         return {"status": "deleted", "id": event_id}
     except Exception as e:
         logger.error(f"Failed to delete calendar event {event_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ async def create_task(payload: TaskCreate):
         return {"data": inserted, "status": "created"}
     except Exception as e:
         logger.error(f"Failed to create task: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @tasks_router.patch("/{task_id}")
@@ -357,7 +357,7 @@ async def update_task(task_id: str, payload: TaskUpdate):
         raise
     except Exception as e:
         logger.error(f"Failed to update task {task_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @tasks_router.delete("/{task_id}")
@@ -372,7 +372,7 @@ async def delete_task(task_id: str):
         return {"status": "deleted", "id": task_id}
     except Exception as e:
         logger.error(f"Failed to delete task {task_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Centralized constants for Warebot.
+"""Centralized constants for ACE (Placeware AI Assistant).
 
 This module provides a single source of truth for branding, table names,
 embedding parameters, disclaimers, environment variable keys, and service
@@ -9,7 +9,7 @@ import os
 
 # Branding & Bot Identity
 BOT_BRAND = "Placeware"
-BOT_NAME = "Warebot"
+BOT_NAME = "ACE"
 
 # Embedding / Retrieval Params
 EMBEDDING_DIM = 384
@@ -289,7 +289,7 @@ JWT_SECRET = os.getenv(ENV_JWT_SECRET, "change-me-for-prod-replace-with-32plus-c
 # Webhook secret used to verify provider callbacks (HMAC-SHA256)
 WEBHOOK_SECRET = os.getenv(ENV_WEBHOOK_SECRET, "")
 RATE_LIMIT = int(os.getenv(ENV_RATE_LIMIT, "60"))
-DEV_TOKEN_ENABLED = os.getenv(ENV_DEV_TOKEN_ENABLED, "1") not in ("0", "false", "False")
+DEV_TOKEN_ENABLED = os.getenv(ENV_DEV_TOKEN_ENABLED, "0") not in ("0", "false", "False")
 CORS_ALLOW_ORIGINS = [o.strip() for o in os.getenv(ENV_CORS_ALLOW_ORIGINS, "*").split(",") if o.strip()] or ["*"]
 AT_REST_KEY = os.getenv(ENV_AT_REST_KEY, "")
 JWT_AUDIENCE = os.getenv(ENV_JWT_AUDIENCE, "")

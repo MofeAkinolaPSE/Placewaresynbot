@@ -32,7 +32,7 @@ async def create_customer(request: Request, payload: CustomerIn, _u=Depends(requ
         data = resp.data or []
         return data[0] if data else {"status": "ok"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/customers/{customer_id}")
@@ -46,7 +46,7 @@ async def get_customer(customer_id: int, _u=Depends(verify_jwt)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/customers")
@@ -55,7 +55,38 @@ async def list_customers(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt
         resp = db.table("customers").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    contact_details: Optional[dict] = None
+    account_manager: Optional[str] = None
+    credit_limit: Optional[float] = None
+    payment_terms_days: Optional[int] = None
+    facility_type: Optional[str] = None
+    client_type: Optional[str] = None
+    last_ordered_at: Optional[str] = None
+    storage_capacity: Optional[float] = None
+    competing_supplier: Optional[str] = None
+
+
+@router.patch("/customers/{customer_id}")
+async def update_customer(customer_id: int, payload: CustomerUpdate, _u=Depends(require_role("crm"))):
+    try:
+        updates = {k: v for k, v in payload.dict().items() if v is not None}
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields provided to update")
+        updates["updated_at"] = dt.datetime.utcnow().isoformat()
+        resp = db.table("customers").update(updates).eq("id", customer_id).execute()
+        data = resp.data or []
+        if not data:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        return data[0]
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class LeadIn(BaseModel):
@@ -180,7 +211,7 @@ async def create_lead(request: Request, payload: LeadIn, _u=Depends(require_role
         invalidate_cache_tags("crm", "crm_dashboard", "crm_risk_scores", "executive")
         return lead
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/leads")
@@ -189,7 +220,7 @@ async def list_leads(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
         resp = db.table("leads").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/opportunities")
@@ -198,7 +229,7 @@ async def list_opps(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
         resp = db.table("opportunities").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/opportunities")
@@ -236,7 +267,7 @@ async def create_opp(request: Request, payload: dict, _u=Depends(require_role("c
         invalidate_cache_tags("crm", "crm_dashboard", "crm_risk_scores", "executive")
         return opp
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/activities")
@@ -245,7 +276,7 @@ async def create_activity(payload: dict, _u=Depends(require_role("crm"))):
         resp = db.table("crm_activities").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/tickets")
@@ -254,7 +285,7 @@ async def create_ticket(payload: dict, _u=Depends(require_role("crm"))):
         resp = db.table("support_tickets").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/campaigns")
@@ -263,7 +294,7 @@ async def list_campaigns(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt
         resp = db.table("campaigns").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/forecasts")
@@ -272,7 +303,7 @@ async def create_forecast(payload: dict, _u=Depends(require_role("crm"))):
         resp = db.table("revenue_forecasts").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/lead-finder/prospects/source")
@@ -576,11 +607,22 @@ async def search_leads_by_location(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Places lookup failed: {exc}")
 
-    # ── Insert, deduplicating by place_id ─────────────────────────────────────
+    # ── Insert, deduplicating by place_id (single batch check) ──────────────
     inserted: list[dict] = []
-    skipped_ids: list[str] = []  # place_ids already in DB (true duplicates)
-    skipped = 0                  # count of true duplicates
-    errors  = 0                  # count of insert failures (schema / DB errors)
+    skipped_ids: list[str] = []
+    skipped = 0
+    errors  = 0
+
+    # Batch dedup: one IN query instead of one query per place
+    incoming_place_ids = [p.get("place_id") for p in places if p.get("place_id")]
+    existing_place_ids: set[str] = set()
+    if incoming_place_ids:
+        try:
+            ex_check = db.table("crm_prospects").select("place_id").in_("place_id", incoming_place_ids).execute()
+            existing_place_ids = {r["place_id"] for r in (ex_check.data or []) if r.get("place_id")}
+        except Exception as e:
+            logger.warning("crm batch dedup check failed: %s", e)
+
     for place in places:
         row = {
             **place,
@@ -592,20 +634,13 @@ async def search_leads_by_location(
             "search_query":  query_label,
             "created_by":    actor,
         }
-        # Ensure source is set from the places payload (not cleared by the spread)
         row["source"] = place.get("source", "google_places")
 
         place_id = row.get("place_id")
-        if place_id:
-            try:
-                existing = db.table("crm_prospects").select("id").eq("place_id", place_id).limit(1).execute()
-                if (existing.data or []):
-                    skipped += 1
-                    skipped_ids.append(place_id)
-                    continue
-            except Exception as e:
-                logger.warning("crm dedup check failed for place_id=%s: %s", place_id, e)
-                # Fall through to attempt the insert anyway
+        if place_id and place_id in existing_place_ids:
+            skipped += 1
+            skipped_ids.append(place_id)
+            continue
 
         try:
             ins = db.table("crm_prospects").insert(row).execute()

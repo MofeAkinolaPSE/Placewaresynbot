@@ -27,7 +27,7 @@ async def ingest_event(request: Request, payload: EventPayload):
             "kg_updates": result.kg_updates,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/events/{event_id}/trace")
@@ -44,4 +44,4 @@ async def event_trace(request: Request, event_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

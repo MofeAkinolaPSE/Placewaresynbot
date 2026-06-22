@@ -116,16 +116,11 @@ async def list_threads(request: Request):
             .execute()
         )
         thread_ids = [row.get('thread_id') for row in (memberships.data or []) if row.get('thread_id')]
-        data = []
-        for thread_id in thread_ids:
-            try:
-                t = db.table('threads').select('*').eq('id', thread_id).limit(1).execute()
-                rows = t.data or []
-                if rows:
-                    data.append(rows[0])
-            except Exception:
-                continue
-
+        if thread_ids:
+            batch = db.table('threads').select('*').in_('id', thread_ids).execute()
+            data = batch.data or []
+        else:
+            data = []
         data.sort(key=lambda x: x.get('last_activity_at') or '', reverse=True)
 
     try:
@@ -147,15 +142,11 @@ async def list_channels(request: Request):
 
     memberships = db.table('thread_participants').select('thread_id').eq('user_id', actor).limit(500).execute()
     ids = [m.get('thread_id') for m in (memberships.data or []) if m.get('thread_id')]
-    channels = []
-    for thread_id in ids:
-        try:
-            t = db.table('threads').select('*').eq('id', thread_id).eq('thread_type', 'channel').limit(1).execute()
-            rows = t.data or []
-            if rows:
-                channels.append(rows[0])
-        except Exception:
-            continue
+    if ids:
+        batch = db.table('threads').select('*').in_('id', ids).eq('thread_type', 'channel').execute()
+        channels = batch.data or []
+    else:
+        channels = []
     channels.sort(key=lambda x: x.get('last_activity_at') or '', reverse=True)
     return channels
 

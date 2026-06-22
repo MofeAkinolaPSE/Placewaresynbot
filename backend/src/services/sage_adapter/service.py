@@ -451,16 +451,82 @@ def get_latest_gl_snapshot(limit: int = 1000, client: DBClient = db) -> List[Dic
 
     if not rows:
         fallback_batch = _latest_batch_for_table("sage_gl_snapshot", client)
-        if not fallback_batch:
-            return []
-        resp = (
-            client.table("sage_gl_snapshot")
-            .select("*")
-            .eq("batch_id", fallback_batch)
-            .order("period", desc=True)
-            .limit(limit)
-            .execute()
-        )
-        rows = resp.data or []
+        if fallback_batch:
+            resp = (
+                client.table("sage_gl_snapshot")
+                .select("*")
+                .eq("batch_id", fallback_batch)
+                .order("period", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            rows = resp.data or []
+
+    # Final fallback: use directly-extracted sage_gl_transactions (Btrieve binary import)
+    if not rows:
+        try:
+            resp = (
+                client.table("sage_gl_transactions")
+                .select("id, post_date, gl_account, description, source, imported_at")
+                .order("post_date", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            raw = resp.data or []
+            # Normalise to the shape callers expect (account_code, account_name, period)
+            rows = [
+                {
+                    "id": r.get("id"),
+                    "account_code": r.get("gl_account") or "",
+                    "account_name": r.get("description") or "",
+                    "period": str(r.get("post_date") or "")[:7],  # YYYY-MM
+                    "debit": 0.0,
+                    "credit": 0.0,
+                    "description": r.get("description") or "",
+                    "post_date": r.get("post_date"),
+                    "source": r.get("source") or "sage50",
+                    "imported_at": r.get("imported_at"),
+                }
+                for r in raw
+            ]
+        except Exception:
+            rows = []
 
     return rows
+
+
+def get_invoices(
+    client: DBClient = db,
+    limit: int = 50,
+    status: str | None = None,
+) -> Dict[str, Any]:
+    """Return Placeware AR invoices synced from Sage 50.
+
+    Reads placeware_invoices (populated automatically when sales_invoices.csv
+    is imported). Falls back to v_ar_invoices Silver view if the table is empty.
+    """
+    try:
+        q = (
+            client.table("placeware_invoices")
+            .select("*")
+            .order("invoice_date", desc=True)
+            .limit(limit)
+        )
+        rows = q.execute().data or []
+
+        # Fallback: Silver view (when placeware_invoices not yet populated)
+        if not rows:
+            vq = client.table("v_ar_invoices").select("*").limit(limit)
+            rows = vq.execute().data or []
+
+        if status:
+            rows = [r for r in rows if (r.get("status") or "").lower() == status.lower()]
+
+        return {
+            "invoices": rows,
+            "total": len(rows),
+            "note": "Synced from Sage 50 via CSV import" if rows else "No invoices imported yet — export sales_invoices.csv from Sage 50 and upload via Settings > Sage Import.",
+        }
+    except Exception as e:
+        logger.error(f"get_invoices error: {e}")
+        return {"invoices": [], "total": 0, "error": str(e)}

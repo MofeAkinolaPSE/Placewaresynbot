@@ -1,0 +1,4002 @@
+[
+  {
+    "description": "COB TRANSFER TO SULYMON BO**5400 EXPENSES ABN",
+    "posting_date": "2020-08-06",
+    "record_id": null,
+    "page_offset": 14,
+    "guid": "12dcd08ad8d67640a02d700a45c6a9bf",
+    "source_page": 101
+  },
+  {
+    "description": "COB TRANSFER TO SULYMON BO**5400 EXPENSES ABN",
+    "posting_date": "2020-08-06",
+    "record_id": null,
+    "page_offset": 181,
+    "guid": "1fd902dbd805624484510dcf52c13a31",
+    "source_page": 101
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-08-06",
+    "record_id": null,
+    "page_offset": 347,
+    "guid": "2c249f0fbabaec4d89f90711cd79458f",
+    "source_page": 101
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 243,
+    "guid": "0155d89137d4b54ebe2c5da0b93aa62a",
+    "source_page": 240
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 406,
+    "guid": "0230e65b2a90154bacecfa0556d1c5fa",
+    "source_page": 240
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 57,
+    "guid": "0394c20af9e9644fa34218a408437143",
+    "source_page": 241
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 218,
+    "guid": "04cc96ad48a38a48aef3901af19f907f",
+    "source_page": 241
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 380,
+    "guid": "0523b4856fb1514b886a6e2b992a421a",
+    "source_page": 241
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 32,
+    "guid": "06e43a56f0309941855613832123a933",
+    "source_page": 242
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 194,
+    "guid": "06ef84fb2567d442951ac36cf7eb278b",
+    "source_page": 242
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 356,
+    "guid": "0b76744bfda25342a2b723cc393975a5",
+    "source_page": 242
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 8,
+    "guid": "0c67747b127b664dbac0011f6eb7f12f",
+    "source_page": 243
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 172,
+    "guid": "0dfd1861fdbc3841990d0a1b9ea42ec8",
+    "source_page": 243
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 335,
+    "guid": "0f05591ab2755045ad0c5160c79ed1df",
+    "source_page": 243
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 151,
+    "guid": "17fd1b23cbfbb441af7c8885c043d609",
+    "source_page": 244
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 316,
+    "guid": "186e0ddceed39d43a72071e26dede166",
+    "source_page": 244
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 131,
+    "guid": "1b315fd0a62f6e4dba3b78bae98d560b",
+    "source_page": 245
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 295,
+    "guid": "1c89e0afe372e54a85156a5942f6063a",
+    "source_page": 245
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 107,
+    "guid": "216c59fc93b60645ad713165dfbedcac",
+    "source_page": 246
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 271,
+    "guid": "243954c410e04944985e593cf400b58d",
+    "source_page": 246
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 435,
+    "guid": "24668f5fcb7ec845ae1e72de85baa9f3",
+    "source_page": 246
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 87,
+    "guid": "26e086cc436bc24da8cdc576dd698c57",
+    "source_page": 247
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 250,
+    "guid": "276060fcd75a294f8b8118cdb6d7409e",
+    "source_page": 247
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 85,
+    "guid": "27a66e321db4dc4ebc0155445ba3e467",
+    "source_page": 272
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 247,
+    "guid": "2ae753f155ce91489c3e270041d9365a",
+    "source_page": 272
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 410,
+    "guid": "2c8efec7dd553749b6cada6e2612dccb",
+    "source_page": 272
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 62,
+    "guid": "2d5266048a08c24683ea1e40ed2eb6e3",
+    "source_page": 273
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 226,
+    "guid": "2d6faebaf0c1794ea28f1022defc2c29",
+    "source_page": 273
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 390,
+    "guid": "2e1ff8aa2b743241b72cdd3b8e4d6851",
+    "source_page": 273
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 41,
+    "guid": "2e4b80161b767744ba1ceb92f25e4e34",
+    "source_page": 274
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 204,
+    "guid": "2eb56544ee95774a978b24568f17edd3",
+    "source_page": 274
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 366,
+    "guid": "2ec44a96e0a0964d888844089e440349",
+    "source_page": 274
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 17,
+    "guid": "2fece22ec477ae4cb2584bb4f570ad82",
+    "source_page": 275
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 178,
+    "guid": "30c4595d7ea9bb48926e042d54482cff",
+    "source_page": 275
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 340,
+    "guid": "30fc79e097af41489ba5aae2900413ca",
+    "source_page": 275
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 156,
+    "guid": "32f441169a2f604fa0ffe78e04ca9119",
+    "source_page": 276
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 318,
+    "guid": "330b7763a008e54580fd95dc59318d86",
+    "source_page": 276
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 134,
+    "guid": "35c11f1e233ee44891e2e8f0bfd19607",
+    "source_page": 277
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 299,
+    "guid": "395afc301f658f4295f262d0a235bc5c",
+    "source_page": 277
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 115,
+    "guid": "3f831ad56a412e479c27c3683730229d",
+    "source_page": 278
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 279,
+    "guid": "40e185500c783547a7ce5210cd9d518a",
+    "source_page": 278
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 442,
+    "guid": "4230c1d9a6e4d746a4282a50a0579ac1",
+    "source_page": 278
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 94,
+    "guid": "424cd8a3850b884c8f6228e09ffb631f",
+    "source_page": 279
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 258,
+    "guid": "4254d9a5e03aae46ab1590e94aedaa72",
+    "source_page": 279
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 82,
+    "guid": "45abae4bfc0c3944be178a6496aed713",
+    "source_page": 304
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 244,
+    "guid": "46321a49c104c04a936be84b90f014e3",
+    "source_page": 304
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 409,
+    "guid": "4638382e9737b14d82fa8176819e4fa6",
+    "source_page": 304
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 59,
+    "guid": "475cd6a911f2694684e707abcc48cbaf",
+    "source_page": 305
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 221,
+    "guid": "4806afdd5ce2634a97386e02ba67d56f",
+    "source_page": 305
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 385,
+    "guid": "482303becbf56843b94f233cefab421f",
+    "source_page": 305
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 36,
+    "guid": "48ef7a84ed25b34eb0017310e790902d",
+    "source_page": 306
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 199,
+    "guid": "4b05045f3ffc674e96d356a0418db66c",
+    "source_page": 306
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 362,
+    "guid": "4b80e1ed43552248b6eeef2fed717bd6",
+    "source_page": 306
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 13,
+    "guid": "4dba7d7858f02c49aa2a820d55969baa",
+    "source_page": 307
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 175,
+    "guid": "4e1cd6fd7b454643a8c26fabeebdcd6b",
+    "source_page": 307
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 338,
+    "guid": "51f64c82ed4f144ea2f405fd4365a085",
+    "source_page": 307
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 151,
+    "guid": "53f63f35041501438f718fc10374d8e2",
+    "source_page": 308
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 315,
+    "guid": "54ab5624dd256c44b75f1d7acc645d3b",
+    "source_page": 308
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 129,
+    "guid": "56a128ded0d8aa4bb7e8cfc2c27a1c9b",
+    "source_page": 309
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 292,
+    "guid": "582359980b144e46b6c2faac0c1f4fa8",
+    "source_page": 309
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 108,
+    "guid": "5b3b17b6eb84a240a89144ca57127bac",
+    "source_page": 310
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 273,
+    "guid": "5b6fcb114b803f4fa496f2e7b3af016f",
+    "source_page": 310
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 437,
+    "guid": "5b9c802bbd9b8f459354126df49841f2",
+    "source_page": 310
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 88,
+    "guid": "5d195fdbdd88eb42b0f7862edc5a7017",
+    "source_page": 311
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 252,
+    "guid": "5dd72f61f0be974da1a4261e3815e249",
+    "source_page": 311
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 83,
+    "guid": "6203a27662e63a45b12583b160e7c802",
+    "source_page": 328
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 244,
+    "guid": "6471f846e922884087dbc93d8f409196",
+    "source_page": 328
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 407,
+    "guid": "6713e938e36a1c49a93d774012c3188f",
+    "source_page": 328
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 60,
+    "guid": "697fe0e42793ad43bdc6f7a4e9a0cbcc",
+    "source_page": 329
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 226,
+    "guid": "6e900d52891b404183c1385f18c9904f",
+    "source_page": 329
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 390,
+    "guid": "6e9fbd2d7b174b43a6a842fad579e77a",
+    "source_page": 329
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 41,
+    "guid": "6f2ee5aabc108d4a9bf0e971f01fe3e8",
+    "source_page": 330
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 204,
+    "guid": "6fbb07f7eade4b4db7768281123d2da5",
+    "source_page": 330
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 370,
+    "guid": "70d87f4786f2c64f9d2fc7744842d50b",
+    "source_page": 330
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 22,
+    "guid": "711ba95cc253134ea3da72635e874f23",
+    "source_page": 331
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 186,
+    "guid": "71c98b7e42ef444c952e666c72ca35de",
+    "source_page": 331
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 349,
+    "guid": "71ec7e5c9f687a4ead371787a38550de",
+    "source_page": 331
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 324,
+    "guid": "72b09a049555ca4fb0c752329008243a",
+    "source_page": 332
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 142,
+    "guid": "773220f4cf23ed42b97958bc1bcb9e53",
+    "source_page": 333
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 306,
+    "guid": "7886b83f67231048976abd5d43f341de",
+    "source_page": 333
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 123,
+    "guid": "7e6b5498d20605438e206c32831902ab",
+    "source_page": 334
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 287,
+    "guid": "7e7a96f3a4bdff479a9943e1208a94e5",
+    "source_page": 334
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 449,
+    "guid": "7eb046a2ff45ea4099ef604bb4634c3e",
+    "source_page": 334
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 99,
+    "guid": "815e8f1540512849957773873f198fef",
+    "source_page": 335
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 264,
+    "guid": "82c6cb91678eea469d3a05a164278462",
+    "source_page": 335
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 83,
+    "guid": "8414a6e4c8fb6b4aa9d58f5b0a602754",
+    "source_page": 352
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 246,
+    "guid": "85395b565c991e4da83411c7d02ffc0a",
+    "source_page": 352
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 410,
+    "guid": "864b6ca202c12a42accb2cb3ea38ae2b",
+    "source_page": 352
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 63,
+    "guid": "86f65066c0c4664d878823fd410e7013",
+    "source_page": 353
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 227,
+    "guid": "885faeb6e9afdd479e38c8b8eec66ba5",
+    "source_page": 353
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 391,
+    "guid": "892d76faecc65a4b97bf2ff1be21deea",
+    "source_page": 353
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 44,
+    "guid": "8bf0390203eddd489fa61ab766ac3312",
+    "source_page": 354
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 209,
+    "guid": "8c6f18986f729a409be99a5cd243c5bc",
+    "source_page": 354
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 373,
+    "guid": "8d7cf74fb082ee4a83bf14db9f0fb634",
+    "source_page": 354
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 26,
+    "guid": "8e0987a09f3b6449a0fee5c0a9927d55",
+    "source_page": 355
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 190,
+    "guid": "8f4205596f45274b9910a1cdf3d37970",
+    "source_page": 355
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 354,
+    "guid": "8f545f23c4b4274e98643bf0a57d8a20",
+    "source_page": 355
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 5,
+    "guid": "8fedf1dbcbcbb4429cf6080375e3445d",
+    "source_page": 356
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 168,
+    "guid": "909e7cdb374e4a4bbb73f7d620a38cbe",
+    "source_page": 356
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 330,
+    "guid": "9271c85106e93740912e697b8f85ebfc",
+    "source_page": 356
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 144,
+    "guid": "9550bfaba9acdf43a3c00d45e4d13b56",
+    "source_page": 357
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 309,
+    "guid": "95a50fd9bced5848a8f6b4e8b2e3be46",
+    "source_page": 357
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 122,
+    "guid": "96429c90edeed2438f91c209d1b575c3",
+    "source_page": 358
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 285,
+    "guid": "970813b41661cd48b58a31ee4de37ac9",
+    "source_page": 358
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 450,
+    "guid": "9ab44e76fa335045922015f3c93841be",
+    "source_page": 358
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 101,
+    "guid": "9af3e9f49b7ee14385948b859e099929",
+    "source_page": 359
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 266,
+    "guid": "9c4b2ff368e91c4099fb374e0aad4a74",
+    "source_page": 359
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 81,
+    "guid": "f284422d6a9e9d48a00750141fc03d47",
+    "source_page": 360
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 245,
+    "guid": "f5c6d2166ba0784eb855bb99efad453c",
+    "source_page": 360
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 408,
+    "guid": "f6d732b516c60540ac325972b3c6a8c5",
+    "source_page": 360
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 60,
+    "guid": "f7b25d035726374ca2d879244018c033",
+    "source_page": 361
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 224,
+    "guid": "fdea7162f3932f4aa49c49dbb9308a0e",
+    "source_page": 361
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 389,
+    "guid": "fef36fe2be979941a6328653f2ed152d",
+    "source_page": 361
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 39,
+    "guid": "ff47ac67d5d5b54fa58f237864671755",
+    "source_page": 362
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 200,
+    "guid": "ffb27ce327ace54e98cb923d462e9b5a",
+    "source_page": 362
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 81,
+    "guid": "9e45d74f8456d848b7c58f9fb0bdac84",
+    "source_page": 376
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 245,
+    "guid": "9e9e398bc1dd2f45a65f08321398762f",
+    "source_page": 376
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 409,
+    "guid": "9fa0c6b596ede3458da945c3b1a2e7ff",
+    "source_page": 376
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 62,
+    "guid": "a05d070f3080314db662b665bf5a255d",
+    "source_page": 377
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 224,
+    "guid": "a1eca66564787140b50906d1ac3090be",
+    "source_page": 377
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 388,
+    "guid": "a2107578a6973545ade94129b4ce95f7",
+    "source_page": 377
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 41,
+    "guid": "a3a7189bda0f664a82115c47abc36afd",
+    "source_page": 378
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 206,
+    "guid": "a6295b076b2876479eb52310aec9195f",
+    "source_page": 378
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 369,
+    "guid": "a6bd15ab9dc00c4981ae10a8bb8d8e81",
+    "source_page": 378
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 19,
+    "guid": "a8cd313cfcc4ee46a444c37c8c2b95db",
+    "source_page": 379
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 183,
+    "guid": "a91fb7af1295e14eb4eab2f53eb86465",
+    "source_page": 379
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 345,
+    "guid": "ae1deee23103d240ac69719e1c32cae6",
+    "source_page": 379
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 159,
+    "guid": "ae8746a55b8a064788b7beffffc93c62",
+    "source_page": 380
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 323,
+    "guid": "af1e2e9ecc36d4479344e51d0a5a92a5",
+    "source_page": 380
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 139,
+    "guid": "b01b60113625214995e5982024262f6e",
+    "source_page": 381
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 303,
+    "guid": "b03406f582b04e4082f25f2823aa233c",
+    "source_page": 381
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 117,
+    "guid": "b20f6c4fc481c04197628168004f2c13",
+    "source_page": 382
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 280,
+    "guid": "b278cea3576fb349a53ffcf8d7a2c4e9",
+    "source_page": 382
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 445,
+    "guid": "b2e66e01d71aac46856cfad92995aa72",
+    "source_page": 382
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 98,
+    "guid": "b3bcaa7eafa73043bf58432941ff30d3",
+    "source_page": 383
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 261,
+    "guid": "b75711e6260ab740a63b883fcfd43911",
+    "source_page": 383
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 85,
+    "guid": "ba9001193e38e64c90148a1ce32e8fb6",
+    "source_page": 432
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 247,
+    "guid": "bbf56430107b294ea8791af2200cbe84",
+    "source_page": 432
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 412,
+    "guid": "bd8c0589bcdcd3448147a0593f9f88bc",
+    "source_page": 432
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 65,
+    "guid": "c004b5490d9df743841e747ad156278d",
+    "source_page": 433
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 230,
+    "guid": "c181362855d5d64da54b58f2ace97085",
+    "source_page": 433
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 391,
+    "guid": "c24ba429bed0344bbc0e90888d405dbe",
+    "source_page": 433
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 43,
+    "guid": "c251efe86941e141b0f233abbdb7ac82",
+    "source_page": 434
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 207,
+    "guid": "c37320434fe6cc48b45c000b72cb1ab9",
+    "source_page": 434
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 371,
+    "guid": "c56cc5653262a344824302d17087bbf9",
+    "source_page": 434
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 24,
+    "guid": "c66391d42ed6314c90384a50273876a8",
+    "source_page": 435
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 189,
+    "guid": "c9b70ceda3c4a24fa0c12577c22a8855",
+    "source_page": 435
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 354,
+    "guid": "ca1d6a49368a5d48a7fe169af9b373b0",
+    "source_page": 435
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 6,
+    "guid": "ca911bc88645f640acfd5dd1e617f696",
+    "source_page": 436
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 169,
+    "guid": "cf2e50b79a310d46afb2fd8625d6d7a0",
+    "source_page": 436
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 333,
+    "guid": "d012a626555bbc4ea9f6872116c5cd2e",
+    "source_page": 436
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 146,
+    "guid": "d33ddf93b4a92e45af68eaa87101bdcb",
+    "source_page": 437
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 308,
+    "guid": "d459109096619148a05aed1076ae4df4",
+    "source_page": 437
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 124,
+    "guid": "d618867f2f5baa4aad0e487b20931fb4",
+    "source_page": 438
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 286,
+    "guid": "d713a3bf851f4a40a040b3a234562d81",
+    "source_page": 438
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 448,
+    "guid": "d83c650c9a5fd547ba0354458a0ccdfa",
+    "source_page": 438
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 100,
+    "guid": "d9917b8a5492f04d9471557707379f08",
+    "source_page": 439
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 262,
+    "guid": "da00f431952fea45af3d891d6dbc370d",
+    "source_page": 439
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 82,
+    "guid": "dadc8928b8f4d94bbf1814db776b7d9a",
+    "source_page": 480
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 244,
+    "guid": "dc5548c2ff977a4bab2d53213693176a",
+    "source_page": 480
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 409,
+    "guid": "ddafaf450a5a8f40a7b909dd28b3778f",
+    "source_page": 480
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 60,
+    "guid": "de8c036b88043d42a13057a46c748fbb",
+    "source_page": 481
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 223,
+    "guid": "df4a8320e93a524cb47bebbc58c9c015",
+    "source_page": 481
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 387,
+    "guid": "df7258c066eeb34f82f1d4219eed3bbd",
+    "source_page": 481
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 40,
+    "guid": "dfa085890bdf8b429d4474a83c39356c",
+    "source_page": 482
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 204,
+    "guid": "e142b86f44216e4191c06e22254be5ff",
+    "source_page": 482
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 369,
+    "guid": "e16aef4b6c3c2f4b8a51e1f98fdb3cf4",
+    "source_page": 482
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 20,
+    "guid": "e18e651a8d8cb94d9530620f651bfac6",
+    "source_page": 483
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 182,
+    "guid": "e1c74a91b8843e41b16e8b404c344cd8",
+    "source_page": 483
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 346,
+    "guid": "e49643e80bdf364a8211a6842b6bf2a4",
+    "source_page": 483
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 162,
+    "guid": "e69f48c9d8b161488cfa107bcda864ed",
+    "source_page": 484
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 324,
+    "guid": "e755b49244d5f0448749a2671df25c8c",
+    "source_page": 484
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 137,
+    "guid": "e83b25d9a3a81c4ab61e6fb27d001ee8",
+    "source_page": 485
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 301,
+    "guid": "e98749045d4a5c4fab5de1efcc8e056b",
+    "source_page": 485
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 116,
+    "guid": "eb590fd56079c245a6201e37920c0bb4",
+    "source_page": 486
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 279,
+    "guid": "ec3e50999221af47b037ea8d275f60fe",
+    "source_page": 486
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 443,
+    "guid": "ec9a4e34a460324caf7c4a03d0d26ea1",
+    "source_page": 486
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 96,
+    "guid": "eda761f1cbcdde4b9398c210bcc27576",
+    "source_page": 487
+  },
+  {
+    "description": "Being 2018 Closing Trial Balance figures",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 258,
+    "guid": "f1844f0b695e6f44997aba70d7e08277",
+    "source_page": 487
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-06-13",
+    "record_id": null,
+    "page_offset": 108,
+    "guid": "cddc61996eabff4b8d38f3e68a946cf1",
+    "source_page": 708
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-06-13",
+    "record_id": null,
+    "page_offset": 252,
+    "guid": "1899bc3517015a4caa734f639a44d863",
+    "source_page": 708
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 390,
+    "guid": "66182929818e7142aba2cde04d7610d7",
+    "source_page": 708
+  },
+  {
+    "description": "SMS ALERT CHARGE",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 16,
+    "guid": "5eb345a7534efb4bb500aca0e5100209",
+    "source_page": 709
+  },
+  {
+    "description": "SMS ALERT CHARGE",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 154,
+    "guid": "a5b31c241f0ee44b9ee07dc64f4232c0",
+    "source_page": 709
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 292,
+    "guid": "4ffb19b5d0f79f40b58e13f6251a95da",
+    "source_page": 709
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 431,
+    "guid": "f90511ee75558749a8751e305012f428",
+    "source_page": 709
+  },
+  {
+    "description": "COB TRANSFER TO AREMU A **4666 ABUJA EXPENSES",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 59,
+    "guid": "4589605f3db87648a93f3f2e086d535b",
+    "source_page": 710
+  },
+  {
+    "description": "COB TRANSFER TO AREMU A **4666 ABUJA EXPENSES",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 227,
+    "guid": "6fb50cb0ba5d284bb0ca69ef988bfbc0",
+    "source_page": 710
+  },
+  {
+    "description": "STAMP DUTY  CHARGE",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 394,
+    "guid": "76a79c520a98664887f06cf8ff1c5ac2",
+    "source_page": 710
+  },
+  {
+    "description": "STAMP DUTY  CHARGE",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 21,
+    "guid": "9bf09bc785976a4584a3f42e2308f6af",
+    "source_page": 711
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-15",
+    "record_id": null,
+    "page_offset": 160,
+    "guid": "45b0e15bc2107842be86488304d58b06",
+    "source_page": 711
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 298,
+    "guid": "f4ef2b0f204cdd4fb3842021ae3e32e5",
+    "source_page": 711
+  },
+  {
+    "description": "SHANCHOL",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 87,
+    "guid": "467a3b50f6b33e4d83c6a4f3ce38bd74",
+    "source_page": 984
+  },
+  {
+    "description": "SHANCHOL",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 237,
+    "guid": "a01a9443bc1aa141ac62a920c6939037",
+    "source_page": 984
+  },
+  {
+    "description": "SHANVAC B ADULT",
+    "posting_date": null,
+    "record_id": 6658,
+    "page_offset": 403,
+    "guid": "3e3f10ca33bc9244b32c65aa48bee90b",
+    "source_page": 984
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5567,
+    "page_offset": 42,
+    "guid": "8a4c2fc66e72b94586482c4b8aeb0108",
+    "source_page": 985
+  },
+  {
+    "description": "SHANVAC B ADULT",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 342,
+    "guid": "f5c34f05fcba014ebdcd083310889cf7",
+    "source_page": 985
+  },
+  {
+    "description": "STAMARIL 1 VIAL",
+    "posting_date": "2018-12-31",
+    "record_id": 5570,
+    "page_offset": 148,
+    "guid": "e749860ff5bc374c9d41f3246b187790",
+    "source_page": 986
+  },
+  {
+    "description": "STAMARIL 1 VIAL",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 304,
+    "guid": "abc66bc920ca5b4f86f9d6aba476b1ee",
+    "source_page": 986
+  },
+  {
+    "description": "STAMARIL 1 VIAL",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 461,
+    "guid": "fe1826533c7b754a9a30401b964e15fb",
+    "source_page": 986
+  },
+  {
+    "description": "SYNFLORIX 0.5 MLS",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 121,
+    "guid": "43853d406dca8545b7df6590c6ddc92a",
+    "source_page": 987
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5573,
+    "page_offset": 273,
+    "guid": "a596cac394931e45937a4c113eaa6f97",
+    "source_page": 987
+  },
+  {
+    "description": "SYNFLORIX 0.5 MLS",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 418,
+    "guid": "611f89d23fd50a4d9a490092dff8f201",
+    "source_page": 987
+  },
+  {
+    "description": "SYNFLORIX 0.5 MLS",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 63,
+    "guid": "c59c54372f449946aa6e65a6e6374638",
+    "source_page": 988
+  },
+  {
+    "description": "TETANUS TOXOID",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 237,
+    "guid": "491aa69a1d14734786bf6dd3121b26b0",
+    "source_page": 988
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5577,
+    "page_offset": 388,
+    "guid": "560837e8bc3288489c4da3644eba233e",
+    "source_page": 988
+  },
+  {
+    "description": "TETANUS TOXOID",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 21,
+    "guid": "7bf77c2f11a6c642969a9c6bfd787002",
+    "source_page": 989
+  },
+  {
+    "description": "TETANUS TOXOID",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 177,
+    "guid": "fe4a446c093fcb4faa263b52e64688ec",
+    "source_page": 989
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 327,
+    "guid": "a77b4b6c89e99047a9e93ab83d8ebf3f",
+    "source_page": 989
+  },
+  {
+    "description": "Tetraxim",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 124,
+    "guid": "a826330936ff67408d6f4fe41431a6e2",
+    "source_page": 990
+  },
+  {
+    "description": "Tetraxim",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 272,
+    "guid": "f95a53f3413bc5419ccd8edb67560923",
+    "source_page": 990
+  },
+  {
+    "description": "Tresiba",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 437,
+    "guid": "3914b12cca38de47b9ac39930d89a683",
+    "source_page": 990
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 69,
+    "guid": "49329f3803c2634c9e2651bc5ade62b3",
+    "source_page": 991
+  },
+  {
+    "description": "Tresiba",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 216,
+    "guid": "326342bb9adf9442a5e9ab6a1d53bc8a",
+    "source_page": 991
+  },
+  {
+    "description": "GIFT TO MR LATEEF ONISUNA",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 241,
+    "guid": "2d7aba627236374f89b4627cb4305b44",
+    "source_page": 1031
+  },
+  {
+    "description": "PAYMENT FOR OJODU PROJECT",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 436,
+    "guid": "15c42e3f91911245a3dd33e1072b04bb",
+    "source_page": 1105
+  },
+  {
+    "description": "KING GLORY VENTURES",
+    "posting_date": "2020-06-29",
+    "record_id": 6723,
+    "page_offset": 71,
+    "guid": "e53b6d6ac5d1e64bbab0c008a342d0ac",
+    "source_page": 1106
+  },
+  {
+    "description": "MR IKECHUKWU",
+    "posting_date": "2020-06-29",
+    "record_id": 5889,
+    "page_offset": 213,
+    "guid": "75c87eed71a7a94e97e28ab98a2578d2",
+    "source_page": 1106
+  },
+  {
+    "description": "PURCHASE OF BATTERY FOR TOYOTA COROLLA",
+    "posting_date": "2020-06-16",
+    "record_id": null,
+    "page_offset": 351,
+    "guid": "abfd6a325b72ac4da0ccbb03180ff919",
+    "source_page": 1106
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-16",
+    "record_id": null,
+    "page_offset": 138,
+    "guid": "7c176071d9999a4896e5dbed62a15df4",
+    "source_page": 1107
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-16",
+    "record_id": null,
+    "page_offset": 276,
+    "guid": "1d5515872e133c46a2fc406ab9bc23a0",
+    "source_page": 1107
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 415,
+    "guid": "f8eeedaaeede6346a2b3a33bfe1e0f88",
+    "source_page": 1107
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-06-16",
+    "record_id": null,
+    "page_offset": 42,
+    "guid": "085131774b411f4ebd2f64d4f5f30945",
+    "source_page": 1108
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-06-17",
+    "record_id": null,
+    "page_offset": 180,
+    "guid": "5e835f430b9fc94da75242eedd2719d3",
+    "source_page": 1108
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-17",
+    "record_id": null,
+    "page_offset": 318,
+    "guid": "72f1f31ffbf96746a4165d797cdb5882",
+    "source_page": 1108
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 457,
+    "guid": "ce6d5cea16adae458da4e70c8d618bc7",
+    "source_page": 1108
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-17",
+    "record_id": null,
+    "page_offset": 84,
+    "guid": "74ffc96aa73b47438040919b0a5c8b66",
+    "source_page": 1109
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-17",
+    "record_id": null,
+    "page_offset": 223,
+    "guid": "d13cb8c360c772419262c7cde59236b6",
+    "source_page": 1109
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-17",
+    "record_id": null,
+    "page_offset": 362,
+    "guid": "a613fc3bfa6b0c4983b5ac082d8d6fdb",
+    "source_page": 1109
+  },
+  {
+    "description": "NAFDAC",
+    "posting_date": "2020-06-18",
+    "record_id": null,
+    "page_offset": 310,
+    "guid": "8178114bf99aeb4b99a59719c7a7080b",
+    "source_page": 1110
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 437,
+    "guid": "64dd240c1c978e4da1301be37081335d",
+    "source_page": 1110
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-18",
+    "record_id": null,
+    "page_offset": 64,
+    "guid": "9978460181060a4ab15623518fb5ab7d",
+    "source_page": 1111
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-06-18",
+    "record_id": null,
+    "page_offset": 203,
+    "guid": "2bedbdf444e4b745a7f01e60ad25dd97",
+    "source_page": 1111
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 342,
+    "guid": "31efada6964947449a861845b55efbbc",
+    "source_page": 1111
+  },
+  {
+    "description": "APROVASC 300MG/10/28MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 265,
+    "guid": "0f00379d5767a74ea6fad744de8d11f2",
+    "source_page": 1125
+  },
+  {
+    "description": "NOVOMIX 30 FLEXPEN 100U",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 452,
+    "guid": "6ee4636008f2844b95bc22950216990f",
+    "source_page": 1125
+  },
+  {
+    "description": "ACTRAPID 100 I.U",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 124,
+    "guid": "b5d3a06878c49e4a998078b9496f1d9d",
+    "source_page": 1126
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5379,
+    "page_offset": 279,
+    "guid": "d4822a2989cba449a9f675a7fcc04b10",
+    "source_page": 1126
+  },
+  {
+    "description": "ACTRAPID 100 I.U",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 424,
+    "guid": "1a2d1aaf26613b499cd5eb34ec796927",
+    "source_page": 1126
+  },
+  {
+    "description": "NOVOMIX 30 FLEXPEN 100U",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 67,
+    "guid": "61132dd7850a3349bd0b678a77e9e060",
+    "source_page": 1127
+  },
+  {
+    "description": "ACTRAPID 100 I.U",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 233,
+    "guid": "6c02b9dfb6525b4fbb4615dcd3dfd339",
+    "source_page": 1127
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-12-31",
+    "record_id": null,
+    "page_offset": 83,
+    "guid": "10b414c732dc9045890b4474ceb568f0",
+    "source_page": 1152
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-12-31",
+    "record_id": null,
+    "page_offset": 224,
+    "guid": "2bb156efe2c71748add20ad4f3c94fe3",
+    "source_page": 1152
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2019-12-31",
+    "record_id": null,
+    "page_offset": 363,
+    "guid": "0e8e0b718bac7b419fb83d795301c0fb",
+    "source_page": 1152
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2019-12-31",
+    "record_id": null,
+    "page_offset": 127,
+    "guid": "3a2a7c8a7034a24ba8f077ffa9a54c8a",
+    "source_page": 1153
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2019-12-31",
+    "record_id": null,
+    "page_offset": 265,
+    "guid": "c6273daf3b6c5947ba1000063db2dd9b",
+    "source_page": 1153
+  },
+  {
+    "description": "REIMBURSEMENT FOR EXPENSES",
+    "posting_date": null,
+    "record_id": 6663,
+    "page_offset": 405,
+    "guid": "7169f5acd5c782418003a1fb4964e43e",
+    "source_page": 1176
+  },
+  {
+    "description": "EXPENSES REIMBURSEMENT",
+    "posting_date": "2019-01-14",
+    "record_id": 6663,
+    "page_offset": 42,
+    "guid": "c1979073d6ddf24c96d4a13e896a9434",
+    "source_page": 1177
+  },
+  {
+    "description": "MR AYO OLANREWAJU",
+    "posting_date": "2019-01-14",
+    "record_id": 5889,
+    "page_offset": 280,
+    "guid": "652f4a0ae2404943af51abc762db05b6",
+    "source_page": 1178
+  },
+  {
+    "description": "WEEKLY FUEL EXPENSES",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 422,
+    "guid": "b788abffbf664449a8e40a1b5d070b66",
+    "source_page": 1178
+  },
+  {
+    "description": "POWERBIKE  EXPENSES",
+    "posting_date": "2019-01-14",
+    "record_id": 5889,
+    "page_offset": 52,
+    "guid": "63ef65aef9d3ad4581c9198822a6d4bf",
+    "source_page": 1179
+  },
+  {
+    "description": "REPAIR OF POWER BIKE BOX",
+    "posting_date": "2019-01-14",
+    "record_id": 6663,
+    "page_offset": 196,
+    "guid": "bbccff129e62af4590c427dc5ae95646",
+    "source_page": 1179
+  },
+  {
+    "description": "MR ISAAC JONATHAN",
+    "posting_date": "2019-01-14",
+    "record_id": 5889,
+    "page_offset": 348,
+    "guid": "b696af7a75c718448883926cb02ae338",
+    "source_page": 1179
+  },
+  {
+    "description": "TELEPHONE EXPENSES",
+    "posting_date": "2019-01-14",
+    "record_id": 5889,
+    "page_offset": 120,
+    "guid": "526d756b974c5b4b98e54efb481cc1a2",
+    "source_page": 1180
+  },
+  {
+    "description": "POWERBIKE FUEL",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 433,
+    "guid": "34ad8c5b7e74e5478fefbef6aecabdc3",
+    "source_page": 1180
+  },
+  {
+    "description": "WEEKLY FUEL FOR POWERBIKE",
+    "posting_date": "2019-01-14",
+    "record_id": 5889,
+    "page_offset": 60,
+    "guid": "cf701c4bca762e488e5477a2dc022115",
+    "source_page": 1181
+  },
+  {
+    "description": "WEEKLY FUEL EXPENSES",
+    "posting_date": "2019-01-14",
+    "record_id": 6663,
+    "page_offset": 210,
+    "guid": "2a1d402759270b4489e0574ba85314d4",
+    "source_page": 1181
+  },
+  {
+    "description": "MR SULYMON ISOLA",
+    "posting_date": "2019-01-15",
+    "record_id": 6663,
+    "page_offset": 352,
+    "guid": "63f7230ab292644098d3d93537ac7a46",
+    "source_page": 1181
+  },
+  {
+    "description": "WEEKLY TELEPHONE EXPENSES FOR GM",
+    "posting_date": "2019-01-15",
+    "record_id": 6663,
+    "page_offset": 142,
+    "guid": "11d6e7744341834ab55cf7a9b0030588",
+    "source_page": 1183
+  },
+  {
+    "description": "TELEPHONE EXPENSES",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 296,
+    "guid": "cfb8a36c0a4d204d99201ba7124137e4",
+    "source_page": 1183
+  },
+  {
+    "description": "Varilrix",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 110,
+    "guid": "b638a19dd5957749a343dcdb54a0acc9",
+    "source_page": 1192
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 259,
+    "guid": "d51b0f8c16b3654b9876ecc9c255f51b",
+    "source_page": 1192
+  },
+  {
+    "description": "Varilrix",
+    "posting_date": null,
+    "record_id": 5600,
+    "page_offset": 406,
+    "guid": "12722d473bb7464a86f6dc3d490a4f33",
+    "source_page": 1192
+  },
+  {
+    "description": "Varilrix",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 43,
+    "guid": "a16c0e01fa94fa4eb19018983daddfbf",
+    "source_page": 1193
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 188,
+    "guid": "1c66ef1ab4631549bc020225522410de",
+    "source_page": 1193
+  },
+  {
+    "description": "VAXIGRIP JUNIOR 1 SYR 0.5",
+    "posting_date": "2018-12-31",
+    "record_id": 5603,
+    "page_offset": 351,
+    "guid": "ee41a5f6e12c1247b663970996324357",
+    "source_page": 1193
+  },
+  {
+    "description": "VAXIGRIP JUNIOR 1 SYR 0.5",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 4,
+    "guid": "54a5a6bc915d694d90c06b5575a060fa",
+    "source_page": 1194
+  },
+  {
+    "description": "VAXIGRIP JUNIOR 1 SYR 0.5",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 170,
+    "guid": "61da7cb53da98842b3aeaa511b158820",
+    "source_page": 1194
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 331,
+    "guid": "5cfd5fcea21fae4a83957a17f37e1b18",
+    "source_page": 1194
+  },
+  {
+    "description": "VERORAB",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 134,
+    "guid": "4fea07affff96c49b6075171ce7de39d",
+    "source_page": 1195
+  },
+  {
+    "description": "VERORAB",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 284,
+    "guid": "a885c378f176fe4697891824f5e7eb0c",
+    "source_page": 1195
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 430,
+    "guid": "49baea6ea62bc14db57ad4c4cc658585",
+    "source_page": 1195
+  },
+  {
+    "description": "VICTOZA",
+    "posting_date": "2018-12-31",
+    "record_id": 5607,
+    "page_offset": 85,
+    "guid": "b0bb72420e97bc4caec335345b6caae6",
+    "source_page": 1196
+  },
+  {
+    "description": "VICTOZA",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 234,
+    "guid": "2ee46d7646ec8543b2df824984e1418d",
+    "source_page": 1196
+  },
+  {
+    "description": "VICTOZA",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 384,
+    "guid": "ff28d6d2662e3842a02379017a56f61c",
+    "source_page": 1196
+  },
+  {
+    "description": "YELLOW FEVER (MULTIPLE)",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 37,
+    "guid": "8118775ad6041445aae372b29f247f36",
+    "source_page": 1197
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5610,
+    "page_offset": 195,
+    "guid": "e0f589d4f5692c4ea80864b0a3b01390",
+    "source_page": 1197
+  },
+  {
+    "description": "YELLOW FEVER (MULTIPLE)",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 340,
+    "guid": "6e42bd5bc64ce24d8a582fae2389a723",
+    "source_page": 1197
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2019-01-02",
+    "record_id": null,
+    "page_offset": 146,
+    "guid": "35333c77ddbaa94cb7ea18075377e036",
+    "source_page": 1198
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2019-01-02",
+    "record_id": null,
+    "page_offset": 284,
+    "guid": "ac832196ac6e154eac807fb25152e69b",
+    "source_page": 1198
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 422,
+    "guid": "0e839448ce47864eb391bb027f97e9dc",
+    "source_page": 1198
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-01-03",
+    "record_id": null,
+    "page_offset": 52,
+    "guid": "1040d0d21659aa45b9ddfcdb8269e335",
+    "source_page": 1199
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 194,
+    "guid": "2d81e2d48c30bf4ba41801567dc502f6",
+    "source_page": 1199
+  },
+  {
+    "description": "LEVEMIR FLEXPEN",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 242,
+    "guid": "7109de2b658b2b418525b49c3b3764ac",
+    "source_page": 1240
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 393,
+    "guid": "cb2c683d4e0ce649a89713c697b14dc3",
+    "source_page": 1240
+  },
+  {
+    "description": "Meningococcal (Emzor)",
+    "posting_date": "2018-12-31",
+    "record_id": 5511,
+    "page_offset": 46,
+    "guid": "e144cdce505b084ea88a1764b8d8bc69",
+    "source_page": 1241
+  },
+  {
+    "description": "Meningococcal (Emzor)",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 208,
+    "guid": "0a08596f8b6d0748aaecdb8deaa91d96",
+    "source_page": 1241
+  },
+  {
+    "description": "Meningococcal (Emzor)",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 371,
+    "guid": "43979e9b4d782e42862d1f0b10153a82",
+    "source_page": 1241
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 18,
+    "guid": "0497abb25599b64f988974b38eac1367",
+    "source_page": 1242
+  },
+  {
+    "description": "MIXTARD 30HM 100 I.U",
+    "posting_date": "2018-12-31",
+    "record_id": 5513,
+    "page_offset": 184,
+    "guid": "4a210c1862e59e4ba044a54c8d1092f5",
+    "source_page": 1242
+  },
+  {
+    "description": "MIXTARD 30HM 100 I.U",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 345,
+    "guid": "44fe2c743d2e4a47ac20f63d470e252f",
+    "source_page": 1242
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 151,
+    "guid": "070ef3703ab66e4f9553c00603c0cf97",
+    "source_page": 1243
+  },
+  {
+    "description": "MIXTARD 30HM 100 I.U FLEXPEN",
+    "posting_date": "2018-12-31",
+    "record_id": 5516,
+    "page_offset": 313,
+    "guid": "f7974793c8cfce42a1e8898d2b7ec191",
+    "source_page": 1243
+  },
+  {
+    "description": "MIXTARD 30HM 100 I.U FLEXPEN",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 136,
+    "guid": "4f73ce413c9c584f99de0dd2e26b034d",
+    "source_page": 1244
+  },
+  {
+    "description": "NIMENRIX",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 320,
+    "guid": "2fc9ea1ea903a0418d320f7fc1cc79c8",
+    "source_page": 1244
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 464,
+    "guid": "5ecd6717d8870b48b146e55dff706475",
+    "source_page": 1244
+  },
+  {
+    "description": "NIMENRIX",
+    "posting_date": "2018-12-31",
+    "record_id": 5519,
+    "page_offset": 99,
+    "guid": "26d9703e00114a4096d1077f2db98766",
+    "source_page": 1245
+  },
+  {
+    "description": "NIMENRIX",
+    "posting_date": "2018-12-31",
+    "record_id": 5889,
+    "page_offset": 246,
+    "guid": "ce2253fb61ec3447848dd89a7450105c",
+    "source_page": 1245
+  },
+  {
+    "description": "NOVOMIX 30 FLEXPEN 100U",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 412,
+    "guid": "1b8b72255e935946bb3d22023992c1a5",
+    "source_page": 1245
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 64,
+    "guid": "519050720877b9468c8798336125b534",
+    "source_page": 1246
+  },
+  {
+    "description": "NOVORAPID FLEXPEN 3ML",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 227,
+    "guid": "73732efebb2c8b4ca59c4b522733b084",
+    "source_page": 1246
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 384,
+    "guid": "8dbe4fc9e3b7f64bba493a092d325e14",
+    "source_page": 1246
+  },
+  {
+    "description": "NOVORAPID FLEXPEN 3ML",
+    "posting_date": "2018-12-31",
+    "record_id": 5529,
+    "page_offset": 19,
+    "guid": "3a1227ee3428954a918c6c3c16302647",
+    "source_page": 1247
+  },
+  {
+    "description": "NOVORAPID FLEXPEN 3ML",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 179,
+    "guid": "bf8a5f85c9b0454b9b86ed8f7fd2dddf",
+    "source_page": 1247
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 84,
+    "guid": "01558464e867ac418aa2549e59e16b59",
+    "source_page": 1248
+  },
+  {
+    "description": "NOVOTWIST NEEDLES",
+    "posting_date": "2018-12-31",
+    "record_id": 5531,
+    "page_offset": 248,
+    "guid": "8e20d9424fb539469b02d7013d8ae7d0",
+    "source_page": 1248
+  },
+  {
+    "description": "NOVOTWIST NEEDLES",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 405,
+    "guid": "71892eb3f5a64747a0354f0b2faa1129",
+    "source_page": 1248
+  },
+  {
+    "description": "NOVOTWIST NEEDLES",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 51,
+    "guid": "fb8043401e97f546aa41cff966c84a5d",
+    "source_page": 1249
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5533,
+    "page_offset": 360,
+    "guid": "8a4d884d619820449dabe4e420042dfc",
+    "source_page": 1249
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 274,
+    "guid": "50a8bff0ba7a4b4088d1805db4b6410a",
+    "source_page": 1250
+  },
+  {
+    "description": "PREVENAR  13",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 438,
+    "guid": "6b8720ae30376940ba39495c0bc141fe",
+    "source_page": 1250
+  },
+  {
+    "description": "PREVENAR  13",
+    "posting_date": "2018-12-31",
+    "record_id": 5543,
+    "page_offset": 80,
+    "guid": "15131d499da05349808727815adaaed2",
+    "source_page": 1251
+  },
+  {
+    "description": "PREVENAR  13",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 231,
+    "guid": "4d025f5a5534d540be3553a89e9257a4",
+    "source_page": 1251
+  },
+  {
+    "description": "PRIORIX",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 403,
+    "guid": "5c3ebe1ad1bb4949bff86203dcacf44d",
+    "source_page": 1251
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 37,
+    "guid": "e158bfd412ff4b4c90d1a0d43f22592c",
+    "source_page": 1252
+  },
+  {
+    "description": "PRIORIX",
+    "posting_date": "2018-12-31",
+    "record_id": 5548,
+    "page_offset": 184,
+    "guid": "2ab58435323d1642aab8b56764510bab",
+    "source_page": 1252
+  },
+  {
+    "description": "PRIORIX",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 331,
+    "guid": "6169744777d85840b959c96ec7a9f442",
+    "source_page": 1252
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5555,
+    "page_offset": 137,
+    "guid": "7fb5b66cee679e42b371e8b22c233294",
+    "source_page": 1253
+  },
+  {
+    "description": "RHOGAM (ANTI - D)",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 282,
+    "guid": "327d58cb4cadb2479c0dcb6c7e79689b",
+    "source_page": 1253
+  },
+  {
+    "description": "RHOGAM (ANTI - D)",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 440,
+    "guid": "cd416af49e75b54bbee78d49417d5668",
+    "source_page": 1253
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 82,
+    "guid": "502d58870fc6d145944c6a7005688bcf",
+    "source_page": 1254
+  },
+  {
+    "description": "ROTARIX",
+    "posting_date": "2018-12-31",
+    "record_id": 5558,
+    "page_offset": 248,
+    "guid": "87c473cd07869540999c1ed470e45aad",
+    "source_page": 1254
+  },
+  {
+    "description": "ROTARIX",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 396,
+    "guid": "16e927b2942c4c42bd986da2c0f991f4",
+    "source_page": 1254
+  },
+  {
+    "description": "ROTARIX",
+    "posting_date": "2018-12-31",
+    "record_id": 6658,
+    "page_offset": 33,
+    "guid": "e9730e45d4161e41a496101b0eb5643a",
+    "source_page": 1255
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 178,
+    "guid": "5d21f5957081fc4a9a9e7787c8bcc2a6",
+    "source_page": 1255
+  },
+  {
+    "description": "SHANCHOL",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 344,
+    "guid": "c29d699364da704f8dc16d6603fb5c61",
+    "source_page": 1255
+  },
+  {
+    "description": "NOVOMIX 30 FLEXPEN 100U",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 89,
+    "guid": "b54e92f348619841a89c64829393aa58",
+    "source_page": 1304
+  },
+  {
+    "description": "APROVASC 300MG/10/28MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5402,
+    "page_offset": 255,
+    "guid": "b57cfd47a9b637479f949269231522c0",
+    "source_page": 1304
+  },
+  {
+    "description": "APROVASC 300MG/10/28MG",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 416,
+    "guid": "b8eab025fdebd04e98b23aa06aa00edf",
+    "source_page": 1304
+  },
+  {
+    "description": "ADACEL POLIO TDAP/IPV",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 86,
+    "guid": "65388e0d6acf1b4b9614eb19dc0edef3",
+    "source_page": 1305
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 246,
+    "guid": "830fea41e43c8540bc2e917fe01ed566",
+    "source_page": 1305
+  },
+  {
+    "description": "ADACEL POLIO TDAP/IPV",
+    "posting_date": null,
+    "record_id": 5383,
+    "page_offset": 393,
+    "guid": "cc1dcbd721875e4a85733a7933c707cb",
+    "source_page": 1305
+  },
+  {
+    "description": "ADACEL POLIO TDAP/IPV",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 42,
+    "guid": "cfba61b1a57f58438dbe69ad3bc5de09",
+    "source_page": 1306
+  },
+  {
+    "description": "AMARYL 2MG TABS",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 221,
+    "guid": "cad4275860924c46bdd950b6339c0f47",
+    "source_page": 1306
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 372,
+    "guid": "f8c186bdb3955c4b8fcfe6bddcef77cf",
+    "source_page": 1306
+  },
+  {
+    "description": "AMARYL 2MG TABS",
+    "posting_date": "2018-12-31",
+    "record_id": 5386,
+    "page_offset": 7,
+    "guid": "5d5566cc2a046a48a181312e8264167c",
+    "source_page": 1307
+  },
+  {
+    "description": "AMARYL 2MG TABS",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 161,
+    "guid": "e25510ced4fa4a49aed7e472b4cae0c2",
+    "source_page": 1307
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 312,
+    "guid": "37f8132cd9fa334fa65adfbc6c6aaaf8",
+    "source_page": 1307
+  },
+  {
+    "description": "AMARYL 4MG TABS",
+    "posting_date": "2018-12-31",
+    "record_id": 5388,
+    "page_offset": 121,
+    "guid": "29dabcc5973e5843940988d5b7c2c1be",
+    "source_page": 1308
+  },
+  {
+    "description": "AMARYL 4MG TABS",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 275,
+    "guid": "2ed0f765b20dbf46bf291350eb21f391",
+    "source_page": 1308
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 427,
+    "guid": "209184a367155743b9eaaf14aa1a4ef2",
+    "source_page": 1308
+  },
+  {
+    "description": "APIDRA SOLOSTAR 300IU 3ML",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 81,
+    "guid": "3c9cd6d51f0fc94abe46b6c82d990b7a",
+    "source_page": 1309
+  },
+  {
+    "description": "APIDRA SOLOSTAR 300IU 3ML",
+    "posting_date": "2018-12-31",
+    "record_id": 5391,
+    "page_offset": 249,
+    "guid": "1d7f67ab3cebf844b0b6fb8d8a05dbc2",
+    "source_page": 1309
+  },
+  {
+    "description": "APIDRA SOLOSTAR 300IU 3ML",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 414,
+    "guid": "fa931dbd60e7694da126c1d3ec827bd8",
+    "source_page": 1309
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 64,
+    "guid": "63d1713b95d9804bb4c40c44e912fec8",
+    "source_page": 1310
+  },
+  {
+    "description": "APROVASC 150MG/10MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5396,
+    "page_offset": 228,
+    "guid": "d342149475942f4486d5282618f7d767",
+    "source_page": 1310
+  },
+  {
+    "description": "APROVASC 150MG/10MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 387,
+    "guid": "026abbcbfdeb374f8bbfc4226e9eade0",
+    "source_page": 1310
+  },
+  {
+    "description": "APROVASC 150MG/10MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5889,
+    "page_offset": 35,
+    "guid": "a11afad1f9cc24489b1cca491e7d5e14",
+    "source_page": 1311
+  },
+  {
+    "description": "APROVASC 300MG/10/28MG",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 206,
+    "guid": "50bb886e297d5c48abc2bd2821ecff8a",
+    "source_page": 1311
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 84,
+    "guid": "792c5609dd4dcf40a23907de45e37b45",
+    "source_page": 1312
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 226,
+    "guid": "139a1eacf5a94a4892d8932e0fa51a32",
+    "source_page": 1312
+  },
+  {
+    "description": "APROVEL TAB 150/28MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 390,
+    "guid": "9d9ecc354d43d043aa45b7d11da9a2f8",
+    "source_page": 1312
+  },
+  {
+    "description": "APROVEL TAB 150/28MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5404,
+    "page_offset": 40,
+    "guid": "123eec1715ced344b3b137305badeb9d",
+    "source_page": 1313
+  },
+  {
+    "description": "APROVEL TAB 150/28MG",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 199,
+    "guid": "36f29690d0a0c045a270163a2c941ea3",
+    "source_page": 1313
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 355,
+    "guid": "8e0c65e98247a949994e735b9bc0500f",
+    "source_page": 1313
+  },
+  {
+    "description": "APROVEL TAB 300MG/28",
+    "posting_date": "2018-12-31",
+    "record_id": 5406,
+    "page_offset": 7,
+    "guid": "c62e82f4bf58cb47ad0303a6c14611b1",
+    "source_page": 1314
+  },
+  {
+    "description": "APROVEL TAB 300MG/28",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 167,
+    "guid": "5504872364625e4fa9fdeb706a7cafd4",
+    "source_page": 1314
+  },
+  {
+    "description": "APROVEL TAB 300MG/28",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 328,
+    "guid": "b54d7fb7dd916143b864296b137eeb33",
+    "source_page": 1314
+  },
+  {
+    "description": "ATS SYRUM 10,000",
+    "posting_date": "2018-12-31",
+    "record_id": 5407,
+    "page_offset": 131,
+    "guid": "f184cf14c1334a4b849619505bfa633e",
+    "source_page": 1315
+  },
+  {
+    "description": "ATS SYRUM 10,000",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 286,
+    "guid": "2ff088e7f111fb49bbc5a8b8406dae4c",
+    "source_page": 1315
+  },
+  {
+    "description": "ATS SYRUM 10,000",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 442,
+    "guid": "b85534ef9833f246a523202165a49846",
+    "source_page": 1315
+  },
+  {
+    "description": "Avaxim inj. Ped",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 104,
+    "guid": "44d370ee78b41b43a6f250417db04f1d",
+    "source_page": 1316
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5411,
+    "page_offset": 257,
+    "guid": "621717049a8008438ff5daf2695949bf",
+    "source_page": 1316
+  },
+  {
+    "description": "Avaxim inj. Ped",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 402,
+    "guid": "1cfa5d2a75790b4f812585d43c4e71c8",
+    "source_page": 1316
+  },
+  {
+    "description": "Avaxim inj. Ped",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 47,
+    "guid": "e96c5b536aa87647a20f347bb2da32cf",
+    "source_page": 1317
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 199,
+    "guid": "24b5e2f8805ec8479f6a3ecc79e6929f",
+    "source_page": 1317
+  },
+  {
+    "description": "CO APROVEL TAB 150/12.5MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 363,
+    "guid": "440543260e75dd48b8efc79d3703a4c5",
+    "source_page": 1317
+  },
+  {
+    "description": "CO APROVEL TAB 150/12.5MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5420,
+    "page_offset": 18,
+    "guid": "3b960ec678d39f47b1bf385569b10169",
+    "source_page": 1318
+  },
+  {
+    "description": "CO APROVEL TAB 150/12.5MG",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 182,
+    "guid": "3bafeffb5940b94abbecb1c7f8563f03",
+    "source_page": 1318
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 343,
+    "guid": "903c4b83531a5d42b5037ff2cb160a39",
+    "source_page": 1318
+  },
+  {
+    "description": "CERVARIX 0.5ml",
+    "posting_date": "2018-12-31",
+    "record_id": 5421,
+    "page_offset": 160,
+    "guid": "1800dd7d6083954ab192850651b26987",
+    "source_page": 1319
+  },
+  {
+    "description": "CERVARIX 0.5ml",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 318,
+    "guid": "c9bf1ce5e46e9241a8cebcdc98b7140a",
+    "source_page": 1319
+  },
+  {
+    "description": "NURUDEEN",
+    "posting_date": "2019-09-30",
+    "record_id": 5889,
+    "page_offset": 82,
+    "guid": "a490955202e24744942c4a62569d4758",
+    "source_page": 1336
+  },
+  {
+    "description": "WEEKLY FUEL FOR POWERBIKE",
+    "posting_date": "2019-09-30",
+    "record_id": 6666,
+    "page_offset": 215,
+    "guid": "84c21d262004b740a8534ff5566b6e73",
+    "source_page": 1336
+  },
+  {
+    "description": "POWERBIKE",
+    "posting_date": "2019-09-30",
+    "record_id": 5889,
+    "page_offset": 362,
+    "guid": "c8f5b34d2a390f44affa023393252367",
+    "source_page": 1336
+  },
+  {
+    "description": "MR SULYMON ISOLA",
+    "posting_date": "2019-09-30",
+    "record_id": 5889,
+    "page_offset": 126,
+    "guid": "ca7747e297c30046a27bb8dd34c7d458",
+    "source_page": 1337
+  },
+  {
+    "description": "WEEKLY FUEL EXPENSES",
+    "posting_date": "2019-09-30",
+    "record_id": 6666,
+    "page_offset": 267,
+    "guid": "2e3294c02872994492c381654ca581d1",
+    "source_page": 1337
+  },
+  {
+    "description": "MR ISAAC JONATHAN",
+    "posting_date": "2019-09-30",
+    "record_id": 5891,
+    "page_offset": 409,
+    "guid": "47bfc16f969c004d9deaf785ee4f4bad",
+    "source_page": 1337
+  },
+  {
+    "description": "TELEPHONE",
+    "posting_date": "2019-09-30",
+    "record_id": 5892,
+    "page_offset": 39,
+    "guid": "0ed82196b4dd404583bc4488b881ec44",
+    "source_page": 1338
+  },
+  {
+    "description": "3 BLUMEN DISPENSER BOTTELED WATER",
+    "posting_date": "2019-09-30",
+    "record_id": 5889,
+    "page_offset": 173,
+    "guid": "41e40a3d1128ef4895f6456da9a1c55d",
+    "source_page": 1338
+  },
+  {
+    "description": "REIMBURSEMENT FOR PEETCASH",
+    "posting_date": "2019-09-30",
+    "record_id": 6666,
+    "page_offset": 325,
+    "guid": "4d0f707e78cf634c951b7df27a8ea3a9",
+    "source_page": 1338
+  },
+  {
+    "description": "OFFICE EXPENSES",
+    "posting_date": "2019-09-30",
+    "record_id": 5894,
+    "page_offset": 110,
+    "guid": "938c6c44c8d3f243ae1f3fa8ff7080a5",
+    "source_page": 1339
+  },
+  {
+    "description": "POWERBIKE REPAIR",
+    "posting_date": "2019-09-30",
+    "record_id": 5890,
+    "page_offset": 250,
+    "guid": "d3ae242839193f4caffda65a47cdbc78",
+    "source_page": 1339
+  },
+  {
+    "description": "TRANSPORTATION",
+    "posting_date": "2019-09-30",
+    "record_id": 5889,
+    "page_offset": 391,
+    "guid": "d8eabce93bc1114bbc2d650e2b8cb46f",
+    "source_page": 1339
+  },
+  {
+    "description": "WEEKLY TEL.EXP FOR GM",
+    "posting_date": "2019-09-30",
+    "record_id": 6666,
+    "page_offset": 18,
+    "guid": "d23e7fec210b274eab75a8d99b6d9207",
+    "source_page": 1340
+  },
+  {
+    "description": "TELEPHONE EXPENSES",
+    "posting_date": "2019-10-02",
+    "record_id": 5889,
+    "page_offset": 161,
+    "guid": "da061323c99acb48bd7098ca3fbb292b",
+    "source_page": 1340
+  },
+  {
+    "description": "PURCHASE OF BLACK TAPE AND THYMINE",
+    "posting_date": "2019-10-02",
+    "record_id": 6666,
+    "page_offset": 304,
+    "guid": "af4d3cef44d2ae4492ee402fb425278d",
+    "source_page": 1340
+  },
+  {
+    "description": "WORKMANSHIP FOR SERVICE AND REPAIR OF BRAKE",
+    "posting_date": "2019-10-02",
+    "record_id": 5889,
+    "page_offset": 104,
+    "guid": "272a8ecdc5305441a37f73a82137aa3e",
+    "source_page": 1341
+  },
+  {
+    "description": "SERVICE OF TOYOTA COROLA",
+    "posting_date": "2019-10-02",
+    "record_id": 6666,
+    "page_offset": 266,
+    "guid": "3cc42975c7e17c4791e2bcd3191b1b80",
+    "source_page": 1341
+  },
+  {
+    "description": "MR DARAMOLA FEMI",
+    "posting_date": null,
+    "record_id": 5890,
+    "page_offset": 412,
+    "guid": "5d52ca989a6f0d44bbd1d4c234b2f290",
+    "source_page": 1341
+  },
+  {
+    "description": "ENGINE OIL",
+    "posting_date": "2019-10-02",
+    "record_id": 5891,
+    "page_offset": 41,
+    "guid": "d2016b2b5ae1314cbdeb745860a54875",
+    "source_page": 1342
+  },
+  {
+    "description": "OIL FILTER",
+    "posting_date": "2019-10-02",
+    "record_id": 6666,
+    "page_offset": 176,
+    "guid": "d54689ec8dfe034b90f519a9b7cd8c62",
+    "source_page": 1342
+  },
+  {
+    "description": "TRAVELLING EXPENSE",
+    "posting_date": "2019-10-02",
+    "record_id": 5889,
+    "page_offset": 308,
+    "guid": "59d415a5321fd54fb797f36f9569238b",
+    "source_page": 1342
+  },
+  {
+    "description": "TRAVELLING TO SUPPLY OAUTH IFE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 451,
+    "guid": "68ba19c2a473024fbc54268f86cd4ea6",
+    "source_page": 1342
+  },
+  {
+    "description": "DELIVERY CHARGE",
+    "posting_date": "2019-10-02",
+    "record_id": 5889,
+    "page_offset": 91,
+    "guid": "4edc607461497b4d852e0dda8f20d71e",
+    "source_page": 1343
+  },
+  {
+    "description": "DELIVERY CHARGE FOR VACCINES SENT TO I.C.H IFE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 231,
+    "guid": "8bb87864b0142347b18b5fb833abe664",
+    "source_page": 1343
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-09-14",
+    "record_id": null,
+    "page_offset": 82,
+    "guid": "bd766d2af7f36a4a9fc433c22c2407ab",
+    "source_page": 1368
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-09-14",
+    "record_id": null,
+    "page_offset": 220,
+    "guid": "150d6aa54a25344bb47dbfeffbac03f1",
+    "source_page": 1368
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2020-09-14",
+    "record_id": null,
+    "page_offset": 358,
+    "guid": "3abf56d29eb09542a64faf7b61aeac2a",
+    "source_page": 1368
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-09-14",
+    "record_id": null,
+    "page_offset": 122,
+    "guid": "9e01ebe88d18b3459bed72a2a87f21f5",
+    "source_page": 1369
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-09-14",
+    "record_id": null,
+    "page_offset": 260,
+    "guid": "8e822fff3eefb3428242c4104e355d06",
+    "source_page": 1369
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-09-15",
+    "record_id": null,
+    "page_offset": 398,
+    "guid": "a93048cfe357df4895a899eb84f90864",
+    "source_page": 1369
+  },
+  {
+    "description": "SMS ALERT CHARGES",
+    "posting_date": "2020-09-15",
+    "record_id": null,
+    "page_offset": 366,
+    "guid": "2a6bdfe7d364d64cbf6185ab8b9ffbe2",
+    "source_page": 1370
+  },
+  {
+    "description": "MR KABIR ALLIOWE",
+    "posting_date": "2020-06-11",
+    "record_id": 5889,
+    "page_offset": 285,
+    "guid": "d5ef3b30a72c8547a25d98b98498e94a",
+    "source_page": 1448
+  },
+  {
+    "description": "TRANSPORTFARE TO MAGODO",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 426,
+    "guid": "f1a46fd4b926e2448e2b73c22d008667",
+    "source_page": 1448
+  },
+  {
+    "description": "REPAIR OF VACCINES BAGS",
+    "posting_date": "2020-06-11",
+    "record_id": 6720,
+    "page_offset": 62,
+    "guid": "8d688ab5d17d56499efc172d1ce5c6d2",
+    "source_page": 1449
+  },
+  {
+    "description": "REPAIR",
+    "posting_date": "2020-06-10",
+    "record_id": 6720,
+    "page_offset": 207,
+    "guid": "ec07870355f35b488f784b781907801b",
+    "source_page": 1449
+  },
+  {
+    "description": "MR SULYMON ISOLA",
+    "posting_date": "2020-06-10",
+    "record_id": 5889,
+    "page_offset": 335,
+    "guid": "24966d57f44c3540b134eb99e0861c9d",
+    "source_page": 1449
+  },
+  {
+    "description": "MR SULYMON ISOLA",
+    "posting_date": "2020-06-16",
+    "record_id": null,
+    "page_offset": 291,
+    "guid": "eedcf3ffa0c21940a6c5ae3c92bae4fc",
+    "source_page": 1453
+  },
+  {
+    "description": "CLEXANE",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 106,
+    "guid": "2f6fe2a68fefc34c92bdec4b6a3e0d39",
+    "source_page": 1480
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 250,
+    "guid": "716c7ceef3f47f468539ee7c457ff513",
+    "source_page": 1480
+  },
+  {
+    "description": "CLEXANE",
+    "posting_date": "2018-12-31",
+    "record_id": 5424,
+    "page_offset": 397,
+    "guid": "3540a47ede0b074d9dacb7c7a7705747",
+    "source_page": 1480
+  },
+  {
+    "description": "CLEXANE",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 31,
+    "guid": "7971bde952bbdc4abb6be216c0a25ee4",
+    "source_page": 1481
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 174,
+    "guid": "02cecb50b95fb5418a1907603115dcff",
+    "source_page": 1481
+  },
+  {
+    "description": "CO APROVEL TAB 300MG/12.5",
+    "posting_date": "2018-12-31",
+    "record_id": 5433,
+    "page_offset": 338,
+    "guid": "bd57228510d4f641b0b5edc80207a5d1",
+    "source_page": 1481
+  },
+  {
+    "description": "CO APROVEL TAB 300MG/12.5",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 157,
+    "guid": "480099f93977684dac5732b4b57a218e",
+    "source_page": 1482
+  },
+  {
+    "description": "ENGERIX B 20mcg",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 344,
+    "guid": "c88d98040f809546b8c689f81600cc54",
+    "source_page": 1482
+  },
+  {
+    "description": "ENGERIX B 20mcg",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 133,
+    "guid": "837e82b08fe63549ababe2e1386c0aa1",
+    "source_page": 1483
+  },
+  {
+    "description": "ENGERIX B 20mcg",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 291,
+    "guid": "cc3422ad26a0cb42abe886a5692669c6",
+    "source_page": 1483
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 445,
+    "guid": "66277bad1a15e5438aa91a9d678f55ad",
+    "source_page": 1483
+  },
+  {
+    "description": "ENGERIX B 10 mcg",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 99,
+    "guid": "8828047736d60949a6bfcbd1a35e5bc1",
+    "source_page": 1484
+  },
+  {
+    "description": "ENGERIX B 10 mcg",
+    "posting_date": "2018-12-31",
+    "record_id": 5444,
+    "page_offset": 258,
+    "guid": "8deec8cd21d4e242b1e7c75c7042aeac",
+    "source_page": 1484
+  },
+  {
+    "description": "ENGERIX B 10 mcg",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 414,
+    "guid": "ba68e661bc1ac246a5339ba93aaefe6e",
+    "source_page": 1484
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 47,
+    "guid": "199dee70def7a5459464fd29cd2a69e9",
+    "source_page": 1485
+  },
+  {
+    "description": "FLEMIN INJ. 1G/875-125MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 196,
+    "guid": "5d5505abb1f28c4cbe210bd60cc9c0ab",
+    "source_page": 1485
+  },
+  {
+    "description": "FLEMIN INJ. 1G/875-125MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5447,
+    "page_offset": 355,
+    "guid": "5e87868cb17d1640b87bb088e9a91d35",
+    "source_page": 1485
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 151,
+    "guid": "09c38af0790cd347951ec3a5882759ac",
+    "source_page": 1486
+  },
+  {
+    "description": "FLEMIN INJ. 1G 200MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 313,
+    "guid": "e868198034621c49b19be1269387b3d6",
+    "source_page": 1486
+  },
+  {
+    "description": "FLEMIN INJ. 1G 200MG",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 120,
+    "guid": "41241c97ca9ff340b000827a36dc18c2",
+    "source_page": 1487
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 275,
+    "guid": "75bd3ea60048854fabbb3459df57d81a",
+    "source_page": 1487
+  },
+  {
+    "description": "FLEMIN INJ. 600MG",
+    "posting_date": "2018-12-31",
+    "record_id": 5449,
+    "page_offset": 106,
+    "guid": "ac74e24bd311544bbd472ff3af1eff35",
+    "source_page": 1496
+  },
+  {
+    "description": "FLEMIN INJ. 600MG",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 263,
+    "guid": "781e00e012e3fa4581601601dc01d052",
+    "source_page": 1496
+  },
+  {
+    "description": "FLEMIN INJ. 600MG",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 421,
+    "guid": "94e276ced0e0c34abe582db87b5890da",
+    "source_page": 1496
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 62,
+    "guid": "6c608e10958fc24eb951d69b6a382bd0",
+    "source_page": 1497
+  },
+  {
+    "description": "GENEVAC-B(HEP. B. ADULT)",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 227,
+    "guid": "ea63803172eaf8479b9d01743f7e4cf0",
+    "source_page": 1497
+  },
+  {
+    "description": "GENEVAC-B(HEP. B. ADULT)",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 394,
+    "guid": "2ec76255d3b8f34bb8c753bc531a08bc",
+    "source_page": 1497
+  },
+  {
+    "description": "GENEVAC-B(HEP. B. ADULT)",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 46,
+    "guid": "4e65a5a651fd594da404db27043f989e",
+    "source_page": 1498
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 207,
+    "guid": "a2abcd5d2d81c744b538f20b7c741e06",
+    "source_page": 1498
+  },
+  {
+    "description": "HAVRIX",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 372,
+    "guid": "f698d97dfff8e948b173def0258c2a4d",
+    "source_page": 1498
+  },
+  {
+    "description": "HAVRIX",
+    "posting_date": "2018-12-31",
+    "record_id": 5465,
+    "page_offset": 9,
+    "guid": "2590d024e0372846b30ed2b12a125625",
+    "source_page": 1499
+  },
+  {
+    "description": "HAVRIX",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 155,
+    "guid": "977060cfd1a37043aaa6f93004fc4259",
+    "source_page": 1499
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 296,
+    "guid": "11cc41b66bbc6145b822e57cf2a030af",
+    "source_page": 1499
+  },
+  {
+    "description": "HEPATITIS B (MULTIPLE)",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 457,
+    "guid": "911aa0be51abdc46b270b03f6ed23e8c",
+    "source_page": 1499
+  },
+  {
+    "description": "HEPATITIS B (MULTIPLE)",
+    "posting_date": "2018-12-31",
+    "record_id": 5466,
+    "page_offset": 108,
+    "guid": "6cfef54b42571743b40a96b79698084d",
+    "source_page": 1500
+  },
+  {
+    "description": "HEPATITIS B (MULTIPLE)",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 268,
+    "guid": "ca4fbc6cfc781440a2f77c2cca159a5b",
+    "source_page": 1500
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 427,
+    "guid": "10f6b83f32d7ed479f0febeb80b16951",
+    "source_page": 1500
+  },
+  {
+    "description": "HEXAXIM",
+    "posting_date": "2018-12-31",
+    "record_id": 5469,
+    "page_offset": 85,
+    "guid": "95c99cca75d88c4c85424eafa3885c4e",
+    "source_page": 1501
+  },
+  {
+    "description": "HEXAXIM",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 237,
+    "guid": "024787ece068bd45a1a1fa7e22b451e1",
+    "source_page": 1501
+  },
+  {
+    "description": "HEXAXIM",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 390,
+    "guid": "42005848a995ea4b800cb909fb61142c",
+    "source_page": 1501
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 25,
+    "guid": "91e5e1cd9379ef4693f66c1b847f6b09",
+    "source_page": 1502
+  },
+  {
+    "description": "INDIRAB (ANTI RABIS)",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 187,
+    "guid": "ac26355aa62fc54da324a9c8842b6f93",
+    "source_page": 1502
+  },
+  {
+    "description": "INDIRAB (ANTI RABIS)",
+    "posting_date": "2018-12-31",
+    "record_id": 5476,
+    "page_offset": 348,
+    "guid": "32ddbd58b42b7f4f830189504e9a2fa0",
+    "source_page": 1502
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 149,
+    "guid": "51dac6a98ee4de4080c01694a7d9403b",
+    "source_page": 1503
+  },
+  {
+    "description": "INSULATARD 100 I.U",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 313,
+    "guid": "c35ede76c65e7a48b0f3ee5496e14774",
+    "source_page": 1503
+  },
+  {
+    "description": "INSULATARD 100 I.U",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 87,
+    "guid": "42329ef61c098f48a994ad1b54a6df64",
+    "source_page": 1520
+  },
+  {
+    "description": "INSULATARD 100 I.U",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 246,
+    "guid": "df0c2929b500e24f86b1c9cf881f5a82",
+    "source_page": 1520
+  },
+  {
+    "description": "INSUMAN COMBO 1000IU",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 425,
+    "guid": "5a486b6630ab034c9fbf1849ebd21ec5",
+    "source_page": 1520
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": 5483,
+    "page_offset": 73,
+    "guid": "aef50225cfb64d4b95264a873a960c87",
+    "source_page": 1521
+  },
+  {
+    "description": "INSUMAN COMBO 1000IU",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 218,
+    "guid": "14d40cabec7d374d995eec90cfce1aac",
+    "source_page": 1521
+  },
+  {
+    "description": "INSUMAN COMBO 1000IU",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 381,
+    "guid": "18c178ca2582ad4bb5ef711ee684bda2",
+    "source_page": 1521
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 28,
+    "guid": "5a7daa8880c14f4abafc02fa94813998",
+    "source_page": 1522
+  },
+  {
+    "description": "INSUMAN COMBO 300IU",
+    "posting_date": "2018-12-31",
+    "record_id": 5484,
+    "page_offset": 194,
+    "guid": "aca27b02c716184fa18eced08a20c54b",
+    "source_page": 1522
+  },
+  {
+    "description": "INSUMAN COMBO 300IU",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 354,
+    "guid": "15843d402d5a20408f140fba1a78909f",
+    "source_page": 1522
+  },
+  {
+    "description": "INSUMAN COMBO 300IU",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 3,
+    "guid": "ef52b852b7627b4db645b870da89dd1b",
+    "source_page": 1523
+  },
+  {
+    "description": "INSUMAN RAPID 1000IU",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 182,
+    "guid": "34e2fcceb602284ca367ba580952ebf2",
+    "source_page": 1523
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 340,
+    "guid": "8576a624f33ff04eb835fcee5a83d247",
+    "source_page": 1523
+  },
+  {
+    "description": "INSUMAN RAPID 1000IU",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 135,
+    "guid": "83ddda121799cf498fec448a2010a18c",
+    "source_page": 1524
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 292,
+    "guid": "07b3aa15aeb0b949bc08aa61d5137c11",
+    "source_page": 1524
+  },
+  {
+    "description": "LANTUS CARTRIDGE 5X3ML",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 457,
+    "guid": "af25e177ef9b3a4aa75188c17c4ad555",
+    "source_page": 1524
+  },
+  {
+    "description": "LANTUS CARTRIDGE 5X3ML",
+    "posting_date": "2018-12-31",
+    "record_id": 5498,
+    "page_offset": 110,
+    "guid": "7d9bfe7e4fa1f040af5aac37ead2e7aa",
+    "source_page": 1525
+  },
+  {
+    "description": "LANTUS CARTRIDGE 5X3ML",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 272,
+    "guid": "fca3507fcd8b8842960e02fe9e997b53",
+    "source_page": 1525
+  },
+  {
+    "description": "LANTUS SOLOSTAR 300IU",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 456,
+    "guid": "70e7b246be7f6d4c8b494f27e0bfc305",
+    "source_page": 1525
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": "2018-12-31",
+    "record_id": null,
+    "page_offset": 105,
+    "guid": "9512d730f22b314dbbc212afd126d2ae",
+    "source_page": 1526
+  },
+  {
+    "description": "LANTUS SOLOSTAR 300IU",
+    "posting_date": "2018-12-31",
+    "record_id": 5500,
+    "page_offset": 252,
+    "guid": "5c10539d2269f84d9f12f1adcc214b96",
+    "source_page": 1526
+  },
+  {
+    "description": "LANTUS SOLOSTAR 300IU",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 414,
+    "guid": "6a55bcbf0782e7438a0ba9d54c88c489",
+    "source_page": 1526
+  },
+  {
+    "description": "LEVEMIR FLEXPEN",
+    "posting_date": "2018-12-31",
+    "record_id": 6657,
+    "page_offset": 82,
+    "guid": "183f92b5f187804db3ddd5eb7381e1d1",
+    "source_page": 1527
+  },
+  {
+    "description": "Closing Stock 2018",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 233,
+    "guid": "d58bcadcd258ef4fa5f15895b5e7e835",
+    "source_page": 1527
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-19",
+    "record_id": null,
+    "page_offset": 83,
+    "guid": "b9f2ca67c35f2f40b99de88b97e20608",
+    "source_page": 1544
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-19",
+    "record_id": null,
+    "page_offset": 224,
+    "guid": "fde92c5027cedf4287d40e7f86f1a39a",
+    "source_page": 1544
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-19",
+    "record_id": null,
+    "page_offset": 363,
+    "guid": "3978e90316f10b4481648c27d263a763",
+    "source_page": 1544
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-19",
+    "record_id": null,
+    "page_offset": 135,
+    "guid": "2da7af07f213d34680fddac8463f40ee",
+    "source_page": 1545
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-19",
+    "record_id": null,
+    "page_offset": 277,
+    "guid": "a782ddaf2d8f1e46a757dc2d6a8841fc",
+    "source_page": 1545
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 419,
+    "guid": "413f1fc7bd279e43a1be8603917075f6",
+    "source_page": 1545
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-20",
+    "record_id": null,
+    "page_offset": 49,
+    "guid": "b75bca19a06cb947820d416e76cbd9e9",
+    "source_page": 1546
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-20",
+    "record_id": null,
+    "page_offset": 193,
+    "guid": "288c4346bebd114a94b44cd71469135d",
+    "source_page": 1546
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-20",
+    "record_id": null,
+    "page_offset": 334,
+    "guid": "f7ceb964754d61468044c603023012d0",
+    "source_page": 1546
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-21",
+    "record_id": null,
+    "page_offset": 103,
+    "guid": "df59c604d97a5e46bdcf373bcbfde6dc",
+    "source_page": 1547
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-21",
+    "record_id": null,
+    "page_offset": 247,
+    "guid": "39f0d59ca8455b46a050e71ffd07f24d",
+    "source_page": 1547
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-21",
+    "record_id": null,
+    "page_offset": 388,
+    "guid": "3eb8f3799d5a1049bb9c38ccbb447c9f",
+    "source_page": 1547
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-21",
+    "record_id": null,
+    "page_offset": 15,
+    "guid": "6a566b9e3ef3ed4285a82d9d88587e07",
+    "source_page": 1548
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-22",
+    "record_id": null,
+    "page_offset": 157,
+    "guid": "93bb929987810c46b2cf27c8a98e824d",
+    "source_page": 1548
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": "2019-02-22",
+    "record_id": null,
+    "page_offset": 300,
+    "guid": "ae3eb4778bf18c4190f6034040fcf293",
+    "source_page": 1548
+  },
+  {
+    "description": "STAMP DUTY CHARGE",
+    "posting_date": null,
+    "record_id": null,
+    "page_offset": 439,
+    "guid": "bf4360ca974a1e48bbc0032df679272e",
+    "source_page": 1548
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-22",
+    "record_id": null,
+    "page_offset": 65,
+    "guid": "5f8c9ebd0f6ad847b1ff8f1c5ecabb79",
+    "source_page": 1549
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-25",
+    "record_id": null,
+    "page_offset": 207,
+    "guid": "c05d138a4415de4990f02f98332ab17b",
+    "source_page": 1549
+  },
+  {
+    "description": "CASH LODGED IN ZIB",
+    "posting_date": "2019-02-25",
+    "record_id": null,
+    "page_offset": 351,
+    "guid": "0cc9a74b1e19574498c3b12b2c0537f3",
+    "source_page": 1549
+  },
+  {
+    "description": "SMS ALERT CHARGE",
+    "posting_date": "2019-02-25",
+    "record_id": null,
+    "page_offset": 120,
+    "guid": "a41b9f82a114f249b589b11f211b5a02",
+    "source_page": 1550
+  },
+  {
+    "description": "SMS ALERT CHARGE",
+    "posting_date": "2019-02-25",
+    "record_id": null,
+    "page_offset": 258,
+    "guid": "c4a0461749f2004192c5e8410a7f3091",
+    "source_page": 1550
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-25",
+    "record_id": null,
+    "page_offset": 395,
+    "guid": "377cd466a880db4994383edd56926227",
+    "source_page": 1550
+  },
+  {
+    "description": "CBN STAMP DUTY CHARGE",
+    "posting_date": "2019-02-26",
+    "record_id": null,
+    "page_offset": 25,
+    "guid": "ac24a1ba8adf434c9766af0a6dadc633",
+    "source_page": 1551
+  }
+]

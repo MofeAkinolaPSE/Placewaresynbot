@@ -29,7 +29,7 @@ const Layout = () => {
               <Menu className="mr-2 h-4 w-4" />
               Menu
             </Button>
-            <span className="font-semibold text-foreground">Warebot</span>
+            <span className="font-semibold text-foreground">ACE</span>
             <span className="opacity-40">·</span>
             <span>Role: {hasRole ? role : <span className="text-destructive">unavailable</span>}</span>
             {typeof wpUserId === "number" && (

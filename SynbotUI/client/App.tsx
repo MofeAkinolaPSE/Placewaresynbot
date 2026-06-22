@@ -47,6 +47,7 @@ import Login from "./pages/Login";
 import RiderTrack from "./pages/RiderTrack";
 import ReportWizard from "./pages/ReportWizard";
 import ReportLibrary from "./pages/ReportLibrary";
+import PurchaseOrders from "./pages/PurchaseOrders";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -95,6 +96,7 @@ const App = () => (
                 <Route path="/operations" element={<Operations />} />
                 <Route path="/operations/project-controls" element={<ProjectControls />} />
                 <Route path="/operations/suppliers" element={<Suppliers />} />
+                <Route path="/operations/purchase-orders" element={<PurchaseOrders />} />
                 <Route path="/operations/logistics" element={<LogisticsMonitor />} />
                 <Route path="/crm" element={<CRM />} />
                 <Route path="/crm/lead-finder" element={<CRMLeadFinder />} />

@@ -1,4 +1,4 @@
-"""Document generation engine for Warebot QMS compliance documents.
+"""Document generation engine for ACE QMS compliance documents.
 
 Generates structured PDF reports using ReportLab Platypus and DOCX using
 python-docx.  Each public method accepts a typed dict payload and returns

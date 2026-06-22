@@ -1,10 +1,11 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 
 
 class DocumentCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
+    model_config = ConfigDict(extra='forbid')
+    title: str = Field(..., max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
 
 
 class Document(BaseModel):
@@ -33,10 +34,12 @@ class DocumentVersion(BaseModel):
 
 
 class AttachRequest(BaseModel):
-    attached_to_table: Optional[str] = None
-    attached_to_id: Optional[str] = None
+    model_config = ConfigDict(extra='forbid')
+    attached_to_table: Optional[str] = Field(None, max_length=100)
+    attached_to_id: Optional[str] = Field(None, max_length=64)
 
 
 class ApprovalRequest(BaseModel):
-    approval_status: str = Field(..., description="approved|rejected|under_review")
-    reason: Optional[str] = None
+    model_config = ConfigDict(extra='forbid')
+    approval_status: str = Field(..., description="approved|rejected|under_review", max_length=20)
+    reason: Optional[str] = Field(None, max_length=1000)
