@@ -14,3 +14,8 @@ Sage 50 2013
 # sage-bridge is a Windows service — committed so client can clone it from one repo
 
 Installer Files
+
+# Ignore local/large dump artifacts
+data-assimilation/dumps/
+data-assimilation/dumps--/
+dumps/
