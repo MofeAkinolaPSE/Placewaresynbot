@@ -19,3 +19,6 @@ Installer Files
 data-assimilation/dumps/
 data-assimilation/dumps--/
 dumps/
+
+# Large binary / accounting files — too big for GitHub (>100 MB)
+*.ptb
