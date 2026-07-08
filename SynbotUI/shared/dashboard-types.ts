@@ -20,7 +20,10 @@ export interface InventoryDashboardData {
   summary: {
     total_active_skus: number;
     low_stock_count: number;
+    /** Active products (future expiry or traded this period) at zero stock. */
     out_of_stock_count: number;
+    /** All catalog items at zero stock, including dead/inactive history. */
+    catalog_zero_stock_count?: number;
   };
   critical_items: InventorySummaryItem[];
   recent_movements: InventoryMovement[];

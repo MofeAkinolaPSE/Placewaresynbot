@@ -320,6 +320,16 @@ DATA_INTENTS: Dict[str, Dict] = {
         "tools": ["getExecutiveSummary", "getRiskSignals", "getRecommendations"],
         "description": "Full executive overview across all business domains",
     },
+    "reconciliation_check": {
+        "keywords": [
+            "reconciliation", "bank reconcile", "reconciled", "outstanding checks",
+            "deposits in transit", "bank balance", "cleared", "uncleared",
+            "outstanding items", "bank statement", "cash reconciliation",
+        ],
+        "agents": [],
+        "tools": ["getReconciliationStatus"],
+        "description": "Bank reconciliation freshness: stale snapshots, GL vs bank balance, outstanding items",
+    },
     "db_schema_inquiry": {
         "keywords": [
             "schema", "what tables", "what data do we have", "what data exists",

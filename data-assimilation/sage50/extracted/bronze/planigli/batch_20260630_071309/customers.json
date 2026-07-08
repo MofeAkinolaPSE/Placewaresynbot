@@ -1,0 +1,80 @@
+{
+  "batch_id": "batch_20260630_071309",
+  "company": "planigli",
+  "entity": "customers",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:13:09.717582+00:00",
+  "row_count": 10,
+  "rows": [
+    {
+      "CustId": "Cosbi Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mrs Adefesobi Taiwo",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Vqr",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Lade Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "NIMR",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Stella Charles Pharm",
+      "Telephone1": "8033008846",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "GH Akodo Ibeju Lekki",
+      "Telephone1": "08183811824",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Life Line Hosp Lekki",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Assumption Px& Store",
+      "Telephone1": "08063434288",
+      "Name": "Assumption Pharmacy& Stores",
+      "Contact": "Airborne",
+      "EmailAddress": "assumptionpharmacy@gmail.com"
+    },
+    {
+      "CustId": "Coxwell Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    }
+  ]
+}

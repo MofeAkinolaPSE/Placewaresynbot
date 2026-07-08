@@ -257,11 +257,17 @@ export default function FinanceBudget() {
             </div>
           ) : rows.length === 0 ? (
             <p className="text-center text-muted-foreground py-16">
-              No GL data or budget targets for <strong>{period}</strong>.
+              No GL data or budget targets for <strong>{variance.period ?? period}</strong>.
               <br />
               Upload a GL CSV via Sage Import and set department budgets above.
             </p>
           ) : (
+            <>
+            {variance.period && variance.requested_period && variance.period !== variance.requested_period && (
+              <p className="text-xs text-muted-foreground mb-2">
+                No GL activity for {variance.requested_period} yet — showing the latest month with data: <strong>{variance.period}</strong>.
+              </p>
+            )}
             <div className="rounded-md border overflow-auto">
               <Table>
                 <TableHeader>
@@ -328,10 +334,11 @@ export default function FinanceBudget() {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
           {variance.gl_rows_processed !== undefined && (
             <p className="text-xs text-muted-foreground mt-2">
-              Based on {variance.gl_rows_processed} GL journal entries for {period}.
+              Based on {variance.gl_rows_processed} expense account lines for {variance.period ?? period}.
             </p>
           )}
         </TabsContent>

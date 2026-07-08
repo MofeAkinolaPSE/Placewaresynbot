@@ -1,0 +1,50 @@
+{
+  "batch_id": "batch_20260630_071536",
+  "company": "planigli",
+  "entity": "chart_of_accounts",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:15:36.238437+00:00",
+  "row_count": 10,
+  "rows": [
+    {
+      "AccountID": "50748",
+      "Description": "Hexaxim"
+    },
+    {
+      "AccountID": "50000",
+      "Description": "Hepatitis B Vaccine"
+    },
+    {
+      "AccountID": "40000",
+      "Description": "Hepatitis B Vaccine"
+    },
+    {
+      "AccountID": "12345",
+      "Description": "Tresiba"
+    },
+    {
+      "AccountID": "60200",
+      "Description": "Marketing exp-International"
+    },
+    {
+      "AccountID": "12317",
+      "Description": "Mixtard 30 HM 40 i.u"
+    },
+    {
+      "AccountID": "12000",
+      "Description": "Hepatitis B Vaccines"
+    },
+    {
+      "AccountID": "12332",
+      "Description": "Tetraxim"
+    },
+    {
+      "AccountID": "72000",
+      "Description": "Payroll Tax Expense"
+    },
+    {
+      "AccountID": "24250",
+      "Description": "Creditor"
+    }
+  ]
+}

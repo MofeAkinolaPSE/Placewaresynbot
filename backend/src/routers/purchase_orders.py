@@ -58,24 +58,43 @@ async def list_purchase_orders(
 @router.get("/purchase-orders/summary")
 async def purchase_orders_summary(_u=Depends(verify_jwt)):
     try:
+        import datetime as _dt
+        today = _dt.date.today()
         batch = _latest_batch_for_table("sage_purchase_orders_snapshot")
-        q = db.table("sage_purchase_orders_snapshot").select("status, net_amount")
+        q = db.table("sage_purchase_orders_snapshot").select(
+            "status, net_amount, expected_delivery_date"
+        )
         if batch:
             q = q.eq("batch_id", batch)
         rows = q.execute().data or []
+
+        def _is_open(r):
+            return r.get("status") in ("open", "pending", "approved")
+
+        def _is_overdue(r):
+            if not _is_open(r):
+                return False
+            d = r.get("expected_delivery_date")
+            if not d:
+                return False
+            try:
+                return _dt.date.fromisoformat(str(d)[:10]) < today
+            except Exception:
+                return False
+
         total = len(rows)
-        open_count = sum(1 for r in rows if r.get("status") in ("open", "pending", "approved"))
+        open_count = sum(1 for r in rows if _is_open(r))
         total_value = sum(float(r.get("net_amount") or 0) for r in rows)
-        open_value = sum(
-            float(r.get("net_amount") or 0)
-            for r in rows
-            if r.get("status") in ("open", "pending", "approved")
-        )
+        open_value = sum(float(r.get("net_amount") or 0) for r in rows if _is_open(r))
+        overdue_count = sum(1 for r in rows if _is_overdue(r))
+        overdue_value = sum(float(r.get("net_amount") or 0) for r in rows if _is_overdue(r))
         return {
             "total_pos": total,
             "open_pos": open_count,
             "total_value": total_value,
             "open_value": open_value,
+            "overdue_pos": overdue_count,
+            "overdue_value": overdue_value,
         }
     except Exception:
         log.exception("Failed to get PO summary")

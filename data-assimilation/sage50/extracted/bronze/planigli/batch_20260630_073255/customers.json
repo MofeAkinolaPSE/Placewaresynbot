@@ -1,0 +1,1004 @@
+{
+  "batch_id": "batch_20260630_073255",
+  "company": "planigli",
+  "entity": "customers",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:32:57.048039+00:00",
+  "row_count": 142,
+  "rows": [
+    {
+      "CustId": "Cosbi Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mrs Adefesobi Taiwo",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Vqr",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Lade Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "NIMR",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Stella Charles Pharm",
+      "Telephone1": "8033008846",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "GH Akodo Ibeju Lekki",
+      "Telephone1": "08183811824",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Life Line Hosp Lekki",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Assumption Px& Store",
+      "Telephone1": "08063434288",
+      "Name": "Assumption Pharmacy& Stores",
+      "Contact": "Airborne",
+      "EmailAddress": "assumptionpharmacy@gmail.com"
+    },
+    {
+      "CustId": "Coxwell Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Edchart Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "EverCare Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Proabay Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "JA LASHMAN HOSPITAL",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Stefnita Clinic& Mat",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Port Health Services",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "I.C.H OAU IFE",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Airforce Onikan",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "NEW NATION",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Gilbalm Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Grays Cardiology Cen",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Haven Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Oyo Messi Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Comfort Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Holy Family Hx Ijegu",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Vantage Chemists Ltd",
+      "Telephone1": "8033189939",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Ayodeji Hospital.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Karadin Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Sacred Heart Hosp",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Supply Medical.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Magodo Specalist Hos",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "DAMILOLA PHARMACY",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Chest Clinic",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Samson ongbali",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Faculty of vetenary",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "All Gate Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Havanna",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "King Solomom",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Oredola R.Jolad",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Ace Medicare",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "WEST CARE HX",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Viral Hepatitus",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Federal Medical Cent",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "MCC Amuwo Odofin",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Sirona Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mrs Olajumoke.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "TEE MED PHARMACY",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Simpson Primary",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Nurse Oluchi",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Shaibu Novo",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Solid Rock Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Massey Children Hosp",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "FLOURISH LAB",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mrs Davis LASUTH",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Akande",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Inland Specialist",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Children's Practice",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Royan Hospital PX",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Life Giver Global",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Shekinah Specialist",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "N-Triumph Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "MRS OLADEJI",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Medstar Pharmacy.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Air Force Base Benin",
+      "Telephone1": "7034260070",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "God's Convenant",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Nard Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Bey Clinic",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Boaz Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "QDX",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Beth Gloria pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Greenfield Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Peachcare Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dexta Health Phamacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Gover Medical VI",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Obayitan Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Joekem Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Adeola Akinjomo",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Chinedu Okoli.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "General Hosp. Ifako",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mrs Ugochinyere",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "\t\u0005\u0013\u000b\u0014Aiico MultiShi",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dabak Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "TITO  Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Winan Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Chinedu Oranye",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Cement Primary Healt",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "fiY",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mama Alice Irobor",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Oliver Height Pharma",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "3 Dee Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Seraphic Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Perfection Motors Co",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Molayo Medical Cent.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "R.O.A Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Emis Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Total Care Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Loyola Jesuit Colleg",
+      "Telephone1": "8114681636",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "St Theresa School",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "TENDA LIFE HOSPITAL",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "John Burke Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "AXA MANSARD",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Massey Str Child. Hx",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "De- Word Medical Cen",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Canvas Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "D L Y",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dr Agobe",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Bamm Clinic",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Santa Antonio Medica",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Redwood Clinic",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Bright hope hospita",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Unilag Pharmaceutica",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dialyzer Medical Cen",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dr Chima",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Nebula Care Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dr Nebe Festac",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dr Oki",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Lagos State Fee Pay",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Lead Mart Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mr Pius.",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Pacific Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dr Shodipo",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Dr. Odugbesan",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Gold Bond Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Nurse Eke Emilia",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "St Raphel Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "De-New Aiyetoro Hosp",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Bronk Premier Hospit",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Optimal Health Centr",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "The Vine Medical",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Rock Of Ages Hospita",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Multi-Care Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Yankee Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Total Family Special",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Q-MED Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Mrs Maina Fatsuma",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Lakeside Pharmacy",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Pharm Biola",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Heda Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Landmark Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Rapha Amazing Clinic",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Placeware Novotwist",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    },
+    {
+      "CustId": "Yombo Hospital",
+      "Telephone1": "",
+      "Name": "",
+      "Contact": "",
+      "EmailAddress": ""
+    }
+  ]
+}

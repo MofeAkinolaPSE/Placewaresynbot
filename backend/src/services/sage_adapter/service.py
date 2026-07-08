@@ -15,6 +15,10 @@ from src.constants import (
 from src.db import db, get_promoted_kpi_batch  # reuse configured client
 from src.cache import ttl_cache
 
+# Sage aged-debtor exports carry no due_date; standard trade terms applied to the
+# invoice date let AR aging still be computed. Keep in sync with agents_exec.py.
+DEFAULT_AR_TERMS_DAYS = 30
+
 
 def get_sage_kpi_batch_id() -> str | None:
     """Return the currently promoted Sage KPI batch id, or None.
@@ -137,10 +141,10 @@ def ar_trend_summary(client: DBClient = db, periods: int = 6) -> Dict[str, Any]:
     Groups by Month (YYYY-MM).
     """
     ar_batch = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
-    q = client.table("sage_ar_snapshot").select("date,amount,balance")
+    q = client.table("sage_ar_snapshot").select("date,amount,balance").gt("amount", 0)
     if ar_batch:
         q = q.eq("batch_id", ar_batch)
-    resp = q.order("date", desc=True).limit(10000).execute()
+    resp = q.order("date", desc=True).limit(50000).execute()
     data = resp.data or []
     buckets: Dict[str, Dict[str, float]] = {}
     
@@ -181,39 +185,59 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
         except Exception:
             return None
 
+    def effective_due(r):
+        """Due date with standard-terms fallback from the invoice date."""
+        dd = parse_date(str(r.get("due_date") or ""))
+        if dd is not None:
+            return dd
+        inv = parse_date(str(r.get("date") or ""))
+        return (inv + datetime.timedelta(days=DEFAULT_AR_TERMS_DAYS)) if inv else today
+
     # --- AR ---
     ar_batch = _latest_batch_for_table("sage_ar_snapshot", client)
-    ar_q = client.table("sage_ar_snapshot").select("amount,balance,due_date")
+    ar_q = client.table("sage_ar_snapshot").select("amount,balance,due_date,date").gt("amount", 0)
     if ar_batch:
         ar_q = ar_q.eq("batch_id", ar_batch)
-    ar_data = (ar_q.order("imported_at", desc=True).limit(10000).execute().data or [])
+    ar_data = (ar_q.limit(50000).execute().data or [])
     ar_total_amount = sum(float(r.get("amount") or 0) for r in ar_data)
     ar_total_balance = sum(float(r.get("balance") or 0) for r in ar_data)
     ar_overdue = sum(
         1 for r in ar_data
-        if (parse_date(r.get("due_date") or "") or today) < today
+        if effective_due(r) < today
         and float(r.get("balance") or 0) > 0
     )
 
     # --- AP ---
     ap_batch = _latest_batch_for_table("sage_ap_snapshot", client)
-    ap_q = client.table("sage_ap_snapshot").select("amount,balance,due_date")
+    ap_q = client.table("sage_ap_snapshot").select("amount,balance,due_date,date")
     if ap_batch:
         ap_q = ap_q.eq("batch_id", ap_batch)
-    ap_data = (ap_q.order("imported_at", desc=True).limit(10000).execute().data or [])
+    ap_data = (ap_q.limit(50000).execute().data or [])
     ap_total_amount = sum(float(r.get("amount") or 0) for r in ap_data)
     ap_total_balance = sum(float(r.get("balance") or 0) for r in ap_data)
     ap_overdue = sum(
         1 for r in ap_data
-        if (parse_date(r.get("due_date") or "") or today) < today
+        if effective_due(r) < today
         and float(r.get("balance") or 0) > 0
     )
 
     # --- GL: cash position, revenue, and cost ---
+    # Uses account_type from sage_coa_snapshot for robust classification
+    # (Nigerian Sage 50 account codes don't follow US GAAP 4000-6999 ranges).
     cash: float | None = None
     total_revenue = 0.0
     total_cost = 0.0
     try:
+        from src.constants import CASH_ACCOUNT_TYPE, REVENUE_ACCOUNT_TYPES, COST_ACCOUNT_TYPES
+
+        # Build account_code → account_type lookup from CoA snapshot
+        coa_res = client.table("sage_coa_snapshot").select("account_code,account_type").limit(2000).execute()
+        acct_type_map: Dict[str, str] = {
+            str(r.get("account_code") or "").strip(): (r.get("account_type") or "")
+            for r in (coa_res.data or [])
+            if r.get("account_code")
+        }
+
         gl_batch = _latest_batch_for_table("sage_gl_snapshot", client)
         gl_q = client.table("sage_gl_snapshot").select("account_code,debit,credit")
         if gl_batch:
@@ -224,33 +248,21 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
             cash_credits = 0.0
             cash_debits = 0.0
             for row in gl_data:
-                code_raw = row.get("account_code") or ""
-                try:
-                    # Handle formats: "ACC-4001", "4001", "4001-01", "ACC-1000"
-                    # Extract the first numeric segment as the account number
-                    m = re.search(r'\d+', str(code_raw))
-                    if not m:
-                        continue
-                    code = int(m.group())
-                except (ValueError, TypeError):
-                    continue
+                code_raw = str(row.get("account_code") or "").strip()
+                acct_type = acct_type_map.get(code_raw, "")
                 debit = float(row.get("debit") or 0)
                 credit = float(row.get("credit") or 0)
 
-                # Cash account
-                if str(code_raw).strip() == CASH_GL_ACCOUNT_CODE or code == int(CASH_GL_ACCOUNT_CODE):
+                if acct_type == CASH_ACCOUNT_TYPE:
                     cash_debits += debit
                     cash_credits += credit
 
-                # Revenue accounts (credit-side income)
-                if REVENUE_GL_ACCOUNT_MIN <= code <= REVENUE_GL_ACCOUNT_MAX:
-                    total_revenue += credit - debit  # net revenue contribution
+                if acct_type in REVENUE_ACCOUNT_TYPES:
+                    total_revenue += credit - debit
 
-                # Cost / expense accounts (debit-side spend)
-                if COST_GL_ACCOUNT_MIN <= code <= COST_GL_ACCOUNT_MAX:
-                    total_cost += debit - credit  # net cost contribution
+                if acct_type in COST_ACCOUNT_TYPES:
+                    total_cost += debit - credit
 
-            # Cash = total debits – total credits on the cash account (bank balance style)
             if cash_debits > 0 or cash_credits > 0:
                 cash = round(cash_debits - cash_credits, 2)
 
@@ -271,7 +283,9 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
 def ar_aging_buckets(client: DBClient = db) -> Dict[str, Any]:
     """Return AR aging buckets (0-30, 31-60, 61-90, 91+ days) by outstanding balance.
 
-    Uses due_date compared to today; entries without due_date are treated as current.
+    Uses due_date when present. Sage aged-debtor exports carry no due_date, so
+    invoice date + DEFAULT_AR_TERMS_DAYS standard trade terms is used as the
+    fallback; rows without either date are treated as current.
     """
     import datetime
     today = datetime.date.today()
@@ -281,14 +295,17 @@ def ar_aging_buckets(client: DBClient = db) -> Dict[str, Any]:
         except Exception:
             return None
     batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
-    q = client.table("sage_ar_snapshot").select("due_date,balance")
+    q = client.table("sage_ar_snapshot").select("due_date,date,balance").gt("balance", 0)
     if batch_id:
         q = q.eq("batch_id", batch_id)
-    resp = q.order("imported_at", desc=True).limit(10000).execute()
+    resp = q.limit(50000).execute()
     buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "91_plus": 0.0}
     for r in resp.data or []:
         bal = float(r.get("balance") or 0)
-        dd = parse_date(r.get("due_date") or "") or today
+        dd = parse_date(str(r.get("due_date") or ""))
+        if dd is None:
+            inv = parse_date(str(r.get("date") or ""))
+            dd = (inv + datetime.timedelta(days=DEFAULT_AR_TERMS_DAYS)) if inv else today
         delta = (today - dd).days
         if delta <= 30:
             buckets["0_30"] += bal
@@ -337,14 +354,14 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
         # Unknown bucket; return empty list
         return []
 
-    # Fetch AR invoices
+    # Fetch AR invoices (real balances only — aged-summary rows carry 0)
     batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
     ar_q = client.table("sage_ar_snapshot").select(
-        "invoice_id,customer_id,due_date,amount,balance,status"
-    )
+        "invoice_id,customer_id,due_date,date,amount,balance,status"
+    ).gt("balance", 0)
     if batch_id:
         ar_q = ar_q.eq("batch_id", batch_id)
-    ar_resp = ar_q.order("imported_at", desc=True).limit(10000).execute()
+    ar_resp = ar_q.limit(50000).execute()
     rows = ar_resp.data or []
 
     # Aggregate by customer within bucket range
@@ -353,7 +370,11 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
         cid = r.get("customer_id") or ""
         if not cid:
             continue
-        dd = parse_date(r.get("due_date")) or today
+        dd = parse_date(str(r.get("due_date") or ""))
+        if dd is None:
+            import datetime as _dt
+            inv = parse_date(str(r.get("date") or ""))
+            dd = (inv + _dt.timedelta(days=DEFAULT_AR_TERMS_DAYS)) if inv else today
         bal = float(r.get("balance") or 0)
         amt = float(r.get("amount") or 0)
         delta = (today - dd).days
@@ -412,7 +433,7 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
         out.append(
             {
                 "customer_id": cid,
-                "customer_name": meta.get("name"),
+                "customer_name": meta.get("name") or cid,
                 "email": meta.get("email"),
                 "phone": meta.get("phone"),
                 "status": meta.get("status"),

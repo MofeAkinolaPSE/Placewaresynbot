@@ -281,10 +281,11 @@ def _try_extract_header(data: bytes, text_start: int) -> Optional[Dict]:
             date2, _ = _decode_date_at(data, pos1 + 4, pos1 + 4 + 30)
 
         return {
-            'name': name,
+            'name':      name,
             'reference': ref,
-            'date': date1,
-            'date2': date2,
+            'date':      date1,
+            'date2':     date2,
+            '_ref_start': ref_start,  # absolute byte offset in data[] for ref text
         }
     return None
 
@@ -317,6 +318,8 @@ def scan_jrnlhdr_invoices(dat_path: str, max_rows: int = 0) -> List[Dict]:
             rec = _try_extract_header(data, i + 2)
             if rec and rec['reference'] not in seen_refs:
                 seen_refs.add(rec['reference'])
+                rec['file_offset'] = i          # position of 0x00 0x00 marker
+                rec['ref_offset']  = rec.pop('_ref_start', i)  # position of reference text
                 results.append(rec)
                 if max_rows and len(results) >= max_rows:
                     break

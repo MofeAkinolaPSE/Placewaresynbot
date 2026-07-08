@@ -1,0 +1,254 @@
+{
+  "batch_id": "batch_20260630_073255",
+  "company": "planigli",
+  "entity": "chart_of_accounts",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:32:57.056514+00:00",
+  "row_count": 61,
+  "rows": [
+    {
+      "AccountID": "50748",
+      "Description": "Hexaxim"
+    },
+    {
+      "AccountID": "50000",
+      "Description": "Hepatitis B Vaccine"
+    },
+    {
+      "AccountID": "40000",
+      "Description": "Hepatitis B Vaccine"
+    },
+    {
+      "AccountID": "12345",
+      "Description": "Tresiba"
+    },
+    {
+      "AccountID": "60200",
+      "Description": "Marketing exp-International"
+    },
+    {
+      "AccountID": "12317",
+      "Description": "Mixtard 30 HM 40 i.u"
+    },
+    {
+      "AccountID": "12000",
+      "Description": "Hepatitis B Vaccines"
+    },
+    {
+      "AccountID": "12332",
+      "Description": "Tetraxim"
+    },
+    {
+      "AccountID": "72000",
+      "Description": "Payroll Tax Expense"
+    },
+    {
+      "AccountID": "24250",
+      "Description": "Creditor"
+    },
+    {
+      "AccountID": "14860",
+      "Description": "Octapharm C/A"
+    },
+    {
+      "AccountID": "49918",
+      "Description": "OPTIFLOX OPTH"
+    },
+    {
+      "AccountID": "23090",
+      "Description": "Cooperative (B) A/C"
+    },
+    {
+      "AccountID": "76000",
+      "Description": "Printing  Expense"
+    },
+    {
+      "AccountID": "62600",
+      "Description": "Cash Lost"
+    },
+    {
+      "AccountID": "39004",
+      "Description": "Beginning Balance Equity"
+    },
+    {
+      "AccountID": "23900",
+      "Description": "Income Taxes Payable"
+    },
+    {
+      "AccountID": "10290",
+      "Description": "delity Bank"
+    },
+    {
+      "AccountID": "50701",
+      "Description": "Measles.Mumps & Rubella Vac"
+    },
+    {
+      "AccountID": "67500",
+      "Description": "Insurance Expense"
+    },
+    {
+      "AccountID": "89160",
+      "Description": "Marketing expense - Mr Ayodele\f:ükH«ÕêäZïä_\u0001"
+    },
+    {
+      "AccountID": "10300",
+      "Description": "yroll Checking Account"
+    },
+    {
+      "AccountID": "12326",
+      "Description": "Polprotec Vaccines"
+    },
+    {
+      "AccountID": "10710",
+      "Description": "o Transaction"
+    },
+    {
+      "AccountID": "14850",
+      "Description": "Amnisure C/A"
+    },
+    {
+      "AccountID": "90300",
+      "Description": "Deprec. Motor Vehicle"
+    },
+    {
+      "AccountID": "59910",
+      "Description": "VARIRID"
+    },
+    {
+      "AccountID": "40538",
+      "Description": "Clexane"
+    },
+    {
+      "AccountID": "69000",
+      "Description": "Accounting/auditing expense"
+    },
+    {
+      "AccountID": "69700",
+      "Description": "Lawma"
+    },
+    {
+      "AccountID": "40517",
+      "Description": "Mixtard 30 HM 40 i.u"
+    },
+    {
+      "AccountID": "40504",
+      "Description": "Dipth,Tetan,pertu(w),HepB&Hib½Ä\u00037äCNË¿dCo¨"
+    },
+    {
+      "AccountID": "59911",
+      "Description": "ACRETIN 0.025%"
+    },
+    {
+      "AccountID": "40534",
+      "Description": "Rhogam (Anti - D)"
+    },
+    {
+      "AccountID": "59918",
+      "Description": "FUSIBACT 15G"
+    },
+    {
+      "AccountID": "40542",
+      "Description": "Amaryl Tabs"
+    },
+    {
+      "AccountID": "40300",
+      "Description": "Cervarix Vaccines"
+    },
+    {
+      "AccountID": "78100",
+      "Description": "Business telephone  Expense"
+    },
+    {
+      "AccountID": "89190",
+      "Description": "Marketing Expenses- Mr Sulymono¡N\u001dNÝêÉQ=wb\u0001"
+    },
+    {
+      "AccountID": "12364",
+      "Description": "ACRETIN 0.025%"
+    },
+    {
+      "AccountID": "50740",
+      "Description": "Yellow Fever"
+    },
+    {
+      "AccountID": "40539",
+      "Description": "Anti-biotics"
+    },
+    {
+      "AccountID": "50744",
+      "Description": "Flu Vaccines"
+    },
+    {
+      "AccountID": "40519",
+      "Description": "Actrapid HM 40 i.u"
+    },
+    {
+      "AccountID": "40546",
+      "Description": "Adacel Polio Tdap/Ipv"
+    },
+    {
+      "AccountID": "49916",
+      "Description": "ELICASAL OINTMENT"
+    },
+    {
+      "AccountID": "59500",
+      "Description": "Purchase Discounts"
+    },
+    {
+      "AccountID": "89130",
+      "Description": "Marketing Exp-Mr Femi Ogunmoku$\u0016é{ä@£àzÀ+Kªºw\u0001"
+    },
+    {
+      "AccountID": "50722",
+      "Description": "Dultavax 0.5ml"
+    },
+    {
+      "AccountID": "59924",
+      "Description": "Euvichol - S"
+    },
+    {
+      "AccountID": "65500",
+      "Description": "Employee Benefit  Exp"
+    },
+    {
+      "AccountID": "23500",
+      "Description": "FUTA Tax Payable"
+    },
+    {
+      "AccountID": "12300",
+      "Description": "Tyhoid Fever Vaccine"
+    },
+    {
+      "AccountID": "12321",
+      "Description": "Stamaril 1 Vial"
+    },
+    {
+      "AccountID": "62100",
+      "Description": "Bank Charges (Diamond)"
+    },
+    {
+      "AccountID": "59905",
+      "Description": "AVSAR 160/10mg Tab"
+    },
+    {
+      "AccountID": "49300",
+      "Description": "Actrapid Flexpen 100IU"
+    },
+    {
+      "AccountID": "89200",
+      "Description": "Travelling Expenses"
+    },
+    {
+      "AccountID": "59913",
+      "Description": "EVOFIX CAP 400MG"
+    },
+    {
+      "AccountID": "11000",
+      "Description": "Accounts Receivable"
+    },
+    {
+      "AccountID": "14870",
+      "Description": "Vaccines Place Current accounÖI¬!}S@ÎÆï¡o\u0015P\\"
+    }
+  ]
+}

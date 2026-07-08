@@ -1,0 +1,70 @@
+{
+  "batch_id": "batch_20260630_073238",
+  "company": "planigli",
+  "entity": "stock_on_hand",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:32:42.034325+00:00",
+  "row_count": 10,
+  "rows": [
+    {
+      "item_id": "MENACTRA",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "ENG B 20 mcg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "ROTARIX",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "CLEXANE 40mg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "APROVEL TAB 150/",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Tavanic Infusion",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Avaxim inj. Ped",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Vaxigrip Tetra",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "VICTOZA",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "KEPPRA 500MG",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    }
+  ]
+}

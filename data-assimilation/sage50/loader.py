@@ -25,6 +25,7 @@ def upload_to_backend(
     datasets: Dict[str, List[Dict[str, Any]]],
     backend_url: str,
     token: str,
+    timeout: int = 600,
 ) -> Dict[str, Any]:
     """Bundle datasets into a ZIP and POST to /sage/import/batch.
 
@@ -57,7 +58,7 @@ def upload_to_backend(
             target_url,
             headers={"Authorization": f"Bearer {token}"},
             files={"file": ("sage_export.zip", zip_bytes, "application/zip")},
-            timeout=300,
+            timeout=timeout,
             verify=False,
             allow_redirects=False,
         )

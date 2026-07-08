@@ -290,19 +290,19 @@ async def match_invoices(request: Request, body: MatchRequest):
         gl_batch = _latest_batch_for_table("sage_gl_snapshot")
         gl_q = (
             db.table("sage_gl_snapshot")
-            .select("reference_id,credit_amount,debit_amount,posting_date,description")
-            .gt("credit_amount", 0)
+            .select("account_code,credit,debit,period,account_name")
+            .gt("credit", 0)
         )
         if gl_batch:
             gl_q = gl_q.eq("batch_id", gl_batch)
         gl_rows = gl_q.limit(10000).execute().data or []
 
-        # Build lookup: reference_id → total credits (payments)
+        # Build lookup: account_code → total credits (GL payments proxy)
         payments: Dict[str, float] = {}
         for g in gl_rows:
-            ref = (g.get("reference_id") or "").strip()
+            ref = (g.get("account_code") or "").strip()
             if ref:
-                payments[ref] = payments.get(ref, 0.0) + float(g.get("credit_amount") or 0)
+                payments[ref] = payments.get(ref, 0.0) + float(g.get("credit") or 0)
 
         matched: List[Dict] = []
         unmatched: List[Dict] = []
@@ -375,34 +375,30 @@ def _compute_pl(period: Optional[str] = None) -> Dict[str, Any]:
         COST_GL_ACCOUNT_MAX,
     )
 
-    gl_batch = _latest_batch_for_table("sage_gl_snapshot")
-    gl_q = db.table("sage_gl_snapshot").select(
-        "account_id,posting_date,debit_amount,credit_amount,description,cost_center"
-    )
-    if gl_batch:
-        gl_q = gl_q.eq("batch_id", gl_batch)
+    # Monthly P&L comes from the v_pl_monthly view (migration 093): GL detail
+    # transactions classified by account_type from the chart of accounts.
+    # The GL account-summary snapshot can't be used — its income rows carry
+    # no per-period breakdown (period = '0000-00').
+    pl_q = db.table("v_pl_monthly").select("period,revenue,expenses")
     if period:
-        gl_q = gl_q.like("posting_date", f"{period}%")
-    gl_rows = gl_q.limit(50000).execute().data or []
+        pl_q = pl_q.like("period", f"{period}%")
+    pl_rows = pl_q.limit(1000).execute().data or []
 
-    # Build monthly buckets { "YYYY-MM": { revenue, expenses, cogs, gross_profit } }
+    # Build monthly buckets { "YYYY-MM": { revenue, expenses } }
     monthly: Dict[str, Dict[str, float]] = {}
     totals = {"revenue": 0.0, "expenses": 0.0}
 
-    for r in gl_rows:
-        pd = str(r.get("posting_date") or "")[:7]  # YYYY-MM
+    for r in pl_rows:
+        pd = str(r.get("period") or "")[:7]
         if not pd:
             continue
-        credit = float(r.get("credit_amount") or 0)
-        debit = float(r.get("debit_amount") or 0)
-
+        rev = float(r.get("revenue") or 0)
+        exp = float(r.get("expenses") or 0)
         bucket = monthly.setdefault(pd, {"revenue": 0.0, "expenses": 0.0})
-        if credit > 0:
-            bucket["revenue"] += credit
-            totals["revenue"] += credit
-        if debit > 0:
-            bucket["expenses"] += debit
-            totals["expenses"] += debit
+        bucket["revenue"] += rev
+        bucket["expenses"] += exp
+        totals["revenue"] += rev
+        totals["expenses"] += exp
 
     series = []
     for month in sorted(monthly.keys()):
@@ -693,12 +689,12 @@ async def cashflow_forecast(
         opening_balance = 0.0
         try:
             gl_batch = _latest_batch_for_table("sage_gl_snapshot")
-            gl_q = db.table("sage_gl_snapshot").select("credit_amount,debit_amount")
+            gl_q = db.table("sage_gl_snapshot").select("credit,debit")
             if gl_batch:
                 gl_q = gl_q.eq("batch_id", gl_batch)
             gl_rows = gl_q.limit(50000).execute().data or []
             net = sum(
-                float(r.get("credit_amount") or 0) - float(r.get("debit_amount") or 0)
+                float(r.get("credit") or 0) - float(r.get("debit") or 0)
                 for r in gl_rows
             )
             opening_balance = max(net, 0.0)
@@ -1323,11 +1319,15 @@ async def credit_risk_scores(request: Request):
     today = datetime.date.today()
     try:
         # --- AR outstanding per customer ---
+        # balance > 0 filter keeps the zero-value aged-summary rows from
+        # crowding real invoices out of the row limit.
         ar_batch = _latest_batch_for_table("sage_ar_snapshot")
-        ar_q = db.table("sage_ar_snapshot").select("customer_id,balance,due_date,status")
+        ar_q = db.table("sage_ar_snapshot").select(
+            "customer_id,balance,due_date,date,status"
+        ).gt("balance", 0)
         if ar_batch:
             ar_q = ar_q.eq("batch_id", ar_batch)
-        ar_rows = ar_q.neq("status", "paid").limit(10000).execute().data or []
+        ar_rows = ar_q.neq("status", "paid").limit(50000).execute().data or []
 
         # Aggregate per customer: max days overdue, total outstanding
         customer_data: Dict[str, Dict[str, Any]] = {}
@@ -1337,12 +1337,18 @@ async def credit_risk_scores(request: Request):
             bal = float(r.get("balance") or 0)
             if bal <= 0:
                 continue
+            # Sage exports carry no due_date — fall back to invoice date
+            # plus 30-day standard trade terms (see sage_adapter service).
             dd_raw = r.get("due_date")
+            terms_days = 0
+            if not dd_raw:
+                dd_raw = r.get("date")
+                terms_days = 30
             days_overdue = 0
             if dd_raw:
                 try:
                     dd = datetime.date.fromisoformat(str(dd_raw)[:10])
-                    days_overdue = max((today - dd).days, 0)
+                    days_overdue = max((today - dd).days - terms_days, 0)
                 except ValueError:
                     pass
 
@@ -1505,28 +1511,46 @@ async def budget_variance(
     try:
         if not period:
             period = datetime.date.today().strftime("%Y-%m")
+        requested_period = period
 
-        # ---- Actual spending from GL (debits per cost_center) ----
-        gl_batch = _latest_batch_for_table("sage_gl_snapshot")
-        gl_q = db.table("sage_gl_snapshot").select(
-            "posting_date,cost_center,debit_amount,credit_amount,account_id"
-        )
-        if gl_batch:
-            gl_q = gl_q.eq("batch_id", gl_batch)
-        # Filter to matching period rows
-        gl_q = (
-            gl_q.gte("posting_date", f"{period}-01")
-            .lt("posting_date", _next_month_str(period))
-            .limit(50000)
-        )
-        gl_rows = gl_q.execute().data or []
+        # ---- Actual spending from GL detail (v_budget_actuals_monthly view,
+        # migration 094): expense-type accounts grouped by account name.
+        # sage_gl_snapshot can't be used — it has no per-period expense rows.
+        def _fetch_actuals(p: str) -> List[Dict[str, Any]]:
+            return (
+                db.table("v_budget_actuals_monthly")
+                .select("department,actual")
+                .eq("period", p)
+                .limit(5000)
+                .execute()
+                .data
+                or []
+            )
+
+        gl_rows = _fetch_actuals(period)
+        if not gl_rows:
+            # Requested month has no GL activity (e.g. current month before the
+            # next Sage export) — fall back to the latest month that does.
+            latest = (
+                db.table("v_budget_actuals_monthly")
+                .select("period")
+                .order("period", desc=True)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            latest_period = latest[0].get("period") if latest else None
+            if latest_period and latest_period != period:
+                period = str(latest_period)
+                gl_rows = _fetch_actuals(period)
 
         actuals: Dict[str, float] = {}
         for r in gl_rows:
-            dept = str(r.get("cost_center") or "Unassigned").strip() or "Unassigned"
-            debit = float(r.get("debit_amount") or 0)
-            if debit > 0:
-                actuals[dept] = actuals.get(dept, 0.0) + debit
+            dept = str(r.get("department") or "Unassigned").strip() or "Unassigned"
+            amt = float(r.get("actual") or 0)
+            if amt > 0:
+                actuals[dept] = actuals.get(dept, 0.0) + amt
 
         # ---- Budget targets for period ----
         targets_rows = (
@@ -1572,6 +1596,7 @@ async def budget_variance(
 
         return {
             "period": period,
+            "requested_period": requested_period,
             "rows": rows_out,
             "summary": {
                 "total_budgeted": round(total_budget, 2),
@@ -1691,3 +1716,147 @@ async def get_invoice_detail(request: Request, invoice_id: str):
     except Exception as e:
         log.error("/finance/invoices/%s error: %s", invoice_id, e)
         raise HTTPException(status_code=500, detail="Failed to retrieve invoice detail")
+
+
+# ---------------------------------------------------------------------------
+# BANK RECONCILIATION  —  GET /finance/reconciliation/status
+#                          POST /finance/reconciliation/log
+# ---------------------------------------------------------------------------
+
+# Snapshot types that are point-in-time (overwrite) vs historical (append)
+_POINT_IN_TIME_TYPES = {
+    "account_reconciliation",
+    "deposits_in_transit",
+    "other_outstanding_items",
+    "outstanding_checks",
+}
+_STALE_DAYS = 30  # flag as stale after this many days without an update
+
+
+class ReconciliationLogIn(BaseModel):
+    account_code: str = Field(..., min_length=1)
+    account_name: Optional[str] = None
+    snapshot_type: str = Field(
+        ...,
+        description=(
+            "One of: account_reconciliation, account_register, bank_deposit_report, "
+            "deposits_in_transit, other_outstanding_items, outstanding_checks"
+        ),
+    )
+    reconciled_period: Optional[str] = Field(None, description="YYYY-MM, e.g. '2026-06'")
+    gl_balance: Optional[float] = None
+    bank_balance: Optional[float] = None
+    outstanding_count: Optional[int] = None
+    outstanding_total: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@router.get("/reconciliation/status")
+async def get_reconciliation_status(request: Request):
+    """
+    Return the freshness status of all reconciliation snapshot types.
+    For each known row, compute days_since_update and a staleness flag.
+    Roles: admin, finance, management
+    """
+    _require_finance(request)
+    try:
+        rows = (
+            db.table("reconciliation_tracking")
+            .select(
+                "id, account_code, account_name, snapshot_type, reconciled_period, "
+                "gl_balance, bank_balance, difference, outstanding_count, "
+                "outstanding_total, last_imported_at, entry_method, logged_by, notes, updated_at"
+            )
+            .order("account_code")
+            .execute()
+            .data or []
+        )
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        result = []
+        for r in rows:
+            updated = r.get("updated_at") or r.get("last_imported_at")
+            days_since: Optional[int] = None
+            if updated:
+                try:
+                    ts = datetime.datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                    days_since = (now - ts).days
+                except Exception:
+                    pass
+
+            is_point_in_time = r["snapshot_type"] in _POINT_IN_TIME_TYPES
+            is_stale = (
+                is_point_in_time
+                and (days_since is None or days_since >= _STALE_DAYS)
+            )
+
+            result.append({
+                **r,
+                "days_since_update": days_since,
+                "is_point_in_time": is_point_in_time,
+                "is_stale": is_stale,
+                "stale_threshold_days": _STALE_DAYS,
+            })
+
+        return {"data": result, "total": len(result), "stale_count": sum(1 for r in result if r["is_stale"])}
+    except Exception as e:
+        log.error("/finance/reconciliation/status error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve reconciliation status")
+
+
+@router.post("/reconciliation/log", status_code=201)
+async def log_reconciliation(request: Request, body: ReconciliationLogIn):
+    """
+    Upsert a reconciliation tracking row — either from a Sage export ingestion
+    or manually entered by finance staff via the Placeware UI.
+    Point-in-time types (account_reconciliation, deposits_in_transit,
+    other_outstanding_items, outstanding_checks) replace the existing row.
+    Historical types (account_register, bank_deposit_report) append a new row.
+    Roles: admin, finance, management
+    """
+    payload = _require_finance(request)
+    logged_by = payload.get("email") or payload.get("sub") or "unknown"
+
+    _valid_types = {
+        "account_reconciliation", "account_register", "bank_deposit_report",
+        "deposits_in_transit", "other_outstanding_items", "outstanding_checks",
+    }
+    if body.snapshot_type not in _valid_types:
+        raise HTTPException(status_code=422, detail=f"Invalid snapshot_type: {body.snapshot_type!r}")
+
+    row: Dict[str, Any] = {
+        "account_code": body.account_code.strip(),
+        "account_name": body.account_name,
+        "snapshot_type": body.snapshot_type,
+        "reconciled_period": body.reconciled_period,
+        "gl_balance": body.gl_balance,
+        "bank_balance": body.bank_balance,
+        "outstanding_count": body.outstanding_count,
+        "outstanding_total": body.outstanding_total,
+        "last_imported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "entry_method": "manual",
+        "logged_by": str(logged_by)[:200],
+        "notes": body.notes[:1000] if body.notes else None,
+    }
+
+    try:
+        if body.snapshot_type in _POINT_IN_TIME_TYPES:
+            # Upsert — one row per account+type
+            res = (
+                db.table("reconciliation_tracking")
+                .upsert(row, on_conflict="account_code,snapshot_type")
+                .execute()
+            )
+        else:
+            # Append — historical records accumulate
+            res = db.table("reconciliation_tracking").insert(row).execute()
+
+        saved = res.data[0] if res.data else row
+        log.info(
+            "reconciliation/log: %s/%s logged by %s for period %s",
+            body.account_code, body.snapshot_type, logged_by, body.reconciled_period,
+        )
+        return {"status": "ok", "data": saved}
+    except Exception as e:
+        log.error("/finance/reconciliation/log error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to save reconciliation log")

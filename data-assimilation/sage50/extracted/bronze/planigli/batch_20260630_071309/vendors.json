@@ -1,0 +1,26 @@
+{
+  "batch_id": "batch_20260630_071309",
+  "company": "planigli",
+  "entity": "vendors",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:13:09.739868+00:00",
+  "row_count": 4,
+  "rows": [
+    {
+      "VendorId": "World wide (Pfizer)",
+      "VendorName": "World wide (Pfizer)"
+    },
+    {
+      "VendorId": "Octapharma Ltd",
+      "VendorName": "Octapharma Ltd"
+    },
+    {
+      "VendorId": "DANAX NIG. LTD",
+      "VendorName": "DANAX NIG. LTD"
+    },
+    {
+      "VendorId": "Alpha Phamacy",
+      "VendorName": "Alpha Phamacy"
+    }
+  ]
+}

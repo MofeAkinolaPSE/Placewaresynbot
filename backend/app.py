@@ -413,6 +413,8 @@ from src.routers.promotions import router as promotions_router
 app.include_router(promotions_router)
 from src.routers.cache_ui import router as cache_router
 app.include_router(cache_router)
+from src.routers.ui_metrics import router as ui_metrics_router
+app.include_router(ui_metrics_router)
 from src.routers.replenishment import router as replenishment_router
 from src.routers.billing import router as billing_router
 from src.routers.agents_exec import router as agents_exec_router
@@ -993,6 +995,13 @@ def _build_chat_instruction(mode: str, question: str = "") -> str:
         "(3) Only state that an action was executed or that a workflow/task was dispatched if a matching successful entry is present in the ORCHESTRATION TOOL RESULTS for this turn. "
         "If no such tool result exists, say plainly that you don't currently have a way to do that, rather than claiming it happened. "
         "If a metric or capability is unavailable, say so clearly. "
+        "(4) Bank reconciliation data rule: whenever you answer a question about cash position, bank balance, outstanding checks, deposits in transit, or cleared transactions, "
+        "check the getReconciliationStatus tool result for this turn. "
+        "If stale_count > 0, prepend a warning before your answer: "
+        "'Note: the bank reconciliation data for [account names] was last updated [N] days ago (last period: [period]). "
+        "The figures below may not reflect items that have cleared or become outstanding since then. "
+        "To update, go to Finance → Reconciliation and log the latest reconciliation or upload the Sage 50 export.' "
+        "If getReconciliationStatus was not called this turn and the question is cash/bank related, state that reconciliation freshness is unknown and advise the user to check the Reconciliation tab in Finance. "
         "Do NOT include customer support copy, ordering instructions, sales CTAs, or contact blocks. "
         # ── EOS action capabilities ────
         f"As EOS, you can execute these actions when the tool results confirm they ran: "

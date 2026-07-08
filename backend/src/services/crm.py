@@ -26,23 +26,28 @@ def risk_scores(client: DBClient = db) -> Dict[str, Any]:
     import datetime
     today = datetime.date.today()
 
-    # Overdue AR by customer
+    # Overdue AR by customer (balance > 0 skips the zero-value aged-summary rows).
+    # Sage exports carry no due_date, so invoice date + 30-day standard terms is
+    # used as the fallback when due_date is missing.
     sage_batch_id = get_sage_kpi_batch_id()
-    ar_q = client.table("sage_ar_snapshot").select("customer_id,due_date,balance")
+    ar_q = client.table("sage_ar_snapshot").select("customer_id,due_date,date,balance").gt("balance", 0)
     if sage_batch_id:
         ar_q = ar_q.eq("batch_id", sage_batch_id)
-    ar = ar_q.order("imported_at", desc=True).limit(MAX_ANALYTICS_ROWS).execute()
+    ar = ar_q.limit(50000).execute()
     ar_rows = ar.data or []
     def parse_date(s: str | None):
         if not s:
             return None
         try:
-            return datetime.date.fromisoformat(s)
+            return datetime.date.fromisoformat(str(s)[:10])
         except Exception:
             return None
     overdue_by_cust: Dict[str, float] = {}
     for r in ar_rows:
-        dd = parse_date(r.get("due_date")) or today
+        dd = parse_date(r.get("due_date"))
+        if dd is None:
+            inv = parse_date(r.get("date"))
+            dd = (inv + datetime.timedelta(days=30)) if inv else today
         bal = float(r.get("balance") or 0)
         cid = r.get("customer_id") or ""
         if cid and bal > 0 and dd < today:
@@ -89,38 +94,46 @@ def get_crm_stats(client: DBClient = db) -> Dict[str, Any]:
     """
     High-level CRM Stats for Dashboard.
     """
-    # 1. Pipeline Value
-    # Using snapshot
-    crm = client.table("crm_pipeline_snapshot").select("amount,status,stage").order("imported_at", desc=True).limit(1000).execute()
+    # 1. Pipeline Value — derived from sage_ar_snapshot (invoices as sales opportunities)
+    crm = client.table("sage_ar_snapshot").select(
+        "invoice_id,customer_id,amount,balance,status,date"
+    ).gt("amount", 0).order("imported_at", desc=True).limit(5000).execute()
     rows = crm.data or []
-    
-    pipeline_val = sum(float(r.get("amount") or 0) for r in rows if r.get("status") in ["Open", "Pipeline", "Pending"])
-    
-    # 2. Win Rate (simulate or calc if historical data exists)
-    won = len([r for r in rows if r.get("status") == "Won"])
-    total = len(rows)
-    win_rate = (won / total * 100) if total > 0 else 0
-    
+
+    open_rows   = [r for r in rows if float(r.get("balance") or 0) > 0]
+    closed_rows = [r for r in rows if float(r.get("balance") or 0) == 0 and float(r.get("amount") or 0) > 0]
+    invoiced_rows = [r for r in rows if float(r.get("amount") or 0) > 0]
+
+    pipeline_val = sum(float(r.get("amount") or 0) for r in open_rows)
+    active_opps  = len(open_rows)
+
+    # 2. Win Rate (fully-paid invoices as "won")
+    total = len(invoiced_rows)
+    win_rate = round(len(closed_rows) / total * 100, 1) if total > 0 else 0
+
     # 3. Risk Score (Avg)
     risks = risk_scores(client).get("customers", [])
     avg_risk = sum(r["risk_score"] for r in risks) / len(risks) if risks else 0
 
-    # 4. Customer master count (from live customers table, not AR snapshot)
+    # 4. Customer count — from Sage master data snapshot (deduplicated by customer_id)
     try:
-        cust_res = client.table("customers").select("id, client_type").execute()
-        cust_rows = cust_res.data or []
-        customer_count = len(cust_rows)
-        active_customers = customer_count  # all records are active clients
+        cust_res = client.table("sage_customers_snapshot").select("customer_id").execute()
+        customer_count = len(set(
+            r["customer_id"] for r in (cust_res.data or []) if r.get("customer_id")
+        ))
+        active_customers = customer_count
     except Exception:
         customer_count = 0
         active_customers = 0
 
+    recent_deals = sorted(rows, key=lambda r: r.get("date") or "", reverse=True)[:5]
+
     return {
         "pipeline_value": pipeline_val,
-        "active_opps": len([r for r in rows if r.get("status") in ["Open", "Pipeline", "Pending"]]),
+        "active_opps": active_opps,
         "win_rate": win_rate,
         "avg_risk_score": avg_risk,
-        "recent_deals": rows[:5],
+        "recent_deals": recent_deals,
         "customer_count": customer_count,
         "active_customers": active_customers,
     }

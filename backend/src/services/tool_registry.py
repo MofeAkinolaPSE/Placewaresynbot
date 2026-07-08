@@ -183,6 +183,70 @@ class ToolRegistry:
         }
 
 
+_RECON_STALE_DAYS = 30
+_RECON_POINT_IN_TIME = {
+    "account_reconciliation",
+    "deposits_in_transit",
+    "other_outstanding_items",
+    "outstanding_checks",
+}
+
+
+def get_reconciliation_status() -> dict:
+    """Return freshness of all bank reconciliation snapshots for Ace context."""
+    from ..db import db as _db
+    from datetime import datetime, timezone
+
+    try:
+        rows = (
+            _db.table("reconciliation_tracking")
+            .select(
+                "account_code, account_name, snapshot_type, reconciled_period, "
+                "gl_balance, bank_balance, difference, last_imported_at, updated_at"
+            )
+            .order("account_code")
+            .execute()
+            .data or []
+        )
+    except Exception:
+        return {"error": "reconciliation_tracking table not yet populated", "stale_accounts": []}
+
+    now = datetime.now(timezone.utc)
+    stale = []
+    summary = []
+    for r in rows:
+        updated = r.get("updated_at") or r.get("last_imported_at")
+        days_since = None
+        if updated:
+            try:
+                ts = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                days_since = (now - ts).days
+            except Exception:
+                pass
+
+        is_pit = r["snapshot_type"] in _RECON_POINT_IN_TIME
+        is_stale = is_pit and (days_since is None or days_since >= _RECON_STALE_DAYS)
+        entry = {
+            "account": r.get("account_name") or r["account_code"],
+            "type": r["snapshot_type"],
+            "period": r.get("reconciled_period"),
+            "days_since_update": days_since,
+            "difference": r.get("difference"),
+            "is_stale": is_stale,
+        }
+        summary.append(entry)
+        if is_stale:
+            stale.append(entry)
+
+    return {
+        "total_tracked": len(summary),
+        "stale_count": len(stale),
+        "stale_threshold_days": _RECON_STALE_DAYS,
+        "stale_accounts": stale,
+        "all_accounts": summary,
+    }
+
+
 SCHEMA_ALLOW_LIST = [
     "customers", "suppliers", "crm_prospects", "customer_360",
     "sage_items_snapshot", "sage_purchase_orders_snapshot", "sage_vendors_snapshot",
@@ -423,6 +487,24 @@ def build_default_tool_registry() -> ToolRegistry:
             allowed_modes={"assistant", "executive"},
         ),
         live_schema_summary,
+    )
+
+    registry.register(
+        ToolMetadata(
+            name="getReconciliationStatus",
+            description=(
+                "Check the freshness of bank reconciliation snapshots. "
+                "Returns which accounts are stale (not updated in 30+ days) and the "
+                "difference between GL balance and bank balance for each. "
+                "Call this before answering any question about cash position, bank balance, "
+                "outstanding checks, or deposits in transit."
+            ),
+            department="finance",
+            source="services.tool_registry.get_reconciliation_status",
+            required_roles={"admin", "finance", "management"},
+            allowed_modes={"assistant", "executive"},
+        ),
+        get_reconciliation_status,
     )
 
     return registry

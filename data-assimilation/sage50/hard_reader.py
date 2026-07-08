@@ -427,6 +427,55 @@ def _find_dat(sage_root: str, company: Optional[str], filenames: List[str]) -> O
     return None
 
 
+def read_sales_invoices(
+    sage_root: str,
+    company: Optional[str] = None,
+    max_rows: Optional[int] = None,
+) -> List[Dict[str, str]]:
+    """Read invoice/transaction headers from JRNLHDR.DAT as sales_invoices rows.
+
+    Output keys use Sage field name conventions so canonical_mapper.py resolves them
+    via field_maps.py's candidate lists for the 'sales_invoices' entity:
+        InvoiceNo   → invoice_id
+        CustomerID  → customer_id  (value is the customer name from the header)
+        InvoiceDate → invoice_date
+        DueDate     → due_date
+        Amount      → net_amount  (defaults to "0" — amounts not yet decoded)
+    """
+    try:
+        from sage50.btrieve_scanner import scan_jrnlhdr_invoices  # type: ignore
+    except ImportError:
+        try:
+            from btrieve_scanner import scan_jrnlhdr_invoices  # type: ignore
+        except ImportError:
+            return []
+
+    dat_path = _find_dat(sage_root, company, ["JRNLHDR.DAT", "jrnlhdr.dat"])
+    if dat_path is None:
+        return []
+
+    raw = scan_jrnlhdr_invoices(dat_path, max_rows=max_rows or 0)
+
+    seen_refs: set = set()
+    rows: List[Dict[str, str]] = []
+    for r in raw:
+        ref = (r.get("reference") or "").strip()
+        if not ref or ref in seen_refs:
+            continue
+        seen_refs.add(ref)
+        rows.append({
+            "InvoiceNo":   ref,
+            "CustomerID":  (r.get("name") or "").strip(),
+            "InvoiceDate": r.get("date") or "",
+            "DueDate":     r.get("date2") or "",
+            "Amount":      "0",
+        })
+        if max_rows is not None and len(rows) >= max_rows:
+            break
+
+    return rows
+
+
 def read_entity(
     entity_name: str,
     sage_root: str,
@@ -444,6 +493,9 @@ def read_entity(
 
     if entity_name == "invoice_headers":
         return read_invoice_headers(sage_root, company, max_rows)
+
+    if entity_name == "sales_invoices":
+        return read_sales_invoices(sage_root, company, max_rows)
 
     schema = SCHEMAS.get(entity_name)
     if schema is None:
@@ -477,7 +529,7 @@ def read_entity(
 
 def available_entities() -> List[str]:
     """Return entity names that have hard-coded schemas."""
-    return list(SCHEMAS.keys())
+    return list(SCHEMAS.keys()) + ["sales_invoices"]
 
 
 def field_names(entity_name: str) -> List[str]:
@@ -486,6 +538,8 @@ def field_names(entity_name: str) -> List[str]:
         return ["description", "posting_date", "record_id"]
     if entity_name == "invoice_headers":
         return ["name", "reference", "date", "date2"]
+    if entity_name == "sales_invoices":
+        return ["InvoiceNo", "CustomerID", "InvoiceDate", "DueDate", "Amount"]
     schema = SCHEMAS.get(entity_name)
     if schema is None:
         return []

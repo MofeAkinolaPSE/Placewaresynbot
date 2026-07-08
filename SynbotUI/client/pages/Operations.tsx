@@ -39,7 +39,7 @@ export default function Operations() {
   const [formData, setFormData] = useState({
     item_id: "",
     change: 0,
-    movement_type: "RESTOCK",
+    movement_type: "ADJUSTMENT",
     source: "",
     destination: "",
   });
@@ -77,7 +77,7 @@ export default function Operations() {
       });
       toast({ title: "Movement Recorded", description: `${formData.movement_type} for ${formData.item_id} recorded.` });
       setDialogOpen(false);
-      setFormData({ item_id: "", change: 0, movement_type: "RESTOCK", source: "", destination: "" });
+      setFormData({ item_id: "", change: 0, movement_type: "ADJUSTMENT", source: "", destination: "" });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["inventory-dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["ops-kpis"] }),
@@ -106,15 +106,15 @@ export default function Operations() {
         <div className="flex gap-2">
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm">
+              <Button size="sm" variant="outline">
                 <PlusCircle className="mr-2 h-4 w-4" />
-                Record Movement
+                Log Adjustment
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Record Inventory Movement</DialogTitle>
-                <DialogDescription>Log a stock movement event (restock, sale, damage, etc.)</DialogDescription>
+                <DialogTitle>Log Stock Adjustment</DialogTitle>
+                <DialogDescription>Record a sale, damage write-off, expiry, or manual adjustment. To add incoming stock, use the Add Stock button in the inventory table.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -137,9 +137,8 @@ export default function Operations() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="RESTOCK">Restock</SelectItem>
                       <SelectItem value="SALE">Sale</SelectItem>
-                      <SelectItem value="DAMAGE">Damage</SelectItem>
+                      <SelectItem value="DAMAGE">Damage / Write-off</SelectItem>
                       <SelectItem value="EXPIRY">Expiry</SelectItem>
                       <SelectItem value="ADJUSTMENT">Adjustment</SelectItem>
                       <SelectItem value="TRANSFER">Transfer</SelectItem>

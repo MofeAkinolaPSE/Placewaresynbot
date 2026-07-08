@@ -1,0 +1,352 @@
+{
+  "batch_id": "batch_20260630_073255",
+  "company": "planigli",
+  "entity": "stock_on_hand",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:33:21.555196+00:00",
+  "row_count": 57,
+  "rows": [
+    {
+      "item_id": "MENACTRA",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "ENG B 20 mcg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "ROTARIX",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "CLEXANE 40mg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "APROVEL TAB 150/",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Tavanic Infusion",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Avaxim inj. Ped",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Vaxigrip Tetra",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "VICTOZA",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "KEPPRA 500MG",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "VERORAB",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "PREVENAR 13",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "NOVOMIX30 FLEXPEN",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "CERVARIX 0.5ml",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "REVAC B",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "SHANCHOL",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "NOVORAPID FLEXPEN",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Nucard 80mg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "AMARYL 1MG TAB",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "TRESIVAC (MMR)",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "EVOFIX SUSP 100MG/5M",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "MIXTARD 30HM FLEX",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "VARILRIX A",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "APIDRA SOLOSTAR",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "APROVASC300MG/10M",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "LEVEMIR FLEXPEN",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Nucard 160mg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "COAPROVEL TAB 300/12",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "CLEXANE",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "FLEMIN INJ. 600G",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "FLEMIN. 1G 200MG",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "HAVRIX",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "CLEXANE 60mg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "ADACEL POLIO",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "INDIRAB(ANTI RABIS)B",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "MIXTARD 30HM 100 I.U",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Humalog Mix 25",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "INSUMAN RAPID 1000",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "MIXTARD 30HM 100",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "TRITACE 2.5MG",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "REVAC B 10mls",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "AVAMYS SPRAY",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "HEXAXIM",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "TYPHIM",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Special Order",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "NIMENRIX",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "CLEXANE 20mg",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "TETANUS TOXOID",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "VAXIGRIP JUNIOR",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Trimovax",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "Tresiba",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "TYPHERIX",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "INSUMAN BASAL 1000IU",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "GENEVAC (HEP. B",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "NOVORAPID FLEXPEN 3M",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "NOVOTWIST NEEDLE",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    },
+    {
+      "item_id": "ELICASAL OINTMENT",
+      "quantity_on_hand": 0,
+      "unit_cost": "0",
+      "reorder_level": "0"
+    }
+  ]
+}

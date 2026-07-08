@@ -1,0 +1,70 @@
+{
+  "batch_id": "batch_20260630_073238",
+  "company": "planigli",
+  "entity": "items",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:32:38.222489+00:00",
+  "row_count": 10,
+  "rows": [
+    {
+      "ItemID": "MENACTRA",
+      "Description": "MENACTRA",
+      "ExpiryDate": "2027-07-01",
+      "LotCode": "U8821AA"
+    },
+    {
+      "ItemID": "ENG B 20 mcg",
+      "Description": "ENG B 20 mcg",
+      "ExpiryDate": "2023-11-01",
+      "LotCode": "AHBVC987BG"
+    },
+    {
+      "ItemID": "ROTARIX",
+      "Description": "ROTARIX",
+      "ExpiryDate": "2024-04-01",
+      "LotCode": "AROLD253AB"
+    },
+    {
+      "ItemID": "CLEXANE 40mg",
+      "Description": "CLEXANE 40mg",
+      "ExpiryDate": "2024-02-01",
+      "LotCode": "FSI84A"
+    },
+    {
+      "ItemID": "APROVEL TAB 150/",
+      "Description": "APROVEL TAB 150/",
+      "ExpiryDate": "2026-07-01",
+      "LotCode": "EA3966"
+    },
+    {
+      "ItemID": "Tavanic Infusion",
+      "Description": "Tavanic Infusion",
+      "ExpiryDate": "2027-04-01",
+      "LotCode": "4F033A"
+    },
+    {
+      "ItemID": "Avaxim inj. Ped",
+      "Description": "Avaxim inj. Ped",
+      "ExpiryDate": "2026-03-01",
+      "LotCode": "X3C763V"
+    },
+    {
+      "ItemID": "Vaxigrip Tetra",
+      "Description": "Vaxigrip Tetra",
+      "ExpiryDate": "2026-01-01",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "VICTOZA",
+      "Description": "VICTOZA",
+      "ExpiryDate": "2021-09-01",
+      "LotCode": "JS69H45"
+    },
+    {
+      "ItemID": "KEPPRA 500MG",
+      "Description": "KEPPRA 500MG",
+      "ExpiryDate": "",
+      "LotCode": ""
+    }
+  ]
+}

@@ -411,3 +411,126 @@ For Synbot (ERP/CRM hybrid + AI agents), the most critical upgrade from the vide
 → Replace Watchtower with CI/CD
 With that, you’re operating at serious SaaS-grade deployment standards — not just VPS hobby level.
 -----
+## Sage Data Dump — Re-upload to the Client's ACE Instance
+
+Purpose: load the fully processed Sage 50 dataset (1.11M rows across 18 tables,
+as of 2026-07-07) into the client's server instance so their ACE runs on the
+same cleaned data as the local build — including the PO/AP de-duplication
+merge, real AR due dates, customer attribution repair, credit limits, item
+costs/expiry dates, customer profitability, and the enriched CRM customer
+master.
+
+### What the dump contains
+
+- File: `data-assimilation/dumps/ace_sage_data_dump_2026-07-07.sql.gz` (~15 MB)
+- Prep script: `data-assimilation/dumps/ace_sage_data_restore_prep.sql`
+- Tables (data-only, plain SQL COPY): all 15 `sage_*_snapshot` tables,
+  `customers` (enriched CRM master), `reconciliation_tracking`,
+  `placeware_inventory_events`.
+- The dump does NOT contain schema. Tables, columns, and views come from the
+  code migrations — which is why step 1 below matters.
+
+### Step 1 — Deploy the latest code first (required)
+
+The dump depends on schema created by migrations up to 096:
+
+- 093 `v_pl_monthly` view (monthly P&L)
+- 094 `v_budget_actuals_monthly` view (budget actuals)
+- 095 `sage_customers_snapshot` enrichment columns (address/city/terms/…)
+- 096 `sage_customer_sales_snapshot` table
+
+On the client host, pull the latest repo and redeploy so migrations run:
+
+```bash
+git pull
+sudo bash deploy/start-stack.sh --redeploy      # Swarm model
+# or for the compose model:
+docker compose -f backend/docker-compose.yml up -d --build
+```
+
+Confirm the backend is healthy before continuing:
+
+```bash
+docker ps --format '{{.Names}}: {{.Status}}'    # backend + db must be healthy
+```
+
+### Step 2 — Copy the dump files to the client host
+
+```bash
+scp data-assimilation/dumps/ace_sage_data_dump_2026-07-07.sql.gz \
+    data-assimilation/dumps/ace_sage_data_restore_prep.sql \
+    user@CLIENT_HOST:/tmp/
+```
+
+### Step 3 — Load the data
+
+Identify the postgres container name on the client host (examples below use
+`backend-db-1`; under Swarm it may be `placeware_db.1.<id>` — find it with
+`docker ps`). The database name is `synbot_demo` unless the client `.env`
+overrides `DATABASE_URL`.
+
+```bash
+# 3a. Clear the target tables (idempotent — safe to re-run)
+docker exec -i backend-db-1 psql -U postgres -d synbot_demo \
+    < /tmp/ace_sage_data_restore_prep.sql
+
+# 3b. Load the dump (takes ~1-3 minutes for the 915K GL rows)
+gunzip -c /tmp/ace_sage_data_dump_2026-07-07.sql.gz | \
+    docker exec -i backend-db-1 psql -U postgres -d synbot_demo
+```
+
+Notes:
+- The prep script truncates `customers` with CASCADE (it is referenced by
+  `crm_activities` / `customer_360`). On a fresh instance those are empty; on
+  a re-run any CRM activity rows tied to old customer ids are also cleared.
+- Both steps are transactional per statement; if 3b fails midway, simply
+  re-run 3a then 3b.
+
+### Step 4 — Restart the backend to clear caches
+
+KPI and dashboard endpoints cache for up to 10 minutes; restart to serve the
+new data immediately:
+
+```bash
+docker restart chat-backend.v1        # compose model
+# or: docker service update --force placeware_backend   # Swarm model
+```
+
+### Step 5 — Verify
+
+DB-level spot checks:
+
+```bash
+docker exec backend-db-1 psql -U postgres -d synbot_demo -c "
+SELECT
+ (SELECT COUNT(*) FROM sage_gl_detail_snapshot)                          AS gl_detail,   -- 914,992
+ (SELECT COUNT(*) FROM sage_ar_snapshot)                                 AS ar_rows,     -- 101,086
+ (SELECT COUNT(*) FROM sage_ar_snapshot WHERE due_date IS NOT NULL)      AS ar_with_due, -- 33,725
+ (SELECT COUNT(*) FROM sage_purchase_orders_snapshot)                    AS pos,         -- 1,180
+ (SELECT COUNT(*) FROM customers)                                        AS customers,   -- 1,538
+ (SELECT COUNT(*) FROM customers WHERE credit_limit > 0)                 AS w_credit,    -- 1,093
+ (SELECT COUNT(*) FROM sage_customer_sales_snapshot)                     AS cust_sales;  -- 1,093
+"
+```
+
+API-level checks (get a token via POST /token with the admin credentials from
+the client `.env`, then):
+
+- `GET /analytics/kpis` — cash ≈ ₦336.6M, AR ≈ ₦18.06B, AP ≈ ₦6.95B
+- `GET /finance/ar/aging` — four non-zero buckets, ~1,600 customer rows
+- `GET /finance/credit/risk` — ~1,008 customers scored
+- `GET /procurement/purchase-orders/summary` — 1,180 total / 1,175 overdue
+- `GET /dashboard/inventory` — 791 SKUs, ~146 active out-of-stock
+- CRM → Customer Accounts — 1,538 customers with city/terms/credit limit;
+  the 360 view (eye icon) shows receivables, profitability, and top items.
+
+### Regenerating the dump after new local changes
+
+From the local dev machine:
+
+```powershell
+docker exec backend-db-1 sh -c "pg_dump -U postgres -d synbot_demo --data-only --no-owner --no-privileges -t sage_coa_snapshot -t sage_vendors_snapshot -t sage_customers_snapshot -t sage_items_snapshot -t sage_inventory_snapshot -t sage_purchase_orders_snapshot -t sage_ar_snapshot -t sage_ap_snapshot -t sage_invoice_lines_snapshot -t sage_inv_transactions_snapshot -t sage_gl_snapshot -t sage_gl_detail_snapshot -t sage_cash_register_snapshot -t sage_gl_account_summary_snapshot -t sage_customer_sales_snapshot -t customers -t reconciliation_tracking -t placeware_inventory_events | gzip > /tmp/ace_sage_data_dump.sql.gz"
+docker cp backend-db-1:/tmp/ace_sage_data_dump.sql.gz "data-assimilation\dumps\ace_sage_data_dump_$(Get-Date -Format yyyy-MM-dd).sql.gz"
+```
+
+Update the filename in steps 2-3 accordingly.

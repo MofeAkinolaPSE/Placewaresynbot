@@ -3,7 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinancialDashboard } from "@/components/dashboards/FinancialDashboard";
 import { GeneralLedgerTable } from "@/components/dashboards/GeneralLedgerTable";
+import { GlTransactionsTable } from "@/components/dashboards/GlTransactionsTable";
+import { GlAccountSummary } from "@/components/dashboards/GlAccountSummary";
 import { ProfitabilityDashboard } from "@/components/dashboards/ProfitabilityDashboard";
+import { ReconciliationStatus } from "@/components/dashboards/ReconciliationStatus";
 import { Button } from "@/components/ui/button";
 import { FileDown, PieChart, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
@@ -106,6 +109,7 @@ const FinanceAnalytics = () => {
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="profitability">Profitability</TabsTrigger>
           <TabsTrigger value="ledgers">Ledgers</TabsTrigger>
+          <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard">
           <FinancialDashboard />
@@ -114,7 +118,25 @@ const FinanceAnalytics = () => {
           <ProfitabilityDashboard />
         </TabsContent>
         <TabsContent value="ledgers">
-          <GeneralLedgerTable />
+          <Tabs defaultValue="trial-balance" className="mt-0">
+            <TabsList className="mb-3">
+              <TabsTrigger value="trial-balance">Trial Balance</TabsTrigger>
+              <TabsTrigger value="transactions">Transactions</TabsTrigger>
+              <TabsTrigger value="account-summary">Account Summary</TabsTrigger>
+            </TabsList>
+            <TabsContent value="trial-balance">
+              <GeneralLedgerTable />
+            </TabsContent>
+            <TabsContent value="transactions">
+              <GlTransactionsTable />
+            </TabsContent>
+            <TabsContent value="account-summary">
+              <GlAccountSummary />
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+        <TabsContent value="reconciliation">
+          <ReconciliationStatus />
         </TabsContent>
       </Tabs>
     </div>

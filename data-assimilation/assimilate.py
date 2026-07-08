@@ -14,6 +14,16 @@ Usage
 
 To add a new company or change any setting, edit the CONFIG block below
 and re-run.  The script is idempotent — safe to run multiple times.
+
+Pipeline Stages (ACE Data Engineering Pipeline)
+-------------------------------------------------
+  Stage 1 — Bronze     : raw extract saved immutably (bronze_layer.py)
+  Stage 2 — Quality    : validation + quarantine (quality_engine.py)
+  Stage 3 — Canonical  : field mapping + metadata injection (canonical_mapper.py)
+  Stage 4 — Master     : master data resolution + reference validation (master_resolver.py)
+  Stage 5 — Silver     : POST to backend operational DB
+  Exceptions logged to exceptions.jsonl (exception_manager.py)
+  Batch health report  : python batch_reporter.py
 """
 from __future__ import annotations
 
@@ -21,6 +31,7 @@ import argparse
 import os
 import sys
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 # ── Ensure stdout handles Unicode on Windows (CP1252 console) ────────────────
@@ -90,10 +101,24 @@ def _extract_datasets(
     company: str,
     sage_root: str,
     dry_run: bool,
+    batch_id: str = "",
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Read all available entities for one company. Returns {entity: [mapped_rows]}."""
-    from sage50.hard_reader import read_entity, field_names, available_entities
-    import field_maps
+    """Run the full ACE pipeline for one company.
+
+    Stages:
+      1. Bronze    — preserve raw extract immutably
+      2. Quality   — validate and quarantine failures
+      3. Canonical — map fields + inject source metadata
+      4. Master    — master data resolution + reference validation
+
+    Returns {entity: [resolved_canonical_rows]} ready for Silver-layer upload.
+    """
+    from sage50.hard_reader import read_entity, available_entities
+    import bronze_layer
+    import quality_engine
+    import canonical_mapper
+    import exception_manager
+    import master_resolver
 
     datasets: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -105,15 +130,71 @@ def _extract_datasets(
         if not raw_rows:
             continue
 
-        avail = field_names(entity)
-        mapped: List[Dict[str, Any]] = []
-        for raw in raw_rows:
-            row = field_maps.map_row(raw, entity, avail)
-            if row:
-                mapped.append(row)
+        # Stage 1 — Bronze: save raw extract immutably
+        if batch_id:
+            try:
+                bronze_layer.save(batch_id, company, entity, raw_rows)
+            except Exception:
+                pass  # Bronze failure is non-fatal; pipeline continues
 
-        if mapped:
-            datasets[entity] = mapped
+        # Stage 2 — Quality: validate + quarantine
+        valid_rows, rejected = quality_engine.validate(entity, raw_rows)
+        if rejected and batch_id:
+            exception_manager.log_many(batch_id, company, entity, rejected)
+
+        if not valid_rows:
+            continue
+
+        # Stage 3 — Canonical: map fields + inject source metadata
+        mapped = canonical_mapper.transform(entity, valid_rows, company, batch_id)
+        if not mapped:
+            continue
+
+        # Stage 4 — Master Resolution: validate cross-entity references
+        resolved, unresolved = master_resolver.resolve(entity, mapped, datasets)
+        if unresolved and batch_id:
+            qr_list = [
+                quality_engine.QualityResult(
+                    r.row,
+                    "UNRESOLVED_REFERENCE",
+                    r.ref_field,
+                    r.severity,
+                )
+                for r in unresolved
+            ]
+            exception_manager.log_many(batch_id, company, entity, qr_list)
+
+        if resolved:
+            datasets[entity] = resolved
+
+    # Synthesise stock_on_hand from items catalogue if not already extracted.
+    # Done here (inside the pipeline) so synthetic records receive all pipeline stages.
+    if "items" in datasets and "stock_on_hand" not in datasets:
+        raw_soh = _synthesize_stock_on_hand_raw(datasets["items"])
+        if raw_soh:
+            if batch_id:
+                try:
+                    bronze_layer.save(batch_id, company, "stock_on_hand", raw_soh)
+                except Exception:
+                    pass
+            valid_soh, rejected_soh = quality_engine.validate("stock_on_hand", raw_soh)
+            if rejected_soh and batch_id:
+                exception_manager.log_many(batch_id, company, "stock_on_hand", rejected_soh)
+            mapped_soh = canonical_mapper.transform("stock_on_hand", valid_soh, company, batch_id)
+            if mapped_soh:
+                resolved_soh, unresolved_soh = master_resolver.resolve(
+                    "stock_on_hand", mapped_soh, datasets
+                )
+                if unresolved_soh and batch_id:
+                    qr_soh = [
+                        quality_engine.QualityResult(
+                            r.row, "UNRESOLVED_REFERENCE", r.ref_field, r.severity,
+                        )
+                        for r in unresolved_soh
+                    ]
+                    exception_manager.log_many(batch_id, company, "stock_on_hand", qr_soh)
+                if resolved_soh:
+                    datasets["stock_on_hand"] = resolved_soh
 
     return datasets
 
@@ -350,7 +431,7 @@ def _push_customers_to_crm(
     return len(records)
 
 
-def _synthesize_stock_on_hand(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _synthesize_stock_on_hand_raw(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Derive sage_inventory_snapshot records from items catalogue.
 
     Sage binary extraction gives us item definitions (item_id, name, cost)
@@ -426,9 +507,11 @@ def main() -> None:
     args = parser.parse_args()
 
     t0 = time.time()
+    batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # ── Resolve paths ─────────────────────────────────────────────────────────
     sage_root = _resolve_sage_root()
+    print(f"\n[Batch: {batch_id}]")
     print(f"Sage root : {sage_root}")
     if not os.path.isdir(sage_root):
         sys.exit(
@@ -452,7 +535,7 @@ def main() -> None:
     grand_total = 0
 
     for company in COMPANIES:
-        datasets = _extract_datasets(company, sage_root, args.dry_run)
+        datasets = _extract_datasets(company, sage_root, args.dry_run, batch_id=batch_id)
         if not datasets:
             print(f"\n=== {company} ===")
             print("  (no data extracted — check company folder name)")
@@ -462,12 +545,6 @@ def main() -> None:
             rows = _print_company_result(company, datasets, api_result=None)
             grand_total += rows
         else:
-            # Synthesise stock_on_hand from items so sage_inventory_snapshot is populated
-            if "items" in datasets and "stock_on_hand" not in datasets:
-                soh = _synthesize_stock_on_hand(datasets["items"])
-                if soh:
-                    datasets["stock_on_hand"] = soh
-
             api_result = _upload(company, datasets, token)
             rows = _print_company_result(company, datasets, api_result)
             grand_total += rows
@@ -503,10 +580,41 @@ def main() -> None:
     # ── Summary ───────────────────────────────────────────────────────────────
     elapsed = round(time.time() - t0, 1)
     mode = "[DRY RUN — nothing written]" if args.dry_run else "[LIVE — data written to Synbot]"
+
+    # Count exceptions logged for this batch
+    exception_count = 0
+    try:
+        import exception_manager as _em
+        exception_count = len(_em.read_exceptions(batch_id=batch_id))
+    except Exception:
+        pass
+
+    # Data Confidence Score
+    dcs_str = ""
+    try:
+        import batch_reporter as _br
+        dcs_info = _br.confidence_score(batch_id)
+        dcs_pct  = dcs_info["dcs"] * 100
+        dcs_status = dcs_info["status"]
+        dcs_str = f"  DCS     {dcs_pct:.1f}%  [{dcs_status}]"
+        if dcs_status == "REVIEW_REQUIRED":
+            dcs_str += "  ← run: python batch_reporter.py"
+    except Exception:
+        pass
+
+    # Bronze archive path
+    bronze_path = os.path.join(_HERE, "sage50", "extracted", "bronze")
+
     print(f"\n{'─'*50}")
+    print(f"  Batch   {batch_id}")
     print(f"  TOTAL   {grand_total:>6} rows across {len(COMPANIES)} companies")
     print(f"  Time    {elapsed}s")
     print(f"  Mode    {mode}")
+    if not args.dry_run:
+        print(f"  Bronze  {bronze_path}")
+        print(f"  Exceptions: {exception_count} logged → exceptions.jsonl")
+    if dcs_str:
+        print(dcs_str)
     print(f"{'─'*50}\n")
 
 

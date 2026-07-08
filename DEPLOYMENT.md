@@ -541,6 +541,97 @@ You only do this once per browser. After that it remembers.
 
 ---
 
+### Step 10b — Load the Processed Sage Data (One-Time Import)
+
+> **What this is:** The full Sage 50 dataset — 1.11M rows across 18 tables — already cleaned and
+> processed on the dev machine: de-duplicated PO/AP invoices, real AR due dates, customer
+> attribution repair, credit limits, item costs + expiry dates, customer profitability, and the
+> enriched CRM customer master. Loading this dump means the client's ACE starts with the exact
+> same data as the verified dev build — no need to re-run the XLSX ingestion pipeline on the server.
+
+**The two files you need** (both live in the repo under `data-assimilation/dumps/`):
+
+| File | Purpose |
+|---|---|
+| `ace_sage_data_dump_2026-07-07.sql.gz` (~15 MB) | The data itself (plain SQL, gzipped) |
+| `ace_sage_data_restore_prep.sql` | Clears the target tables first — makes the load safe to re-run |
+
+**Prerequisite — the app must be on the latest code (Step 9 already did this).** The dump is
+data-only; the tables and views it fills are created by migrations `093`–`096`, which run
+automatically when the backend container starts. If the code on the server is older than
+2026-07-07, `git pull` and redeploy first, or the load will fail with "table does not exist."
+
+**1. Get the dump onto the server.** If the `data-assimilation/dumps/` folder is committed to the
+repo, it is already there from Step 7 — skip ahead. Otherwise copy it from your dev laptop via the
+RDP session (copy the two files → paste into a folder inside the RDP window, e.g. `C:\temp\`).
+Files on `C:\temp` are visible in Ubuntu at `/mnt/c/temp/`.
+
+**2. Load the data.** In the **Ubuntu terminal** (adjust the path if you copied via `C:\temp`):
+
+```bash
+cd ~/placeware/data-assimilation/dumps    # or: cd /mnt/c/temp
+
+# 2a. Clear the target tables (idempotent — safe to re-run any time)
+docker exec -i backend-db-1 psql -U postgres -d synbot_demo < ace_sage_data_restore_prep.sql
+
+# 2b. Load the dump (~1–3 minutes for the 915K GL rows)
+gunzip -c ace_sage_data_dump_2026-07-07.sql.gz | docker exec -i backend-db-1 psql -U postgres -d synbot_demo
+```
+
+Expected: a stream of `TRUNCATE TABLE` / `SET` / `COPY` lines with **no `ERROR` lines**.
+If 2b fails midway (e.g. connection drop), just re-run 2a then 2b.
+
+> **Note:** the prep script truncates `customers` with CASCADE (it is referenced by
+> `crm_activities`). On a fresh server those tables are empty, so nothing of value is lost.
+
+**3. Restart the backend to clear its caches** (KPIs cache for up to 10 minutes):
+
+```bash
+cd ~/placeware/backend
+docker compose restart backend
+```
+
+**4. Verify the data landed.** Run the spot-check — the numbers should match exactly:
+
+```bash
+docker exec backend-db-1 psql -U postgres -d synbot_demo -c "
+SELECT
+ (SELECT COUNT(*) FROM sage_gl_detail_snapshot)                      AS gl_detail,
+ (SELECT COUNT(*) FROM sage_ar_snapshot)                             AS ar_rows,
+ (SELECT COUNT(*) FROM sage_ar_snapshot WHERE due_date IS NOT NULL)  AS ar_with_due,
+ (SELECT COUNT(*) FROM sage_purchase_orders_snapshot)                AS pos,
+ (SELECT COUNT(*) FROM customers)                                    AS customers,
+ (SELECT COUNT(*) FROM customers WHERE credit_limit > 0)             AS w_credit_limit;
+"
+```
+
+Expected:
+```
+ gl_detail | ar_rows | ar_with_due | pos  | customers | w_credit_limit
+-----------+---------+-------------+------+-----------+----------------
+    914992 |  101086 |       33725 | 1180 |      1538 |           1093
+```
+
+**5. Verify in the browser** — log into ACE and check:
+- [ ] Dashboard KPI cards non-zero (AR ≈ ₦18.06B, AP ≈ ₦6.95B, Cash ≈ ₦336.6M)
+- [ ] Executive Summary → AR Aging pie chart renders four buckets
+- [ ] Finance → AR & Alerts → Credit Risk tab shows ~1,008 scored customers
+- [ ] Operations → Purchase Orders → 1,180 total / ~1,175 overdue
+- [ ] Operations → Inventory → 791 SKUs, ~40 items with stock, expiry dates visible
+- [ ] CRM → Customer Accounts → 1,538 customers with city/terms/credit limits;
+      the 360 view (eye icon) shows receivables, profitability, and top items
+
+**All checked = the client instance now runs on the full processed dataset.**
+
+> **Regenerating the dump later** (after new data work on the dev machine) — run on the dev laptop:
+> ```powershell
+> docker exec backend-db-1 sh -c "pg_dump -U postgres -d synbot_demo --data-only --no-owner --no-privileges -t sage_coa_snapshot -t sage_vendors_snapshot -t sage_customers_snapshot -t sage_items_snapshot -t sage_inventory_snapshot -t sage_purchase_orders_snapshot -t sage_ar_snapshot -t sage_ap_snapshot -t sage_invoice_lines_snapshot -t sage_inv_transactions_snapshot -t sage_gl_snapshot -t sage_gl_detail_snapshot -t sage_cash_register_snapshot -t sage_gl_account_summary_snapshot -t sage_customer_sales_snapshot -t customers -t reconciliation_tracking -t placeware_inventory_events | gzip > /tmp/ace_sage_data_dump.sql.gz"
+> docker cp backend-db-1:/tmp/ace_sage_data_dump.sql.gz "data-assimilation\dumps\ace_sage_data_dump_NEW-DATE.sql.gz"
+> ```
+> Then repeat this step on the server with the new filename.
+
+---
+
 ### Step 11 — Install the Watchdog (Auto-Recovery Service)
 
 The watchdog checks the app containers every 60 seconds and restarts anything that goes unhealthy.
@@ -645,6 +736,8 @@ Steps for Part 2 are tracked separately. In summary:
 | `docker ps` gives permission denied | `sudo usermod -aG docker $USER` → close and reopen Ubuntu terminal |
 | Pipeline fails at "local registry" | `docker run -d -p 5000:5000 --restart=always --name registry registry:2` |
 | Login fails after deploy | `docker exec $(docker ps -qf name=backend) python seed_admin.py` |
+| Data load fails: "table does not exist" | Backend code is older than the dump — `git pull` + redeploy (migrations 093–096 must run), then retry Step 10b |
+| Dashboards still zero after data load | Caches — `docker compose restart backend`, then hard-refresh the browser (Ctrl+Shift+R) |
 | App unreachable from other machines | Rerun the `netsh` firewall commands from Step 5 |
 | Containers keep restarting | `docker service logs placeware_backend --tail 50` — read the error |
 

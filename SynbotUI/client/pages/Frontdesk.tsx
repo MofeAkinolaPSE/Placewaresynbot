@@ -1211,8 +1211,10 @@ function InvoicesTab() {
     }
   }
 
+  // Radix Select throws on <SelectItem value="">, so "all" is the sentinel
+  // for the unfiltered state and mapped back to "" in state.
   const STATUS_FILTERS = [
-    { value: "",                label: "All Statuses"      },
+    { value: "all",             label: "All Statuses"      },
     { value: "qc_pending",      label: "Pending QC"        },
     { value: "finance_pending", label: "Pending Finance"   },
     { value: "finance_approved",label: "Approved"          },
@@ -1228,7 +1230,7 @@ function InvoicesTab() {
           <Input className="pl-9" placeholder="Search client name…" value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)} />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Statuses" /></SelectTrigger>
           <SelectContent>
             {STATUS_FILTERS.map((f) => (

@@ -13,18 +13,28 @@ def auth_stub():
 
 @router.get('/metrics/summary')
 def metrics_summary(_=Depends(auth_stub)) -> Any:
-    """Return a small set of metrics for UI cards."""
+    """Return a small set of metrics for UI cards, aggregated live from Sage snapshot tables."""
     try:
-        res = db.db.table('placeware_kpis').select('*').execute()
-        kpis = res.data or []
+        ar_res = db.db.table("sage_ar_snapshot").select("amount, balance").execute()
+        ar_rows = ar_res.data or []
     except Exception:
-        kpis = []
+        ar_rows = []
 
-    # Build a dictionary of common cards
-    out = {
-        'total_leads': next((int(x['value']) for x in kpis if x.get('metric') == 'leads.total'), 0),
-        'pipeline_value': next((float(x['value']) for x in kpis if x.get('metric') == 'pipeline.value'), 0.0),
-        'forecast': next((float(x['value']) for x in kpis if x.get('metric') == 'financial.forecast'), 0.0),
-        'pending_routes': next((int(x['value']) for x in kpis if x.get('metric') == 'logistics.pending_routes'), 0),
+    try:
+        cust_res = db.db.table("sage_customers_snapshot").select("customer_id").execute()
+        total_leads = len(set(
+            r["customer_id"] for r in (cust_res.data or []) if r.get("customer_id")
+        ))
+    except Exception:
+        total_leads = 0
+
+    pipeline_value = sum(float(r.get("amount") or 0) for r in ar_rows if float(r.get("balance") or 0) > 0)
+    forecast       = sum(float(r.get("amount") or 0) for r in ar_rows)
+    pending_routes = sum(1 for r in ar_rows if float(r.get("balance") or 0) > 0)
+
+    return {
+        "total_leads":    total_leads,
+        "pipeline_value": round(pipeline_value, 2),
+        "forecast":       round(forecast, 2),
+        "pending_routes": pending_routes,
     }
-    return out

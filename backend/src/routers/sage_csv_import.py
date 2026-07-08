@@ -182,6 +182,25 @@ def _map_customers(row: Dict[str, str]) -> Dict[str, Any]:
         "email": row.get("email", "").strip() or None,
         "phone": row.get("phone", "").strip() or None,
         "status": row.get("status", "active").strip() or "active",
+        "address": (row.get("address") or "").strip() or None,
+        "city": (row.get("city") or "").strip() or None,
+        "contact_person": (row.get("contact_person") or "").strip() or None,
+        "terms": (row.get("terms") or "").strip() or None,
+        "customer_since": _safe_date(row.get("customer_since")) or None,
+    }
+
+
+def _map_customer_sales(row: Dict[str, str]) -> Dict[str, Any]:
+    customer_id = (row.get("customer_id") or "").strip()
+    if not customer_id:
+        raise ValueError("customer_id is required")
+    return {
+        "customer_id": customer_id,
+        "name": (row.get("name") or "").strip() or None,
+        "amount": _safe_float(row.get("amount")),
+        "cost_of_sales": _safe_float(row.get("cost_of_sales")),
+        "gross_profit": _safe_float(row.get("gross_profit")),
+        "gross_margin": _safe_float(row.get("gross_margin")),
     }
 
 
@@ -373,6 +392,56 @@ def _map_staff(row: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _map_gl_detail(row: Dict[str, str]) -> Dict[str, Any]:
+    """Maps gl_detail.csv → sage_gl_detail_snapshot columns."""
+    account_code = (row.get("account_code") or row.get("account_id") or "").strip()
+    if not account_code:
+        raise ValueError("account_code / account_id is required")
+    return {
+        "account_code":    account_code,
+        "account_name":    row.get("account_name", "").strip() or None,
+        "txn_date":        _safe_date(row.get("txn_date") or row.get("date")),
+        "reference":       row.get("reference", "").strip() or None,
+        "journal_type":    row.get("journal_type", "").strip() or None,
+        "description":     row.get("description", "").strip() or None,
+        "debit":           _safe_float(row.get("debit")),
+        "credit":          _safe_float(row.get("credit")),
+        "running_balance": _safe_float(row.get("running_balance")) if row.get("running_balance", "").strip() else None,
+        "source_file":     row.get("source_file", "").strip() or None,
+    }
+
+
+def _map_cash_register(row: Dict[str, str]) -> Dict[str, Any]:
+    """Maps cash_register.csv → sage_cash_register_snapshot columns."""
+    return {
+        "txn_date":        _safe_date(row.get("txn_date") or row.get("date")),
+        "trans_no":        row.get("trans_no", "").strip() or None,
+        "txn_type":        row.get("txn_type", "").strip() or None,
+        "description":     row.get("description", "").strip() or None,
+        "reference":       row.get("reference", "").strip() or None,
+        "payment_amount":  _safe_float(row.get("payment_amount")),
+        "receipt_amount":  _safe_float(row.get("receipt_amount")),
+        "running_balance": _safe_float(row.get("running_balance")) if row.get("running_balance", "").strip() else None,
+        "source_file":     row.get("source_file", "").strip() or None,
+    }
+
+
+def _map_gl_account_summary(row: Dict[str, str]) -> Dict[str, Any]:
+    """Maps gl_account_summary.csv → sage_gl_account_summary_snapshot columns."""
+    account_code = (row.get("account_code") or row.get("account_number") or "").strip()
+    if not account_code:
+        raise ValueError("account_code / account_number is required")
+    return {
+        "account_code":      account_code,
+        "account_name":      row.get("account_name", "").strip() or None,
+        "beginning_balance": _safe_float(row.get("beginning_balance")) if row.get("beginning_balance", "").strip() else None,
+        "debit_change":      _safe_float(row.get("debit_change")) if row.get("debit_change", "").strip() else None,
+        "credit_change":     _safe_float(row.get("credit_change")) if row.get("credit_change", "").strip() else None,
+        "net_change":        _safe_float(row.get("net_change")) if row.get("net_change", "").strip() else None,
+        "ending_balance":    _safe_float(row.get("ending_balance")) if row.get("ending_balance", "").strip() else None,
+    }
+
+
 def _map_hr_payroll(row: Dict[str, str]) -> Dict[str, Any]:
     """Maps HR payroll CSV → sage_payroll_snapshot columns.
 
@@ -430,6 +499,7 @@ _REGISTRY: Dict[str, Tuple[str, Callable[[Dict[str, str]], Dict[str, Any]]]] = {
     "chart_of_accounts": ("sage_coa_snapshot", _map_chart_of_accounts),
     "vendors": ("sage_vendors_snapshot", _map_vendors),
     "customers": ("sage_customers_snapshot", _map_customers),
+    "customer_sales": ("sage_customer_sales_snapshot", _map_customer_sales),
     "items": ("sage_items_snapshot", _map_items),
     "stock_on_hand": ("sage_inventory_snapshot", _map_stock_on_hand),
     "purchase_orders": ("sage_purchase_orders_snapshot", _map_purchase_orders),
@@ -439,6 +509,9 @@ _REGISTRY: Dict[str, Tuple[str, Callable[[Dict[str, str]], Dict[str, Any]]]] = {
     "gl_journal_entries": ("sage_gl_snapshot", _map_gl_journal_entries),
     "staff": ("sage_staff_snapshot", _map_staff),
     "hr_payroll": ("sage_payroll_snapshot", _map_hr_payroll),
+    "gl_detail": ("sage_gl_detail_snapshot", _map_gl_detail),
+    "cash_register": ("sage_cash_register_snapshot", _map_cash_register),
+    "gl_account_summary": ("sage_gl_account_summary_snapshot", _map_gl_account_summary),
 }
 
 # Human-friendly metadata for UI listing
@@ -527,6 +600,27 @@ SUPPORTED_TYPES: List[Dict[str, Any]] = [
         "target_table": "sage_payroll_snapshot",
         "required_columns": ["employee_id"],
     },
+    {
+        "file_type": "gl_detail",
+        "label": "GL Transactions (Detail)",
+        "description": "Transaction-level General Ledger: GL, General Journal, Sales Journal, Cash Receipts, COGS. Required: account_code.",
+        "target_table": "sage_gl_detail_snapshot",
+        "required_columns": ["account_code"],
+    },
+    {
+        "file_type": "cash_register",
+        "label": "Cash Account Register",
+        "description": "Cash account transaction register with running balance.",
+        "target_table": "sage_cash_register_snapshot",
+        "required_columns": ["txn_date"],
+    },
+    {
+        "file_type": "gl_account_summary",
+        "label": "GL Account Summary",
+        "description": "Per-account beginning and ending balances (Financial Statements export). Required: account_code.",
+        "target_table": "sage_gl_account_summary_snapshot",
+        "required_columns": ["account_code"],
+    },
 ]
 
 # Cache-tag groups to bust after successful imports
@@ -543,12 +637,63 @@ _CACHE_TAGS: Dict[str, List[str]] = {
     "gl_journal_entries": ["finance", "finance_kpis", "finance_trend", "executive", "executive_summary"],
     "staff": ["staff", "executive_summary"],
     "hr_payroll": ["finance", "payroll", "executive_summary"],
+    "gl_detail": ["finance", "finance_gl_detail"],
+    "cash_register": ["finance", "finance_kpis"],
+    "gl_account_summary": ["finance", "finance_kpis", "executive_summary"],
 }
 
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+_SAGE_SNAPSHOT_TABLES = [
+    "sage_gl_snapshot", "sage_gl_transactions", "sage_coa_snapshot",
+    "sage_customers_snapshot", "sage_vendors_snapshot", "sage_items_snapshot",
+    "sage_inventory_snapshot", "sage_ar_snapshot", "sage_ap_snapshot",
+    "sage_inv_transactions_snapshot", "sage_invoice_lines_snapshot",
+    "sage_purchase_orders_snapshot", "sage_payroll_snapshot", "sage_staff_snapshot",
+    "sage_gl_detail_snapshot", "sage_cash_register_snapshot", "sage_gl_account_summary_snapshot",
+]
+
+
+@router.post("/truncate")
+async def truncate_sage_snapshots(request: Request):
+    """Truncate all sage_*_snapshot tables to prepare for a fresh import.
+
+    WARNING: This deletes all imported Sage data from the snapshot tables.
+    Application tables (customers, suppliers, opportunities, customer_360,
+    reconciliation_tracking) are NOT touched.
+
+    Roles: admin only.
+    """
+    user = _require_import_role(request)
+    roles = set(user.get("roles") or [])
+    if "admin" not in roles:
+        raise HTTPException(status_code=403, detail="Admin role required for truncate")
+
+    from src.db import get_psycopg_dsn
+    try:
+        import psycopg2
+    except ImportError:
+        raise HTTPException(status_code=500, detail="psycopg2 not installed in backend")
+
+    table_list = ", ".join(f'public."{t}"' for t in _SAGE_SNAPSHOT_TABLES)
+    sql = f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE;"
+
+    try:
+        conn = psycopg2.connect(get_psycopg_dsn())
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        conn.close()
+    except Exception as exc:
+        logger.error(f"truncate_sage_snapshots failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Truncate failed: {exc}")
+
+    logger.info(f"truncate_sage_snapshots: cleared {len(_SAGE_SNAPSHOT_TABLES)} tables by {user.get('sub','?')}")
+    return {"status": "ok", "tables_truncated": _SAGE_SNAPSHOT_TABLES}
+
 
 @router.get("/supported")
 async def list_supported_types():
@@ -880,6 +1025,10 @@ _FILENAME_ALIASES: Dict[str, str] = {
     "employee": "staff",
     "employees": "staff",
     "payroll": "hr_payroll",
+    "gl_detail": "gl_detail",
+    "cash_register": "cash_register",
+    "gl_account_summary": "gl_account_summary",
+    "customer_sales": "customer_sales",
 }
 
 

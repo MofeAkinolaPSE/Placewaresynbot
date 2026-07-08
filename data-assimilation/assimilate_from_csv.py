@@ -29,6 +29,7 @@ import csv
 import os
 import sys
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -374,9 +375,23 @@ def _map_csv_to_entity(
 def _build_datasets(
     csv_dir: str,
     dry_run: bool,
+    batch_id: str = "",
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Read all CSVs, run mappers, merge same-entity datasets."""
+    """Read all CSVs, run mappers, merge same-entity datasets.
+
+    Stage 1 (Bronze): raw CSV rows are archived before any transformation.
+    Mapper failures are written to exceptions.jsonl via exception_manager.
+    """
     import glob as _glob
+
+    # Pipeline support — import lazily so script still works without them
+    try:
+        import bronze_layer as _bronze
+        import exception_manager as _exc_mgr
+        import quality_engine as _qe
+        _pipeline_available = True
+    except ImportError:
+        _pipeline_available = False
 
     csv_files = sorted(_glob.glob(os.path.join(csv_dir, "*.csv")))
     if not csv_files:
@@ -394,6 +409,13 @@ def _build_datasets(
             print(f"  {stem}.csv: empty — skipped")
             continue
 
+        # Stage 1 — Bronze: archive raw rows before any transformation
+        if batch_id and _pipeline_available and not dry_run:
+            try:
+                _bronze.save(batch_id, "csv_import", stem, raw_rows)
+            except Exception:
+                pass
+
         # Dry-run: limit to 5 rows per file
         if dry_run:
             raw_rows = raw_rows[:5]
@@ -405,6 +427,17 @@ def _build_datasets(
 
         if not mapped:
             print(f"  {stem}.csv: 0 mappable rows")
+            # Log as exception so steward can investigate
+            if batch_id and _pipeline_available and not dry_run:
+                try:
+                    from quality_engine import QualityResult
+                    for r in raw_rows:
+                        _exc_mgr.log(
+                            batch_id, "csv_import", stem,
+                            QualityResult(r, "MAPPER_FAILED", "all_fields", "DATA_QUALITY"),
+                        )
+                except Exception:
+                    pass
             continue
 
         if entity not in datasets:
@@ -475,14 +508,16 @@ def main() -> None:
     args = parser.parse_args()
 
     t0 = time.time()
+    batch_id = f"batch_csv_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     csv_dir = os.path.normpath(args.csv_dir)
+    print(f"\n[Batch: {batch_id}]")
     print(f"CSV dir  : {csv_dir}")
     print(f"Backend  : {BACKEND_URL}")
     if args.dry_run:
         print("Mode     : DRY RUN (first 5 rows per CSV, no writes)")
     print()
 
-    datasets = _build_datasets(csv_dir, dry_run=args.dry_run)
+    datasets = _build_datasets(csv_dir, dry_run=args.dry_run, batch_id=batch_id)
 
     if not datasets:
         print("\nNo mappable data found. Check the CSV column headers above.")
@@ -533,10 +568,20 @@ def main() -> None:
 
     elapsed = round(time.time() - t0, 1)
     mode = "[LIVE — data written to Synbot]"
+
+    exception_count = 0
+    try:
+        import exception_manager as _em
+        exception_count = len(_em.read_exceptions(batch_id=batch_id))
+    except Exception:
+        pass
+
     print(f"\n{'─'*50}")
+    print(f"  Batch   {batch_id}")
     print(f"  TOTAL   {total_inserted:>6} rows inserted")
     print(f"  Time    {elapsed}s")
     print(f"  Mode    {mode}")
+    print(f"  Exceptions: {exception_count} logged → exceptions.jsonl")
     print(f"{'─'*50}\n")
 
 

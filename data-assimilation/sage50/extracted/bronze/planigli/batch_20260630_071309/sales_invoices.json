@@ -1,0 +1,80 @@
+{
+  "batch_id": "batch_20260630_071309",
+  "company": "planigli",
+  "entity": "sales_invoices",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:13:13.638752+00:00",
+  "row_count": 10,
+  "rows": [
+    {
+      "InvoiceNo": "WTH TAX",
+      "CustomerID": "Ogun State Hospital Mgt Board",
+      "InvoiceDate": "2019-10-30",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "TRANSFER",
+      "CustomerID": "Maritol Medical Centre",
+      "InvoiceDate": "2022-11-08",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37889",
+      "CustomerID": "Talent Specialist Hosp.",
+      "InvoiceDate": "2022-11-05",
+      "DueDate": "2022-10-06",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WTHTAX",
+      "CustomerID": "Ancillia Hospital",
+      "InvoiceDate": "2020-11-02",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WITH TAX",
+      "CustomerID": "Oak Hospital Ikorudu",
+      "InvoiceDate": "2019-11-04",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WTHATX",
+      "CustomerID": "Parkland Hospital",
+      "InvoiceDate": "2019-09-21",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "FIDELITY",
+      "CustomerID": "Oak Hospital Ikorudu",
+      "InvoiceDate": "2019-09-30",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WITHTAX",
+      "CustomerID": "Alpha Pharmacy",
+      "InvoiceDate": "2019-01-09",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "Closing Bal2018",
+      "CustomerID": "Parkland Hospital",
+      "InvoiceDate": "2018-12-31",
+      "DueDate": "2018-12-31",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WTHTAX\\",
+      "CustomerID": "Ancillia Hospital",
+      "InvoiceDate": "2021-07-30",
+      "DueDate": "",
+      "Amount": "0"
+    }
+  ]
+}

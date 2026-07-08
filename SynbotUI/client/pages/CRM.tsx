@@ -549,8 +549,9 @@ const CRM = () => {
                   <TableHead className="min-w-[100px]">Type</TableHead>
                   <TableHead className="min-w-[120px]">Phone</TableHead>
                   <TableHead className="min-w-[180px]">Email</TableHead>
-                  <TableHead className="min-w-[100px]">Segment</TableHead>
-                  <TableHead className="min-w-[100px]">Region</TableHead>
+                  <TableHead className="min-w-[100px]">City</TableHead>
+                  <TableHead className="min-w-[90px]">Terms</TableHead>
+                  <TableHead className="min-w-[110px] text-right">Credit Limit</TableHead>
                   <TableHead className="min-w-[80px] text-right">Risk</TableHead>
                   <TableHead className="min-w-[90px]">Actions</TableHead>
                 </TableRow>
@@ -558,7 +559,7 @@ const CRM = () => {
               <TableBody>
                 {customersList.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       {customersRaw === undefined ? "Loading..." : "No customers found"}
                     </TableCell>
                   </TableRow>
@@ -581,10 +582,13 @@ const CRM = () => {
                         {(c.contact_details as any)?.email || c.email || "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {(c.contact_details as any)?.segment || "—"}
+                        {(c.contact_details as any)?.city || (c.contact_details as any)?.region || "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {(c.contact_details as any)?.region || "—"}
+                        {(c.metadata as any)?.terms || (c.payment_terms_days != null ? `${c.payment_terms_days}d` : "—")}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {Number(c.credit_limit) > 0 ? `₦${Number(c.credit_limit).toLocaleString()}` : "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs">
                         {c.risk_score != null ? Number(c.risk_score).toFixed(0) : "—"}
@@ -672,30 +676,127 @@ const CRM = () => {
 
       {/* Customer 360 Modal */}
       <Dialog open={!!view360Customer} onOpenChange={(o) => { if (!o) setView360Customer(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Customer 360 — {view360Customer?.name}</DialogTitle>
           </DialogHeader>
           {loading360 ? (
             <p className="text-sm text-muted-foreground py-4">Loading…</p>
           ) : customer360Data ? (
-            <div className="grid grid-cols-2 gap-4 py-2">
-              {[
-                { label: "Total Purchases", value: customer360Data.total_purchases != null ? `₦${Number(customer360Data.total_purchases).toLocaleString()}` : "—" },
-                { label: "Lifetime Value", value: customer360Data.lifetime_value != null ? `₦${Number(customer360Data.lifetime_value).toLocaleString()}` : "—" },
-                { label: "Open Opportunities", value: customer360Data.open_opportunities ?? "—" },
-                { label: "Risk Score", value: customer360Data.risk_score != null ? Number(customer360Data.risk_score).toFixed(1) : "—" },
-                { label: "Credit Limit", value: view360Customer?.credit_limit ? `₦${Number(view360Customer.credit_limit).toLocaleString()}` : "—" },
-                { label: "Payment Terms", value: view360Customer?.payment_terms_days ? `${view360Customer.payment_terms_days} days` : "—" },
-                { label: "Facility Type", value: view360Customer?.facility_type || "—" },
-                { label: "Last Ordered", value: view360Customer?.last_ordered_at ? new Date(view360Customer.last_ordered_at).toLocaleDateString() : "—" },
-              ].map(({ label, value }) => (
-                <div key={label} className="rounded border p-3">
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="text-sm font-semibold mt-1">{value}</p>
+            (() => {
+              const prof360 = customer360Data.customer ?? {};
+              const recv = customer360Data.receivables ?? {};
+              const pnl = customer360Data.profitability;
+              const items: any[] = customer360Data.top_items ?? [];
+              const util = recv.credit_utilization_pct;
+              return (
+                <div className="space-y-4 py-1">
+                  {/* Profile */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Profile</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                      {[
+                        ["Contact", prof360.contact_person],
+                        ["Phone", prof360.phone],
+                        ["Address", prof360.address],
+                        ["City", prof360.city],
+                        ["Trade Terms", prof360.terms],
+                        ["Customer Since", prof360.customer_since ? new Date(prof360.customer_since).toLocaleDateString() : null],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="flex justify-between gap-3 border-b border-dashed pb-1">
+                          <span className="text-muted-foreground text-xs">{label}</span>
+                          <span className="text-right text-xs font-medium truncate" title={String(value ?? "")}>{value || "—"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Receivables */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Receivables</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: "Outstanding", value: `₦${Number(recv.outstanding ?? 0).toLocaleString()}`, alert: false },
+                        { label: "Open Invoices", value: recv.invoice_count ?? 0, alert: false },
+                        { label: "Overdue", value: `₦${Number(recv.overdue_amount ?? 0).toLocaleString()}`, alert: Number(recv.overdue_amount) > 0 },
+                        { label: "Credit Limit", value: prof360.credit_limit > 0 ? `₦${Number(prof360.credit_limit).toLocaleString()}` : "—", alert: false },
+                      ].map(({ label, value, alert }) => (
+                        <div key={label} className={`rounded border p-2.5 ${alert ? "border-destructive/40" : ""}`}>
+                          <p className="text-[11px] text-muted-foreground">{label}</p>
+                          <p className={`text-sm font-semibold mt-0.5 tabular-nums ${alert ? "text-destructive" : ""}`}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {util != null && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${util > 100 ? "bg-destructive" : util > 75 ? "bg-amber-400" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.min(util, 100)}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs tabular-nums ${util > 100 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                          {util}% of credit limit
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Profitability */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Lifetime Profitability (Sage)</p>
+                    {pnl ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                          { label: "Sales", value: `₦${Number(pnl.sales).toLocaleString()}` },
+                          { label: "Cost of Sales", value: `₦${Number(pnl.cost_of_sales).toLocaleString()}` },
+                          { label: "Gross Profit", value: `₦${Number(pnl.gross_profit).toLocaleString()}` },
+                          { label: "Margin", value: `${Number(pnl.gross_margin_pct).toFixed(1)}%` },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="rounded border p-2.5">
+                            <p className="text-[11px] text-muted-foreground">{label}</p>
+                            <p className="text-sm font-semibold mt-0.5 tabular-nums">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No sales history recorded for this customer.</p>
+                    )}
+                  </div>
+
+                  {/* Top purchased items */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Top Purchased Items</p>
+                    {items.length > 0 ? (
+                      <div className="rounded border overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/40">
+                            <tr>
+                              <th className="text-left p-2 font-medium text-muted-foreground">Item</th>
+                              <th className="text-right p-2 font-medium text-muted-foreground">Qty</th>
+                              <th className="text-right p-2 font-medium text-muted-foreground">Amount</th>
+                              <th className="text-right p-2 font-medium text-muted-foreground">Gross Profit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((it) => (
+                              <tr key={it.item_id} className="border-t">
+                                <td className="p-2">{it.item_id}</td>
+                                <td className="p-2 text-right tabular-nums">{Number(it.quantity).toLocaleString()}</td>
+                                <td className="p-2 text-right tabular-nums">₦{Number(it.amount).toLocaleString()}</td>
+                                <td className="p-2 text-right tabular-nums">₦{Number(it.gross_profit).toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No line-level purchase history for this customer.</p>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()
           ) : (
             <p className="text-sm text-muted-foreground py-4">No 360 data available for this customer yet.</p>
           )}

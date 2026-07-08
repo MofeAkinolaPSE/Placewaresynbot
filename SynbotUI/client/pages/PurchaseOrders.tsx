@@ -71,19 +71,21 @@ const PurchaseOrders = () => {
 
       {/* Summary KPIs */}
       {summary && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {[
             { label: "Total POs", value: summary.total_pos ?? "—" },
             { label: "Open POs", value: summary.open_pos ?? "—" },
+            { label: "Overdue POs", value: summary.overdue_pos ?? "—", alert: (summary.overdue_pos ?? 0) > 0 },
             { label: "Total Value", value: summary.total_value != null ? `₦${Number(summary.total_value).toLocaleString()}` : "—" },
             { label: "Open Value", value: summary.open_value != null ? `₦${Number(summary.open_value).toLocaleString()}` : "—" },
-          ].map(({ label, value }) => (
-            <Card key={label}>
+            { label: "Overdue Value", value: summary.overdue_value != null ? `₦${Number(summary.overdue_value).toLocaleString()}` : "—", alert: (summary.overdue_value ?? 0) > 0 },
+          ].map(({ label, value, alert }) => (
+            <Card key={label} className={alert ? "border-l-4 border-l-destructive" : ""}>
               <CardHeader className="pb-1 pt-4">
                 <CardDescription className="text-xs font-medium uppercase tracking-wide">{label}</CardDescription>
               </CardHeader>
               <CardContent className="pb-4">
-                <div className="text-2xl font-bold tabular-nums">{value}</div>
+                <div className={`text-2xl font-bold tabular-nums ${alert ? "text-destructive" : ""}`}>{value}</div>
               </CardContent>
             </Card>
           ))}
@@ -135,47 +137,54 @@ const PurchaseOrders = () => {
                   <TableHead className="min-w-[120px]">PO Number</TableHead>
                   <TableHead className="min-w-[180px]">Vendor</TableHead>
                   <TableHead className="min-w-[110px]">Order Date</TableHead>
-                  <TableHead className="min-w-[130px]">Expected Delivery</TableHead>
+                  <TableHead className="min-w-[130px]">Due / Expected</TableHead>
                   <TableHead className="min-w-[120px] text-right">Net Amount</TableHead>
                   <TableHead className="min-w-[100px]">Status</TableHead>
-                  <TableHead className="min-w-[120px]">Created By</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                       {orders.length === 0 ? "No purchase orders found. Import Sage data to populate." : "No orders match your filter."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((o, i) => (
+                  filtered.map((o, i) => {
+                    const dueRaw = o.expected_delivery_date;
+                    const isOverdue =
+                      o.status === "open" && dueRaw && new Date(dueRaw) < new Date();
+                    return (
                     <TableRow key={o.po_id ?? i}>
                       <TableCell className="font-mono text-xs">{o.po_number || "—"}</TableCell>
                       <TableCell className="text-sm">{o.vendor_name || o.vendor_id || "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {o.order_date ? new Date(o.order_date).toLocaleDateString() : "—"}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {o.expected_delivery_date ? new Date(o.expected_delivery_date).toLocaleDateString() : "—"}
+                      <TableCell className={`text-xs ${isOverdue ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                        {dueRaw ? new Date(dueRaw).toLocaleDateString() : "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {o.net_amount != null ? `₦${Number(o.net_amount).toLocaleString()}` : "—"}
                       </TableCell>
                       <TableCell>
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLOR[o.status] ?? "bg-muted text-muted-foreground"}`}>
-                          {o.status || "—"}
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          isOverdue
+                            ? "bg-destructive/15 text-destructive"
+                            : STATUS_COLOR[o.status] ?? "bg-muted text-muted-foreground"
+                        }`}>
+                          {isOverdue ? "overdue" : (o.status || "—")}
                         </span>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{o.created_by || "—"}</TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

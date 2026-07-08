@@ -398,3 +398,112 @@ async def run_scenarios(
     except Exception as exc:
         audit_logger.error(f"scenarios endpoint failed: {exc}")
         raise HTTPException(status_code=500, detail="Scenario engine failed")
+
+
+# ---------------------------------------------------------------------------
+# GL Detail (transaction-level)  GET /analytics/gl-detail
+# ---------------------------------------------------------------------------
+
+@router.get("/gl-detail")
+async def get_gl_detail(
+    request: Request,
+    limit: int = 500,
+    offset: int = 0,
+    account_code: str = None,
+    journal_type: str = None,
+    source_file: str = None,
+):
+    """Paginated transaction-level GL entries from sage_gl_detail_snapshot.
+
+    Roles: admin, finance, management, ops
+    """
+    require_analytics_access(request)
+    from src.db import db
+    try:
+        q = db.table("sage_gl_detail_snapshot").select(
+            "id, account_code, account_name, txn_date, reference, journal_type, "
+            "description, debit, credit, running_balance, source_file, imported_at"
+        )
+        if account_code:
+            q = q.eq("account_code", account_code)
+        if journal_type:
+            q = q.eq("journal_type", journal_type)
+        if source_file:
+            q = q.ilike("source_file", f"%{source_file}%")
+        resp = (
+            q.order("txn_date", desc=True)
+             .order("id", desc=True)
+             .range(offset, offset + limit - 1)
+             .execute()
+        )
+        rows = resp.data or []
+        return {"data": rows, "count": len(rows), "offset": offset, "limit": limit}
+    except Exception as exc:
+        audit_logger.error(f"gl-detail endpoint failed: {exc}")
+        raise HTTPException(status_code=500, detail="GL detail query failed")
+
+
+# ---------------------------------------------------------------------------
+# GL Account Summary  GET /analytics/gl-summary
+# ---------------------------------------------------------------------------
+
+@router.get("/gl-summary")
+async def get_gl_account_summary(request: Request):
+    """GL account beginning/ending balances from sage_gl_account_summary_snapshot.
+
+    Roles: admin, finance, management, ops
+    """
+    require_analytics_access(request)
+    from src.db import db
+    try:
+        resp = (
+            db.table("sage_gl_account_summary_snapshot")
+            .select(
+                "account_code, account_name, beginning_balance, debit_change, "
+                "credit_change, net_change, ending_balance, imported_at"
+            )
+            .order("account_code")
+            .limit(2000)
+            .execute()
+        )
+        rows = resp.data or []
+        total_ending = sum(float(r.get("ending_balance") or 0) for r in rows)
+        return {"data": rows, "count": len(rows), "total_ending_balance": round(total_ending, 2)}
+    except Exception as exc:
+        audit_logger.error(f"gl-summary endpoint failed: {exc}")
+        raise HTTPException(status_code=500, detail="GL summary query failed")
+
+
+# ---------------------------------------------------------------------------
+# Cash Register  GET /analytics/cash-register
+# ---------------------------------------------------------------------------
+
+@router.get("/cash-register")
+async def get_cash_register(
+    request: Request,
+    limit: int = 500,
+    offset: int = 0,
+):
+    """Cash account register with running balance from sage_cash_register_snapshot.
+
+    Roles: admin, finance, management, ops
+    """
+    require_analytics_access(request)
+    from src.db import db
+    try:
+        resp = (
+            db.table("sage_cash_register_snapshot")
+            .select(
+                "id, txn_date, trans_no, txn_type, description, reference, "
+                "payment_amount, receipt_amount, running_balance, source_file, imported_at"
+            )
+            .order("txn_date", desc=True)
+            .order("id", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+        rows = resp.data or []
+        return {"data": rows, "count": len(rows), "offset": offset, "limit": limit}
+    except Exception as exc:
+        audit_logger.error(f"cash-register endpoint failed: {exc}")
+        raise HTTPException(status_code=500, detail="Cash register query failed")

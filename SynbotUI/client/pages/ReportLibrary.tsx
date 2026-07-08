@@ -71,8 +71,10 @@ function ScoreBadge({ score }: { score?: number }) {
   );
 }
 
+// Radix Select throws on <SelectItem value="">, so "all" is used as the
+// sentinel for the unfiltered state and mapped back to "" in state.
 const REPORT_TYPE_OPTIONS = [
-  { value: "", label: "All Types" },
+  { value: "all", label: "All Types" },
   { value: "executive", label: "Executive" },
   { value: "financial", label: "Financial" },
   { value: "sales", label: "Sales" },
@@ -89,7 +91,7 @@ const REPORT_TYPE_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = [
-  { value: "", label: "All Statuses" },
+  { value: "all", label: "All Statuses" },
   { value: "draft", label: "Draft" },
   { value: "complete", label: "Complete" },
   { value: "approved", label: "Approved" },
@@ -168,7 +170,7 @@ export default function ReportLibrary() {
               onChange={(e) => setSearch(e.target.value)}
               className="w-64"
             />
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <Select value={typeFilter || "all"} onValueChange={(v) => setTypeFilter(v === "all" ? "" : v)}>
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="Report Type" />
               </SelectTrigger>
@@ -180,7 +182,7 @@ export default function ReportLibrary() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>

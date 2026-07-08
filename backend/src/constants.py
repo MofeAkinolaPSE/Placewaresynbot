@@ -261,12 +261,19 @@ ENV_WEBHOOK_SECRET = "WEBHOOK_SECRET"
 CASH_GL_ACCOUNT_CODE: str = os.getenv("CASH_GL_ACCOUNT_CODE", "1000")
 
 # Revenue accounts: any GL account_code cast to int in this range is treated as revenue (credit side).
+# Kept for legacy callers that import these names; new code uses REVENUE_ACCOUNT_TYPES below.
 REVENUE_GL_ACCOUNT_MIN: int = 4000
 REVENUE_GL_ACCOUNT_MAX: int = 4999
 
 # Cost/expense accounts: debit-side rows in this range feed total_cost.
 COST_GL_ACCOUNT_MIN: int = 5000
 COST_GL_ACCOUNT_MAX: int = 6999
+
+# Account-type string classification (matches sage_coa_snapshot.account_type).
+# Used by kpis() for robust revenue/cost detection independent of numeric ranges.
+CASH_ACCOUNT_TYPE: str = "Cash"
+REVENUE_ACCOUNT_TYPES: tuple = ("Income",)
+COST_ACCOUNT_TYPES: tuple = ("Cost of Sales", "Expenses")
 
 # How many hours before a missing/unchanged Sage import triggers stale_pipeline_alert on /health.
 PIPELINE_STALE_HOURS: int = int(os.getenv("PIPELINE_STALE_HOURS", "48"))

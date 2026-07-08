@@ -1,0 +1,549 @@
+{
+  "batch_id": "batch_20260630_073255",
+  "company": "planigli",
+  "entity": "sales_invoices",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:33:21.551979+00:00",
+  "row_count": 77,
+  "rows": [
+    {
+      "InvoiceNo": "WTH TAX",
+      "CustomerID": "Ogun State Hospital Mgt Board",
+      "InvoiceDate": "2019-10-30",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "TRANSFER",
+      "CustomerID": "Maritol Medical Centre",
+      "InvoiceDate": "2022-11-08",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37889",
+      "CustomerID": "Talent Specialist Hosp.",
+      "InvoiceDate": "2022-11-05",
+      "DueDate": "2022-10-06",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WTHTAX",
+      "CustomerID": "Ancillia Hospital",
+      "InvoiceDate": "2020-11-02",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WITH TAX",
+      "CustomerID": "Oak Hospital Ikorudu",
+      "InvoiceDate": "2019-11-04",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WTHATX",
+      "CustomerID": "Parkland Hospital",
+      "InvoiceDate": "2019-09-21",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "FIDELITY",
+      "CustomerID": "Oak Hospital Ikorudu",
+      "InvoiceDate": "2019-09-30",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WITHTAX",
+      "CustomerID": "Alpha Pharmacy",
+      "InvoiceDate": "2019-01-09",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "Closing Bal2018",
+      "CustomerID": "Parkland Hospital",
+      "InvoiceDate": "2018-12-31",
+      "DueDate": "2018-12-31",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WTHTAX\\",
+      "CustomerID": "Ancillia Hospital",
+      "InvoiceDate": "2021-07-30",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "27479",
+      "CustomerID": "Mercy Stripes Spec. Hospital",
+      "InvoiceDate": "2020-09-18",
+      "DueDate": "2020-08-19",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "WHT TAX",
+      "CustomerID": "C.C.U LASUTH",
+      "InvoiceDate": "2022-10-26",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "27379",
+      "CustomerID": "Millitary Reference Hospital",
+      "InvoiceDate": "2020-09-11",
+      "DueDate": "2020-08-12",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "CHEQUE",
+      "CustomerID": "Talent Specialist Hosp.",
+      "InvoiceDate": "2022-05-20",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "BEGINNING BAL.",
+      "CustomerID": "SmithKline Beecham Nig Ltd",
+      "InvoiceDate": "",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "thtax",
+      "CustomerID": "Oak Hospital Ikorudu",
+      "InvoiceDate": "2021-11-23",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26932",
+      "CustomerID": "Deseret Hospital",
+      "InvoiceDate": "2020-08-09",
+      "DueDate": "2020-07-10",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26948",
+      "CustomerID": "Dr Ejeye U.I",
+      "InvoiceDate": "2020-08-09",
+      "DueDate": "2020-07-10",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "TRANSFER PREP",
+      "CustomerID": "Seraphic Hospital.",
+      "InvoiceDate": "2022-12-21",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "BAD DEBT",
+      "CustomerID": "Finnih Hospital",
+      "InvoiceDate": "2022-12-31",
+      "DueDate": "",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "27141",
+      "CustomerID": "Unita Hospital",
+      "InvoiceDate": "2020-08-26",
+      "DueDate": "2020-07-27",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26993",
+      "CustomerID": "Mrs Ugwoke c/o Golden cross",
+      "InvoiceDate": "2020-08-14",
+      "DueDate": "2020-07-15",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "22748",
+      "CustomerID": "Goscel Pharmacy",
+      "InvoiceDate": "2019-06-12",
+      "DueDate": "2019-06-12",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "27027",
+      "CustomerID": "West Care Hospital",
+      "InvoiceDate": "2020-08-15",
+      "DueDate": "2020-07-16",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37960",
+      "CustomerID": "Mrs Ugwoke c/o Golden cross",
+      "InvoiceDate": "2022-11-11",
+      "DueDate": "2022-10-12",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "27076",
+      "CustomerID": "The Bridge Hospital",
+      "InvoiceDate": "2020-08-20",
+      "DueDate": "2020-07-21",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "21904",
+      "CustomerID": "The Bridge Hospital",
+      "InvoiceDate": "2019-04-10",
+      "DueDate": "2019-04-10",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "21796",
+      "CustomerID": "Ikeja Medical Centre",
+      "InvoiceDate": "2019-04-02",
+      "DueDate": "2019-04-02",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26714",
+      "CustomerID": "Dr Ejeye U.I",
+      "InvoiceDate": "2020-07-25",
+      "DueDate": "2020-06-25",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "23190",
+      "CustomerID": "Goscel Pharmacy",
+      "InvoiceDate": "2019-07-12",
+      "DueDate": "2019-07-12",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "25741",
+      "CustomerID": "Royan Hospital",
+      "InvoiceDate": "2020-04-18",
+      "DueDate": "2020-03-19",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26785",
+      "CustomerID": "AB 10 Hospital",
+      "InvoiceDate": "2020-07-30",
+      "DueDate": "2020-06-30",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26829",
+      "CustomerID": "Dr Prosper Aguh",
+      "InvoiceDate": "2020-07-02",
+      "DueDate": "2020-07-02",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "23228",
+      "CustomerID": "Med Court Pharmacy",
+      "InvoiceDate": "2019-07-17",
+      "DueDate": "2019-07-17",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "25563",
+      "CustomerID": "Medwin Hospital",
+      "InvoiceDate": "2020-04-05",
+      "DueDate": "2020-03-06",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "25582",
+      "CustomerID": "Alpha Px Airforce Base",
+      "InvoiceDate": "2020-04-08",
+      "DueDate": "2020-03-09",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "25636",
+      "CustomerID": "Anthonio Cardina Med",
+      "InvoiceDate": "2020-04-11",
+      "DueDate": "2020-03-12",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "25442",
+      "CustomerID": "DAMIKAY HOSPITAL",
+      "InvoiceDate": "2020-03-29",
+      "DueDate": "2020-02-28",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "25451",
+      "CustomerID": "Soteria Maternity & Hospital",
+      "InvoiceDate": "2020-03-29",
+      "DueDate": "2020-02-28",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "36634",
+      "CustomerID": "Bonne Santee",
+      "InvoiceDate": "2022-08-06",
+      "DueDate": "2022-07-07",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "28425",
+      "CustomerID": "The Bridge Hospital",
+      "InvoiceDate": "2020-11-27",
+      "DueDate": "2020-10-28",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "27934",
+      "CustomerID": "Fanimed Hospital",
+      "InvoiceDate": "2020-10-17",
+      "DueDate": "2020-09-17",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26116",
+      "CustomerID": "De-Marvel Hospital",
+      "InvoiceDate": "2020-06-12",
+      "DueDate": "2020-05-13",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26301",
+      "CustomerID": "X-Serve Clinics 07046236098",
+      "InvoiceDate": "2020-06-28",
+      "DueDate": "2020-05-29",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26325",
+      "CustomerID": "DR AIYEDUN",
+      "InvoiceDate": "2020-06-28",
+      "DueDate": "2020-05-29",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26341",
+      "CustomerID": "Victory Drugs Pharmacy",
+      "InvoiceDate": "2020-07-01",
+      "DueDate": "2020-06-01",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26375",
+      "CustomerID": "Mrs Ugwoke c/o Golden cross",
+      "InvoiceDate": "2020-07-03",
+      "DueDate": "2020-06-03",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26392",
+      "CustomerID": "Magodo Specialist Hospital",
+      "InvoiceDate": "2020-07-03",
+      "DueDate": "2020-06-03",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26423",
+      "CustomerID": "Olowora Mutual Health Care",
+      "InvoiceDate": "2020-07-05",
+      "DueDate": "2020-06-05",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26458",
+      "CustomerID": "Prev Health Plus",
+      "InvoiceDate": "2020-07-08",
+      "DueDate": "2020-06-08",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26486",
+      "CustomerID": "De-Marvel Hospital",
+      "InvoiceDate": "2020-07-10",
+      "DueDate": "2020-06-10",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26533",
+      "CustomerID": "AB 10 Hospital",
+      "InvoiceDate": "2020-07-11",
+      "DueDate": "2020-06-11",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "26662",
+      "CustomerID": "Bloom Boom Paediatric Centre",
+      "InvoiceDate": "2020-07-23",
+      "DueDate": "2020-06-23",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "30395",
+      "CustomerID": "Lagoon Hospital",
+      "InvoiceDate": "2021-04-21",
+      "DueDate": "2021-03-22",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "30579",
+      "CustomerID": "Nurse Eyo C/O Lagoon Hx",
+      "InvoiceDate": "2021-04-06",
+      "DueDate": "2021-04-06",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "35265",
+      "CustomerID": "Talent Specialist Hosp.",
+      "InvoiceDate": "2022-04-16",
+      "DueDate": "2022-03-17",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "35170",
+      "CustomerID": "Talent Specialist Hosp.",
+      "InvoiceDate": "2022-04-08",
+      "DueDate": "2022-03-09",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "34678",
+      "CustomerID": "Bibilomo Jubril.",
+      "InvoiceDate": "2022-01-26",
+      "DueDate": "2022-01-26",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "32941",
+      "CustomerID": "NETT PHARMACY",
+      "InvoiceDate": "2021-10-10",
+      "DueDate": "2021-09-10",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "32050",
+      "CustomerID": "St Augustine Hospital",
+      "InvoiceDate": "2021-07-16",
+      "DueDate": "2021-07-16",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "35643",
+      "CustomerID": "J.A.Lashman Hospital",
+      "InvoiceDate": "2022-05-20",
+      "DueDate": "2022-04-20",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "36029",
+      "CustomerID": "Porshah Health Care",
+      "InvoiceDate": "2022-06-25",
+      "DueDate": "2022-05-26",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "36063",
+      "CustomerID": "Oladapo Medical Centre",
+      "InvoiceDate": "2022-06-26",
+      "DueDate": "2022-05-27",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "36073",
+      "CustomerID": "Jajo Hospital",
+      "InvoiceDate": "2022-06-29",
+      "DueDate": "2022-05-30",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "35410",
+      "CustomerID": "B.J Pharmacy",
+      "InvoiceDate": "2022-04-28",
+      "DueDate": "2022-03-29",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "38902",
+      "CustomerID": "Evans Clinic",
+      "InvoiceDate": "2023-01-27",
+      "DueDate": "2022-12-28",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "38288",
+      "CustomerID": "Maritol Medical Centre",
+      "InvoiceDate": "2022-12-07",
+      "DueDate": "2022-11-07",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "38598",
+      "CustomerID": "Dafe Medical Centre",
+      "InvoiceDate": "2022-12-01",
+      "DueDate": "2022-12-01",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "36975",
+      "CustomerID": "Maritol Medical Centre",
+      "InvoiceDate": "2022-08-31",
+      "DueDate": "2022-08-01",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37305",
+      "CustomerID": "Blooming Care Hospital",
+      "InvoiceDate": "2022-09-24",
+      "DueDate": "2022-08-25",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37395",
+      "CustomerID": "Fanimed Hospital",
+      "InvoiceDate": "2022-10-01",
+      "DueDate": "2022-09-01",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37431",
+      "CustomerID": "Bonne Santee",
+      "InvoiceDate": "2022-10-02",
+      "DueDate": "2022-09-02",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37761",
+      "CustomerID": "County Hospital",
+      "InvoiceDate": "2022-10-26",
+      "DueDate": "2022-09-26",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37784",
+      "CustomerID": "Matron Okeke C/O Lagoon Hx",
+      "InvoiceDate": "2022-09-28",
+      "DueDate": "2022-09-28",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "37848",
+      "CustomerID": "De-Marvel Hospital",
+      "InvoiceDate": "2022-11-03",
+      "DueDate": "2022-10-04",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "42640",
+      "CustomerID": "Maidan PHC",
+      "InvoiceDate": "2023-12-03",
+      "DueDate": "2023-11-03",
+      "Amount": "0"
+    },
+    {
+      "InvoiceNo": "S.REC",
+      "CustomerID": "ADACEL POLIO TDAP/IPV",
+      "InvoiceDate": "",
+      "DueDate": "",
+      "Amount": "0"
+    }
+  ]
+}

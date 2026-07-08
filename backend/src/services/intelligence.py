@@ -56,18 +56,86 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
     - Coverage risk
     """
     summary = get_inventory_summary(limit=100, client=client)
-    total_active_skus = get_latest_batch_sku_count(client=client)
-    
-    low_stock = [i for i in summary if i['current_stock'] < 10] # Configurable threshold?
-    out_of_stock = [i for i in summary if i['current_stock'] <= 0]
-    
+
+    # KPI counts must cover the whole catalog — computing them from the
+    # 100-row summary sample produced arbitrary numbers. v_inventory has one
+    # row per item with its latest-batch stock.
+    try:
+        inv_rows = (
+            client.table("v_inventory")
+            .select("sku,current_stock,reorder_level,expiry_date")
+            .limit(5000)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        inv_rows = []
+
+    # "Out of stock" only counts items that are still commercially active —
+    # zero-stock catalog entries that expired years ago and haven't traded
+    # are dead history, not stockouts. Active = future expiry date OR traded
+    # in the current fiscal period (unit-activity rows, transaction_id ACT_*).
+    traded_skus: set = set()
+    try:
+        act_res = (
+            client.table("sage_inv_transactions_snapshot")
+            .select("item_id,quantity_in,quantity_out")
+            .like("transaction_id", "ACT_%")
+            .limit(5000)
+            .execute()
+        )
+        traded_skus = {
+            r.get("item_id")
+            for r in (act_res.data or [])
+            if r.get("item_id")
+            and (float(r.get("quantity_in") or 0) > 0 or float(r.get("quantity_out") or 0) > 0)
+        }
+    except Exception:
+        pass
+
+    if inv_rows:
+        import datetime as _dt
+        today = _dt.date.today()
+
+        def _future_expiry(r) -> bool:
+            raw = r.get("expiry_date")
+            if not raw:
+                return False
+            try:
+                return _dt.date.fromisoformat(str(raw)[:10]) >= today
+            except Exception:
+                return False
+
+        total_active_skus = len(inv_rows)
+        low_stock_count = 0
+        out_of_stock_count = 0
+        catalog_zero_stock_count = 0
+        for r in inv_rows:
+            qty = float(r.get("current_stock") or 0)
+            reorder = float(r.get("reorder_level") or 0)
+            threshold = reorder if reorder > 0 else 10
+            if qty <= 0:
+                catalog_zero_stock_count += 1
+                if _future_expiry(r) or r.get("sku") in traded_skus:
+                    out_of_stock_count += 1
+            elif qty < threshold:
+                low_stock_count += 1
+    else:
+        total_active_skus = get_latest_batch_sku_count(client=client) or len(summary)
+        low_stock_count = sum(1 for i in summary if 0 < i["current_stock"] < 10)
+        out_of_stock_count = sum(1 for i in summary if i["current_stock"] <= 0)
+        catalog_zero_stock_count = out_of_stock_count
+
+    low_stock = [i for i in summary if i['current_stock'] < 10]
     recent_movements = get_recent_inventory_movements(limit=limit, client=client)
 
     return {
         "summary": {
-            "total_active_skus": total_active_skus if total_active_skus > 0 else len(summary),
-            "low_stock_count": len(low_stock),
-            "out_of_stock_count": len(out_of_stock),
+            "total_active_skus": total_active_skus,
+            "low_stock_count": low_stock_count,
+            "out_of_stock_count": out_of_stock_count,
+            "catalog_zero_stock_count": catalog_zero_stock_count,
         },
         "critical_items": low_stock[:limit],
         "recent_movements": recent_movements,
@@ -191,8 +259,10 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
     # (AR/AP snapshots are empty — invoices were not entered in Sage;
     #  these tables hold the real master data from DAT file extraction)
     try:
-        cust_res = client.table("customers").select("id").execute()
-        customer_count = len(cust_res.data or [])
+        cust_res = client.table("sage_customers_snapshot").select("customer_id").execute()
+        customer_count = len(set(
+            r.get("customer_id") for r in (cust_res.data or []) if r.get("customer_id")
+        ))
     except Exception:
         customer_count = 0
 
@@ -208,12 +278,16 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
         inventory_sku_count = inventory["summary"].get("total_active_skus", 0)
 
     try:
-        gl_res = client.table("sage_gl_transactions").select("id").limit(1).execute()
-        # Use count via a separate query to avoid loading all rows
-        gl_count_res = client.table("sage_gl_transactions").select("id", count="exact").limit(1).execute()
+        gl_count_res = client.table("sage_gl_detail_snapshot").select("id", count="exact").limit(1).execute()
         gl_transaction_count = gl_count_res.count or 0
     except Exception:
         gl_transaction_count = 0
+
+    try:
+        ar_count_res = client.table("sage_ar_snapshot").select("id", count="exact").gt("amount", 0).limit(1).execute()
+        ar_invoice_count = ar_count_res.count or 0
+    except Exception:
+        ar_invoice_count = 0
 
     try:
         prospect_res = client.table("crm_prospects").select("id").execute()
@@ -252,7 +326,7 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
             "inventory_sku_count": inventory_sku_count,
             "gl_transaction_count": gl_transaction_count,
             "prospect_count": prospect_count,
-            "ar_invoice_count": finance['ar'].get('invoice_count', 0),
+            "ar_invoice_count": ar_invoice_count,
             "note": (
                 f"Database contains {customer_count} customers, {inventory_sku_count} inventory SKUs, "
                 f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects. "
@@ -387,8 +461,10 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
     gl_transaction_count = 0
     prospect_count = 0
     try:
-        cust_res = client.table("customers").select("id").execute()
-        customer_count = len(cust_res.data or [])
+        cust_res = client.table("sage_customers_snapshot").select("customer_id").execute()
+        customer_count = len(set(
+            r.get("customer_id") for r in (cust_res.data or []) if r.get("customer_id")
+        ))
     except Exception:
         pass
     try:
@@ -402,7 +478,7 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
     except Exception:
         pass
     try:
-        gl_res = client.table("sage_gl_transactions").select("id", count="exact").limit(1).execute()
+        gl_res = client.table("sage_gl_detail_snapshot").select("id", count="exact").limit(1).execute()
         gl_transaction_count = gl_res.count or 0
     except Exception:
         pass

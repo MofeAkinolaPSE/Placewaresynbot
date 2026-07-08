@@ -64,29 +64,33 @@ const FinanceReports = () => {
     () => {
       if (!Array.isArray(stockRows)) return [];
       const rows = stockRows;
-      return rows.map((r: any) => ({
-        sku: r.sku,
-        name: r.name,
-        quantity: Number(r.current_stock ?? r.quantity),
-        unitCost: Number(r.unit_cost),
-        valuation: r.valuation != null
-          ? Number(r.valuation)
-          : Number(r.unit_cost) * Number(r.current_stock ?? r.quantity),
-        status: ((): "optimal" | "low" | "out" => {
-          const qty = Number(r.current_stock ?? r.quantity);
-          if (r.status === "optimal" || r.status === "low" || r.status === "out") {
-            return r.status;
-          }
-          if (qty <= 0) return "out";
-          if (qty < 10) return "low";
-          return "optimal";
-        })(),
-      })).filter((r: any) =>
+      // /inventory/items (v_inventory) exposes cost_price + current_stock;
+      // older payloads used unit_cost + quantity — accept both.
+      return rows.map((r: any) => {
+        const qty = Number(r.current_stock ?? r.quantity ?? 0);
+        const unitCost = Number(r.unit_cost ?? r.cost_price ?? 0);
+        const reorder = Number(r.reorder_level ?? 0);
+        return {
+          sku: r.sku,
+          name: r.name ?? r.item_name ?? "",
+          quantity: Number.isFinite(qty) ? qty : 0,
+          unitCost: Number.isFinite(unitCost) ? unitCost : 0,
+          valuation: r.valuation != null
+            ? Number(r.valuation)
+            : (Number.isFinite(unitCost) ? unitCost : 0) * (Number.isFinite(qty) ? qty : 0),
+          status: ((): "optimal" | "low" | "out" => {
+            if (r.status === "optimal" || r.status === "low" || r.status === "out") {
+              return r.status;
+            }
+            if (qty <= 0) return "out";
+            if (reorder > 0 ? qty <= reorder : qty < 10) return "low";
+            return "optimal";
+          })(),
+        };
+      }).filter((r: any) =>
         typeof r.sku === "string" &&
         typeof r.name === "string" &&
-        Number.isFinite(r.quantity) &&
-        Number.isFinite(r.unitCost) &&
-        Number.isFinite(r.valuation)
+        r.sku.length > 0
       );
     },
     [stockRows]

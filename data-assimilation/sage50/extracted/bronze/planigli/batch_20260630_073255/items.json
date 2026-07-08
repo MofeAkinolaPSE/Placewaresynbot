@@ -1,0 +1,352 @@
+{
+  "batch_id": "batch_20260630_073255",
+  "company": "planigli",
+  "entity": "items",
+  "source_system": "sage50",
+  "extraction_timestamp": "2026-06-30T06:32:57.107488+00:00",
+  "row_count": 57,
+  "rows": [
+    {
+      "ItemID": "MENACTRA",
+      "Description": "MENACTRA",
+      "ExpiryDate": "2027-07-01",
+      "LotCode": "U8821AA"
+    },
+    {
+      "ItemID": "ENG B 20 mcg",
+      "Description": "ENG B 20 mcg",
+      "ExpiryDate": "2023-11-01",
+      "LotCode": "AHBVC987BG"
+    },
+    {
+      "ItemID": "ROTARIX",
+      "Description": "ROTARIX",
+      "ExpiryDate": "2024-04-01",
+      "LotCode": "AROLD253AB"
+    },
+    {
+      "ItemID": "CLEXANE 40mg",
+      "Description": "CLEXANE 40mg",
+      "ExpiryDate": "2024-02-01",
+      "LotCode": "FSI84A"
+    },
+    {
+      "ItemID": "APROVEL TAB 150/",
+      "Description": "APROVEL TAB 150/",
+      "ExpiryDate": "2026-07-01",
+      "LotCode": "EA3966"
+    },
+    {
+      "ItemID": "Tavanic Infusion",
+      "Description": "Tavanic Infusion",
+      "ExpiryDate": "2027-04-01",
+      "LotCode": "4F033A"
+    },
+    {
+      "ItemID": "Avaxim inj. Ped",
+      "Description": "Avaxim inj. Ped",
+      "ExpiryDate": "2026-03-01",
+      "LotCode": "X3C763V"
+    },
+    {
+      "ItemID": "Vaxigrip Tetra",
+      "Description": "Vaxigrip Tetra",
+      "ExpiryDate": "2026-01-01",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "VICTOZA",
+      "Description": "VICTOZA",
+      "ExpiryDate": "2021-09-01",
+      "LotCode": "JS69H45"
+    },
+    {
+      "ItemID": "KEPPRA 500MG",
+      "Description": "KEPPRA 500MG",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "VERORAB",
+      "Description": "VERORAB",
+      "ExpiryDate": "2022-05-01",
+      "LotCode": "T1C612V"
+    },
+    {
+      "ItemID": "PREVENAR 13",
+      "Description": "PREVENAR 13",
+      "ExpiryDate": "2021-03-01",
+      "LotCode": "APO737"
+    },
+    {
+      "ItemID": "NOVOMIX30 FLEXPEN",
+      "Description": "NOVOMIX30 FLEXPEN",
+      "ExpiryDate": "2024-02-01",
+      "LotCode": "MT66B18"
+    },
+    {
+      "ItemID": "CERVARIX 0.5ml",
+      "Description": "CERVARIX 0.5ml",
+      "ExpiryDate": "2027-07-01",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "REVAC B",
+      "Description": "REVAC B",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "SHANCHOL",
+      "Description": "SHANCHOL",
+      "ExpiryDate": "2025-06-01",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "NOVORAPID FLEXPEN",
+      "Description": "NOVORAPID FLEXPEN",
+      "ExpiryDate": "2022-11-01",
+      "LotCode": "KT60B00"
+    },
+    {
+      "ItemID": "Nucard 80mg",
+      "Description": "Nucard 80mg",
+      "ExpiryDate": "2027-02-01",
+      "LotCode": "4C199"
+    },
+    {
+      "ItemID": "AMARYL 1MG TAB",
+      "Description": "AMARYL 1MG TAB",
+      "ExpiryDate": "2021-04-01",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "TRESIVAC (MMR)",
+      "Description": "TRESIVAC (MMR)",
+      "ExpiryDate": "2026-04-01",
+      "LotCode": "0133M097B"
+    },
+    {
+      "ItemID": "EVOFIX SUSP 100MG/5M",
+      "Description": "EVOFIX SUSP 100MG/5M",
+      "ExpiryDate": "2026-11-01",
+      "LotCode": "4N129"
+    },
+    {
+      "ItemID": "MIXTARD 30HM FLEX",
+      "Description": "MIXTARD 30HM FLEX",
+      "ExpiryDate": "",
+      "LotCode": "PR7VP97"
+    },
+    {
+      "ItemID": "VARILRIX A",
+      "Description": "VARILRIX A",
+      "ExpiryDate": "2020-08-01",
+      "LotCode": "A70CD374A"
+    },
+    {
+      "ItemID": "APIDRA SOLOSTAR",
+      "Description": "APIDRA SOLOSTAR",
+      "ExpiryDate": "2020-06-01",
+      "LotCode": "8F649A"
+    },
+    {
+      "ItemID": "APROVASC300MG/10M",
+      "Description": "APROVASC300MG/10M",
+      "ExpiryDate": "2021-09-01",
+      "LotCode": "8MXA010"
+    },
+    {
+      "ItemID": "LEVEMIR FLEXPEN",
+      "Description": "LEVEMIR FLEXPEN",
+      "ExpiryDate": "2023-06-01",
+      "LotCode": "LT62D80"
+    },
+    {
+      "ItemID": "Nucard 160mg",
+      "Description": "Nucard 160mg",
+      "ExpiryDate": "2026-02-01",
+      "LotCode": "3C238"
+    },
+    {
+      "ItemID": "COAPROVEL TAB 300/12",
+      "Description": "COAPROVEL TAB 300/12",
+      "ExpiryDate": "2020-09-01",
+      "LotCode": "7A570"
+    },
+    {
+      "ItemID": "CLEXANE",
+      "Description": "CLEXANE",
+      "ExpiryDate": "2022-11-01",
+      "LotCode": "AS19F"
+    },
+    {
+      "ItemID": "FLEMIN INJ. 600G",
+      "Description": "FLEMIN INJ. 600G",
+      "ExpiryDate": "2020-02-01",
+      "LotCode": "N180040"
+    },
+    {
+      "ItemID": "FLEMIN. 1G 200MG",
+      "Description": "FLEMIN. 1G 200MG",
+      "ExpiryDate": "2021-05-01",
+      "LotCode": "N190049"
+    },
+    {
+      "ItemID": "HAVRIX",
+      "Description": "HAVRIX",
+      "ExpiryDate": "2021-04-01",
+      "LotCode": "AHAVB965BI"
+    },
+    {
+      "ItemID": "CLEXANE 60mg",
+      "Description": "CLEXANE 60mg",
+      "ExpiryDate": "2026-06-01",
+      "LotCode": "JS365A"
+    },
+    {
+      "ItemID": "ADACEL POLIO",
+      "Description": "ADACEL POLIO",
+      "ExpiryDate": "2024-03-01",
+      "LotCode": "V3G815V"
+    },
+    {
+      "ItemID": "INDIRAB(ANTI RABIS)B",
+      "Description": "INDIRAB(ANTI RABIS)B",
+      "ExpiryDate": "2028-02-01",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "MIXTARD 30HM 100 I.U",
+      "Description": "MIXTARD 30HM 100 I.U",
+      "ExpiryDate": "2020-01-01",
+      "LotCode": "GS64G94"
+    },
+    {
+      "ItemID": "Humalog Mix 25",
+      "Description": "Humalog Mix 25",
+      "ExpiryDate": "2020-09-01",
+      "LotCode": "C838698D"
+    },
+    {
+      "ItemID": "INSUMAN RAPID 1000",
+      "Description": "INSUMAN RAPID 1000",
+      "ExpiryDate": "2021-01-01",
+      "LotCode": "9F041A"
+    },
+    {
+      "ItemID": "MIXTARD 30HM 100",
+      "Description": "MIXTARD 30HM 100",
+      "ExpiryDate": "2025-04-01",
+      "LotCode": "NT68R40"
+    },
+    {
+      "ItemID": "TRITACE 2.5MG",
+      "Description": "TRITACE 2.5MG",
+      "ExpiryDate": "",
+      "LotCode": "9UOO3"
+    },
+    {
+      "ItemID": "REVAC B 10mls",
+      "Description": "REVAC B 10mls",
+      "ExpiryDate": "",
+      "LotCode": "51E24001A"
+    },
+    {
+      "ItemID": "AVAMYS SPRAY",
+      "Description": "AVAMYS SPRAY",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "HEXAXIM",
+      "Description": "HEXAXIM",
+      "ExpiryDate": "",
+      "LotCode": "T3M263V"
+    },
+    {
+      "ItemID": "TYPHIM",
+      "Description": "TYPHIM",
+      "ExpiryDate": "2023-09-01",
+      "LotCode": "U2A292V"
+    },
+    {
+      "ItemID": "Special Order",
+      "Description": "Special Order",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "NIMENRIX",
+      "Description": "NIMENRIX",
+      "ExpiryDate": "2020-04-01",
+      "LotCode": "A90CA338A"
+    },
+    {
+      "ItemID": "CLEXANE 20mg",
+      "Description": "CLEXANE 20mg",
+      "ExpiryDate": "2021-08-01",
+      "LotCode": "9S771"
+    },
+    {
+      "ItemID": "TETANUS TOXOID",
+      "Description": "TETANUS TOXOID",
+      "ExpiryDate": "2024-08-01",
+      "LotCode": "25911004A"
+    },
+    {
+      "ItemID": "VAXIGRIP JUNIOR",
+      "Description": "VAXIGRIP JUNIOR",
+      "ExpiryDate": "",
+      "LotCode": "T3A662V."
+    },
+    {
+      "ItemID": "Trimovax",
+      "Description": "Trimovax",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "Tresiba",
+      "Description": "Tresiba",
+      "ExpiryDate": "2024-02-01",
+      "LotCode": "MP5B076"
+    },
+    {
+      "ItemID": "TYPHERIX",
+      "Description": "TYPHERIX",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "INSUMAN BASAL 1000IU",
+      "Description": "INSUMAN BASAL 1000IU",
+      "ExpiryDate": "",
+      "LotCode": ""
+    },
+    {
+      "ItemID": "GENEVAC (HEP. B",
+      "Description": "GENEVAC (HEP. B",
+      "ExpiryDate": "2025-01-01",
+      "LotCode": "0342Q003D.."
+    },
+    {
+      "ItemID": "NOVORAPID FLEXPEN 3M",
+      "Description": "NOVORAPID FLEXPEN 3M",
+      "ExpiryDate": "2020-09-01",
+      "LotCode": "HP52361"
+    },
+    {
+      "ItemID": "NOVOTWIST NEEDLE",
+      "Description": "NOVOTWIST NEEDLE",
+      "ExpiryDate": "2024-09-01",
+      "LotCode": "19K14N"
+    },
+    {
+      "ItemID": "ELICASAL OINTMENT",
+      "Description": "ELICASAL OINTMENT",
+      "ExpiryDate": "2026-08-01",
+      "LotCode": "AH0022"
+    }
+  ]
+}

@@ -121,6 +121,12 @@ class TableQuery:
         self._limit = int(n)
         return self
 
+    def single(self):
+        """Mirror Supabase .single() — adds LIMIT 1; .execute() returns data as a single dict."""
+        self._limit = 1
+        self._single = True
+        return self
+
     def execute(self):
         conn = self.client.pool.getconn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -362,6 +368,10 @@ class TableQuery:
                 params.append(self._offset)
             cur.execute(sql, params)
             rows = cur.fetchall()
+            if getattr(self, '_single', False):
+                result = Result(list(rows), count=total_count)
+                result.data = dict(rows[0]) if rows else {}
+                return result
             return Result(rows, count=total_count)
         except Exception as e:
             logging.error(

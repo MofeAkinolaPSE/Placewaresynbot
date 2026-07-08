@@ -91,6 +91,28 @@ AGENT_DEFAULT_SPECS: Dict[str, List[Dict[str, Any]]] = {
 }
 
 
+# Sage aged-debtor exports carry no due_date; standard trade terms are applied
+# to the invoice date so AR aging buckets can still be computed.
+DEFAULT_AR_TERMS_DAYS = 30
+
+
+def _ar_days_overdue(row: Dict[str, Any], today: dt.date) -> int:
+    """Days past due for an AR row. Uses due_date when present, otherwise
+    invoice_date + DEFAULT_AR_TERMS_DAYS. Returns 0 when neither parses."""
+    raw = row.get("due_date")
+    terms = 0
+    if not raw:
+        raw = row.get("invoice_date") or row.get("date")
+        terms = DEFAULT_AR_TERMS_DAYS
+    if not raw:
+        return 0
+    try:
+        base = dt.date.fromisoformat(str(raw)[:10])
+    except Exception:
+        return 0
+    return max((today - base).days - terms, 0)
+
+
 def create_db_executor():
     """Create a database executor function for agent queries."""
     def executor(spec: Dict[str, Any]) -> Any:
@@ -99,8 +121,22 @@ def create_db_executor():
         try:
             if query_type == "inventory_low_stock":
                 threshold = spec.get("threshold", 10)
-                result = db.table("placeware_inventory_snapshot").select("*").lt("current_qty", threshold).execute()
-                return result.data if hasattr(result, 'data') else []
+                # Only items that are actually stocked — items never held (qty 0
+                # across all history) are catalog noise, not low-stock signals.
+                result = db.table("placeware_inventory_snapshot").select("*").gt(
+                    "current_qty", 0
+                ).lt("current_qty", threshold).execute()
+                rows = result.data if hasattr(result, 'data') else []
+                # Normalize to the field names InventoryIntelligenceAgent reads.
+                return [
+                    {
+                        **r,
+                        "product_id": r.get("sku"),
+                        "stock": r.get("current_qty"),
+                        "threshold": r.get("safety_stock") or threshold,
+                    }
+                    for r in rows
+                ]
             
             elif query_type == "inventory_expiring":
                 days = spec.get("days", 60)
@@ -160,19 +196,15 @@ def create_db_executor():
                 return result.data if hasattr(result, 'data') else []
             
             elif query_type == "ar_aging":
-                result = db.table("placeware_ar_ledger").select("*").execute()
+                # Only real invoices (amount > 0) — Sage aged-debtor summary rows carry 0.
+                result = db.table("placeware_ar_ledger").select("*").gt(
+                    "amount", 0
+                ).limit(spec.get("limit", 50000)).execute()
                 rows = result.data if hasattr(result, 'data') else []
                 now = dt.date.today()
                 normalized = []
                 for row in rows:
-                    due_date = row.get("due_date")
-                    days_overdue = 0
-                    if due_date:
-                        try:
-                            due = dt.date.fromisoformat(str(due_date)[:10])
-                            days_overdue = max((now - due).days, 0)
-                        except Exception:
-                            days_overdue = 0
+                    days_overdue = _ar_days_overdue(row, now)
                     normalized.append({
                         **row,
                         "days_overdue": days_overdue,
@@ -227,19 +259,11 @@ def create_db_executor():
             elif query_type == "revenue_by_product":
                 result = db.table("placeware_ar_ledger").select(
                     "customer_id, customer_name, amount, balance, due_date, invoice_date"
-                ).execute()
+                ).gt("amount", 0).limit(spec.get("limit", 50000)).execute()
                 rows = result.data if hasattr(result, 'data') else []
                 now = dt.date.today()
                 normalized = []
                 for row in rows:
-                    due_date = row.get("due_date")
-                    days_overdue = 0
-                    if due_date:
-                        try:
-                            due = dt.date.fromisoformat(str(due_date)[:10])
-                            days_overdue = (now - due).days
-                        except Exception:
-                            days_overdue = 0
                     normalized.append(
                         {
                             "product_id": "unattributed",
@@ -247,33 +271,25 @@ def create_db_executor():
                             "customer_id": row.get("customer_id"),
                             "customer": row.get("customer_name"),
                             "amount": row.get("amount") or row.get("balance") or 0,
-                            "days_overdue": days_overdue,
+                            "days_overdue": _ar_days_overdue(row, now),
                         }
                     )
                 return normalized
 
             elif query_type == "revenue_by_customer":
                 result = db.table("placeware_ar_ledger").select(
-                    "customer_id, customer_name, amount, balance, due_date"
-                ).execute()
+                    "customer_id, customer_name, amount, balance, due_date, invoice_date"
+                ).gt("amount", 0).limit(spec.get("limit", 50000)).execute()
                 rows = result.data if hasattr(result, 'data') else []
                 now = dt.date.today()
                 normalized = []
                 for row in rows:
-                    due_date = row.get("due_date")
-                    days_overdue = 0
-                    if due_date:
-                        try:
-                            due = dt.date.fromisoformat(str(due_date)[:10])
-                            days_overdue = (now - due).days
-                        except Exception:
-                            days_overdue = 0
                     normalized.append(
                         {
                             "customer_id": row.get("customer_id"),
                             "customer": row.get("customer_name"),
                             "amount": row.get("amount") or row.get("balance") or 0,
-                            "days_overdue": days_overdue,
+                            "days_overdue": _ar_days_overdue(row, now),
                         }
                     )
                 return normalized
@@ -330,12 +346,18 @@ def create_db_executor():
 
             elif query_type == "gl_profitability":
                 # Aggregate GL snapshot into product-level revenue/cost rows expected by FinancialAnalystAgent.
-                # Revenue accounts 4000-4999: credit side. Cost accounts 5000-6999: debit side.
+                # Classification uses account_type from sage_coa_snapshot (Nigerian Sage 50
+                # CoA does not follow US GAAP 4000-6999 numbering).
                 from src.services.sage_adapter.service import get_sage_kpi_batch_id
-                from src.constants import (
-                    REVENUE_GL_ACCOUNT_MIN, REVENUE_GL_ACCOUNT_MAX,
-                    COST_GL_ACCOUNT_MIN, COST_GL_ACCOUNT_MAX,
-                )
+                from src.constants import REVENUE_ACCOUNT_TYPES, COST_ACCOUNT_TYPES
+
+                coa_res = db.table("sage_coa_snapshot").select("account_code,account_type").limit(2000).execute()
+                acct_type_map = {
+                    str(r.get("account_code") or "").strip(): (r.get("account_type") or "")
+                    for r in (coa_res.data or [])
+                    if r.get("account_code")
+                }
+
                 batch_id = get_sage_kpi_batch_id()
                 gl_q = db.table("sage_gl_snapshot").select("account_code,account_name,debit,credit")
                 if batch_id:
@@ -343,28 +365,25 @@ def create_db_executor():
                 gl_rows = gl_q.limit(50000).execute().data or []
                 rows_out = []
                 for row in gl_rows:
-                    code_raw = row.get("account_code") or ""
-                    try:
-                        code = int(str(code_raw).split("-")[0].strip())
-                    except (ValueError, TypeError):
-                        continue
+                    code_raw = str(row.get("account_code") or "").strip()
+                    acct_type = acct_type_map.get(code_raw, "")
                     debit = float(row.get("debit") or 0)
                     credit = float(row.get("credit") or 0)
-                    if REVENUE_GL_ACCOUNT_MIN <= code <= REVENUE_GL_ACCOUNT_MAX:
+                    if acct_type in REVENUE_ACCOUNT_TYPES:
                         net = credit - debit
                         if net != 0:
                             rows_out.append({
-                                "product_id": str(row.get("account_code")),
+                                "product_id": code_raw,
                                 "product_name": row.get("account_name"),
                                 "revenue": round(net, 2),
                                 "cost": 0.0,
                                 "units": 0,
                             })
-                    elif COST_GL_ACCOUNT_MIN <= code <= COST_GL_ACCOUNT_MAX:
+                    elif acct_type in COST_ACCOUNT_TYPES:
                         net = debit - credit
                         if net != 0:
                             rows_out.append({
-                                "product_id": str(row.get("account_code")),
+                                "product_id": code_raw,
                                 "product_name": row.get("account_name"),
                                 "revenue": 0.0,
                                 "cost": round(net, 2),
@@ -412,6 +431,28 @@ def create_db_executor():
                 return result.data if hasattr(result, "data") else []
 
             elif query_type == "customer_list":
+                # Primary source: Sage master data (1.5K+ real customers).
+                # Falls back to the internal CRM customers table when the snapshot is empty.
+                result = db.table("sage_customers_snapshot").select(
+                    "customer_id, name, status, phone"
+                ).order("name").limit(spec.get("limit", 2000)).execute()
+                rows = result.data if hasattr(result, "data") else []
+                if rows:
+                    seen = set()
+                    out = []
+                    for r in rows:
+                        cid = r.get("customer_id") or ""
+                        if not cid or cid in seen:
+                            continue
+                        seen.add(cid)
+                        out.append({
+                            "customer_id": cid,
+                            "name": r.get("name") or cid,
+                            "status": r.get("status") or "active",
+                            "risk_score": 0,
+                            "phone": r.get("phone") or "",
+                        })
+                    return out
                 result = db.table("customers").select(
                     "id, name, customer_code, status, risk_score, contact_details"
                 ).order("name").limit(spec.get("limit", 300)).execute()

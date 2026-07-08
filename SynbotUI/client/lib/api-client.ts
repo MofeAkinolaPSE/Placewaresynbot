@@ -383,9 +383,14 @@ export const api = {
     trend: () => fetchJson<any>("/analytics/trend"),
     transactions: () => fetchJson<any[]>("/analytics/transactions"),
     profitability: () => fetchJson<any>("/analytics/profitability"),
-    arAging: () => fetchRaw<any>("/reports/ar_aging"),
+    // Backed by GET /finance/ar/aging ({summary, customers, ...}) — the old
+    // /reports/ar_aging route never existed on the backend.
+    arAging: () =>
+      fetchRaw<any>("/finance/ar/aging").then((r) => r?.summary ?? r),
     arAgingCustomers: (bucket: string) =>
-      fetchRaw<any>(`/reports/ar_aging/customers?bucket=${encodeURIComponent(bucket)}`),
+      fetchRaw<any>(`/finance/ar/aging?bucket=${encodeURIComponent(bucket)}`).then(
+        (r) => ({ customers: r?.customers ?? [] }),
+      ),
 
     // --- Tier-1 Finance Module (from 078 requirements) ---
 
@@ -520,6 +525,43 @@ export const api = {
 
     /** Chart of Accounts from Sage 50 snapshot */
     coa: (limit = 500) => fetchRaw<any>(`/finance/coa?limit=${limit}`),
+
+    /** Bank reconciliation snapshot freshness for all tracked accounts */
+    reconciliationStatus: () => fetchRaw<any>("/finance/reconciliation/status"),
+
+    /** Log a completed reconciliation (manual entry or post-Sage-import confirmation) */
+    logReconciliation: (payload: {
+      account_code: string;
+      account_name?: string;
+      snapshot_type: string;
+      reconciled_period?: string;
+      gl_balance?: number;
+      bank_balance?: number;
+      outstanding_count?: number;
+      outstanding_total?: number;
+      notes?: string;
+    }) => fetchRaw<any>("/finance/reconciliation/log", { method: "POST", body: JSON.stringify(payload) }),
+
+    /** Transaction-level GL entries from sage_gl_detail_snapshot */
+    glDetail: (params?: { limit?: number; offset?: number; account_code?: string; journal_type?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.limit)        q.set("limit",        String(params.limit));
+      if (params?.offset)       q.set("offset",       String(params.offset));
+      if (params?.account_code) q.set("account_code", params.account_code);
+      if (params?.journal_type) q.set("journal_type", params.journal_type);
+      return fetchRaw<any>(`/analytics/gl-detail?${q.toString()}`);
+    },
+
+    /** GL account beginning/ending balances from sage_gl_account_summary_snapshot */
+    glSummary: () => fetchRaw<any>("/analytics/gl-summary"),
+
+    /** Cash account register with running balance from sage_cash_register_snapshot */
+    cashRegister: (params?: { limit?: number; offset?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.limit)  q.set("limit",  String(params.limit));
+      if (params?.offset) q.set("offset", String(params.offset));
+      return fetchRaw<any>(`/analytics/cash-register?${q.toString()}`);
+    },
   },
   intelligence: {
     executiveSummary: () => fetchRaw<ExecutiveSummaryResponse>("/intelligence/executive_summary"),
@@ -686,10 +728,12 @@ export const api = {
     },
   inventory: {
     stock: async (skus?: string[]) => {
-      const data = await fetchRaw("/inventory/items");
+      // limit=2000 covers the full catalog — the backend default of 200
+      // returns an arbitrary subset and hides most stocked items.
+      const data = await fetchRaw("/inventory/items?limit=2000");
       return (data.data ?? data.stock ?? []) as any[];
     },
-    latestSnapshot: () => fetchRaw<any>("/inventory/items").then(d => d.data ?? []),
+    latestSnapshot: () => fetchRaw<any>("/inventory/items?limit=2000").then(d => d.data ?? []),
     // simple search endpoint used by staff UI autocomplete
     search: (query: string) => fetchJson<any[]>(`/inventory?query=${encodeURIComponent(query)}`),
     recordMovement: (payload: {
@@ -701,6 +745,12 @@ export const api = {
       created_by?: string;
       metadata?: Record<string, any>;
     }) => sendJson<{ status: string; movement: any }>("/inventory/movements", "POST", payload),
+    addStock: (payload: {
+      sku: string;
+      quantity_change: number;
+      event_type: string;
+      reference?: string;
+    }) => sendJson<{ success: boolean; event: any }>("/inventory/event", "POST", payload),
   },
   projects: {
     readiness: () => fetchRaw<{ ready: boolean; reason?: string; checks?: Record<string, boolean> }>("/controls/readiness"),
