@@ -188,7 +188,10 @@ class RevenueStrategyAgent(BaseAgent):
         # Scenario forecasts — powered by ScenarioEngine
         # ---------------------------------------------------------------
         top_product_ids = [p for p, _ in top_products[:5]] if top_products else []
-        ar_customer_ids = [c for c, _ in ar_reliable[:10]] if ar_reliable else []
+        # ar_reliable is a flat list of customer_id strings (see analyze()),
+        # not (id, stats) tuples — unpacking each string as `c, _` blew up
+        # with "too many values to unpack" for any id longer than 2 chars.
+        ar_customer_ids = ar_reliable[:10] if ar_reliable else []
         total_cost = metrics.get("total_cost", 0.0)
 
         try:

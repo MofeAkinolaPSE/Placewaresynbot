@@ -4136,7 +4136,12 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         ).model_dump()
     live_context_parts = []
     if tool_outputs:
-        live_context_parts.append("ORCHESTRATION TOOL RESULTS:\n" + json.dumps(tool_outputs, indent=2))
+        # default=str covers Decimal/date/datetime values that leak in from
+        # raw DB rows (psycopg2 numeric columns) — json.dumps can't serialize
+        # them natively and this path previously crashed the whole /chat call.
+        live_context_parts.append(
+            "ORCHESTRATION TOOL RESULTS:\n" + json.dumps(tool_outputs, indent=2, default=str)
+        )
     if tool_errors:
         live_context_parts.append("ORCHESTRATION TOOL WARNINGS:\n" + "\n".join(tool_errors))
     live_context_str = "\n\n".join(live_context_parts)
