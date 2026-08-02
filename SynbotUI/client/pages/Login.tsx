@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/components/AuthProvider";
+import { AuthError } from "@/lib/auth-client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -48,8 +49,12 @@ const Login = () => {
     try {
       await login(email, password);
       navigate("/", { replace: true });
-    } catch {
-      setError("Invalid email or password. Please try again.");
+    } catch (err) {
+      setError(
+        err instanceof AuthError
+          ? err.message
+          : "Invalid email or password. Please try again.",
+      );
     }
   };
 
