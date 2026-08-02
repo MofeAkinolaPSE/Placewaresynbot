@@ -1,12 +1,35 @@
-fastapi>=0.111.0
-uvicorn[standard]>=0.29.0
-pydantic>=2.7.0
-pydantic-settings>=2.2.0
-python-dotenv>=1.0.0
-pyodbc>=5.1.0
-httpx>=0.27.0
-watchdog>=4.0.0
-# pythonnet — must target .NET Framework for the Sage 50 SDK
-# Requires .NET Framework 4.x on the Windows host
-pythonnet>=3.0.3
-requests>=2.31.0
+# ── Sage Bridge dependencies ─────────────────────────────────────────────────
+#
+# TARGET PLATFORM: Windows 7 SP1, Python 3.9.13, **32-bit**
+#
+# Read this before changing a pin:
+#
+#   1. Python 3.9 is the LAST release with Windows 7 support. Do not bump to
+#      3.10+ — the installer refuses to run on Win7.
+#   2. Python must be **32-bit** to match the Pervasive ODBC driver shipped
+#      with Sage 50 2013. A 64-bit interpreter fails at pyodbc.connect() with
+#      an architecture-mismatch error. See INSTALL.md.
+#   3. Every version below is pinned exactly. Open-ended ranges (>=) resolve
+#      to releases that no longer publish cp39/win32 wheels, so `pip install`
+#      starts building from source and fails on a machine with no compiler.
+#
+# Verify a bump without a Win7 box:
+#   pip download -r requirements.txt --platform win32 --python-version 39 \
+#       --only-binary=:all: -d ./wheelhouse
+
+fastapi==0.115.6
+uvicorn==0.30.6          # plain, NOT [standard]: httptools/watchfiles need a
+                         # compiler on win32 and buy us nothing here
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+pyodbc==5.1.0            # 5.2+ drops cp39/win32 wheels
+httpx==0.27.2
+
+# pythonnet loads Sage.Peachtree.API.dll. Requires .NET Framework 4.x
+# (preinstalled on Win7 SP1) — NOT .NET Core/5+.
+pythonnet==3.0.3
+
+# NOTE: `watchdog` and `requests` were previously listed but are not imported
+# by the service. Detection is a stdlib polling loop, HTTP is httpx, and the
+# durable outbox uses stdlib sqlite3. Nothing further to add.

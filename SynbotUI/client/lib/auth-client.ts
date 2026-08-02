@@ -10,6 +10,9 @@ type TokenResponse = {
 
 const REFRESH_TOKEN_KEY = "refresh_token";
 
+/** Sign-in failure carrying a message safe to show the user. */
+export class AuthError extends Error {}
+
 class AuthClient {
   private accessToken: string | null = null;
   private roles: string[] = [];
@@ -50,14 +53,27 @@ class AuthClient {
     body.set("username", email);
     body.set("password", password);
 
-    const res = await fetch(apiUrl("/token"), {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
+    let res: Response;
+    try {
+      res = await fetch(apiUrl("/token"), {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+    } catch {
+      // Never reached the server: backend down, DNS/CORS failure, offline.
+      this.lastAuthError = "login_unreachable";
+      throw new AuthError(
+        "Cannot reach the server. Check that the backend is running.",
+      );
+    }
     if (!res.ok) {
       this.lastAuthError = `login_failed:${res.status}`;
-      throw new Error("Invalid credentials");
+      throw new AuthError(
+        res.status === 401 || res.status === 400
+          ? "Invalid email or password. Please try again."
+          : `Sign-in failed (server error ${res.status}). Please try again.`,
+      );
     }
     const data = (await res.json()) as TokenResponse;
     this.applyTokenResponse(data);

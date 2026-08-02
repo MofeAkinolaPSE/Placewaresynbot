@@ -14,6 +14,8 @@ file watcher and triggers a background sync to update Supabase caches.
 """
 from __future__ import annotations
 
+import datetime
+import hmac
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -578,12 +580,32 @@ async def sage_webhook(
     background_tasks: BackgroundTasks,
 ):
     """
-    Receives change-event pushes from the Sage Bridge file watcher.
-    No JWT auth here — protected by shared webhook secret header instead.
+    Receives event pushes from the Sage Bridge.
+
+    No JWT here — protected by the shared webhook secret header instead.
+
+    Idempotency
+    -----------
+    The bridge guarantees AT-LEAST-once delivery: it retries until we return
+    2xx, so the same event can legitimately arrive more than once (a retry
+    after a timeout where we actually succeeded, a replay after a bridge crash,
+    an operator-triggered rescan).
+
+    Every event carries a deterministic ``event_id``. We record applied IDs and
+    return **409** for one we have already processed. The bridge treats 409 as
+    success and stops retrying, which turns at-least-once delivery into
+    at-most-once application. This is the "never duplicate a sync" half of the
+    guarantee — the bridge's durable outbox is the "never drop one" half.
+
+    Two envelope shapes are accepted:
+      * ``event=record_upserted`` — carries the full record in ``data``; applied
+        directly with no pull-back to the bridge.
+      * ``event=data_changed``    — legacy change ping; triggers the existing
+        pull-based entity sync. Kept so entity types the bridge does not yet
+        extract in full keep working unchanged.
     """
-    # Verify webhook secret
     provided_key = request.headers.get("X-Webhook-Key", "")
-    if WEBHOOK_SECRET and provided_key != WEBHOOK_SECRET:
+    if WEBHOOK_SECRET and not hmac.compare_digest(provided_key, WEBHOOK_SECRET):
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
     try:
@@ -593,14 +615,83 @@ async def sage_webhook(
 
     entity_type = payload.get("entity_type")
     event = payload.get("event")
+    event_id = payload.get("event_id") or request.headers.get("X-Event-Id", "")
 
-    logger.info("Sage webhook received: event=%s entity=%s", event, entity_type)
+    logger.info(
+        "Sage webhook: event=%s entity=%s event_id=%s", event, entity_type, event_id
+    )
 
-    if event == "data_changed" and entity_type:
+    # ── Idempotency gate ─────────────────────────────────────────────────────
+    if event_id:
+        if _event_already_applied(event_id):
+            logger.info("Duplicate event %s ignored (already applied).", event_id)
+            # 409 tells the bridge "already done" so it stops retrying.
+            return JSONResponse(
+                status_code=409,
+                content={"received": True, "duplicate": True, "event_id": event_id},
+            )
+    else:
+        # An event with no ID cannot be deduplicated. Accept it (dropping it
+        # would violate the no-loss guarantee) but make the gap visible.
+        logger.warning(
+            "Sage webhook event has no event_id — cannot deduplicate. "
+            "Is the bridge older than v2.0.0?"
+        )
+
+    # ── Dispatch ─────────────────────────────────────────────────────────────
+    if event == "record_upserted" and entity_type:
+        from src.services.sage_sync_engine import apply_record_event
+        background_tasks.add_task(apply_record_event, payload)
+    elif event == "data_changed" and entity_type:
         from src.services.sage_sync_engine import schedule_entity_sync
         background_tasks.add_task(schedule_entity_sync, entity_type)
+    else:
+        logger.warning("Unhandled Sage webhook event=%s entity=%s", event, entity_type)
 
-    return {"received": True}
+    if event_id:
+        _mark_event_applied(event_id, entity_type or "", event or "")
+
+    return {"received": True, "event_id": event_id}
+
+
+def _event_already_applied(event_id: str) -> bool:
+    """
+    True when this event_id has already been processed.
+
+    Fails OPEN on a database error: if we cannot tell, we process the event.
+    Reprocessing is safe (the downstream upserts are idempotent on sage_id),
+    whereas failing closed would drop the event entirely — the worse outcome
+    given the no-loss requirement.
+    """
+    try:
+        existing = (
+            db.table("placeware_sage_event_log")
+            .select("event_id")
+            .eq("event_id", event_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(existing.data)
+    except Exception as exc:
+        logger.warning(
+            "Idempotency check failed for %s (%s) — processing anyway.", event_id, exc
+        )
+        return False
+
+
+def _mark_event_applied(event_id: str, entity_type: str, event: str) -> None:
+    """Record an applied event_id so a later redelivery is recognised."""
+    try:
+        db.table("placeware_sage_event_log").insert({
+            "event_id": event_id,
+            "entity_type": entity_type,
+            "event": event,
+            "applied_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }).execute()
+    except Exception as exc:
+        # Non-fatal: worst case is a duplicate application later, which the
+        # idempotent upserts absorb.
+        logger.warning("Could not record event_id %s: %s", event_id, exc)
 
 
 # ── Sync log helper ───────────────────────────────────────────────────────────

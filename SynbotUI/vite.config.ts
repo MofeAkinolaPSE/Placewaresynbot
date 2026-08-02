@@ -76,8 +76,8 @@ function expressPlugin(): Plugin {
     async configureServer(server) {
       // Lazy-load Express server only in dev — dynamic path prevents esbuild
       // from attempting to resolve this module during the Docker/production build.
-      const serverPath = "./server";
-      const { createServer } = await import(serverPath);
+      const serverPath = path.resolve(__dirname, "./server/index.ts");
+      const { createServer } = await server.ssrLoadModule(serverPath);
       const app = createServer();
 
       // Add Express app as middleware to Vite dev server
