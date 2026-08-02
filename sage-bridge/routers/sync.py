@@ -15,45 +15,92 @@ from auth import verify_api_key
 import odbc_client as odbc
 import sdk_client as sdk
 from config import get_settings
+from outbox import get_outbox
+from sender import nudge_sender
+from watcher import WM_INVOICE, get_watcher
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 _auth = Depends(verify_api_key)
 
-# In-memory record of last sync timestamps per entity type
-_last_sync: Dict[str, str] = {}
-
 
 @router.get("/status", response_model=Dict[str, Any])
 def sync_status(request: Request, _: None = _auth):
-    """Return connectivity status, Sage company path, and last sync timestamps."""
+    """
+    Full operational status: connectivity, outbox depth, watermark, failures.
+
+    This is the endpoint to check when asking "is the sync healthy?". Unlike
+    the original it reads sync state from the durable outbox rather than an
+    in-memory dict that reset to empty on every restart.
+    """
     settings = get_settings()
-    odbc_ok = False
-    sdk_ok = False
-    odbc_error = ""
-    sdk_error = ""
-    try:
-        odbc.fetch_all("company", limit=1)
-        odbc_ok = True
-    except Exception as exc:
-        odbc_error = str(exc)
-    try:
-        sdk.sdk_get_company_info()
-        sdk_ok = True
-    except Exception as exc:
-        sdk_error = str(exc)
+    odbc_ok, odbc_error = odbc.check_connection()
+    sdk_state = sdk.sdk_health()
+    ob = get_outbox()
+    stats = ob.stats()
 
     return {
-        "bridge_version": "1.0.0",
+        "bridge_version": "2.0.0",
         "sage_company_path": settings.SAGE_COMPANY_PATH,
         "sage_odbc_dsn": settings.SAGE_ODBC_DSN,
         "sage_odbc_conn_str_configured": bool(settings.SAGE_ODBC_CONN_STR),
+        "mock_mode": settings.SAGE_MOCK,
         "odbc_connected": odbc_ok,
-        "sdk_connected": sdk_ok,
-        "odbc_error": odbc_error,
-        "sdk_error": sdk_error,
-        "last_sync": _last_sync,
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "odbc_error": "" if odbc_ok else odbc_error,
+        "sdk": sdk_state,
+        "outbox": stats,
+        "invoice_watermark": ob.get_watermark(WM_INVOICE) or None,
+        # Healthy means: Sage readable AND nothing stuck undelivered.
+        "healthy": odbc_ok and stats["failed"] == 0,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
+
+
+@router.get("/outbox", response_model=Dict[str, Any])
+def outbox_status(request: Request, _: None = _auth):
+    """Outbox counts and the age of the oldest undelivered event."""
+    return get_outbox().stats()
+
+
+@router.post("/outbox/replay", response_model=Dict[str, Any])
+def replay_failed(request: Request, _: None = _auth):
+    """
+    Requeue every event parked as failed.
+
+    Safe to call repeatedly: replayed events carry their original deterministic
+    event_id, so SynBot deduplicates anything it already applied. Use this
+    after fixing whatever caused the failures (bad webhook key, SynBot down
+    past the retry window).
+    """
+    n = get_outbox().requeue_failed()
+    nudge_sender()
+    return {"requeued": n}
+
+
+@router.post("/scan", response_model=Dict[str, Any])
+def force_scan(request: Request, _: None = _auth):
+    """
+    Run an invoice scan immediately instead of waiting for the next poll.
+
+    Useful after a config fix, or to confirm end-to-end flow during setup.
+    """
+    try:
+        enqueued = get_watcher().force_scan()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Scan failed: {}".format(exc)) from exc
+    return {"enqueued": enqueued}
+
+
+@router.post("/watermark/reset", response_model=Dict[str, Any])
+def reset_watermark(request: Request, value: str = "", _: None = _auth):
+    """
+    Rewind the invoice scan cursor so the next scan re-reads from ``value``.
+
+    Empty value = re-read the entire AR table. Safe: regenerated events reuse
+    their deterministic IDs and are deduplicated by SynBot. Intended for use
+    after correcting a sage_schema.py mapping.
+    """
+    get_watcher().reset_watermark(value)
+    return {"watermark": value, "note": "next scan re-reads from this cursor"}
 
 
 @router.get("/company", response_model=Dict[str, Any])
@@ -98,7 +145,11 @@ def bulk_historical_pull(
         )
     try:
         rows = odbc.fetch_all(entity_type, limit=limit, offset=offset)
-        _last_sync[entity_type] = datetime.datetime.utcnow().isoformat() + "Z"
+        # Durable, unlike the previous in-memory dict which reset on restart.
+        get_outbox().set_watermark(
+            "historical_pull:" + entity_type,
+            datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        )
         return rows
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"ODBC error: {exc}") from exc

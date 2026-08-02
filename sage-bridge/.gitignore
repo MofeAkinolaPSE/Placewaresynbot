@@ -10,8 +10,19 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-test/
 venv/
 env/
 
-# Logs
+# Logs (rotating handler also produces .log.1 … .log.5)
+logs/
 *.log
+*.log.*
+
+# Durable outbox — contains undelivered business data.
+# Must NOT be committed, and must NOT be deleted on a live install: it holds
+# pending invoices and the scan watermark. Back it up separately.
+data/
+*.db
+*.db-wal
+*.db-shm

@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -85,52 +87,158 @@ def load_sdk(dll_path: str) -> None:
 
 class SageSession:
     """
-    Thread-safe wrapper around a PeachtreeSession + open Company.
-    Re-opens the company if the session was closed.
+    Wrapper around a PeachtreeSession + open Company, with health checking and
+    automatic reconnection.
+
+    Two problems with the original are fixed here.
+
+    **1. A dead session never recovered.** ``_ensure_open`` reopened only when
+    ``_session is None``. If Sage was closed and reopened, the company file got
+    locked, or the session died for any other reason, the object was non-None
+    but unusable — every subsequent call failed until someone restarted the
+    service. ``_is_healthy()`` now probes the session and reconnects when the
+    probe fails.
+
+    **2. Concurrent SDK access.** The lock guarded only the *opening* of the
+    session; the ``sdk_get_*`` functions then hit the .NET objects from
+    whichever FastAPI threadpool worker they landed on. The Peachtree API is
+    not documented thread-safe, and COM/.NET interop under pythonnet is
+    apartment-sensitive. ``access()`` now serialises every SDK call through one
+    reentrant lock.
+
+    Serialising costs throughput, but this bridge handles a handful of
+    invoices a minute on a single-user Sage install — correctness is worth far
+    more than parallelism here.
     """
+
+    #: Reconnect attempts before giving up on a single call.
+    _MAX_RECONNECT = 2
 
     def __init__(self, company_path: str) -> None:
         self._company_path = company_path
         self._session = None
         self._company = None
-        self._lock = threading.Lock()
+        # Reentrant: access() may be nested by helpers that also take it.
+        self._lock = threading.RLock()
+        self._consecutive_failures = 0
+
+    # ── connection state ─────────────────────────────────────────────────────
 
     def _open(self) -> None:
-        """Open a Sage session and the company file."""
+        """Open a Sage session and the company file. Caller holds the lock."""
         if not _sdk_loaded:
             raise RuntimeError("SDK not loaded. Call load_sdk() first.")
 
         session = _peachtree.PeachtreeSession()
         session.Begin(_peachtree.ProductType.Peachtree)
         company = session.Open(self._company_path)
-        logger.info("Sage company opened: %s", self._company_path)
         self._session = session
         self._company = company
+        self._consecutive_failures = 0
+        logger.info("Sage company opened: %s", self._company_path)
+
+    def _is_healthy(self) -> bool:
+        """
+        Probe whether the session is still usable.
+
+        Touching a cheap property is enough: a dead session raises rather than
+        returning a wrong answer, which is exactly the signal we need.
+        """
+        if self._session is None or self._company is None:
+            return False
+        try:
+            _ = self._company.Name
+            return True
+        except Exception as exc:
+            logger.warning("Sage session failed health probe: %s", exc)
+            return False
+
+    def _reconnect(self) -> None:
+        """Tear down and reopen. Caller holds the lock."""
+        logger.info("Reopening Sage session...")
+        self._close_locked()
+        self._open()
 
     def _ensure_open(self) -> None:
         with self._lock:
-            if self._session is None or self._company is None:
-                self._open()
+            if not self._is_healthy():
+                self._reconnect()
+
+    # ── serialised access ────────────────────────────────────────────────────
+
+    @contextmanager
+    def access(self):
+        """
+        Context manager yielding the live Company object under an exclusive lock.
+
+        Every SDK call must go through this::
+
+            with _get_session().access() as company:
+                company.Factories...
+
+        Reconnects transparently if the session has died, retrying the caller's
+        work is NOT attempted — the caller sees the exception and the sync layer
+        leaves the event pending, so nothing is lost.
+        """
+        with self._lock:
+            attempt = 0
+            while True:
+                if self._is_healthy():
+                    break
+                attempt += 1
+                if attempt > self._MAX_RECONNECT:
+                    self._consecutive_failures += 1
+                    raise RuntimeError(
+                        "Sage SDK session unavailable after {} reconnect "
+                        "attempts (consecutive failures: {}). Check that Sage 50 "
+                        "is installed, the company path is correct, and the SDK "
+                        "authorization has been granted — see INSTALL.md."
+                        .format(self._MAX_RECONNECT, self._consecutive_failures)
+                    )
+                try:
+                    self._reconnect()
+                except Exception as exc:
+                    logger.error("Sage reconnect attempt %d failed: %s", attempt, exc)
+                    time.sleep(1.0 * attempt)
+            yield self._company
 
     @property
     def company(self):
+        """Backwards-compatible accessor. Prefer access() for new code."""
         self._ensure_open()
         return self._company
 
+    def health(self) -> Dict[str, Any]:
+        """Report session state for /health and /sync/status."""
+        with self._lock:
+            healthy = self._is_healthy()
+        return {
+            "sdk_loaded": _sdk_loaded,
+            "session_open": self._session is not None,
+            "healthy": healthy,
+            "company_path": self._company_path,
+            "consecutive_failures": self._consecutive_failures,
+        }
+
+    # ── teardown ─────────────────────────────────────────────────────────────
+
+    def _close_locked(self) -> None:
+        if self._company is not None:
+            try:
+                self._company.Close()
+            except Exception:
+                pass
+        if self._session is not None:
+            try:
+                self._session.End()
+            except Exception:
+                pass
+        self._session = None
+        self._company = None
+
     def close(self) -> None:
         with self._lock:
-            if self._company:
-                try:
-                    self._company.Close()
-                except Exception:
-                    pass
-            if self._session:
-                try:
-                    self._session.End()
-                except Exception:
-                    pass
-            self._session = None
-            self._company = None
+            self._close_locked()
             logger.info("Sage session closed.")
 
 
@@ -149,6 +257,28 @@ def _get_session() -> SageSession:
     if _sage_session is None:
         raise RuntimeError("SageSession not initialised. Call init_session() first.")
     return _sage_session
+
+
+def sdk_health() -> Dict[str, Any]:
+    """
+    Report SDK availability without raising. Used by /health and /sync/status.
+
+    Returns a dict rather than a bool so operators can tell "Sage not installed"
+    apart from "session died" apart from "not authorized yet" — three very
+    different problems that all previously surfaced as sdk_connected: false.
+    """
+    if _is_mock():
+        return {"sdk_loaded": True, "session_open": True, "healthy": True,
+                "mode": "mock"}
+    if _sage_session is None:
+        return {
+            "sdk_loaded": _sdk_loaded,
+            "session_open": False,
+            "healthy": False,
+            "reason": "session not initialised (SDK load or company open failed "
+                      "at startup — check the log for the underlying error)",
+        }
+    return _sage_session.health()
 
 
 def _is_mock() -> bool:
@@ -514,32 +644,73 @@ def sdk_void_invoice(invoice_id: str) -> bool:
     return False
 
 
-def _invoice_to_dict(inv) -> Dict[str, Any]:
-    lines = []
+def _attr(obj: Any, name: str, default: Any = None) -> Any:
+    """
+    Read a .NET property that may not exist on this SDK build.
+
+    Sage 50 2013's API surface varies slightly between releases; referencing a
+    property that is absent raises rather than returning None. Every optional
+    field goes through here so a missing property degrades that one field
+    instead of failing the whole extraction.
+    """
     try:
-        for line in inv.SalesInvoiceLines:
-            lines.append({
-                "description": _safe(str(line.Description), ""),
-                "quantity": _safe(float(line.Quantity), 0.0),
-                "unit_price": _safe(float(line.UnitPrice), 0.0),
-                "amount": _safe(float(line.Amount), 0.0),
-                "gl_account": _safe(str(line.AccountReference), ""),
-                "item_id": _safe(str(line.ItemReference), ""),
-            })
+        value = getattr(obj, name, default)
+        return default if value is None else value
     except Exception:
-        pass
+        return default
+
+
+def _invoice_to_dict(inv) -> Dict[str, Any]:
+    """
+    Map a Sage SalesInvoice to our wire format.
+
+    Extended beyond the original to carry tax, per-line tax, customer name and
+    shipping — the original returned none of these, so SynBot was driving
+    finance and inventory updates from header totals alone.
+    """
+    lines: List[Dict[str, Any]] = []
+    try:
+        for idx, line in enumerate(inv.SalesInvoiceLines):
+            lines.append({
+                "line_no": idx + 1,
+                "description": _safe(str(_attr(line, "Description", "")), ""),
+                "quantity": _safe(float(_attr(line, "Quantity", 0.0)), 0.0),
+                "unit_price": _safe(float(_attr(line, "UnitPrice", 0.0)), 0.0),
+                "amount": _safe(float(_attr(line, "Amount", 0.0)), 0.0),
+                "gl_account": _safe(str(_attr(line, "AccountReference", "")), ""),
+                "item_id": _safe(str(_attr(line, "ItemReference", "")), ""),
+                # Tax per line — absent on some 2013 builds, hence _attr.
+                "tax_type": _safe(str(_attr(line, "SalesTaxType", "")), ""),
+                "tax_amount": _safe(float(_attr(line, "SalesTaxAmount", 0.0)), 0.0),
+            })
+    except Exception as exc:
+        # Do NOT swallow silently as the original did: a header with no lines
+        # looks like a valid empty invoice downstream and would zero out the
+        # inventory movement for a real sale.
+        logger.error(
+            "Failed reading invoice lines for %s: %s — record marked incomplete",
+            _safe(str(_attr(getattr(inv, "Key", None), "ID", "")), "?"), exc,
+        )
+        raise
+
     return {
         "sage_id": _safe(str(inv.Key.ID), ""),
-        "customer_id": _safe(str(inv.CustomerReference), ""),
+        "customer_id": _safe(str(_attr(inv, "CustomerReference", "")), ""),
+        "customer_name": _safe(str(_attr(inv, "CustomerName", "")), ""),
         "date": _py_date(inv.Date),
-        "due_date": _py_date(inv.DueDate),
-        "invoice_number": _safe(str(inv.ReferenceNumber), ""),
-        "po_number": _safe(str(inv.CustomerPurchaseOrderNumber), ""),
-        "total_amount": _safe(float(inv.TotalAmount), 0.0),
-        "amount_paid": _safe(float(inv.AmountPaid), 0.0),
-        "amount_due": _safe(float(inv.AmountDue), 0.0),
-        "is_paid": _safe(bool(inv.IsPaid), False),
-        "note": _safe(str(inv.Note), ""),
+        "due_date": _py_date(_attr(inv, "DueDate")),
+        "ship_date": _py_date(_attr(inv, "ShipDate")),
+        "ship_method": _safe(str(_attr(inv, "ShipVia", "")), ""),
+        "invoice_number": _safe(str(_attr(inv, "ReferenceNumber", "")), ""),
+        "po_number": _safe(str(_attr(inv, "CustomerPurchaseOrderNumber", "")), ""),
+        "total_amount": _safe(float(_attr(inv, "TotalAmount", 0.0)), 0.0),
+        "amount_paid": _safe(float(_attr(inv, "AmountPaid", 0.0)), 0.0),
+        "amount_due": _safe(float(_attr(inv, "AmountDue", 0.0)), 0.0),
+        "sales_tax_amount": _safe(float(_attr(inv, "SalesTaxAmount", 0.0)), 0.0),
+        "tax_code": _safe(str(_attr(inv, "SalesTaxCodeReference", "")), ""),
+        "freight_amount": _safe(float(_attr(inv, "FreightAmount", 0.0)), 0.0),
+        "is_paid": _safe(bool(_attr(inv, "IsPaid", False)), False),
+        "note": _safe(str(_attr(inv, "Note", "")), ""),
         "lines": lines,
     }
 

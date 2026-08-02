@@ -160,6 +160,143 @@ async def schedule_entity_sync(entity_type: str) -> None:
         _log_sync_error(entity_type, str(exc))
 
 
+async def apply_record_event(envelope: Dict[str, Any]) -> None:
+    """
+    Apply a full record pushed by the bridge (event=record_upserted).
+
+    This replaces the old "ping then re-pull everything" flow for invoices. The
+    bridge now sends the complete invoice — header, lines, tax, payment and
+    inventory movement — so we apply it directly instead of fetching up to 2000
+    invoices back over the LAN on every single change.
+
+    Idempotent: keyed on sage_id, so replaying an event is a no-op rather than a
+    duplicate. Combined with the event_id gate in the webhook handler, a record
+    is applied at most once even though the bridge may deliver it several times.
+    """
+    entity_type = envelope.get("entity_type") or ""
+    record = envelope.get("data") or {}
+    sage_id = envelope.get("sage_id") or record.get("sage_id")
+
+    if not sage_id:
+        logger.error("record_upserted with no sage_id — ignoring: %s", envelope)
+        return
+
+    if entity_type != "invoice":
+        logger.warning(
+            "apply_record_event received unsupported entity_type=%s; falling back "
+            "to a pull-based sync.", entity_type,
+        )
+        await schedule_entity_sync(entity_type)
+        return
+
+    meta = record.get("_meta") or {}
+    if meta.get("completeness") == "partial":
+        # Visible rather than silent: downstream figures are being derived from
+        # a degraded extraction (usually the SDK being unavailable).
+        logger.warning(
+            "Invoice %s arrived with completeness=partial (source=%s, missing=%s). "
+            "Tax and related fields may be incomplete.",
+            sage_id, meta.get("source"), meta.get("missing"),
+        )
+
+    try:
+        payment = record.get("payment") or {}
+        cache_row = {
+            "sage_id": str(sage_id),
+            "invoice_number": record.get("invoice_number") or "",
+            "customer_id": record.get("customer_id") or "",
+            "customer_name": record.get("customer_name") or "",
+            "date": record.get("date"),
+            "due_date": record.get("due_date"),
+            "subtotal": record.get("subtotal") or 0,
+            "total_tax": (record.get("tax") or {}).get("total_tax") or 0,
+            "total_amount": payment.get("total_amount") or 0,
+            "amount_paid": payment.get("amount_paid") or 0,
+            "amount_due": payment.get("amount_due") or 0,
+            "payment_status": payment.get("payment_status") or "unknown",
+            "line_count": record.get("line_count") or 0,
+            "lines": record.get("lines") or [],
+            "po_number": record.get("po_number") or "",
+            "note": record.get("note") or "",
+            "source": meta.get("source") or "sage_bridge",
+            "completeness": meta.get("completeness") or "unknown",
+            "synced_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        _upsert_to_supabase("sage_invoices_cache", [cache_row], pk="sage_id")
+
+        _apply_inventory_movement(sage_id, record.get("inventory_movement") or [])
+
+        audit_event(
+            action="sage_invoice_synced",
+            actor="sage_bridge",
+            resource="sage_invoices_cache/{}".format(sage_id),
+            metadata={
+                "sage_id": str(sage_id),
+                "invoice_number": cache_row["invoice_number"],
+                "total_amount": cache_row["total_amount"],
+                "payment_status": cache_row["payment_status"],
+                "line_count": cache_row["line_count"],
+                "event_id": envelope.get("event_id"),
+                "completeness": cache_row["completeness"],
+            },
+        )
+        _record_sync_timestamp("ar_transaction")
+        logger.info(
+            "Invoice %s applied (%s lines, %s).",
+            sage_id, cache_row["line_count"], cache_row["payment_status"],
+        )
+
+        await _run_invoice_workflow([{
+            "sage_id": sage_id,
+            "due_date": record.get("due_date"),
+            "balance": payment.get("amount_due"),
+            "customer_id": record.get("customer_id"),
+        }])
+
+    except Exception as exc:
+        logger.error("Failed applying invoice %s: %s", sage_id, exc)
+        _log_sync_error("ar_transaction", "invoice {}: {}".format(sage_id, exc))
+        # Re-raise so the webhook's background task records a failure. The
+        # bridge keeps the event pending and retries it.
+        raise
+
+
+def _apply_inventory_movement(
+    sage_id: str, movements: List[Dict[str, Any]]
+) -> None:
+    """
+    Record stock movement implied by an invoice.
+
+    ``quantity_delta`` is negative for a sale (see the bridge's
+    invoice_extract._derive_inventory_movement). Rows are keyed on
+    (source_document, item_id) so replaying an invoice overwrites its own
+    movement rather than double-decrementing stock.
+    """
+    if not movements:
+        return
+    rows = []
+    for m in movements:
+        rows.append({
+            "source_document": "sage_invoice:{}".format(sage_id),
+            "item_id": m.get("item_id"),
+            "quantity_delta": m.get("quantity_delta"),
+            "direction": m.get("direction") or "out",
+            "unit_price": m.get("unit_price"),
+            "recorded_at": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+    try:
+        db.table("sage_inventory_movements").upsert(
+            rows, on_conflict="source_document,item_id"
+        ).execute()
+        logger.info("Inventory: %d movement row(s) for invoice %s", len(rows), sage_id)
+    except Exception as exc:
+        # Non-fatal for the invoice sync itself, but must be visible — stock
+        # figures will be stale until this is fixed.
+        logger.error(
+            "Could not record inventory movement for invoice %s: %s", sage_id, exc
+        )
+
+
 async def _run_invoice_workflow(invoice_rows: List[Dict[str, Any]]) -> None:
     """
     Invoice workflow — triggered automatically after every AR sync.
