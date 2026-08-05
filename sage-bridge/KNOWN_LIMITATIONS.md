@@ -40,21 +40,70 @@ loses it.
 
 ---
 
-## 3. Deleted and voided invoices are not detected
+## 3. Deleted and voided invoices — detected, with a deliberate delay
 
-The scan walks *forward* from a watermark, so it sees new and updated rows but
-not deletions.
+The forward scan walks from a watermark and cannot see deletions. A
+**reconciliation sweep** now covers that gap: it enumerates every invoice ID in
+Sage, diffs against what the bridge has synced, and emits `record_deleted` for
+the difference. SynBot soft-deletes (`is_voided`) across the invoice cache,
+stock movements, sales lines and GL entries, then recomputes the customer's AR
+balance.
 
-- **Impact:** an invoice voided in Sage stays in SynBot's cache as active.
-- **Workaround:** if Sage marks voids with a status column rather than deleting
-  the row, the change is picked up as an edit. Confirm the client's void
-  behaviour on site.
-- **Proper fix:** a periodic full reconciliation sweep comparing ID sets. Not
-  implemented — it needs the verified schema first.
+Residual limitations:
+
+- **Latency is up to `RECONCILE_INTERVAL_SECONDS` (default 24 h).** The sweep is
+  a full-table enumeration, so it cannot run at poll frequency on this hardware.
+  A void is invisible to SynBot until the next sweep. Force one with
+  `POST /sync/reconcile`.
+- **The sweep refuses to act when it cannot trust its input.** Three guards —
+  abort on any read error, abort on an empty enumeration, abort above
+  `RECONCILE_MAX_DELETE_RATIO` (default 10%) — mean a genuine bulk void needs an
+  operator to raise the ceiling deliberately. That is the intended trade: a
+  false delete is unrecoverable downstream, a delayed one is not.
+- **Voids that keep the row** and flip a status column were already handled as
+  edits (the content fingerprint changes). Unchanged.
+- **Only invoices.** Deletion of customers, vendors or inventory items is still
+  undetected.
 
 ---
 
-## 4. SDK authorization cannot be automated
+## 4. What the Sage 50 2013 SDK genuinely cannot do
+
+`sdk_client.py` is now written against the real API, verified member-by-member
+against `Sage.Peachtree.API` 2013.0.0.826 by `verify_sdk_api.py` (189 names).
+These are hard gaps in the SDK itself, not omissions in the bridge:
+
+| Capability | Status | Why |
+|---|---|---|
+| **Create vendor bills** | Not possible | `PurchaseInvoice` has no `Save()`. Returns **501**. Enter in Sage, or post via `/journal`. |
+| **Payroll** | Not available | No payroll factory exists on `Company.Factories`. `sdk_get_payroll_checks` returns `[]`. Read `PAYROLL.DAT` over ODBC if needed. |
+| **Company address / phone / tax ID / fiscal year** | Not available | There is no `CompanyInformation` object. `CompanyIdentifier` gives name, path, database, schema version only. Fields are returned empty and listed in `_unavailable`. |
+| **Employee detail** | Minimal | Sage's `Employee` is ID, Name, Email, PhoneNumbers, IsInactive, IsSalesRepresentative. No address, hire date, pay type, or department. |
+| **Inventory cost** | Not exposed | A costing-method computation in Sage, not a property. Reported as `0.0` rather than guessed. Sales price comes from `PriceLevels[0]`. |
+| **Per-line tax amounts** | Not available | `SalesInvoiceSalesLine.SalesTaxType` is an integer *code*. Tax is computed at invoice level (`SalesTaxAmount`). Per-line tax is always `0.0`. |
+| **Invoice ship date** | Not available | `SalesInvoice` has no ship date; only `SalesOrder` does. Always `None`. |
+
+### Invoice identity differs between the two paths
+
+The SDK's primary key for a transaction is a **Guid** (`invoice.Key.Guid`). The
+ODBC scan keys on `ARTRANS.TRANSNO`. `sdk_get_invoice()` therefore matches on
+*either* the Guid or `ReferenceNumber`, so the two paths stay interchangeable.
+If the client's `REFERENCE` column does not correspond to the SDK's
+`ReferenceNumber`, SDK lookups from the ODBC-driven scan will miss and every
+invoice will fall back to the partial ODBC record. **Confirm this on site** —
+it is the one remaining assumption linking the two halves.
+
+### Full-table loads
+
+`factory.List()` + `.Load()` materialises the whole entity set; the SDK's
+`LoadModifiers` filtering was not used because filter expressions could not be
+tested without a company file. On a company with years of history this is the
+most likely performance problem. Measure it on site before raising
+`WATCHER_SCAN_PAGE_SIZE`.
+
+---
+
+## 5. SDK authorization cannot be automated
 
 The Sage 50 SDK requires a one-time interactive consent dialog. A Windows
 service cannot answer it.
@@ -67,10 +116,17 @@ service cannot answer it.
 
 ---
 
-## 5. Duplicate protection requires the SynBot migration
+## 6. Duplicate protection requires the SynBot migrations
 
 Migration `071_sage_bridge_idempotency.sql` creates `placeware_sage_event_log`.
 **Without it, the dedupe check fails open and duplicates become possible.**
+
+`097_sage_bridge_voids_and_downstream.sql` is equally required: it adds the
+`is_voided` columns, `sage_gl_entries`, `sage_sales_lines` and the customer AR
+rollup columns. Without it, void handling and the finance/sales/customer
+downstream writes all fail — and because those writes now raise rather than
+log-and-continue, the events stay pending in the outbox rather than being
+silently half-applied. Apply both.
 
 The failure is deliberate: the check fails *open* (processes the event) rather
 than *closed* (drops it), because reprocessing is recoverable and dropping is
@@ -79,7 +135,7 @@ guarantee to "usually". Apply it.
 
 ---
 
-## 6. Single-writer assumption
+## 7. Single-writer assumption
 
 One bridge instance per Sage company. Two pointed at the same company file
 would both scan and both enqueue.
@@ -90,9 +146,9 @@ resources. Do not run two.
 
 ---
 
-## 7. What the tests do and do not prove
+## 8. What the tests do and do not prove
 
-The 47 automated tests run against fakes. Honestly scoped:
+58 bridge tests plus 6 SynBot webhook tests, all against fakes. Honestly scoped:
 
 **Proven by tests here (real, verifiable):**
 
@@ -104,22 +160,43 @@ The 47 automated tests run against fakes. Honestly scoped:
 - Failed events retained and replayable, never deleted
 - Field-level extraction accuracy, inventory sign convention, payment status
 - Delivery against a real HTTP server that 503s, 403s and disappears
+- Void detection, tombstoning, and delete-event ID stability
+- All three reconciliation guards (partial read, empty read, bulk ceiling)
+- Watcher liveness reporting — a watcher that never started reports unhealthy
+- **The receiver honours the no-loss contract**: a failed apply returns 5xx and
+  does *not* record the `event_id`, so the bridge retries instead of dropping.
+  Verified by reverting the fix and confirming the tests fail.
+
+**Proven against the REAL Sage assembly (2013.0.0.826):**
+
+- The SDK loads, and all 400 types resolve — so the assembly resolver finds
+  every dependency in the Peachtree install (`Sage.Peachtree.Domain` and the
+  rest live in the program root, not beside the DLL in `API\`)
+- **Every one of the 189 type / property / method names `sdk_client.py` calls
+  exists in the assembly** — `verify_sdk_api.py`, runnable on any machine with
+  Sage installed, no company file needed
+- 32-bit Python 3.9 loads the X86 assembly; the bitness guard fires correctly
+  on a 64-bit interpreter
 
 **NOT proven — needs the client machine:**
 
 - Real Pervasive ODBC connectivity and driver bitness
 - **Whether the table/column names are correct** (see §1)
-- Real Sage SDK loading, authorization and session behaviour
+- SDK **authorization** — `RequestAccess` needs a real company and a human
+- Whether the *values* are what we expect. The API surface is verified; that a
+  property exists does not prove it is populated the way we assume
+- **Whether the ODBC `TRANSNO` matches the SDK `ReferenceNumber`** (see §4) —
+  the assumption linking the two halves
 - Extraction accuracy against *real* invoices — mock data is representative,
   not real
 - Behaviour under a real Sage upgrade or company-file lock
-- Performance against a company file with years of history
+- Performance of full-table `List()` + `Load()` against years of history (§4)
 
 `verify_onsite.py` covers each of these as a checklist on site.
 
 ---
 
-## 8. Security constraints
+## 9. Security constraints
 
 | Item | Status |
 |---|---|
@@ -130,7 +207,20 @@ The 47 automated tests run against fakes. Honestly scoped:
 
 ---
 
-## 9. Deliberately unchanged
+## 10. The GL mirror is a mirror, not a ledger
+
+`sage_gl_entries` reproduces the standard sales-invoice shape — revenue per GL
+account, tax, and the receivable as the balancing side — so finance reporting
+has account-level figures instead of only invoice totals.
+
+It is **not** a double-entry engine. Sage remains the book of record. Anything
+beyond the plain sales-invoice shape (multi-currency, deferred revenue, job
+costing splits, manual adjusting entries) is not modelled here and must be read
+from Sage directly. Do not reconcile statutory accounts from this table.
+
+---
+
+## 11. Deliberately unchanged
 
 - **`/invoices` list endpoint still returns ODBC header rows.** SynBot's
   pull-based paths use it; the new push path carries full records instead.
@@ -140,14 +230,19 @@ The 47 automated tests run against fakes. Honestly scoped:
   scope for full extraction. They now carry `event_id`s, so they are
   deduplicated too.
 - **ODBC-for-reads / SDK-for-writes split.** Sound design; kept.
+- **`data_changed` pings still run as background tasks.** They carry no data, so
+  a lost ping costs a sync cycle rather than a record. Only the data-carrying
+  events (`record_upserted`, `record_deleted`) were made synchronous.
 
 ---
 
-## 10. Recommended follow-ups
+## 12. Recommended follow-ups
 
-1. **Reconciliation sweep** — daily full comparison to catch voids/deletes (§3).
-2. **Extend full extraction** to sales orders and payments, once the invoice
+1. **Extend full extraction** to sales orders and payments, once the invoice
    path is proven on site.
-3. **Alerting** — `/health` reports `degraded`; nothing watches it. Point a
-   monitor at it so a stalled outbox pages someone.
-4. **Replace Windows 7** — the real long-term fix for §8.
+2. **Alerting** — `/health` now reports `degraded` when the watcher is not
+   running, stalled, or the outbox has failures. Nothing watches it. Point a
+   monitor at it so a stalled sync pages someone. This is the largest remaining
+   operational gap.
+3. **Extend reconciliation** to customers, vendors and inventory (§3).
+4. **Replace Windows 7** — the real long-term fix for §9.

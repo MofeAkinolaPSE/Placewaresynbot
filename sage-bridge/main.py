@@ -40,7 +40,7 @@ import sdk_client as sdk
 from config import get_settings
 from outbox import get_outbox
 from sender import start_sender, stop_sender
-from watcher import start_watcher, stop_watcher
+from watcher import get_watcher, start_watcher, stop_watcher
 
 from routers.accounts import router as accounts_router
 from routers.customers import router as customers_router
@@ -126,7 +126,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if not settings.SAGE_MOCK:
         try:
-            sdk.load_sdk(settings.SAGE_API_DLL_PATH)
+            sdk.load_sdk(settings.SAGE_API_DLL_PATH, settings.SAGE_INSTALL_DIR)
             logger.info("Sage SDK loaded.")
         except RuntimeError as exc:
             logger.error("SDK load failed: %s", exc)
@@ -136,7 +136,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
 
         try:
-            sdk.init_session(settings.SAGE_COMPANY_PATH)
+            sdk.init_session(
+                settings.SAGE_COMPANY_PATH, settings.SAGE_APPLICATION_ID
+            )
             logger.info("Sage company session opened: %s", settings.SAGE_COMPANY_PATH)
         except Exception as exc:
             logger.error("Sage company session failed: %s", exc)
@@ -249,14 +251,24 @@ def health():
     odbc_ok, _ = odbc.check_connection()
     sdk_state = sdk.sdk_health()
     stats = get_outbox().stats()
+    watcher_state = get_watcher().health()
 
-    degraded = (not odbc_ok) or stats["failed"] > 0
+    # watcher_healthy is part of the degraded test on purpose: a watcher that
+    # never started leaves the outbox permanently empty, which otherwise looks
+    # identical to "no new invoices" and reported ok forever.
+    degraded = (
+        (not odbc_ok)
+        or stats["failed"] > 0
+        or not watcher_state["healthy"]
+    )
     return {
         "status": "degraded" if degraded else "ok",
         "service": "sage-bridge",
         "version": BRIDGE_VERSION,
         "odbc_connected": odbc_ok,
         "sdk_healthy": bool(sdk_state.get("healthy")),
+        "watcher_healthy": watcher_state["healthy"],
+        "watcher_last_scan_age_seconds": watcher_state["last_scan_age_seconds"],
         "outbox_pending": stats["pending"],
         "outbox_failed": stats["failed"],
     }

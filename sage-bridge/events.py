@@ -92,6 +92,36 @@ def build_envelope(
     }
 
 
+def build_delete_envelope(entity_type: str, sage_id: str) -> Dict[str, Any]:
+    """
+    Build a ``record_deleted`` event for a record that vanished from Sage.
+
+    Emitted by the reconciliation sweep, which is the only thing that can see a
+    deletion — the forward scan walks a watermark upward and never revisits a
+    row, so a disappearance is invisible to it.
+
+    The ID is deterministic on (entity_type, sage_id) with no content
+    fingerprint: a deletion has no content, and re-running the sweep must
+    regenerate the same ID so a redelivery dedupes instead of firing a second
+    delete.
+    """
+    payload = {"sage_id": sage_id, "deleted": True}
+    return {
+        "source": "sage_bridge",
+        "schema_version": SCHEMA_VERSION,
+        "event": "record_deleted",
+        "event_id": "del-{}-{}".format(
+            entity_type,
+            hashlib.sha256(
+                "delete:{}:{}".format(entity_type, sage_id).encode("utf-8")
+            ).hexdigest()[:32],
+        ),
+        "entity_type": entity_type,
+        "sage_id": sage_id,
+        "data": payload,
+    }
+
+
 def build_change_ping(entity_type: str, token: str) -> Dict[str, Any]:
     """
     Build a legacy-compatible "something changed" ping.

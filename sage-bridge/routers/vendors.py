@@ -98,9 +98,17 @@ def list_vendor_bills(
 
 @router.post("/bills", status_code=status.HTTP_201_CREATED, response_model=Dict[str, Any])
 def create_vendor_bill(request: Request, body: VendorBillCreate, _: None = _auth):
-    """Record a vendor bill (AP invoice) in Sage."""
+    """
+    Record a vendor bill (AP invoice) in Sage.
+
+    Returns **501** in live mode: the Sage 50 2013 SDK exposes no Save() on
+    PurchaseInvoice, so vendor bills cannot be created through it. 501 rather
+    than 503 because retrying will never help — see KNOWN_LIMITATIONS.md.
+    """
     try:
         return sdk.sdk_create_vendor_invoice(body.model_dump())
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
