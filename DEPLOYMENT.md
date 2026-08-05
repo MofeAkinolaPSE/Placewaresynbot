@@ -706,6 +706,346 @@ To create accounts: log into ACE as admin → **Settings → Users → Invite**
 
 ---
 
+# LOCAL SAME-MACHINE SAGE BRIDGE TEST
+
+> **When to use this section:** you have Sage 50 installed on the **same PC** as your ACE dev environment (not the two-machine VM + Windows-7 setup in Part 2 below), and you want to prove the whole pipeline works — Sage 50 → Bridge → ACE — before anything goes near a real deployment. This is a different scenario from Part 2, so it gets its own walkthrough.
+>
+> **Glossary for this section:**
+> - **DSN** — "Data Source Name." A saved connection profile Windows uses to let a program talk to a database. The bridge uses one to read Sage's data.
+> - **Outbox** — a small local queue the bridge keeps. When it detects a new invoice, it drops an event here first, then tries to deliver it to ACE, retrying automatically if ACE is briefly unreachable.
+> - **`host.docker.internal`** — a special address Docker Desktop provides automatically. From inside a container, it always means "the Windows PC this container is running on." You don't configure it; it just works.
+> - **Webhook** — a URL the bridge calls (like a phone number it dials) whenever something changes in Sage, so ACE finds out immediately instead of having to constantly ask.
+
+---
+
+## Why `python main.py` Just Failed (Two Different Errors, Two Different Fixes)
+
+**Error 1 — the first one you hit:**
+```
+ValidationError: BRIDGE_API_KEY is unset or still a placeholder
+```
+This means the bridge refuses to start, on purpose. `sage-bridge/config.py` keeps a list of known placeholder values, and `placeware-bridge-dev-key-2026` (the value currently sitting in `sage-bridge/.env`) is literally on that list. It's the same key used as a password every time ACE talks to the bridge, so a shared, guessable value would be a real security hole in production. **Phase A** below fixes it.
+
+**Error 2 — after fixing Error 1, you'll likely hit this next** (both DLL load and ODBC connection failing the same way):
+```
+Failed to load Sage SDK DLL ... An attempt was made to load a program with an incorrect format.
+ODBC connection failed: ('IM014', ... 'The specified DSN contains an architecture mismatch between the Driver and Application')
+```
+This is a **32-bit vs 64-bit mismatch**. Sage 50 2013's database driver and SDK are both 32-bit only — a 64-bit Python interpreter physically cannot load them, no matter how correct your `.env` values are. If your terminal prompt shows `(.venv)` when you're inside `sage-bridge\`, check where that venv actually lives first — it's easy to still have a *different* project's 64-bit venv active from earlier work. **Phase 0** below fixes it.
+
+> **Why this matters even though your teammate already got Sage's DSN and company path working:** those are two separate things. The DSN being *created correctly* (in the 32-bit ODBC admin tool) doesn't help if the *program connecting to it* is 64-bit — that's exactly what "architecture mismatch" means: driver and caller disagree on bitness. Phase 0 fixes the caller's side.
+
+---
+
+## PHASE 0 — Set Up the Bridge's Own 32-bit Python Environment
+
+**Why this matters:** the bridge needs its *own* virtual environment built on 32-bit Python 3.9.13 — it cannot share ACE's backend venv (which is 64-bit, built for a completely different purpose). Running the bridge under the wrong interpreter is what produced both DLL-load and ODBC errors above.
+
+**0.1 — Check what's currently active.** In your PowerShell window:
+```powershell
+python -c "import struct, sys; print(struct.calcsize('P')*8, sys.executable)"
+```
+If this prints `64` and a path containing `backend\.venv`, that confirms it — you're running the bridge under the backend's environment. Close this terminal and open a fresh PowerShell window (so no old venv activation carries over).
+
+**0.2 — Check whether 32-bit Python 3.9.13 is already installed.** Some machines have it side-by-side with 64-bit Python already, from a previous setup attempt:
+```powershell
+py -3.9-32 -c "import struct; print(struct.calcsize('P')*8)"
+```
+If this prints `32`, skip to **0.4** — you already have it, you just need a venv built from it. If you get an error like "no suitable Python runtime found," continue to 0.3.
+
+**0.3 — Install 32-bit Python 3.9.13.** Go to the official release page: `https://www.python.org/downloads/release/python-3913/`. Scroll to the **Files** table near the bottom and download **"Windows x86 installer"** — this is the 32-bit build (do **not** pick "Windows x86-64 installer," which is 64-bit despite the confusing name overlap). Run the installer:
+- Check **"Add python.exe to PATH"** at the bottom of the first screen
+- Use the default install location
+
+> **Why exactly 3.9.13?** It's also the last Python release with official Windows 7 support — don't substitute a newer version even though it might install fine on this dev PC, since production runs on Windows 7.
+
+**0.4 — Build the bridge's own venv, from inside `sage-bridge\`:**
+```powershell
+cd "C:\Users\DELL\Desktop\Moe\Chat Assisant  placeware x1\sage-bridge"
+py -3.9-32 -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\pip install -r requirements.txt
+```
+This creates a `sage-bridge\.venv` folder — separate and independent from `backend\.venv`.
+
+**0.5 — Confirm it's really 32-bit before going further:**
+```powershell
+.venv\Scripts\python -c "import struct; print(struct.calcsize('P')*8)"
+```
+Must print `32`.
+
+> **From here on, every command in this walkthrough that starts with `.venv\Scripts\activate` means *this* venv** — always run it from inside `sage-bridge\`, in a fresh terminal, never a window where you previously activated `backend\.venv`.
+
+**Checklist:**
+- [ ] `sage-bridge\.venv` exists (separate from `backend\.venv`)
+- [ ] `sage-bridge\.venv\Scripts\python.exe` reports `32`-bit
+- [ ] `pip install -r requirements.txt` completed with no errors
+
+---
+
+## PHASE A — Generate and Set the Bridge API Key
+
+**Why this matters:** the bridge checks every incoming request for this key before doing anything with it. ACE reads its own copy of the same key and sends it along whenever it calls the bridge. If the two don't match character-for-character, every call between them fails.
+
+**A1 — Generate a new key.** Open PowerShell:
+```powershell
+cd "C:\Users\DELL\Desktop\Moe\Chat Assisant  placeware x1\sage-bridge"
+.venv\Scripts\activate
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+This prints one long random line, e.g. `Xk3x9F7qP...` (yours will be different). **Select and copy it** — you'll paste it into two files next.
+
+**A2 — Paste it into `sage-bridge\.env`.**
+```powershell
+notepad .env
+```
+Find this line:
+```
+BRIDGE_API_KEY=placeware-bridge-dev-key-2026
+```
+Replace everything after the `=` with the string you copied in A1:
+```
+BRIDGE_API_KEY=Xk3x9F7qP...your-generated-key...
+```
+**Ctrl+S** to save, close Notepad.
+
+**A3 — Paste the exact same key into `backend\.env`.**
+```powershell
+notepad "C:\Users\DELL\Desktop\Moe\Chat Assisant  placeware x1\backend\.env"
+```
+Find:
+```
+SAGE_BRIDGE_KEY=placeware-bridge-dev-key-2026
+```
+Replace the value with the **same string** from A1 (copy-paste it again — don't retype). Save and close.
+
+**Checklist:**
+- [ ] `BRIDGE_API_KEY` in `sage-bridge\.env` is the new generated string, not `placeware-bridge-dev-key-2026`
+- [ ] `SAGE_BRIDGE_KEY` in `backend\.env` is the exact same string as above
+
+---
+
+## PHASE B — Fix the Network Addresses
+
+**Why this matters (read before editing):** ACE runs *inside Docker containers*. The bridge runs as a normal Windows program *outside* any container (it needs direct access to Sage 50). Because of that split, the word `localhost` means something different depending on which side is talking:
+
+| Who's calling | Address to use | Why |
+|---|---|---|
+| ACE's backend container, calling the bridge | `host.docker.internal` | Inside a container, `localhost` means "this container" — not the Windows PC it's running on. `host.docker.internal` is Docker's built-in way of saying "the real PC," automatically, no setup needed. |
+| The bridge (a normal Windows program), calling ACE | `localhost` | The bridge isn't in a container, so `localhost` correctly means "this PC" — and ACE's web address is published on this PC's ports 80/443, so `localhost` reaches it directly. |
+
+**B1 — Edit `sage-bridge\.env`.** Find:
+```
+SYNBOT_WEBHOOK_URL=https://192.168.100.84/sage/webhook
+```
+Change the IP address to `localhost`:
+```
+SYNBOT_WEBHOOK_URL=https://localhost/sage/webhook
+```
+Leave `BRIDGE_INSECURE_SKIP_VERIFY=true` untouched — ACE's local HTTPS uses a self-signed certificate (the same "Your connection is not private" warning from Step 10 earlier in this guide), and this setting tells the bridge to accept it instead of refusing to connect.
+
+**B2 — Edit `backend\.env`.** Find:
+```
+SAGE_BRIDGE_URL=http://192.168.100.15:7070
+```
+Change it to:
+```
+SAGE_BRIDGE_URL=http://host.docker.internal:7070
+```
+
+**Checklist:**
+- [ ] `SYNBOT_WEBHOOK_URL` in `sage-bridge\.env` says `localhost`, no IP address left over
+- [ ] `SAGE_BRIDGE_URL` in `backend\.env` says `host.docker.internal`, no IP address left over
+
+---
+
+## PHASE C — Confirm the Sage Connection Details
+
+If your teammate already configured the ODBC DSN and company path on this machine, this phase is a quick double-check rather than fresh setup — but do it anyway, since a stale placeholder here fails silently (the bridge starts fine, it just can't see any Sage data).
+
+**C1 — Confirm `SAGE_COMPANY_PATH`.**
+
+*How to find the correct value:* open Sage 50 → menu bar → **Help → About Sage 50 Accounting**. A window pops up showing the company data folder, something like `C:\Sage\Peachtree\Company\YourCompanyName\`. Copy that exact path, including the company folder name at the end.
+
+In `sage-bridge\.env`, find:
+```
+SAGE_COMPANY_PATH=c:\Sage\Peachtree\Company
+```
+If it's missing the company folder name, or points somewhere else entirely, replace it with what Sage's About window showed you.
+
+**C2 — Confirm `SAGE_ODBC_DSN`.**
+
+*How to find the correct value:*
+1. Open File Explorer, paste this into the address bar, press Enter: `C:\Windows\SysWOW64\odbcad32.exe`
+   > **Important — do not use the regular ODBC tool** (the one you'd find by searching Windows normally). That one is 64-bit, and Sage 50 2013's database driver is 32-bit only — the DSN you need is completely invisible in the 64-bit tool, even though it exists. This is the single most common thing that trips people up here.
+2. Click the **System DSN** tab.
+3. Look for an entry whose driver is "Pervasive ODBC Client Interface." The **Name** column next to it is the value you need.
+
+In `sage-bridge\.env`, find:
+```
+SAGE_ODBC_DSN=demodata
+```
+Replace `demodata` with the Name you just found (commonly `PervasiveSage50`, but use whatever is actually listed on your machine).
+
+**C3 — Confirm the SDK file exists.** This DLL is what lets the bridge write acknowledgements back to Sage. In PowerShell:
+```powershell
+Test-Path "C:\Program Files (x86)\Sage\Peachtree\API\Sage.Peachtree.API.dll"
+```
+Should print `True`. If it prints `False`, open `C:\Program Files (x86)\Sage\` in File Explorer, search for `Sage.Peachtree.API.dll`, and update `SAGE_API_DLL_PATH` in `sage-bridge\.env` to wherever you actually find it.
+
+**Checklist:**
+- [ ] `SAGE_COMPANY_PATH` matches Sage's own About window exactly
+- [ ] `SAGE_ODBC_DSN` matches the Name column in the **32-bit** ODBC admin tool
+- [ ] `Test-Path` on the SDK DLL printed `True`
+
+---
+
+## PHASE D — Start ACE (the Docker Side)
+
+**D1 — Bring the containers up.** From PowerShell:
+```powershell
+cd "C:\Users\DELL\Desktop\Moe\Chat Assisant  placeware x1\backend"
+docker compose up -d
+```
+No `--build` needed unless you changed backend code — the images already exist from earlier work, so this comes up in under a minute.
+
+**D2 — Confirm everything is healthy:**
+```powershell
+docker compose ps
+```
+Expected — every row shows `Up` or `(healthy)`:
+```
+NAME                    STATUS
+backend-db-1            Up (healthy)
+chat-backend.v1         Up (healthy)
+placeware-frontend.v1   Up (healthy)
+```
+If `chat-backend.v1` isn't healthy after a minute or two, it likely just needs the `.env` edits from Phases A/B reloaded:
+```powershell
+docker compose restart backend
+```
+
+**D3 — Confirm the duplicate-event guard exists.** This is a small database table that stops ACE from double-processing the same invoice if the bridge ever retries a delivery:
+```powershell
+docker exec backend-db-1 psql -U postgres -d synbot_demo -c "SELECT to_regclass('public.placeware_sage_event_log');"
+```
+Expected — a line containing `placeware_sage_event_log`. If it prints blank instead, create it once:
+```powershell
+Get-Content ..\backend\migrations\071_sage_bridge_idempotency.sql -Raw | docker exec -i backend-db-1 psql -U postgres -d synbot_demo
+```
+(If you skip this and the table is missing, the test will still work — ACE just won't catch a duplicate delivery as cleanly.)
+
+**Checklist:**
+- [ ] `docker compose ps` shows all three containers `Up`/`(healthy)`
+- [ ] The dedupe-table check returns `placeware_sage_event_log`
+
+---
+
+## PHASE E — Start Sage and the Bridge
+
+**E1 — Open Sage 50**, log into your company, and **leave it open** — the bridge needs it running for the rest of this test.
+
+**E2 — Start the bridge.** Open a new PowerShell window (keep it open — this is where you'll watch the invoice get picked up later):
+```powershell
+cd "C:\Users\DELL\Desktop\Moe\Chat Assisant  placeware x1\sage-bridge"
+.venv\Scripts\activate
+python main.py
+```
+Expected — a startup banner like `=== Sage Bridge 2.0.0 starting (mock=False) ===`, and **no `ValidationError`**. If you see the same error as before, go back to Phase A — the key wasn't saved, or was saved with a stray space or line break.
+
+**E3 — Check the bridge is alive.** Open *another* new PowerShell window (don't close E2's — it needs to keep running):
+```powershell
+curl http://localhost:7070/health
+```
+Expected — JSON containing `"status":"ok"` and `"odbc_connected":true`. If `odbc_connected` shows `false`, go back to Phase C — the company path or DSN name is off.
+
+**Checklist:**
+- [ ] `python main.py` (E2) is running with no errors, window left open
+- [ ] `/health` shows `status: ok` and `odbc_connected: true`
+
+---
+
+## PHASE F — Run the Full Connectivity Check
+
+This is an automated script that checks everything at once — both directions, bridge-to-Sage and bridge-to-ACE — before you touch any real data.
+
+**F1 —** in the same window as E3:
+```powershell
+python test_connectivity.py --skip-write
+```
+The `--skip-write` flag means "don't create a test customer record inside my real Sage company file" — since this is your actual local Sage install and not a disposable demo copy, keep this flag on.
+
+**F2 — Read the output.** It runs 6 checks in order:
+1. Bridge is reachable
+2. API key is accepted
+3. Sage is reachable through the bridge (ODBC)
+4. Bridge can pull real Sage data (customers, inventory)
+5. ACE is reachable from this machine
+6. ACE's webhook endpoint accepts a push from the bridge
+
+**All 6 should say PASS.** If #5 or #6 fails, go back to Phase B (an old IP address is probably still sitting in one of the `.env` files). If #3 fails, go back to Phase C.
+
+**Checklist:**
+- [ ] All 6 checks report PASS
+
+---
+
+## PHASE G — The Real Test: Add an Invoice in Sage
+
+This is the moment the whole setup has been building to.
+
+**G1 —** In the Sage 50 window from E1, create a normal invoice for any existing customer — a small, throwaway amount is fine. Save it.
+
+**G2 — Watch the bridge's log window (E2).** By default the bridge checks for changes every 60 seconds (`WATCHER_POLL_SECONDS=60` in `.env`), so within about a minute you should see a log line saying it found the new invoice and sent it toward ACE.
+
+**G3 — Confirm ACE actually received it.** Pick whichever of these three is easiest for you:
+
+*Option 1 — watch backend logs live* (new PowerShell window):
+```powershell
+cd "C:\Users\DELL\Desktop\Moe\Chat Assisant  placeware x1\backend"
+docker compose logs -f backend
+```
+Look for a line like `POST /sage/webhook ... 200` or `... 201`.
+
+*Option 2 — check the database directly:*
+```powershell
+docker exec backend-db-1 psql -U postgres -d synbot_demo -c "SELECT sage_id, customer_id, amount, created_at FROM sage_invoices_cache ORDER BY created_at DESC LIMIT 5;"
+```
+Your new invoice should be the top row, with a `created_at` timestamp matching right now.
+
+*Option 3 — check it in the ACE web app:* log into `https://localhost`, go to **Finance → AR & Alerts** (or the **Sage Import** page), and look for the new invoice.
+
+**Checklist:**
+- [ ] The new invoice shows up in the backend logs, the database, or the ACE UI
+
+**G4 — Clean up.** This created a real record in your Sage company file — delete or void it in Sage 50 now if it was only for testing.
+
+---
+
+## Verification Summary
+
+- **Phase 0.5** — the bridge's venv reports `32`-bit → running under the correct interpreter.
+- **Phase A/E2** — `python main.py` starts cleanly with no `ValidationError` → the key fix worked.
+- **Phase E3** — `/health` reports `odbc_connected: true` (no architecture-mismatch errors in the log) → the bridge is really talking to Sage, not running blind.
+- **Phase F** — `test_connectivity.py --skip-write` passes all 6 checks → both directions of the connection work, confirmed *before* touching real invoice data.
+- **Phase G3** — the test invoice lands in `sage_invoices_cache` / the backend logs / the ACE UI → the complete loop works: Sage 50 → ODBC watcher → bridge outbox → webhook → ACE.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `ValidationError: BRIDGE_API_KEY is unset or still a placeholder` | Key wasn't actually saved, or saved to the wrong file | Redo Phase A — reopen the file and confirm the value after `=` isn't the old placeholder |
+| `Failed to load Sage SDK DLL ... incorrect format` | Running under a 64-bit Python interpreter | Redo Phase 0 — confirm `sage-bridge\.venv\Scripts\python.exe` reports `32`-bit, and that this terminal window never had `backend\.venv` activated |
+| `ODBC connection failed: ('IM014', ... architecture mismatch ...)` | Same as above — 64-bit Python against the 32-bit Pervasive driver | Same fix as above — this and the SDK error are two symptoms of the identical root cause |
+| `/health` shows `odbc_connected: false` (after confirming Python is 32-bit) | Wrong DSN name, or Sage isn't open | Recheck Phase C2 (DSN name via the **32-bit** ODBC tool); confirm Sage 50 is open and logged in |
+| `test_connectivity.py` check 5 or 6 fails ("unreachable") | An old IP address is still set somewhere, or ACE isn't running | Recheck Phase B for leftover `192.168.x.x` values; confirm `docker compose ps` shows everything healthy |
+| Bridge never logs picking up the invoice | Watcher hasn't polled yet, or wrong company path | Wait a full 60 seconds; recheck Phase C1 (company path) |
+| Backend logs show `401` or `403` on `/sage/webhook` | The two API keys don't match exactly (extra space, partial paste) | Recopy the key from Phase A into both files — don't retype it by hand |
+
+---
+
+---
+
 # PART 2 — Sage Bridge (Do After App Is Verified)
 
 > Come back to this section once the ACE app is confirmed working and team members can log in.
