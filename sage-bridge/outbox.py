@@ -86,6 +86,25 @@ CREATE TABLE IF NOT EXISTS watermark (
     value      TEXT NOT NULL,
     updated_at REAL NOT NULL
 );
+
+-- Every record the bridge has ever enqueued, by Sage ID.
+--
+-- This is the memory the reconciliation sweep needs. The forward scan alone
+-- cannot see deletions: it walks from a watermark upward, so a row that
+-- disappears is simply never visited again. Holding the set of IDs we have
+-- seen lets the sweep diff it against what Sage currently returns and emit a
+-- delete for the difference.
+CREATE TABLE IF NOT EXISTS synced_record (
+    entity_type TEXT NOT NULL,
+    sage_id     TEXT NOT NULL,
+    first_seen  REAL NOT NULL,
+    last_seen   REAL NOT NULL,
+    deleted_at  REAL,               -- set once a delete event is emitted
+    PRIMARY KEY (entity_type, sage_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_synced_live
+    ON synced_record (entity_type, deleted_at);
 """
 
 
@@ -192,6 +211,54 @@ class Outbox:
         if inserted:
             logger.info("Outbox: enqueued %d new event(s)", inserted)
         return inserted
+
+    # ── synced-record registry (reconciliation support) ──────────────────────
+
+    def record_seen(self, entity_type: str, sage_ids: List[str]) -> None:
+        """
+        Note that these Sage IDs currently exist. Idempotent.
+
+        Called with every ID the forward scan enqueues, and with every ID the
+        reconciliation sweep observes. ``deleted_at`` is cleared on re-appearance
+        so an ID that comes back (an un-void, or a restored backup) is tracked
+        as live again rather than staying tombstoned forever.
+        """
+        if not sage_ids:
+            return
+        now = time.time()
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.executemany(
+                "INSERT INTO synced_record (entity_type, sage_id, first_seen, last_seen) "
+                "VALUES (?,?,?,?) "
+                "ON CONFLICT(entity_type, sage_id) DO UPDATE SET "
+                "  last_seen=excluded.last_seen, deleted_at=NULL",
+                [(entity_type, str(sid), now, now) for sid in sage_ids],
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+    def live_ids(self, entity_type: str) -> List[str]:
+        """Every ID we believe currently exists in Sage (not yet tombstoned)."""
+        rows = self._conn().execute(
+            "SELECT sage_id FROM synced_record "
+            "WHERE entity_type=? AND deleted_at IS NULL",
+            (entity_type,),
+        ).fetchall()
+        return [r["sage_id"] for r in rows]
+
+    def mark_deleted(self, entity_type: str, sage_ids: List[str]) -> None:
+        """Tombstone IDs after their delete events have been enqueued."""
+        if not sage_ids:
+            return
+        now = time.time()
+        self._conn().executemany(
+            "UPDATE synced_record SET deleted_at=? WHERE entity_type=? AND sage_id=?",
+            [(now, entity_type, str(sid)) for sid in sage_ids],
+        )
 
     # ── watermark ────────────────────────────────────────────────────────────
 

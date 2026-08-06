@@ -257,13 +257,26 @@ def check_sdk() -> str:
                 s.SAGE_API_DLL_PATH),
         )
 
+    # The SDK's dependencies (Sage.Peachtree.Common, .DataTypes, MFCNet, ...)
+    # live in the Peachtree root, not beside the DLL in API\. Peachw.exe.config
+    # is what points the CLR at them for Sage's own process; check the folder is
+    # really the install root before blaming .NET for the load failure.
+    if not os.path.isfile(os.path.join(s.SAGE_INSTALL_DIR, "Peachw.exe")):
+        record(
+            "Peachtree install dir", WARN,
+            "Peachw.exe not found in {}\n"
+            "Set SAGE_INSTALL_DIR to the Peachtree program folder, or the SDK's "
+            "dependent assemblies will not resolve.".format(s.SAGE_INSTALL_DIR),
+        )
+
     try:
         import sdk_client as sdk
-        sdk.load_sdk(s.SAGE_API_DLL_PATH)
+        sdk.load_sdk(s.SAGE_API_DLL_PATH, s.SAGE_INSTALL_DIR)
     except Exception as exc:
         return record(
             "Sage SDK loads", WARN,
-            "{}\nCheck .NET Framework 4.x is installed.".format(exc),
+            "{}\nCheck .NET Framework 4.x is installed, and that this is a "
+            "32-bit Python (the Sage 2013 SDK is X86-only).".format(exc),
         )
 
     try:
@@ -328,6 +341,86 @@ def check_synbot() -> str:
 
 # ── 8. End-to-end ────────────────────────────────────────────────────────────
 
+def check_reconcile() -> str:
+    """
+    Dry-run the void/delete sweep against the real company file.
+
+    This is the check that catches a reconciliation setup which would either do
+    nothing useful or — worse — trip a guard on every run and silently never
+    detect a void. Emits no delete events on a fresh install, because the bridge
+    has not synced anything yet.
+    """
+    try:
+        from config import get_settings
+        from watcher import get_watcher
+        s = get_settings()
+    except Exception as exc:
+        return record("Reconciliation sweep", FAIL, str(exc))
+
+    if not s.RECONCILE_ENABLED:
+        return record(
+            "Reconciliation sweep", WARN,
+            "RECONCILE_ENABLED=false — invoices voided in Sage will stay active "
+            "in SynBot indefinitely. Enable unless you have a specific reason.",
+        )
+
+    if s.SAGE_MOCK:
+        return record("Reconciliation sweep", WARN, "SAGE_MOCK=true — not tested.")
+
+    try:
+        result = get_watcher().reconcile()
+    except Exception as exc:
+        return record("Reconciliation sweep", FAIL,
+                      "Sweep raised: {}".format(exc))
+
+    status = result.get("status")
+    if status == "skipped":
+        return record(
+            "Reconciliation sweep", OK,
+            "Nothing synced yet, so nothing to compare — expected on a fresh "
+            "install. It becomes active once invoices have synced.",
+        )
+    if status == "ok":
+        return record(
+            "Reconciliation sweep", OK,
+            "Enumerated {} invoice(s); {} missing.".format(
+                result.get("present", 0), result.get("deleted", 0)),
+        )
+    return record(
+        "Reconciliation sweep", WARN,
+        "Sweep aborted ({}). No deletes were emitted — this is the safety guard "
+        "working, but void detection will not function until the cause is "
+        "fixed. See INSTALL.md 'Reading a reconcile result'.".format(
+            result.get("reason", status)),
+    )
+
+
+def check_watcher_health() -> str:
+    """
+    Confirm the watcher reports its own liveness.
+
+    A watcher that never started leaves the outbox permanently empty, which is
+    indistinguishable from a quiet day unless something reports the difference.
+    """
+    try:
+        from watcher import get_watcher
+        state = get_watcher().health()
+    except Exception as exc:
+        return record("Watcher liveness", FAIL, str(exc))
+
+    if state.get("start_error"):
+        return record(
+            "Watcher liveness", FAIL,
+            "Watcher cannot start: {}\nNothing will be detected until this is "
+            "fixed.".format(state["start_error"]),
+        )
+    return record(
+        "Watcher liveness", OK,
+        "Liveness reporting works; /health will show status=degraded if "
+        "detection stops.",
+    )
+
+
 def check_end_to_end() -> str:
     """Enqueue a real event and confirm the sender delivers it."""
     import time
@@ -389,6 +482,8 @@ def main() -> int:
         check_odbc,
         lambda: check_schema(args.report),
         check_sdk,
+        check_watcher_health,
+        check_reconcile,
         check_synbot,
     ]
     for check in checks:

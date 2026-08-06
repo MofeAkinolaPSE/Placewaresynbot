@@ -31,8 +31,19 @@ to SynBot exactly once.
 
 | Guarantee | Mechanism |
 |---|---|
-| Never drop a sync | `outbox.db` — events are committed to disk *with* the scan watermark in one transaction, before any delivery attempt. Retried until SynBot returns 2xx. |
-| Never duplicate a sync | Deterministic `event_id` per record. SynBot records applied IDs and returns **409** for repeats; the bridge treats 409 as done. |
+| Never drop a sync | `outbox.db` — events are committed to disk *with* the scan watermark in one transaction, before any delivery attempt. Retried until SynBot returns 2xx. **SynBot applies the record synchronously**, so a 2xx means it landed; a failure returns 5xx and the event stays pending. |
+| Never duplicate a sync | Deterministic `event_id` per record. SynBot records applied IDs — only *after* a successful apply — and returns **409** for repeats; the bridge treats 409 as done. |
+
+**Detection has two layers plus a sweep:**
+
+| Layer | Catches | Interval |
+|---|---|---|
+| `.DAT` mtime poll | "something changed in AR" | `WATCHER_POLL_SECONDS` (30 s) |
+| Forward table scan | new and edited invoices | `WATCHER_FULL_SCAN_SECONDS` (5 min), mtime-independent |
+| Reconciliation sweep | **deleted / voided** invoices | `RECONCILE_INTERVAL_SECONDS` (24 h) |
+
+The sweep exists because the forward scan walks a watermark upward and cannot
+see a row that is gone.
 
 **Do not delete `data/outbox.db`.** It holds undelivered invoices and the scan
 position. Back it up alongside the Sage company file.
@@ -133,22 +144,60 @@ Must-set values:
 | `SYNBOT_WEBHOOK_KEY` | Must equal `SAGE_BRIDGE_WEBHOOK_SECRET` in SynBot's `backend/.env`. |
 | `SAGE_MOCK` | `false` |
 
+Optional, sensible defaults — change only with a reason:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SAGE_INSTALL_DIR` | derived | Peachtree program folder (holds `Peachw.exe`). Blank derives it from `SAGE_API_DLL_PATH`. |
+| `RECONCILE_ENABLED` | `true` | Void/delete detection. Turning this off means voided invoices stay live in SynBot forever. |
+| `RECONCILE_INTERVAL_SECONDS` | `86400` | Full-table enumeration — daily is the right order of magnitude, not hourly. |
+| `RECONCILE_MAX_DELETE_RATIO` | `0.10` | Abort the sweep if more than 10% of known invoices vanish at once. Raise deliberately, never casually. |
+
 Then restrict the file — it holds a shared secret in plaintext:
 
 ```bat
 icacls .env /inheritance:r /grant:r "SYSTEM:(R)" /grant:r "Administrators:(F)"
 ```
 
-### 3.6 Apply the SynBot migration
+### 3.6 Apply the SynBot migrations
 
-On the SynBot side, once:
+On the SynBot side, once. **Both are required:**
 
 ```bash
 psql "$DATABASE_URL" -f backend/migrations/071_sage_bridge_idempotency.sql
+psql "$DATABASE_URL" -f backend/migrations/097_sage_bridge_voids_and_downstream.sql
 ```
 
-This creates `placeware_sage_event_log` (the dedupe ledger — **without it
+`071` creates `placeware_sage_event_log` (the dedupe ledger — **without it
 duplicate protection does not work**) and `sage_inventory_movements`.
+
+`097` adds void/soft-delete support (`is_voided` across the invoice cache, stock
+movements, sales lines and GL entries), the `sage_gl_entries` and
+`sage_sales_lines` tables, and the customer AR rollup columns. Without it every
+invoice sync fails at the downstream write — loudly, with events staying pending
+in the outbox rather than half-applying.
+
+### 3.7a Verify the SDK API surface — do this FIRST
+
+```bat
+.venv\Scripts\python verify_sdk_api.py
+```
+
+Reflects over the installed `Sage.Peachtree.API.dll` and asserts that all 189
+types, properties and methods the bridge calls actually exist. Takes seconds,
+needs **no company file**, touches no data.
+
+Expected: `OK — every type, property and method the bridge calls exists here.`
+
+If it fails, the SDK on this machine is not the 2013.0.0.826 build the bridge
+targets, and the failures name the exact missing members. **Stop and reconcile
+`sdk_client.py` before going further** — nothing else in the SDK path can work.
+
+> This check exists because the original `sdk_client.py` was written against an
+> API that does not exist (`ProductType`, `Company.SalesInvoices`,
+> `invoice.TotalAmount`, ~20 more). None of that fails at import — it fails at
+> the first real call, gets caught by the degraded-start handler, and leaves
+> the bridge quietly running ODBC-only with no tax on any invoice.
 
 ### 3.7 Verify before installing the service
 
@@ -199,6 +248,9 @@ curl -H "X-Bridge-API-Key: <key>" http://<win7-ip>:7070/sync/status
   "healthy": true,
   "odbc_connected": true,
   "sdk": {"healthy": true},
+  "watcher": {"healthy": true, "thread_alive": true, "stalled": false,
+              "start_error": "", "last_scan_age_seconds": 12.4,
+              "last_reconcile_age_seconds": 3600.0},
   "outbox": {"pending": 0, "sent": 1432, "failed": 0,
              "oldest_pending_age_seconds": null},
   "invoice_watermark": "1099"
@@ -211,6 +263,14 @@ curl -H "X-Bridge-API-Key: <key>" http://<win7-ip>:7070/sync/status
 | `failed` > 0 | Events exhausted retries | Fix the cause, then `POST /sync/outbox/replay`. |
 | `oldest_pending_age_seconds` large | Delivery stalled | Check the bridge log. |
 | `sdk.healthy: false` | SDK down | Invoices sync as `partial`. Re-check authorization (3.4). |
+| `watcher.start_error` non-empty | Watcher never started — usually a bad `SAGE_COMPANY_PATH` | Fix the path and restart. **Nothing is being detected until you do.** |
+| `watcher.stalled: true` | Loop wedged, probably a hung ODBC call | Check the log, restart the service. |
+| `watcher.healthy: false` with an empty outbox | Detection is dead | Do **not** read an empty outbox as "no new invoices" — check this field first. |
+
+> **Why the `watcher` block matters.** A watcher that never started leaves the
+> outbox permanently empty, which looks exactly like a quiet day. Before this
+> block existed the service reported `ok` indefinitely while syncing nothing.
+> `healthy` is now false whenever the watcher is not actually running.
 
 ### Useful operations
 
@@ -224,7 +284,23 @@ curl -X POST -H "X-Bridge-API-Key: <key>" http://<ip>:7070/sync/outbox/replay
 # Re-read all invoices from scratch (safe — dedupes)
 curl -X POST -H "X-Bridge-API-Key: <key>" \
      "http://<ip>:7070/sync/watermark/reset?value="
+
+# Check for voided/deleted invoices now, instead of waiting for the daily sweep
+curl -X POST -H "X-Bridge-API-Key: <key>" http://<ip>:7070/sync/reconcile
 ```
+
+**Reading a reconcile result.** `status: "ok"` means the sweep completed;
+`deleted` is how many invoices vanished from Sage. `status: "aborted"` means a
+safety guard tripped and **nothing was emitted** — check `reason`:
+
+| `reason` | Meaning | Action |
+|---|---|---|
+| `enumeration failed` | ODBC error mid-scan | Fix connectivity; a partial read is indistinguishable from mass deletion, so nothing was emitted |
+| `empty enumeration` | Sage returned zero invoices | Connectivity or permissions fault — not an empty company |
+| `bulk delete ceiling exceeded` | More than `RECONCILE_MAX_DELETE_RATIO` missing | Usually a swapped or restored company file. Investigate before raising the ceiling |
+
+An aborted sweep is safe to ignore once the cause is fixed — the next sweep
+retries, and nothing was tombstoned.
 
 ### Logs
 
@@ -262,9 +338,22 @@ pip install pytest pydantic pydantic-settings python-dotenv httpx fastapi
 python -m pytest tests/ -v
 ```
 
-47 tests covering event identity, no-loss, no-duplicate, crash recovery, retry
-behaviour and extraction accuracy. See section 7 of `KNOWN_LIMITATIONS.md` for
-what these do **not** cover.
+58 tests covering event identity, no-loss, no-duplicate, crash recovery, retry
+behaviour, extraction accuracy, void detection with all three sweep guards, and
+watcher liveness.
+
+The receiving end has its own regression tests — run these from `backend/`:
+
+```bash
+python -m pytest tests/test_sage_webhook_durability.py -v
+```
+
+Six tests pinning the contract that makes the outbox meaningful: a 2xx from
+SynBot must mean the record was actually applied. They are the guard against
+reintroducing the background-task bug, where a failed apply still returned 200
+and the bridge dropped the invoice.
+
+See section 7 of `KNOWN_LIMITATIONS.md` for what these do **not** cover.
 
 Run the service against fake Sage data:
 

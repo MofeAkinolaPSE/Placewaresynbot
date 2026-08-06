@@ -597,9 +597,36 @@ async def sage_webhook(
     at-most-once application. This is the "never duplicate a sync" half of the
     guarantee — the bridge's durable outbox is the "never drop one" half.
 
+    Why the apply is synchronous
+    ----------------------------
+    ``record_upserted`` events are applied inline, before the response is sent,
+    and the ``event_id`` is recorded only after that succeeds.
+
+    This used to run as a FastAPI ``BackgroundTask``. Background tasks execute
+    *after* the response has gone out, so the ordering was:
+
+        queue apply → record event_id as applied → return 200
+
+    A failure inside the apply then had nowhere to surface. The bridge had
+    already received 200, marked the event ``sent`` in its outbox, and would
+    purge it 30 days later; and because the ``event_id`` was already in
+    ``placeware_sage_event_log``, an operator replay came back 409 and was
+    treated as success. The invoice was unrecoverable through either path —
+    which defeats the exact guarantee the durable outbox exists to provide.
+
+    Now a failed apply raises, the client gets 5xx, the bridge keeps the event
+    pending and retries it with backoff, and no ``event_id`` is recorded. The
+    cost is that the bridge's HTTP call is held open for the duration of the
+    apply; that is bounded by SENDER_TIMEOUT_SECONDS (30s) on the bridge side
+    and is the right trade for not losing invoices.
+
+    ``data_changed`` pings stay on a background task: they carry no data, and
+    the pull-based sync they trigger re-reads whatever it needs, so a lost ping
+    costs a sync cycle rather than a record.
+
     Two envelope shapes are accepted:
       * ``event=record_upserted`` — carries the full record in ``data``; applied
-        directly with no pull-back to the bridge.
+        synchronously with no pull-back to the bridge.
       * ``event=data_changed``    — legacy change ping; triggers the existing
         pull-based entity sync. Kept so entity types the bridge does not yet
         extract in full keep working unchanged.
@@ -641,9 +668,39 @@ async def sage_webhook(
     # ── Dispatch ─────────────────────────────────────────────────────────────
     if event == "record_upserted" and entity_type:
         from src.services.sage_sync_engine import apply_record_event
-        background_tasks.add_task(apply_record_event, payload)
+        try:
+            await apply_record_event(payload)
+        except Exception as exc:
+            # Do NOT record the event_id: the record was not applied, so a
+            # retry must be allowed to run rather than being 409'd as a
+            # duplicate. 503 keeps the event pending in the bridge's outbox.
+            logger.error(
+                "Apply failed for event %s (entity=%s) — returning 503 so the "
+                "bridge retries: %s", event_id, entity_type, exc,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Could not apply record; bridge should retry.",
+            ) from exc
+    elif event == "record_deleted" and entity_type:
+        from src.services.sage_sync_engine import apply_delete_event
+        # Synchronous for the same reason as record_upserted: a swallowed
+        # failure would leave a voided invoice live in the cache with nothing
+        # to replay from.
+        try:
+            await apply_delete_event(payload)
+        except Exception as exc:
+            logger.error(
+                "Delete failed for event %s (entity=%s) — returning 503 so the "
+                "bridge retries: %s", event_id, entity_type, exc,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Could not apply deletion; bridge should retry.",
+            ) from exc
     elif event == "data_changed" and entity_type:
         from src.services.sage_sync_engine import schedule_entity_sync
+        # Carries no data — a lost ping costs a sync cycle, not a record.
         background_tasks.add_task(schedule_entity_sync, entity_type)
     else:
         logger.warning("Unhandled Sage webhook event=%s entity=%s", event, entity_type)

@@ -220,11 +220,22 @@ async def apply_record_event(envelope: Dict[str, Any]) -> None:
             "note": record.get("note") or "",
             "source": meta.get("source") or "sage_bridge",
             "completeness": meta.get("completeness") or "unknown",
+            # An invoice present in Sage is by definition not voided. Set
+            # explicitly so a reappearing invoice clears a previous tombstone.
+            "is_voided": False,
+            "voided_at": None,
             "synced_at": datetime.datetime.utcnow().isoformat() + "Z",
         }
         _upsert_to_supabase("sage_invoices_cache", [cache_row], pk="sage_id")
 
         _apply_inventory_movement(sage_id, record.get("inventory_movement") or [])
+
+        # Downstream surfaces beyond inventory. Each is keyed so a replay
+        # overwrites its own rows rather than accumulating duplicates, which is
+        # what lets the bridge retry an event safely.
+        _apply_sales_lines(sage_id, record)
+        _apply_gl_entries(sage_id, record)
+        _refresh_customer_rollup(record.get("customer_id"))
 
         audit_event(
             action="sage_invoice_synced",
@@ -256,9 +267,271 @@ async def apply_record_event(envelope: Dict[str, Any]) -> None:
     except Exception as exc:
         logger.error("Failed applying invoice %s: %s", sage_id, exc)
         _log_sync_error("ar_transaction", "invoice {}: {}".format(sage_id, exc))
-        # Re-raise so the webhook's background task records a failure. The
-        # bridge keeps the event pending and retries it.
+        # Re-raise. The webhook handler awaits this call, so the raise turns
+        # into a 503 and the event_id is NOT recorded — the bridge keeps the
+        # event pending and retries it with backoff. Swallowing here would
+        # silently lose the invoice.
         raise
+
+
+async def apply_delete_event(envelope: Dict[str, Any]) -> None:
+    """
+    Apply a ``record_deleted`` event — an invoice that vanished from Sage.
+
+    Emitted only by the bridge's reconciliation sweep, which is the sole path
+    that can observe a deletion. Before this existed, an invoice voided in Sage
+    stayed live in the cache indefinitely, inflating AR and overstating stock
+    movement, with nothing that would ever correct it.
+
+    Soft delete, never hard: rows are flagged ``is_voided`` and retained. A hard
+    delete would erase the audit trail for a transaction that genuinely happened
+    and was genuinely reversed — exactly the history an accounting integration
+    must not lose. Every consumer of live figures filters on ``is_voided``.
+
+    Idempotent: applying a delete twice sets the same flags.
+    """
+    entity_type = envelope.get("entity_type") or ""
+    sage_id = envelope.get("sage_id") or (envelope.get("data") or {}).get("sage_id")
+
+    if not sage_id:
+        logger.error("record_deleted with no sage_id — ignoring: %s", envelope)
+        return
+
+    if entity_type != "invoice":
+        logger.warning(
+            "apply_delete_event received unsupported entity_type=%s — ignoring. "
+            "Only invoice deletion is modelled.", entity_type,
+        )
+        return
+
+    source_doc = "sage_invoice:{}".format(sage_id)
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+
+    try:
+        # Read the customer first: the rollup refresh below needs to know whose
+        # balance changed, and after the void the invoice no longer contributes.
+        existing = (
+            db.table("sage_invoices_cache")
+            .select("customer_id")
+            .eq("sage_id", str(sage_id))
+            .limit(1)
+            .execute()
+        )
+        customer_id = (existing.data or [{}])[0].get("customer_id")
+
+        db.table("sage_invoices_cache").update(
+            {"is_voided": True, "voided_at": now, "payment_status": "voided"}
+        ).eq("sage_id", str(sage_id)).execute()
+
+        # The goods never left — stock must not stay decremented.
+        db.table("sage_inventory_movements").update(
+            {"is_voided": True}
+        ).eq("source_document", source_doc).execute()
+
+        db.table("sage_sales_lines").update(
+            {"is_voided": True}
+        ).eq("source_document", source_doc).execute()
+
+        db.table("sage_gl_entries").update(
+            {"is_voided": True}
+        ).eq("source_document", source_doc).execute()
+
+        _refresh_customer_rollup(customer_id)
+
+        audit_event(
+            action="sage_invoice_voided",
+            actor="sage_bridge",
+            resource="sage_invoices_cache/{}".format(sage_id),
+            metadata={
+                "sage_id": str(sage_id),
+                "customer_id": customer_id,
+                "event_id": envelope.get("event_id"),
+                "detected_by": "reconciliation_sweep",
+            },
+        )
+        logger.warning(
+            "Invoice %s voided — no longer present in Sage. Cache, stock, sales "
+            "and GL rows flagged is_voided.", sage_id,
+        )
+
+    except Exception as exc:
+        logger.error("Failed applying deletion for invoice %s: %s", sage_id, exc)
+        _log_sync_error("ar_transaction", "delete {}: {}".format(sage_id, exc))
+        # Raise so the webhook returns 503 and the bridge retries. A swallowed
+        # failure here leaves a voided invoice live in SynBot permanently.
+        raise
+
+
+def _apply_sales_lines(sage_id: str, record: Dict[str, Any]) -> None:
+    """
+    Persist invoice lines at line grain (downstream: sales + reporting).
+
+    The invoice cache stores lines as JSONB, which displays fine but cannot
+    answer "units of item X sold last quarter" without scanning and unpacking
+    every invoice. This is the queryable grain.
+
+    Keyed on (source_document, line_no) so a replay overwrites its own rows.
+    """
+    lines = record.get("lines") or []
+    if not lines:
+        return
+
+    source_doc = "sage_invoice:{}".format(sage_id)
+    invoice_date = record.get("date")
+    customer_id = record.get("customer_id") or ""
+
+    rows = []
+    for idx, line in enumerate(lines):
+        rows.append({
+            "source_document": source_doc,
+            "line_no": line.get("line_no") or idx + 1,
+            "sage_id": str(sage_id),
+            "customer_id": customer_id,
+            "item_id": line.get("item_id") or "",
+            "description": line.get("description") or "",
+            "quantity": line.get("quantity") or 0,
+            "unit_price": line.get("unit_price") or 0,
+            "amount": line.get("amount") or 0,
+            "gl_account": line.get("gl_account") or "",
+            "tax_amount": line.get("tax_amount") or 0,
+            "invoice_date": invoice_date,
+            "is_voided": False,
+            "recorded_at": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
+    try:
+        db.table("sage_sales_lines").upsert(
+            rows, on_conflict="source_document,line_no"
+        ).execute()
+        logger.debug("Sales: %d line(s) for invoice %s", len(rows), sage_id)
+    except Exception as exc:
+        logger.error("Could not record sales lines for invoice %s: %s", sage_id, exc)
+        raise
+
+
+def _apply_gl_entries(sage_id: str, record: Dict[str, Any]) -> None:
+    """
+    Mirror the invoice's ledger impact (downstream: finance).
+
+    Sage performs the real posting — this is the reporting mirror, and it is
+    deliberately simple: revenue per GL account from the lines, tax as its own
+    entry, and the receivable as the balancing side.
+
+    It is NOT a general-purpose double-entry engine and does not try to be. It
+    reproduces the standard sales-invoice shape so finance reporting in SynBot
+    has account-level figures instead of only invoice totals. Anything more
+    exotic (multi-currency, deferred revenue, job costing splits) must be read
+    from Sage directly.
+
+    Keyed on (source_document, gl_account, entry_type) so replay is idempotent.
+    """
+    lines = record.get("lines") or []
+    payment = record.get("payment") or {}
+    tax = record.get("tax") or {}
+    invoice_date = record.get("date")
+    customer_id = record.get("customer_id") or ""
+    source_doc = "sage_invoice:{}".format(sage_id)
+
+    # Revenue, aggregated per account: several lines commonly share one.
+    by_account: Dict[str, float] = {}
+    for line in lines:
+        account = (line.get("gl_account") or "").strip()
+        if not account:
+            continue
+        by_account[account] = by_account.get(account, 0.0) + float(line.get("amount") or 0)
+
+    rows = []
+    for account, amount in sorted(by_account.items()):
+        rows.append({
+            "source_document": source_doc, "gl_account": account,
+            "entry_type": "revenue", "amount": round(amount, 4),
+            "customer_id": customer_id, "entry_date": invoice_date,
+            "is_voided": False,
+        })
+
+    total_tax = float(tax.get("total_tax") or 0)
+    if total_tax:
+        rows.append({
+            "source_document": source_doc,
+            "gl_account": (tax.get("tax_code") or "TAX").strip() or "TAX",
+            "entry_type": "tax", "amount": round(total_tax, 4),
+            "customer_id": customer_id, "entry_date": invoice_date,
+            "is_voided": False,
+        })
+
+    total_amount = float(payment.get("total_amount") or 0)
+    if total_amount:
+        rows.append({
+            "source_document": source_doc, "gl_account": "AR",
+            "entry_type": "receivable", "amount": round(total_amount, 4),
+            "customer_id": customer_id, "entry_date": invoice_date,
+            "is_voided": False,
+        })
+
+    if not rows:
+        return
+
+    try:
+        db.table("sage_gl_entries").upsert(
+            rows, on_conflict="source_document,gl_account,entry_type"
+        ).execute()
+        logger.debug("Finance: %d GL entry row(s) for invoice %s", len(rows), sage_id)
+    except Exception as exc:
+        logger.error("Could not record GL entries for invoice %s: %s", sage_id, exc)
+        raise
+
+
+def _refresh_customer_rollup(customer_id: Optional[str]) -> None:
+    """
+    Recompute one customer's AR rollup from their non-voided invoices
+    (downstream: customer records).
+
+    Recomputed rather than incremented. An increment would drift on every
+    replay, and replays are routine here — the bridge retries, operators
+    trigger rescans, and the watermark can be reset. Recomputing from the cache
+    is idempotent by construction and costs one indexed query per invoice sync.
+
+    Non-fatal: a failure leaves the customer balance stale but the invoice
+    itself correctly applied, and the next invoice for that customer — or
+    refresh_customer_ar_rollup() — repairs it. Failing the whole event over a
+    derived rollup would be the wrong trade.
+    """
+    if not customer_id:
+        return
+
+    try:
+        result = (
+            db.table("sage_invoices_cache")
+            .select("amount_due,payment_status,date")
+            .eq("customer_id", customer_id)
+            .eq("is_voided", False)
+            .execute()
+        )
+        invoices = result.data or []
+
+        open_invoices = [
+            i for i in invoices if (i.get("payment_status") or "") != "paid"
+        ]
+        balance = sum(float(i.get("amount_due") or 0) for i in open_invoices)
+        dates = [i.get("date") for i in invoices if i.get("date")]
+
+        db.table("sage_customers_cache").update({
+            "ar_balance": round(balance, 4),
+            "open_invoice_count": len(open_invoices),
+            "last_invoice_date": max(dates) if dates else None,
+            "last_invoice_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }).eq("id", customer_id).execute()
+
+        logger.debug(
+            "Customer %s rollup: balance=%.2f open=%d",
+            customer_id, balance, len(open_invoices),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not refresh AR rollup for customer %s: %s — balance is stale "
+            "until the next invoice for this customer or a call to "
+            "refresh_customer_ar_rollup().", customer_id, exc,
+        )
 
 
 def _apply_inventory_movement(
@@ -282,6 +555,10 @@ def _apply_inventory_movement(
             "quantity_delta": m.get("quantity_delta"),
             "direction": m.get("direction") or "out",
             "unit_price": m.get("unit_price"),
+            # Explicitly cleared: if this invoice was previously voided and has
+            # reappeared in Sage, re-applying it must un-void the movement
+            # rather than leave stock permanently written off.
+            "is_voided": False,
             "recorded_at": datetime.datetime.utcnow().isoformat() + "Z",
         })
     try:
@@ -290,11 +567,15 @@ def _apply_inventory_movement(
         ).execute()
         logger.info("Inventory: %d movement row(s) for invoice %s", len(rows), sage_id)
     except Exception as exc:
-        # Non-fatal for the invoice sync itself, but must be visible — stock
-        # figures will be stale until this is fixed.
+        # Raise rather than log-and-continue. This used to be swallowed, which
+        # let an invoice be marked applied while its stock movement was missing
+        # — inventory silently diverging from Sage with nothing to replay from.
+        # The upsert is keyed on (source_document, item_id), so retrying the
+        # whole event is safe and cannot double-decrement.
         logger.error(
             "Could not record inventory movement for invoice %s: %s", sage_id, exc
         )
+        raise
 
 
 async def _run_invoice_workflow(invoice_rows: List[Dict[str, Any]]) -> None:

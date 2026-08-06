@@ -37,6 +37,7 @@ def sync_status(request: Request, _: None = _auth):
     sdk_state = sdk.sdk_health()
     ob = get_outbox()
     stats = ob.stats()
+    watcher_state = get_watcher().health()
 
     return {
         "bridge_version": "2.0.0",
@@ -47,10 +48,13 @@ def sync_status(request: Request, _: None = _auth):
         "odbc_connected": odbc_ok,
         "odbc_error": "" if odbc_ok else odbc_error,
         "sdk": sdk_state,
+        "watcher": watcher_state,
         "outbox": stats,
         "invoice_watermark": ob.get_watermark(WM_INVOICE) or None,
-        # Healthy means: Sage readable AND nothing stuck undelivered.
-        "healthy": odbc_ok and stats["failed"] == 0,
+        # Healthy means: Sage readable, detection actually running, and nothing
+        # stuck undelivered. The watcher term matters — without it a bridge that
+        # never started scanning reported healthy indefinitely.
+        "healthy": odbc_ok and stats["failed"] == 0 and watcher_state["healthy"],
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
@@ -88,6 +92,32 @@ def force_scan(request: Request, _: None = _auth):
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Scan failed: {}".format(exc)) from exc
     return {"enqueued": enqueued}
+
+
+@router.post("/reconcile", response_model=Dict[str, Any])
+def force_reconcile(request: Request, _: None = _auth):
+    """
+    Run the void/delete reconciliation sweep immediately.
+
+    Enumerates every invoice ID in Sage and diffs it against what the bridge
+    has synced; anything missing gets a ``record_deleted`` event. This is the
+    only path that detects an invoice deleted outright — the forward scan
+    cannot see deletions.
+
+    Expensive (full table enumeration), so it normally runs on
+    RECONCILE_INTERVAL_SECONDS. Use this after a suspected void, or during
+    setup to confirm the sweep works.
+
+    Safe: guarded against partial reads, empty results and bulk deletion — see
+    SageDataWatcher.reconcile. A guard trip returns status="aborted" and emits
+    nothing.
+    """
+    try:
+        return get_watcher().reconcile()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="Reconcile failed: {}".format(exc)
+        ) from exc
 
 
 @router.post("/watermark/reset", response_model=Dict[str, Any])

@@ -43,12 +43,13 @@ import logging
 import os
 import threading
 import time
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import events as ev
 import invoice_extract
 import odbc_client as odbc
 import sage_schema as schema
+import sdk_client as sdk
 from config import get_settings
 from outbox import get_outbox
 from sender import nudge_sender
@@ -95,6 +96,17 @@ class SageDataWatcher:
         # its join(timeout=5) gave up while the thread kept running.
         self._wake = threading.Event()
         self._last_full_scan = 0.0
+        # Liveness/observability state. Without these a watcher that never
+        # started — or one whose thread died — is indistinguishable from a
+        # healthy one that simply has nothing to do: the outbox stays empty
+        # either way. health() surfaces the difference.
+        self._start_error: str = ""
+        self._last_tick: float = 0.0
+        self._last_scan_at: float = 0.0
+        self._last_scan_error: str = ""
+        self._total_enqueued: int = 0
+        self._last_reconcile_at: float = 0.0
+        self._last_reconcile_error: str = ""
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -102,12 +114,24 @@ class SageDataWatcher:
         settings = get_settings()
 
         if not settings.SAGE_MOCK and not os.path.isdir(settings.SAGE_COMPANY_PATH):
+            self._start_error = (
+                "Sage company path does not exist: {}".format(settings.SAGE_COMPANY_PATH)
+            )
             logger.error(
-                "Sage company path does not exist: %s — watcher NOT started. "
-                "Set SAGE_COMPANY_PATH correctly and restart.",
-                settings.SAGE_COMPANY_PATH,
+                "%s — watcher NOT started. Set SAGE_COMPANY_PATH correctly and "
+                "restart. /health will report status=degraded until then.",
+                self._start_error,
             )
             return
+
+        self._start_error = ""
+
+        # Seed the reconcile clock so the first sweep lands one interval after
+        # boot rather than immediately. A full enumeration on every service
+        # restart would be punishing on the target hardware, and a restart is
+        # not evidence that anything was deleted. Force one with POST
+        # /sync/reconcile when it is actually wanted.
+        self._last_reconcile_at = time.time()
 
         # Seed mtimes so startup does not treat every file as freshly changed.
         # Unlike the original this is NOT how we avoid missing work: the
@@ -162,13 +186,21 @@ class SageDataWatcher:
         while self._running:
             try:
                 self._tick()
-            except Exception:
+                self._last_scan_error = ""
+            except Exception as exc:
                 # Never let a bug kill the thread: a dead watcher looks healthy
                 # from outside while silently syncing nothing.
+                self._last_scan_error = str(exc)[:300]
                 logger.exception("Watcher tick failed (continuing)")
+
+            # Stamped on every completed pass, success or failure. health()
+            # compares it against now() to detect a wedged loop.
+            self._last_tick = time.time()
 
             self._wake.wait(timeout=settings.WATCHER_POLL_SECONDS)
             self._wake.clear()
+
+        logger.info("Watcher loop exited.")
 
     def _tick(self) -> None:
         settings = get_settings()
@@ -182,6 +214,24 @@ class SageDataWatcher:
                 logger.debug("Periodic full scan due (mtime-independent).")
             self._scan_invoices()
             self._last_full_scan = now
+
+        # Reconciliation is a full-table enumeration, so it runs on its own much
+        # slower schedule (default daily) — it is the only thing that can see a
+        # deletion, but it is far too expensive to run every poll.
+        if settings.RECONCILE_ENABLED:
+            due_reconcile = (
+                (now - self._last_reconcile_at) >= settings.RECONCILE_INTERVAL_SECONDS
+            )
+            if due_reconcile:
+                logger.info("Reconciliation sweep due — checking for voided/deleted invoices.")
+                try:
+                    self.reconcile()
+                except Exception:
+                    logger.exception("Reconcile failed (will retry next interval)")
+                finally:
+                    # Stamp even on failure so a persistently broken sweep does
+                    # not re-run a full enumeration on every single poll.
+                    self._last_reconcile_at = time.time()
 
         # Entity types we don't extract in full still get a change-ping so
         # SynBot's existing pull-based sync keeps working unchanged.
@@ -256,30 +306,35 @@ class SageDataWatcher:
             batch = []
             highest_ok: Optional[str] = None
 
-            for row in rows:
-                key_col = schema.ARTrans.ROWID.lower()
-                sage_id = str(row.get(key_col, row.get("sage_id", ""))).strip()
-                if not sage_id:
-                    logger.warning("Invoice row with no ID — skipping: %r", row)
-                    continue
+            # One loaded invoice snapshot for the whole page. Without this each
+            # extract_invoice() re-enumerates every invoice in the company —
+            # quadratic, and unfinishable on a real company file. See
+            # sdk_client.bulk_read.
+            with sdk.bulk_read():
+                for row in rows:
+                    key_col = schema.ARTrans.ROWID.lower()
+                    sage_id = str(row.get(key_col, row.get("sage_id", ""))).strip()
+                    if not sage_id:
+                        logger.warning("Invoice row with no ID — skipping: %r", row)
+                        continue
 
-                record = invoice_extract.extract_invoice(sage_id, header_row=row)
-                if record is None:
-                    # Stop advancing here. Everything before this invoice is
-                    # committed; this one and everything after is retried.
-                    logger.warning(
-                        "Invoice %s not extractable — halting scan at this point "
-                        "so it is retried rather than skipped.", sage_id,
-                    )
-                    break
+                    record = invoice_extract.extract_invoice(sage_id, header_row=row)
+                    if record is None:
+                        # Stop advancing here. Everything before this invoice is
+                        # committed; this one and everything after is retried.
+                        logger.warning(
+                            "Invoice %s not extractable — halting scan at this "
+                            "point so it is retried rather than skipped.", sage_id,
+                        )
+                        break
 
-                batch.append({
-                    "event_id": ev.make_event_id("invoice", sage_id, record),
-                    "entity_type": "invoice",
-                    "sage_id": sage_id,
-                    "payload": ev.build_envelope("invoice", sage_id, record),
-                })
-                highest_ok = sage_id
+                    batch.append({
+                        "event_id": ev.make_event_id("invoice", sage_id, record),
+                        "entity_type": "invoice",
+                        "sage_id": sage_id,
+                        "payload": ev.build_envelope("invoice", sage_id, record),
+                    })
+                    highest_ok = sage_id
 
             if batch and highest_ok is not None:
                 try:
@@ -290,6 +345,14 @@ class SageDataWatcher:
                     )
                     total_enqueued += n
                     cursor = highest_ok
+                    # Register the IDs so the reconciliation sweep knows they
+                    # exist and can notice if they later disappear. Best-effort:
+                    # a failure here costs delete detection for these IDs until
+                    # the next sweep re-observes them, never a lost invoice.
+                    try:
+                        ob.record_seen("invoice", [e["sage_id"] for e in batch])
+                    except Exception:
+                        logger.exception("Could not register scanned IDs (continuing)")
                 except Exception:
                     logger.exception(
                         "Enqueue failed — watermark NOT advanced, nothing lost."
@@ -302,6 +365,9 @@ class SageDataWatcher:
             if len(rows) < settings.WATCHER_SCAN_PAGE_SIZE:
                 break
 
+        self._last_scan_at = time.time()
+        self._total_enqueued += total_enqueued
+
         if total_enqueued:
             logger.info(
                 "Invoice scan enqueued %d event(s); cursor now %s",
@@ -309,6 +375,185 @@ class SageDataWatcher:
             )
             nudge_sender()
         return total_enqueued
+
+    # ── reconciliation sweep (void / delete detection) ───────────────────────
+
+    def reconcile(self) -> Dict[str, Any]:
+        """
+        Detect invoices that have disappeared from Sage and emit deletes.
+
+        Why this exists
+        ---------------
+        The forward scan walks ARTRANS from a watermark upward, so it sees new
+        and edited rows but structurally cannot see a row that is gone. A void
+        that deletes the row left SynBot's cache showing an active invoice
+        forever, with no mechanism that would ever correct it.
+
+        (A void that *keeps* the row and flips a status column is already
+        handled — the content fingerprint changes, so it looks like an edit.)
+
+        How it stays safe
+        -----------------
+        Emitting a delete is destructive downstream, so a partial or failed
+        enumeration must never be mistaken for "everything was deleted". Three
+        guards, in order:
+
+        1. **Abort on any read error.** A single failed page aborts the whole
+           sweep with no deletes emitted. A half-read table looks exactly like
+           mass deletion otherwise.
+        2. **Empty-result guard.** If Sage returns zero invoices while we know
+           of many, that is a connectivity or permissions fault, not a company
+           that deleted its entire AR history. Abort and log loudly.
+        3. **Bulk-delete ceiling.** If the diff exceeds
+           ``RECONCILE_MAX_DELETE_RATIO`` of known records, abort and require an
+           operator to look. Real voids trickle; a mass disappearance is a bug
+           or a restored-from-backup company file.
+
+        Returns a summary dict; also drives GET /sync/reconcile.
+        """
+        settings = get_settings()
+        ob = get_outbox()
+        known = set(ob.live_ids("invoice"))
+
+        if not known:
+            logger.debug("Reconcile: nothing known yet, nothing to compare.")
+            self._last_reconcile_at = time.time()
+            return {"status": "skipped", "reason": "no known records", "deleted": 0}
+
+        # ── enumerate every invoice ID currently in Sage ─────────────────────
+        present: Set[str] = set()
+        cursor: Optional[str] = None
+        pages = 0
+        # Hard page ceiling: guards against a cursor that fails to advance
+        # (duplicate keys) turning this into an infinite loop.
+        max_pages = 10_000
+
+        while pages < max_pages:
+            try:
+                rows = odbc.scan_after(
+                    "ar_transactions",
+                    schema.ARTrans.ROWID,
+                    cursor,
+                    limit=settings.WATCHER_SCAN_PAGE_SIZE,
+                )
+            except Exception as exc:
+                # Guard 1.
+                logger.error(
+                    "Reconcile aborted: enumeration failed at cursor=%s (%s). "
+                    "No deletes emitted — a partial read is indistinguishable "
+                    "from mass deletion.", cursor, exc,
+                )
+                self._last_reconcile_error = str(exc)[:300]
+                return {"status": "aborted", "reason": "enumeration failed", "deleted": 0}
+
+            if not rows:
+                break
+
+            key_col = schema.ARTrans.ROWID.lower()
+            page_ids = [
+                str(r.get(key_col, r.get("sage_id", ""))).strip()
+                for r in rows
+            ]
+            page_ids = [i for i in page_ids if i]
+            if not page_ids:
+                break
+
+            present.update(page_ids)
+
+            # Take the LAST row as the next cursor, not max(). scan_after emits
+            # ORDER BY <key>, so the last row is the page's true high-water mark
+            # under the DATABASE's collation. Python's max() applies string
+            # ordering, which disagrees with a numeric key column the moment IDs
+            # pass a digit boundary — max(["9","10"]) is "9", so the cursor goes
+            # backwards, the next page repeats rows, and enumeration stops early
+            # with `present` incomplete. In reconcile that means live invoices
+            # look deleted.
+            new_cursor = page_ids[-1]
+            if new_cursor == cursor:
+                # Cursor failed to advance — stop rather than spin.
+                break
+            cursor = new_cursor
+            pages += 1
+
+            if len(rows) < settings.WATCHER_SCAN_PAGE_SIZE:
+                break
+
+        # Guard 2.
+        if not present:
+            logger.error(
+                "Reconcile aborted: Sage returned zero invoices but %d are known. "
+                "Treating as a connectivity/permissions fault, not deletion.",
+                len(known),
+            )
+            self._last_reconcile_error = "enumeration returned no rows"
+            return {"status": "aborted", "reason": "empty enumeration", "deleted": 0}
+
+        missing = sorted(known - present)
+
+        # Guard 3.
+        if missing:
+            ratio = len(missing) / len(known)
+            if ratio > settings.RECONCILE_MAX_DELETE_RATIO:
+                logger.error(
+                    "Reconcile aborted: %d of %d known invoices (%.0f%%) are "
+                    "missing, above the %.0f%% ceiling. No deletes emitted. "
+                    "This usually means the company file was swapped or "
+                    "restored. Investigate, then raise "
+                    "RECONCILE_MAX_DELETE_RATIO to override.",
+                    len(missing), len(known), ratio * 100,
+                    settings.RECONCILE_MAX_DELETE_RATIO * 100,
+                )
+                self._last_reconcile_error = (
+                    "bulk-delete ceiling exceeded ({} of {})".format(len(missing), len(known))
+                )
+                return {
+                    "status": "aborted",
+                    "reason": "bulk delete ceiling exceeded",
+                    "would_delete": len(missing),
+                    "deleted": 0,
+                }
+
+        # Refresh last_seen for everything still there — cheap, and it keeps the
+        # registry honest if an ID was tombstoned in error and has reappeared.
+        try:
+            ob.record_seen("invoice", sorted(present))
+        except Exception:
+            logger.exception("Reconcile: could not refresh seen records (continuing)")
+
+        if not missing:
+            self._last_reconcile_at = time.time()
+            self._last_reconcile_error = ""
+            logger.info("Reconcile: %d invoice(s) present, none missing.", len(present))
+            return {"status": "ok", "present": len(present), "deleted": 0}
+
+        batch = []
+        for sid in missing:
+            envelope = ev.build_delete_envelope("invoice", sid)
+            batch.append({
+                "event_id": envelope["event_id"],
+                "entity_type": "invoice",
+                "sage_id": sid,
+                "payload": envelope,
+            })
+
+        try:
+            ob.enqueue_batch(batch)
+            ob.mark_deleted("invoice", missing)
+        except Exception:
+            logger.exception(
+                "Reconcile: could not enqueue delete events — not tombstoned, "
+                "so the next sweep retries them."
+            )
+            return {"status": "error", "reason": "enqueue failed", "deleted": 0}
+
+        self._last_reconcile_at = time.time()
+        self._last_reconcile_error = ""
+        logger.warning(
+            "Reconcile: %d invoice(s) no longer in Sage — delete events enqueued: %s",
+            len(missing), missing[:20],
+        )
+        nudge_sender()
+        return {"status": "ok", "present": len(present), "deleted": len(missing)}
 
     # ── legacy change ping ───────────────────────────────────────────────────
 
@@ -338,6 +583,50 @@ class SageDataWatcher:
     def force_scan(self) -> int:
         """Run an invoice scan now. Exposed via POST /sync/scan."""
         return self._scan_invoices()
+
+    # ── liveness ─────────────────────────────────────────────────────────────
+
+    def health(self) -> Dict[str, Any]:
+        """
+        Report whether detection is actually running.
+
+        This is the check that distinguishes "no new invoices" from "nothing is
+        looking for invoices". Both leave the outbox empty, so without this the
+        service reports ok while syncing nothing — the single most dangerous
+        failure mode for an unattended bridge.
+
+        ``healthy`` is False when the thread was never started (bad company
+        path), has died, or has not completed a pass in well over the poll
+        interval.
+        """
+        settings = get_settings()
+        now = time.time()
+        alive = bool(self._thread and self._thread.is_alive())
+
+        # Generous multiple of the poll interval: a slow ODBC scan on old
+        # hardware must not be reported as a stall.
+        stall_after = max(settings.WATCHER_POLL_SECONDS * 5, 300)
+        since_tick = (now - self._last_tick) if self._last_tick else None
+        stalled = bool(self._running and since_tick is not None and since_tick > stall_after)
+
+        return {
+            "running": self._running,
+            "thread_alive": alive,
+            "healthy": alive and self._running and not stalled and not self._start_error,
+            "stalled": stalled,
+            "start_error": self._start_error,
+            "last_tick_age_seconds": round(since_tick, 1) if since_tick is not None else None,
+            "last_scan_age_seconds": (
+                round(now - self._last_scan_at, 1) if self._last_scan_at else None
+            ),
+            "last_scan_error": self._last_scan_error,
+            "events_enqueued_since_start": self._total_enqueued,
+            "reconcile_enabled": settings.RECONCILE_ENABLED,
+            "last_reconcile_age_seconds": (
+                round(now - self._last_reconcile_at, 1) if self._last_reconcile_at else None
+            ),
+            "last_reconcile_error": self._last_reconcile_error,
+        }
 
     def reset_watermark(self, value: str = "") -> None:
         """

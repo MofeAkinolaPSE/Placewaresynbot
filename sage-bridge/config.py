@@ -63,12 +63,28 @@ class Settings(BaseSettings):
         default="C:\\PLACEHOLDER\\SageCompany\\",
         description="Absolute path to the Sage 50 company data folder (.DAT files)",
     )
+    SAGE_INSTALL_DIR: str = Field(
+        default="",
+        description="Peachtree program directory — the folder containing Peachw.exe "
+                    "and its Peachw.exe.config. Sage.Peachtree.API.dll lives in the "
+                    "API subfolder but its dependencies (Sage.Peachtree.Common, "
+                    "DataTypes, BusinessLogic, ...) sit in this root, so the SDK "
+                    "loader must probe here. Empty = derive from SAGE_API_DLL_PATH.",
+    )
     SAGE_API_DLL_PATH: str = Field(
         default="C:\\Program Files (x86)\\Sage\\Peachtree\\API\\Sage.Peachtree.API.dll",
         description="Absolute path to Sage.Peachtree.API.dll",
     )
 
     # ── Pervasive ODBC ───────────────────────────────────────────────────────
+    SAGE_APPLICATION_ID: str = Field(
+        default="PlacewareSynBotBridge",
+        description="Application identifier passed to PeachtreeSession.Begin(). "
+                    "Sage records the third-party authorization against THIS "
+                    "string — changing it after go-live invalidates the granted "
+                    "consent and the SDK will ask for approval again.",
+    )
+
     SAGE_ODBC_DSN: str = Field(
         default="PervasiveSage50",
         description="ODBC DSN name for the Sage company Pervasive database",
@@ -134,6 +150,28 @@ class Settings(BaseSettings):
         default=20, ge=1, le=1000,
         description="Cap pages per tick so a first-run backfill cannot monopolise "
                     "the machine. Remaining pages continue on the next tick.",
+    )
+
+    # ── Reconciliation (void / delete detection) ─────────────────────────────
+    RECONCILE_ENABLED: bool = Field(
+        default=True,
+        description="Run the periodic sweep that detects invoices deleted from "
+                    "Sage. The forward scan cannot see deletions, so without "
+                    "this a voided invoice stays active in SynBot forever.",
+    )
+    RECONCILE_INTERVAL_SECONDS: int = Field(
+        default=86400, ge=300, le=604800,
+        description="How often to run the sweep. It enumerates the whole AR "
+                    "table, so daily (the default) is the right order of "
+                    "magnitude on the target hardware — not hourly.",
+    )
+    RECONCILE_MAX_DELETE_RATIO: float = Field(
+        default=0.10, ge=0.0, le=1.0,
+        description="Abort the sweep if more than this fraction of known "
+                    "invoices appear to have vanished. A mass disappearance is "
+                    "almost always a swapped/restored company file or a broken "
+                    "read, not real voids — emitting those deletes downstream "
+                    "would be unrecoverable. Raise deliberately to override.",
     )
 
     # ── Outbox / retry ───────────────────────────────────────────────────────
@@ -247,4 +285,9 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.OUTBOX_DB_PATH = _resolve_relative(settings.OUTBOX_DB_PATH)
     settings.LOG_FILE = _resolve_relative(settings.LOG_FILE)
+    if not settings.SAGE_INSTALL_DIR:
+        # API\Sage.Peachtree.API.dll -> the Peachtree root two levels up.
+        settings.SAGE_INSTALL_DIR = os.path.dirname(
+            os.path.dirname(os.path.abspath(settings.SAGE_API_DLL_PATH))
+        )
     return settings
