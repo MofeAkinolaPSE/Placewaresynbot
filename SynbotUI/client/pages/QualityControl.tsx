@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShieldCheck, Thermometer, AlertTriangle, Package, FlaskConical,
   Loader2, Plus, RefreshCw, CheckCircle2, XCircle, ChevronDown,
-  ChevronRight, Lock, ClipboardList, Activity, BarChart3, Bell,
+  ChevronRight, ChevronUp, Lock, ClipboardList, ClipboardCheck, Activity, BarChart3, Bell,
   Siren, Clock, FileWarning, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,18 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { motion } from "framer-motion";
 import { motionVariants, motionTransitions } from "@/lib/motion";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { FilterBar } from "@/components/workspace/FilterBar";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
+import { InvoiceDetailBody } from "@/components/workspace/InvoiceDetailBody";
+import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+
+// Matches the currency-formatting convention used across Frontdesk/ARReceipts/CustomerWorkspace.
+const fmtCurrency = (n: number | null | undefined) =>
+  typeof n === "number"
+    ? `₦${n.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`
+    : "—";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -175,6 +187,32 @@ function DashboardTab() {
     refetchInterval: 60_000,
   });
 
+  // Pending QC — invoice requests from the Frontdesk/ACE Workstation
+  // pipeline. This page's own KPI (Frontdesk's "Pending QC" count) had
+  // nothing backing it here -- QC staff had no way to actually act on
+  // these invoices except from Frontdesk or Customer Workspace. Reuses
+  // InvoiceActionPanel as-is (same component ARReceipts.tsx's "Pending
+  // Finance Approval" section uses), not duplicated QC-mutation logic.
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const pendingQcQuery = useQuery({
+    queryKey: ["frontdesk-invoices", "qc_pending"],
+    queryFn: () => api.frontdesk.listInvoices({ status: "qc_pending", limit: 50 }),
+    refetchInterval: 30_000,
+  });
+  const pendingQcInvoices: any[] = pendingQcQuery.data?.invoices ?? [];
+  useRealtimeChannel("frontdesk_updates", () => pendingQcQuery.refetch());
+
+  // Full detail (items, batch/expiry, addresses, PO/terms) -- the list
+  // query above only has summary columns (no items at all), which meant
+  // expanding a row here showed nothing but the QC action form itself,
+  // with no way for QC to actually see what they're checking against
+  // physical stock. Fetched only for whichever row is expanded.
+  const expandedQcDetailQuery = useQuery({
+    queryKey: ["fd-invoice-detail", expandedInvoiceId],
+    queryFn: () => api.frontdesk.getInvoice(expandedInvoiceId!),
+    enabled: !!expandedInvoiceId,
+  });
+
   const kpi: QcKpi = data?.kpi ?? {
     expiring_critical_30d: 0,
     open_deviations: 0,
@@ -248,6 +286,57 @@ function DashboardTab() {
               </motion.div>
             ))}
           </div>
+
+          {/* Pending QC — invoice requests from the ACE Workstation/Frontdesk
+              pipeline. Only shown when there's something to act on. */}
+          {pendingQcInvoices.length > 0 && (
+            <Card className="border-orange-300/60 dark:border-orange-800/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 text-orange-600" />
+                  Pending QC — Invoice Requests
+                  <Badge variant="outline" className="ml-1">{pendingQcInvoices.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {pendingQcInvoices.map((inv: any) => (
+                  <div key={inv.id} className="border rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedInvoiceId(expandedInvoiceId === inv.id ? null : inv.id)}
+                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors text-left"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-muted-foreground truncate">{inv.invoice_number}</div>
+                        <div className="text-sm font-medium truncate">{inv.company_name || inv.customer_name}</div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="font-semibold text-sm">{fmtCurrency(inv.total_amount)}</span>
+                        {expandedInvoiceId === inv.id ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+                    {expandedInvoiceId === inv.id && (
+                      <div className="border-t bg-muted/20 p-3 space-y-3">
+                        <InvoiceDetailBody
+                          invoice={expandedQcDetailQuery.data?.invoice}
+                          loading={expandedQcDetailQuery.isLoading}
+                        />
+                        <div className="border-t pt-3">
+                          <InvoiceActionPanel
+                            invoice={inv}
+                            onActioned={() => pendingQcQuery.refetch()}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader className="pb-2">
@@ -389,7 +478,7 @@ function TemperatureTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [showLogForm, setShowLogForm] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [escalateTarget, setEscalateTarget] = useState<TempLog | null>(null);
   const [filterDevOnly, setFilterDevOnly] = useState(false);
   const [filterLocation, setFilterLocation] = useState("");
@@ -418,6 +507,17 @@ function TemperatureTab() {
 
   const logs: TempLog[] = data?.logs ?? data ?? [];
 
+  // Derived from the already-fetched logs array (no new call) — matches
+  // CapaTab's KpiStrip precedent. See ACE-Workspace-Standard.md Ch.9's
+  // partial-retrofit note: this tab keeps its flat table (every row already
+  // is its own detail view) but adopts KpiStrip/FilterBar/DetailSheet.
+  const kpis = useMemo(() => ({
+    total:      logs.length,
+    deviations: logs.filter((l) => l.is_deviation).length,
+    escalated:  logs.filter((l) => l.is_deviation && l.deviation_escalated).length,
+    normal:     logs.filter((l) => !l.is_deviation).length,
+  }), [logs]);
+
   const logMut = useMutation({
     mutationFn: () => api.qc.logTemperature({
       location:       logLocation.trim(),
@@ -430,7 +530,7 @@ function TemperatureTab() {
     }),
     onSuccess: () => {
       toast({ title: "Temperature logged" });
-      setShowLogForm(false);
+      setSheetOpen(false);
       setLogLocation(""); setLogReading(""); setLogBy(""); setLogNotes("");
       setLogMin(""); setLogMax("");
       void queryClient.invalidateQueries({ queryKey: ["qc-temp-logs"] });
@@ -458,7 +558,16 @@ function TemperatureTab() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <KpiStrip
+        items={[
+          { label: "Total Logs", value: kpis.total },
+          { label: "Deviations", value: kpis.deviations, tone: "warning" },
+          { label: "Escalated", value: kpis.escalated, tone: "danger" },
+          { label: "Normal", value: kpis.normal, tone: "success" },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold">Cold-Chain Temperature Logs</h2>
@@ -466,94 +575,28 @@ function TemperatureTab() {
           <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
             <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />
           </Button>
-          <Button size="sm" onClick={() => setShowLogForm((p) => !p)}>
+          <Button size="sm" onClick={() => setSheetOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> Log Reading
           </Button>
         </div>
       </div>
 
-      {/* Inline log form */}
-      {showLogForm && (
-        <motion.div {...motionVariants.cardEnter} transition={motionTransitions.standard}>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">New Temperature Reading</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Location *</label>
-                  <Input placeholder="e.g. Cold Room A" value={logLocation} onChange={(e) => setLogLocation(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Reading (°C) *</label>
-                  <Input type="number" step="0.1" placeholder="2.4" value={logReading} onChange={(e) => setLogReading(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Session</label>
-                  <Select value={logSession} onValueChange={(v) => setLogSession(v as typeof logSession)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="morning">Morning</SelectItem>
-                      <SelectItem value="midday">Midday</SelectItem>
-                      <SelectItem value="evening">Evening</SelectItem>
-                      <SelectItem value="ad_hoc">Ad-hoc</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Min Threshold (°C)</label>
-                  <Input type="number" step="0.1" placeholder="2.0" value={logMin} onChange={(e) => setLogMin(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Max Threshold (°C)</label>
-                  <Input type="number" step="0.1" placeholder="8.0" value={logMax} onChange={(e) => setLogMax(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Logged By *</label>
-                  <Input placeholder="Staff name" value={logBy} onChange={(e) => setLogBy(e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
-                <Textarea placeholder="Optional notes…" rows={2} value={logNotes} onChange={(e) => setLogNotes(e.target.value)} />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  disabled={logMut.isPending || !logLocation.trim() || !logReading || !logBy.trim()}
-                  onClick={() => logMut.mutate()}
-                >
-                  {logMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                  Submit
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowLogForm(false)}>Cancel</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+      <FilterBar
+        search={{ value: filterLocation, onChange: setFilterLocation, placeholder: "Filter by location…" }}
+        selects={[
+          {
+            label: "readings",
+            value: filterDevOnly ? "deviations" : "",
+            onChange: (v) => setFilterDevOnly(v === "deviations"),
+            placeholder: "All Readings",
+            options: [{ value: "deviations", label: "Deviations Only" }],
+          },
+        ]}
+      />
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Input
-          className="max-w-[200px] h-8 text-sm"
-          placeholder="Filter by location…"
-          value={filterLocation}
-          onChange={(e) => setFilterLocation(e.target.value)}
-        />
-        <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={filterDevOnly}
-            onChange={(e) => setFilterDevOnly(e.target.checked)}
-            className="rounded"
-          />
-          Deviations only
-        </label>
-      </div>
-
-      {/* Logs table */}
+      {/* Logs table — stays a flat table, not List/Detail: every row already
+          shows its full detail, and Escalate is a single Dialog click away.
+          See ACE-Workspace-Standard.md Ch.9's partial-retrofit note. */}
       {isLoading ? (
         <div className="flex items-center justify-center h-32">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -658,6 +701,66 @@ function TemperatureTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Temperature Reading — ephemeral create task, matches CapaTab's
+          "New Deviation" DetailSheet precedent (Ch.5.2). */}
+      <DetailSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        title="New Temperature Reading"
+        icon={Thermometer}
+        footer={
+          <Button
+            className="w-full"
+            disabled={logMut.isPending || !logLocation.trim() || !logReading || !logBy.trim()}
+            onClick={() => logMut.mutate()}
+          >
+            {logMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+            Submit
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Location *</label>
+              <Input placeholder="e.g. Cold Room A" value={logLocation} onChange={(e) => setLogLocation(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Reading (°C) *</label>
+              <Input type="number" step="0.1" placeholder="2.4" value={logReading} onChange={(e) => setLogReading(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Session</label>
+              <Select value={logSession} onValueChange={(v) => setLogSession(v as typeof logSession)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">Morning</SelectItem>
+                  <SelectItem value="midday">Midday</SelectItem>
+                  <SelectItem value="evening">Evening</SelectItem>
+                  <SelectItem value="ad_hoc">Ad-hoc</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Logged By *</label>
+              <Input placeholder="Staff name" value={logBy} onChange={(e) => setLogBy(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Min Threshold (°C)</label>
+              <Input type="number" step="0.1" placeholder="2.0" value={logMin} onChange={(e) => setLogMin(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Max Threshold (°C)</label>
+              <Input type="number" step="0.1" placeholder="8.0" value={logMax} onChange={(e) => setLogMax(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+            <Textarea placeholder="Optional notes…" rows={2} value={logNotes} onChange={(e) => setLogNotes(e.target.value)} />
+          </div>
+        </div>
+      </DetailSheet>
     </div>
   );
 }
@@ -676,13 +779,16 @@ function CapaTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [showForm, setShowForm]               = useState(false);
-  const [selected, setSelected]               = useState<Deviation | null>(null);
+  const [sheetOpen, setSheetOpen]             = useState(false);
+  const [selectedId, setSelectedId]           = useState<string | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [filterStatus, setFilterStatus]       = useState("");
   const [filterClass,  setFilterClass]        = useState("");
 
-  // Create form
+  // Create form (now inside a DetailSheet, not an inline toggle — see
+  // ACE-Workspace-Standard.md Ch.5: a multi-field *create* task doesn't have
+  // a natural inline home once the List/Detail/Actions shape is in place,
+  // even though the pre-retrofit page used an inline toggle)
   const [cls,        setCls]        = useState<"minor" | "major" | "critical">("minor");
   const [trigger,    setTrigger]    = useState("");
   const [obs,        setObs]        = useState("");
@@ -692,7 +798,7 @@ function CapaTab() {
   const [recoms,     setRecoms]     = useState("");
   const [capaText,   setCapaText]   = useState("");   // free-text CAPA summary
 
-  // Update form
+  // Update form (unchanged fields, now driving the inline Detail Workspace)
   const [updStatus,  setUpdStatus]  = useState("");
   const [updPerson,  setUpdPerson]  = useState("");
   const [updCapaText,setUpdCapaText] = useState("");
@@ -710,6 +816,28 @@ function CapaTab() {
 
   const deviations: Deviation[] = data?.deviations ?? data ?? [];
 
+  // Derived from the list query (not a separate snapshot) so the Detail
+  // Workspace automatically reflects the latest data after any mutation's
+  // invalidation — no manual re-fetch-and-reselect needed.
+  const selected = useMemo(
+    () => deviations.find((d) => d.id === selectedId) ?? null,
+    [deviations, selectedId],
+  );
+
+  const kpis = useMemo(() => ({
+    total: deviations.length,
+    open: deviations.filter((d) => d.status === "open").length,
+    escalated: deviations.filter((d) => d.status === "escalated").length,
+    closed: deviations.filter((d) => d.status === "closed").length,
+  }), [deviations]);
+
+  const selectDeviation = (dev: Deviation) => {
+    setSelectedId(dev.id);
+    setUpdStatus(dev.status);
+    setUpdPerson(dev.responsible_person ?? "");
+    setUpdCapaText("");
+  };
+
   const createMut = useMutation({
     mutationFn: () => api.qc.createDeviation({
       classification:      cls,
@@ -723,7 +851,7 @@ function CapaTab() {
     }),
     onSuccess: () => {
       toast({ title: "Deviation report created" });
-      setShowForm(false);
+      setSheetOpen(false);
       setCls("minor"); setTrigger(""); setObs(""); setDept(""); setPerson(""); setImpact(""); setRecoms(""); setCapaText("");
       void queryClient.invalidateQueries({ queryKey: ["qc-deviations"] });
       void queryClient.invalidateQueries({ queryKey: ["qc-dashboard"] });
@@ -739,7 +867,7 @@ function CapaTab() {
     }),
     onSuccess: () => {
       toast({ title: "Deviation updated" });
-      setSelected(null);
+      setUpdCapaText(""); // don't resubmit the same CAPA action text twice
       void queryClient.invalidateQueries({ queryKey: ["qc-deviations"] });
     },
     onError: (e: any) => toast({ title: "Error", description: e?.message, variant: "destructive" }),
@@ -750,7 +878,6 @@ function CapaTab() {
     onSuccess: () => {
       toast({ title: "Deviation closed" });
       setShowCloseDialog(false);
-      setSelected(null);
       setResolution("");
       void queryClient.invalidateQueries({ queryKey: ["qc-deviations"] });
       void queryClient.invalidateQueries({ queryKey: ["qc-dashboard"] });
@@ -758,225 +885,258 @@ function CapaTab() {
     onError: (e: any) => toast({ title: "Error", description: e?.message, variant: "destructive" }),
   });
 
+  // Ported from Compliance.tsx's DeviationsTab during its consolidation onto
+  // this tab (§9.12) — the one capability that duplicate UI had that this
+  // one didn't: a formal PDF deviation/CAPA report via DocumentEngine.
+  const reportMut = useMutation({
+    mutationFn: (dev: Deviation) => api.compliance.generateDeviationReport(dev.id),
+    onSuccess: () => {
+      toast({ title: "Report queued", description: "PDF generation in progress — check the Compliance Documents tab shortly." });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message, variant: "destructive" }),
+  });
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-semibold">CAPA & Deviation Reports</h2>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-          </Button>
-          <Button size="sm" onClick={() => setShowForm((p) => !p)}>
-            <Plus className="h-4 w-4 mr-1" /> New Deviation
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <KpiStrip
+        items={[
+          { label: "Total Deviations", value: kpis.total },
+          { label: "Open", value: kpis.open, tone: "warning" },
+          { label: "Escalated", value: kpis.escalated, tone: "danger" },
+          { label: "Closed", value: kpis.closed, tone: "success" },
+        ]}
+      />
 
-      {/* Create form */}
-      {showForm && (
-        <motion.div {...motionVariants.cardEnter} transition={motionTransitions.standard}>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">New Deviation Report</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Classification *</label>
-                  <Select value={cls} onValueChange={(v) => setCls(v as typeof cls)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="minor">Minor</SelectItem>
-                      <SelectItem value="major">Major</SelectItem>
-                      <SelectItem value="critical">Critical</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Trigger Type *</label>
-                  <Select value={trigger} onValueChange={setTrigger}>
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                    <SelectContent>
-                      {TRIGGER_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Responsible Dept *</label>
-                  <Input placeholder="e.g. Quality Assurance" value={dept} onChange={(e) => setDept(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Responsible Person</label>
-                  <Input placeholder="Optional" value={person} onChange={(e) => setPerson(e.target.value)} />
-                </div>
+      <FilterBar
+        selects={[
+          {
+            label: "statuses",
+            value: filterStatus,
+            onChange: setFilterStatus,
+            placeholder: "All statuses",
+            options: [
+              { value: "open", label: "Open" },
+              { value: "under_investigation", label: "Under Investigation" },
+              { value: "escalated", label: "Escalated" },
+              { value: "closed", label: "Closed" },
+            ],
+          },
+          {
+            label: "classes",
+            value: filterClass,
+            onChange: setFilterClass,
+            placeholder: "All classes",
+            options: [
+              { value: "minor", label: "Minor" },
+              { value: "major", label: "Major" },
+              { value: "critical", label: "Critical" },
+            ],
+          },
+        ]}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">
+        {/* List / Queue Panel */}
+        <Card className="lg:max-h-[600px] flex flex-col">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Deviations</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-y-auto space-y-2 flex-1">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Observation *</label>
-                <Textarea placeholder="Describe what was observed…" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Impact Assessment</label>
-                  <Textarea placeholder="Potential impact…" rows={2} value={impact} onChange={(e) => setImpact(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Recommendations</label>
-                  <Textarea placeholder="Recommended actions…" rows={2} value={recoms} onChange={(e) => setRecoms(e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Initial CAPA Action</label>
-                <Input placeholder="Initial corrective/preventive action…" value={capaText} onChange={(e) => setCapaText(e.target.value)} />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  disabled={createMut.isPending || !trigger || !obs.trim() || !dept.trim()}
-                  onClick={() => createMut.mutate()}
+            ) : deviations.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground text-sm">No deviations found.</div>
+            ) : (
+              deviations.map((dev) => (
+                <button
+                  key={dev.id}
+                  onClick={() => selectDeviation(dev)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 hover:bg-muted/40 transition-colors ${
+                    selectedId === dev.id ? "border-primary bg-muted/40" : ""
+                  }`}
                 >
-                  {createMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                  Submit
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs text-muted-foreground">{dev.deviation_id}</span>
+                    <Pill label={dev.classification} colorCls={CLASS_COLORS[dev.classification]} />
+                    <Pill label={dev.status} colorCls={STATUS_COLORS[dev.status]} />
+                  </div>
+                  <p className="text-sm font-medium truncate mt-1">{dev.observation}</p>
+                  <div className="flex gap-3 text-xs text-muted-foreground flex-wrap mt-0.5">
+                    <span>Dept: {dev.responsible_department}</span>
+                    <span>{fmtDt(dev.created_at)}</span>
+                  </div>
+                </button>
+              ))
+            )}
+          </CardContent>
+        </Card>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={filterStatus || "__all__"} onValueChange={(v) => setFilterStatus(v === "__all__" ? "" : v)}>
-          <SelectTrigger className="w-[150px] h-8 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All statuses</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="under_investigation">Under Investigation</SelectItem>
-            <SelectItem value="escalated">Escalated</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={filterClass || "__all__"} onValueChange={(v) => setFilterClass(v === "__all__" ? "" : v)}>
-          <SelectTrigger className="w-[150px] h-8 text-sm"><SelectValue placeholder="All classes" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All classes</SelectItem>
-            <SelectItem value="minor">Minor</SelectItem>
-            <SelectItem value="major">Major</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-          </SelectContent>
-        </Select>
+        {/* Detail Workspace — inline, replaces the old Dialog. Per
+            ACE-Workspace-Standard.md Ch.5/§5.1: a persistent, selected record
+            has no reason to be dismissible — no close button here. */}
+        <Card>
+          <CardContent className="pt-6">
+            {!selected && (
+              <p className="text-sm text-muted-foreground text-center py-12">Select a deviation to view details.</p>
+            )}
+            {selected && (
+              <div className="space-y-4 text-sm">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs text-muted-foreground">{selected.deviation_id}</span>
+                  <Pill label={selected.classification} colorCls={CLASS_COLORS[selected.classification]} />
+                  <Pill label={selected.status} colorCls={STATUS_COLORS[selected.status]} />
+                </div>
+                <div className="rounded-md bg-muted p-3 space-y-1">
+                  <div><span className="font-medium">Trigger:</span> {selected.trigger_type.replace(/_/g, " ")}</div>
+                  <div><span className="font-medium">Department:</span> {selected.responsible_department}</div>
+                  <div className="leading-relaxed"><span className="font-medium">Observation:</span> {selected.observation}</div>
+                </div>
+                <Separator />
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Update Status</label>
+                    <Select value={updStatus} onValueChange={setUpdStatus}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">Open</SelectItem>
+                        <SelectItem value="under_investigation">Under Investigation</SelectItem>
+                        <SelectItem value="escalated">Escalated</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Responsible Person</label>
+                    <Input value={updPerson} onChange={(e) => setUpdPerson(e.target.value)} placeholder="Name…" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Add CAPA Action</label>
+                    <Input value={updCapaText} onChange={(e) => setUpdCapaText(e.target.value)} placeholder="Describe CAPA step…" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={selected.status === "closed"}
+                    onClick={() => setShowCloseDialog(true)}
+                  >
+                    Close Deviation
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={updateMut.isPending}
+                    onClick={() => updateMut.mutate(selected)}
+                  >
+                    {updateMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                    Save
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Generate Deviation & CAPA report PDF"
+                    disabled={reportMut.isPending}
+                    onClick={() => reportMut.mutate(selected)}
+                  >
+                    {reportMut.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileWarning className="h-4 w-4 mr-1" />}
+                    Report
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Button className="w-full" size="sm" onClick={() => setSheetOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" /> New Deviation
+            </Button>
+            <Button variant="outline" className="w-full" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* List */}
-      {isLoading ? (
-        <div className="flex items-center justify-center h-32">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
+      {/* New Deviation — the one Sheet usage: an ephemeral create task,
+          matching ARReceipts.tsx's "Record Receipt" precedent. */}
+      <DetailSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        title="New Deviation Report"
+        icon={FlaskConical}
+        footer={
+          <Button
+            className="w-full"
+            disabled={createMut.isPending || !trigger || !obs.trim() || !dept.trim()}
+            onClick={() => createMut.mutate()}
+          >
+            {createMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+            Submit
+          </Button>
+        }
+      >
         <div className="space-y-3">
-          {deviations.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">No deviations found.</div>
-          ) : (
-            deviations.map((dev) => (
-              <motion.div key={dev.id} {...motionVariants.cardEnter} transition={motionTransitions.standard}>
-                <Card
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => {
-                    setSelected(dev);
-                    setUpdStatus(dev.status);
-                    setUpdPerson(dev.responsible_person ?? "");
-                    setUpdCapaText("");
-                  }}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs text-muted-foreground">{dev.deviation_id}</span>
-                          <Pill label={dev.classification} colorCls={CLASS_COLORS[dev.classification]} />
-                          <Pill label={dev.status} colorCls={STATUS_COLORS[dev.status]} />
-                        </div>
-                        <p className="text-sm font-medium truncate">{dev.observation}</p>
-                        <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
-                          <span>Dept: {dev.responsible_department}</span>
-                          {dev.responsible_person && <span>By: {dev.responsible_person}</span>}
-                          <span>{fmtDt(dev.created_at)}</span>
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Detail / Update dialog */}
-      <Dialog open={!!selected && !showCloseDialog} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span>{selected?.deviation_id}</span>
-              {selected && <Pill label={selected.classification} colorCls={CLASS_COLORS[selected.classification]} />}
-            </DialogTitle>
-          </DialogHeader>
-          {selected && (
-            <div className="space-y-4 text-sm">
-              <div className="rounded-md bg-muted p-3 space-y-1">
-                <div><span className="font-medium">Trigger:</span> {selected.trigger_type.replace(/_/g, " ")}</div>
-                <div><span className="font-medium">Department:</span> {selected.responsible_department}</div>
-                <div className="leading-relaxed"><span className="font-medium">Observation:</span> {selected.observation}</div>
-              </div>
-              <Separator />
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Update Status</label>
-                  <Select value={updStatus} onValueChange={setUpdStatus}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="open">Open</SelectItem>
-                      <SelectItem value="under_investigation">Under Investigation</SelectItem>
-                      <SelectItem value="escalated">Escalated</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Responsible Person</label>
-                  <Input value={updPerson} onChange={(e) => setUpdPerson(e.target.value)} placeholder="Name…" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Add CAPA Action</label>
-                  <Input value={updCapaText} onChange={(e) => setUpdCapaText(e.target.value)} placeholder="Describe CAPA step…" />
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Classification *</label>
+              <Select value={cls} onValueChange={(v) => setCls(v as typeof cls)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="minor">Minor</SelectItem>
+                  <SelectItem value="major">Major</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={selected?.status === "closed"}
-              onClick={() => setShowCloseDialog(true)}
-            >
-              Close Deviation
-            </Button>
-            <Button
-              size="sm"
-              disabled={updateMut.isPending}
-              onClick={() => selected && updateMut.mutate(selected)}
-            >
-              {updateMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Trigger Type *</label>
+              <Select value={trigger} onValueChange={setTrigger}>
+                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  {TRIGGER_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Responsible Dept *</label>
+            <Input placeholder="e.g. Quality Assurance" value={dept} onChange={(e) => setDept(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Responsible Person</label>
+            <Input placeholder="Optional" value={person} onChange={(e) => setPerson(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Observation *</label>
+            <Textarea placeholder="Describe what was observed…" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Impact Assessment</label>
+            <Textarea placeholder="Potential impact…" rows={2} value={impact} onChange={(e) => setImpact(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Recommendations</label>
+            <Textarea placeholder="Recommended actions…" rows={2} value={recoms} onChange={(e) => setRecoms(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Initial CAPA Action</label>
+            <Input placeholder="Initial corrective/preventive action…" value={capaText} onChange={(e) => setCapaText(e.target.value)} />
+          </div>
+        </div>
+      </DetailSheet>
 
-      {/* Close dialog */}
+      {/* Close dialog — unchanged: already the correct pattern per Ch.5
+          (short, single-input confirmation), directly analogous to the
+          Void Receipt / Reject Payment precedent. */}
       <Dialog open={showCloseDialog} onOpenChange={(o) => { if (!o) setShowCloseDialog(false); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Close Deviation {selected?.deviation_id}</DialogTitle></DialogHeader>
@@ -1064,6 +1224,24 @@ function NafdacTab() {
 
   const batches: NafdacBatch[] = batchQuery.data?.batches ?? batchQuery.data ?? [];
   const recalls: Recall[]      = recallQuery.data?.recalls ?? recallQuery.data ?? [];
+
+  // One KpiStrip variant per sub-section, derived from the already-fetched
+  // arrays (no new calls). See ACE-Workspace-Standard.md Ch.9's
+  // partial-retrofit note — tables stay flat, KpiStrip/FilterBar/DetailSheet
+  // are adopted independently of the List/Detail/QuickActions shape.
+  const batchKpis = useMemo(() => ({
+    total:    batches.length,
+    pending:  batches.filter((b) => b.status === "pending").length,
+    approved: batches.filter((b) => b.status === "approved").length,
+    rejected: batches.filter((b) => b.status === "rejected").length,
+  }), [batches]);
+
+  const recallKpis = useMemo(() => ({
+    total:     recalls.length,
+    active:    recalls.filter((r) => r.status === "initiated" || r.status === "in_progress").length,
+    completed: recalls.filter((r) => r.status === "completed").length,
+    closed:    recalls.filter((r) => r.status === "closed").length,
+  }), [recalls]);
 
   // Mutations
   const registerBatchMut = useMutation({
@@ -1170,84 +1348,45 @@ function NafdacTab() {
       {/* ---- BATCH REGISTRY ---- */}
       {sub === "batches" && (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={batchStatusFilter || "__all__"} onValueChange={(v) => setBatchStatusFilter(v === "__all__" ? "" : v)}>
-              <SelectTrigger className="w-[150px] h-8 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All statuses</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-                <SelectItem value="suspended">Suspended</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="ghost" size="sm" onClick={() => batchQuery.refetch()} disabled={batchQuery.isFetching}>
-              <RefreshCw className={`h-4 w-4 ${batchQuery.isFetching ? "animate-spin" : ""}`} />
-            </Button>
-            <Button size="sm" onClick={() => setShowBatchForm((p) => !p)}>
-              <Plus className="h-4 w-4 mr-1" /> Register Batch
-            </Button>
+          <KpiStrip
+            items={[
+              { label: "Total Batches", value: batchKpis.total },
+              { label: "Pending", value: batchKpis.pending, tone: "warning" },
+              { label: "Approved", value: batchKpis.approved, tone: "success" },
+              { label: "Rejected", value: batchKpis.rejected, tone: "danger" },
+            ]}
+          />
+
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <FilterBar
+              selects={[
+                {
+                  label: "statuses",
+                  value: batchStatusFilter,
+                  onChange: setBatchStatusFilter,
+                  placeholder: "All statuses",
+                  options: [
+                    { value: "pending", label: "Pending" },
+                    { value: "approved", label: "Approved" },
+                    { value: "rejected", label: "Rejected" },
+                    { value: "suspended", label: "Suspended" },
+                  ],
+                },
+              ]}
+            />
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => batchQuery.refetch()} disabled={batchQuery.isFetching}>
+                <RefreshCw className={`h-4 w-4 ${batchQuery.isFetching ? "animate-spin" : ""}`} />
+              </Button>
+              <Button size="sm" onClick={() => setShowBatchForm(true)}>
+                <Plus className="h-4 w-4 mr-1" /> Register Batch
+              </Button>
+            </div>
           </div>
 
-          {/* Register form */}
-          {showBatchForm && (
-            <motion.div {...motionVariants.cardEnter} transition={motionTransitions.standard}>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Register NAFDAC Batch</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Batch Number *</label>
-                      <Input placeholder="e.g. BTH-2026-001" value={batchNum} onChange={(e) => setBatchNum(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Product Name *</label>
-                      <Input placeholder="Product name" value={productName} onChange={(e) => setProductName(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">NAFDAC Reg. No.</label>
-                      <Input placeholder="A4-0000" value={nafdacReg} onChange={(e) => setNafdacReg(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Supplier</label>
-                      <Input placeholder="Supplier name" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Valid From</label>
-                      <Input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Valid To</label>
-                      <Input type="date" value={validTo} onChange={(e) => setValidTo(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Certificate Ref.</label>
-                      <Input placeholder="CERT-XXX" value={certRef} onChange={(e) => setCertRef(e.target.value)} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
-                    <Textarea rows={2} value={batchNotes} onChange={(e) => setBatchNotes(e.target.value)} placeholder="Optional…" />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      disabled={registerBatchMut.isPending || !batchNum.trim() || !productName.trim()}
-                      onClick={() => registerBatchMut.mutate()}
-                    >
-                      {registerBatchMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                      Register
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setShowBatchForm(false)}>Cancel</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* Batch table */}
+          {/* Batch table — stays flat, not List/Detail: every row already
+              shows its full detail, and Approve/Reject are single Dialog
+              clicks away. See ACE-Workspace-Standard.md Ch.9. */}
           {batchQuery.isLoading ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1331,82 +1470,44 @@ function NafdacTab() {
       {/* ---- RECALLS ---- */}
       {sub === "recalls" && (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={recallStatusFilter || "__all__"} onValueChange={(v) => setRecallStatusFilter(v === "__all__" ? "" : v)}>
-              <SelectTrigger className="w-[150px] h-8 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All statuses</SelectItem>
-                <SelectItem value="initiated">Initiated</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="ghost" size="sm" onClick={() => recallQuery.refetch()} disabled={recallQuery.isFetching}>
-              <RefreshCw className={`h-4 w-4 ${recallQuery.isFetching ? "animate-spin" : ""}`} />
-            </Button>
-            <Button size="sm" variant="destructive" onClick={() => setShowRecallForm((p) => !p)}>
-              <Siren className="h-4 w-4 mr-1" /> Initiate Recall
-            </Button>
+          <KpiStrip
+            items={[
+              { label: "Total Recalls", value: recallKpis.total },
+              { label: "Active", value: recallKpis.active, tone: "danger" },
+              { label: "Completed", value: recallKpis.completed, tone: "success" },
+              { label: "Closed", value: recallKpis.closed },
+            ]}
+          />
+
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <FilterBar
+              selects={[
+                {
+                  label: "statuses",
+                  value: recallStatusFilter,
+                  onChange: setRecallStatusFilter,
+                  placeholder: "All statuses",
+                  options: [
+                    { value: "initiated", label: "Initiated" },
+                    { value: "in_progress", label: "In Progress" },
+                    { value: "completed", label: "Completed" },
+                    { value: "closed", label: "Closed" },
+                  ],
+                },
+              ]}
+            />
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => recallQuery.refetch()} disabled={recallQuery.isFetching}>
+                <RefreshCw className={`h-4 w-4 ${recallQuery.isFetching ? "animate-spin" : ""}`} />
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => setShowRecallForm(true)}>
+                <Siren className="h-4 w-4 mr-1" /> Initiate Recall
+              </Button>
+            </div>
           </div>
 
-          {/* Recall form */}
-          {showRecallForm && (
-            <motion.div {...motionVariants.cardEnter} transition={motionTransitions.standard}>
-              <Card className="border-red-300">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-red-700 flex items-center gap-2">
-                    <Siren className="h-4 w-4" /> Initiate Product Recall
-                  </CardTitle>
-                  <CardDescription>This action will be recorded and notified to relevant departments.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Batch Number *</label>
-                      <Input value={rBatch} onChange={(e) => setRBatch(e.target.value)} placeholder="BTH-2026-001" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Product Name *</label>
-                      <Input value={rProduct} onChange={(e) => setRProduct(e.target.value)} placeholder="Product name" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Scope</label>
-                      <Select value={rScope} onValueChange={(v) => setRScope(v as typeof rScope)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="voluntary">Voluntary</SelectItem>
-                          <SelectItem value="mandatory">Mandatory</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="text-xs text-muted-foreground mb-1 block">Regulatory Authority</label>
-                      <Input value={rAuthority} onChange={(e) => setRAuthority(e.target.value)} placeholder="NAFDAC / SON / etc." />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Recall Reason *</label>
-                    <Textarea rows={3} value={rReason} onChange={(e) => setRReason(e.target.value)} placeholder="Detailed reason for recall…" />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={initiateRecallMut.isPending || !rBatch.trim() || !rProduct.trim() || !rReason.trim()}
-                      onClick={() => initiateRecallMut.mutate()}
-                    >
-                      {initiateRecallMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                      Initiate Recall
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setShowRecallForm(false)}>Cancel</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* Recalls list */}
+          {/* Recalls list — stays flat: each card already shows full detail,
+              and "Update Status" is a single Dialog click away. */}
           {recallQuery.isLoading ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1559,6 +1660,114 @@ function NafdacTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Register Batch — ephemeral create task, DetailSheet per Ch.5.2
+          (same precedent as CapaTab's "New Deviation" / TemperatureTab's
+          "New Temperature Reading"). */}
+      <DetailSheet
+        open={showBatchForm}
+        onOpenChange={setShowBatchForm}
+        title="Register NAFDAC Batch"
+        icon={ShieldCheck}
+        footer={
+          <Button
+            className="w-full"
+            disabled={registerBatchMut.isPending || !batchNum.trim() || !productName.trim()}
+            onClick={() => registerBatchMut.mutate()}
+          >
+            {registerBatchMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+            Register
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Batch Number *</label>
+              <Input placeholder="e.g. BTH-2026-001" value={batchNum} onChange={(e) => setBatchNum(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Product Name *</label>
+              <Input placeholder="Product name" value={productName} onChange={(e) => setProductName(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">NAFDAC Reg. No.</label>
+              <Input placeholder="A4-0000" value={nafdacReg} onChange={(e) => setNafdacReg(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Supplier</label>
+              <Input placeholder="Supplier name" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Valid From</label>
+              <Input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Valid To</label>
+              <Input type="date" value={validTo} onChange={(e) => setValidTo(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Certificate Ref.</label>
+              <Input placeholder="CERT-XXX" value={certRef} onChange={(e) => setCertRef(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+            <Textarea rows={2} value={batchNotes} onChange={(e) => setBatchNotes(e.target.value)} placeholder="Optional…" />
+          </div>
+        </div>
+      </DetailSheet>
+
+      {/* Initiate Recall — ephemeral create task, DetailSheet per Ch.5.2. */}
+      <DetailSheet
+        open={showRecallForm}
+        onOpenChange={setShowRecallForm}
+        title="Initiate Product Recall"
+        description="This action will be recorded and notified to relevant departments."
+        icon={Siren}
+        footer={
+          <Button
+            className="w-full"
+            variant="destructive"
+            disabled={initiateRecallMut.isPending || !rBatch.trim() || !rProduct.trim() || !rReason.trim()}
+            onClick={() => initiateRecallMut.mutate()}
+          >
+            {initiateRecallMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+            Initiate Recall
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Batch Number *</label>
+              <Input value={rBatch} onChange={(e) => setRBatch(e.target.value)} placeholder="BTH-2026-001" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Product Name *</label>
+              <Input value={rProduct} onChange={(e) => setRProduct(e.target.value)} placeholder="Product name" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Scope</label>
+              <Select value={rScope} onValueChange={(v) => setRScope(v as typeof rScope)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="voluntary">Voluntary</SelectItem>
+                  <SelectItem value="mandatory">Mandatory</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Regulatory Authority</label>
+              <Input value={rAuthority} onChange={(e) => setRAuthority(e.target.value)} placeholder="NAFDAC / SON / etc." />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Recall Reason *</label>
+            <Textarea rows={3} value={rReason} onChange={(e) => setRReason(e.target.value)} placeholder="Detailed reason for recall…" />
+          </div>
+        </div>
+      </DetailSheet>
     </div>
   );
 }

@@ -1,9 +1,10 @@
 from __future__ import annotations
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from typing import Any as DBClient
-from datetime import date
-from ..db import db
+from datetime import date, timedelta
+from ..db import db, get_user_by_id
 from ..constants import TABLE_STAFF, TABLE_TIMESHEETS
 logger = logging.getLogger("ops")
 
@@ -37,6 +38,10 @@ def get_staff_by_department(department: Optional[str] = None, client: DBClient =
 
 def get_staff_by_id(staff_id: str, client: DBClient = db) -> Optional[Dict[str, Any]]:
     resp = client.table(TABLE_STAFF).select("*").eq("staff_id", staff_id).execute()
+    return resp.data[0] if resp.data else None
+
+def get_staff_by_email(email: str, client: DBClient = db) -> Optional[Dict[str, Any]]:
+    resp = client.table(TABLE_STAFF).select("*").eq("email", email).execute()
     return resp.data[0] if resp.data else None
 
 # --- Timesheet Logic ---
@@ -83,7 +88,62 @@ def get_timesheets(
         query = query.eq("staff_id", staff_id)
         
     resp = query.order("date", desc=True).limit(limit).execute()
-    return resp.data or []
+    rows = resp.data or []
+
+    # Enrich with the staff member's name — the frontend's TimesheetEntry
+    # type has always expected a joined `staff.full_name`, but this query
+    # never provided one, so every row fell back to showing the raw
+    # staff_id UUID. Mirrors the rider-enrichment pattern in
+    # logistics.py's list_deliveries().
+    staff_ids = list({r["staff_id"] for r in rows if r.get("staff_id")})
+    if staff_ids:
+        try:
+            staff_resp = client.table(TABLE_STAFF).select("staff_id,full_name").in_("staff_id", staff_ids).execute()
+            staff_map = {s["staff_id"]: s for s in (staff_resp.data or [])}
+        except Exception:
+            staff_map = {}
+        for r in rows:
+            match = staff_map.get(r.get("staff_id"))
+            r["staff"] = {"full_name": match["full_name"]} if match else None
+
+    return rows
+
+
+def _display_name_from_email(email: str) -> str:
+    """Real, non-fabricated name fallback: title-cased local-part of the
+    account's actual sign-in email, e.g. "tayo@placeware.com" -> "Tayo"."""
+    local = (email or "").split("@")[0]
+    parts = [p for p in re.split(r"[._-]+", local) if p]
+    return " ".join(p.capitalize() for p in parts) if parts else (email or "there")
+
+
+def resolve_staff_identity(user_id: str, client: DBClient = db) -> Dict[str, Any]:
+    """Resolve a login account (placeware_users) to a display identity.
+
+    placeware_users (auth) and placeware_staff (HR directory) are separate
+    tables, joinable only by matching email -- most accounts today have no
+    staff record (no staff CSV has been imported for them), so this always
+    falls back to a real, email-derived name rather than showing the raw
+    user_id or a fabricated name/department.
+    """
+    user = get_user_by_id(user_id) or {}
+    email = user.get("email") or ""
+    staff = get_staff_by_email(email, client=client) if email else None
+
+    hours_this_week = 0.0
+    if staff and staff.get("staff_id"):
+        monday = date.today() - timedelta(days=date.today().weekday())
+        entries = get_timesheets(start_date=monday, staff_id=staff["staff_id"], client=client)
+        hours_this_week = sum(float(e.get("hours_worked") or 0) for e in entries)
+
+    return {
+        "email": email,
+        "display_name": staff["full_name"] if staff else _display_name_from_email(email),
+        "staff_id": staff.get("staff_id") if staff else None,
+        "department": staff.get("department") if staff else None,
+        "linked": bool(staff),
+        "hours_this_week": round(hours_this_week, 1),
+    }
 
 
 def sync_staff_batch(staff_rows: List[Dict[str, Any]], client: DBClient = db) -> int:

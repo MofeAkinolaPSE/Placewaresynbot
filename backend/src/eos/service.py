@@ -737,15 +737,26 @@ async def _handle_generate_report_action(
     if agent:
         try:
             insight = agent.run()
-            # Prefer the full narrative over the bullet fragment list
-            full_report: str = (insight.metrics or {}).get("full_report", "") or ""
-            summary = full_report if full_report else (
-                "\n".join(insight.findings) if insight.findings else "Report generation completed."
-            )
+            metrics = insight.metrics or {}
+            full_report: str = metrics.get("full_report", "") or ""
+            report_memory_id = metrics.get("report_memory_id")
+            if report_memory_id:
+                # A .docx download will be attached to the chat response (see
+                # /chat's generate_report action-dispatch call site) -- keep
+                # the chat bubble to a short summary instead of dumping the
+                # whole multi-section narrative as raw text.
+                summary = metrics.get("summary") or full_report[:400] or "Report generated."
+            else:
+                # Not persisted (low quality score, or a simulation run) --
+                # nothing to download, so fall back to showing the full text
+                # inline, same as before this change.
+                summary = full_report if full_report else (
+                    "\n".join(insight.findings) if insight.findings else "Report generation completed."
+                )
             status = "simulated" if simulation else "success"
             return {
                 "intent": intent,
-                "report": {"summary": summary, "status": status, "metrics": insight.metrics},
+                "report": {"summary": summary, "status": status, "metrics": metrics},
                 "simulation": simulation,
             }
         except Exception as exc:

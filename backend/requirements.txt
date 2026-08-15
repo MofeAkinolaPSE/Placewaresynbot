@@ -25,3 +25,5 @@ tokenizers>=0.19.0
 numpy>=1.24.0
 # Monitoring — Prometheus metrics via /metrics endpoint (internal only)
 prometheus-fastapi-instrumentator>=6.0.0
+# Shared TTL cache backend (sync client — matches the sync agent/DB layer)
+redis>=5.0.0,<6.0.0

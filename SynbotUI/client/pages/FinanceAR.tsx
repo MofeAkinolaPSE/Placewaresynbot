@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -45,6 +45,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-base";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,6 +65,281 @@ function BucketBadge({ bucket }: { bucket: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Alert Rules tab — extracted into its own component (mirroring
+// QualityControl.tsx's NafdacTab/TemperatureTab pattern) since FinanceAR is
+// otherwise one monolithic function with all 7 tabs' state/queries/
+// mutations inline. This is the only FinanceAR tab with real create/delete/
+// ack mutations on discrete, already-fully-shown records — a partial
+// retrofit (KpiStrip + DetailSheet, flat table + per-row actions kept
+// as-is), same reasoning as NafdacTab/TemperatureTab. See
+// ACE-Workspace-Standard.md Ch.9.5/9.7.
+// ---------------------------------------------------------------------------
+
+function AlertRulesTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [alertForm, setAlertForm] = useState({
+    threshold_amount: "",
+    days_overdue_min: "30",
+    customer_id: "",
+    description: "",
+    notify_emails: "",
+  });
+
+  const alertsQ = useQuery({
+    queryKey: ["finance-ar-alerts"],
+    queryFn: () => api.finance.listArAlerts(),
+    refetchInterval: 60_000,
+  });
+
+  const alerts = (alertsQ.data as any) ?? {};
+  const rules: any[] = alerts.rules ?? [];
+  const events: any[] = alerts.unacknowledged_events ?? [];
+
+  const kpis = useMemo(() => ({
+    total: rules.length,
+    active: rules.filter((r) => r.is_active).length,
+    inactive: rules.filter((r) => !r.is_active).length,
+    unacked: events.length,
+  }), [rules, events]);
+
+  const createAlertMut = useMutation({
+    mutationFn: (payload: any) => api.finance.createArAlert(payload),
+    onSuccess: () => {
+      toast({ title: "Alert rule created" });
+      void qc.invalidateQueries({ queryKey: ["finance-ar-alerts"] });
+      setSheetOpen(false);
+      setAlertForm({ threshold_amount: "", days_overdue_min: "30", customer_id: "", description: "", notify_emails: "" });
+    },
+    onError: (err: any) =>
+      toast({ title: "Failed to create alert", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteAlertMut = useMutation({
+    mutationFn: (ruleId: string) => api.finance.deleteArAlert(ruleId),
+    onSuccess: () => {
+      toast({ title: "Alert rule deactivated" });
+      void qc.invalidateQueries({ queryKey: ["finance-ar-alerts"] });
+    },
+    onError: (err: any) =>
+      toast({ title: "Failed to deactivate", description: err.message, variant: "destructive" }),
+  });
+
+  const ackEventMut = useMutation({
+    mutationFn: (eventId: string) => api.finance.ackAlertEvent(eventId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["finance-ar-alerts"] });
+    },
+  });
+
+  function handleCreateAlert() {
+    const payload: any = {
+      threshold_amount: parseFloat(alertForm.threshold_amount),
+      days_overdue_min: parseInt(alertForm.days_overdue_min, 10),
+    };
+    if (alertForm.customer_id) payload.customer_id = alertForm.customer_id;
+    if (alertForm.description) payload.description = alertForm.description;
+    if (alertForm.notify_emails)
+      payload.notify_emails = alertForm.notify_emails.split(",").map((s) => s.trim()).filter(Boolean);
+    createAlertMut.mutate(payload);
+  }
+
+  return (
+    <div className="space-y-4">
+      <KpiStrip
+        items={[
+          { label: "Total Rules", value: kpis.total },
+          { label: "Active", value: kpis.active, tone: "success" },
+          { label: "Inactive", value: kpis.inactive },
+          { label: "Unacknowledged Events", value: kpis.unacked, tone: kpis.unacked > 0 ? "danger" : "default" },
+        ]}
+      />
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">Threshold Alert Rules</h2>
+        <Button size="sm" onClick={() => setSheetOpen(true)}>
+          <Plus className="w-4 h-4 mr-1" /> New Rule
+        </Button>
+      </div>
+
+      {/* Unacknowledged events */}
+      {events.length > 0 && (
+        <Card className="border-orange-500/30 bg-orange-500/5">
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm text-orange-600 dark:text-orange-400">
+              Unacknowledged Events ({events.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              {events.map((ev: any) => (
+                <div
+                  key={ev.id}
+                  className="flex items-center justify-between text-sm border border-border/50 rounded-lg px-3 py-2"
+                >
+                  <div>
+                    <strong>{ev.customer_id ?? ev.customer_name}</strong>:{" "}
+                    {fmt(ev.outstanding_balance)} outstanding — {ev.days_overdue}d overdue
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {ev.triggered_at?.slice(0, 16)}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => ackEventMut.mutate(ev.id)}
+                    disabled={ackEventMut.isPending}
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Rules table — stays flat, not List/Detail: every row already shows
+          its full detail, and delete is already a single click away. See
+          ACE-Workspace-Standard.md Ch.9.5. */}
+      <div className="rounded-xl border border-border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Threshold (₦)</TableHead>
+              <TableHead>Min Days Overdue</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-12" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {alertsQ.isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : rules.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                  No alert rules configured
+                </TableCell>
+              </TableRow>
+            ) : (
+              rules.map((r: any) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-mono font-semibold">
+                    {fmt(r.threshold_amount)}
+                  </TableCell>
+                  <TableCell>{r.days_overdue_min}d</TableCell>
+                  <TableCell>{r.customer_id ?? <span className="text-muted-foreground">All</span>}</TableCell>
+                  <TableCell className="text-sm">{r.description ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant={r.is_active ? "default" : "secondary"}>
+                      {r.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteAlertMut.mutate(r.id)}
+                      disabled={deleteAlertMut.isPending}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* New Rule — ephemeral create task, DetailSheet per Ch.5.2 (same
+          precedent as CAPA's "New Deviation" / Temperature's "Log Reading"
+          / NAFDAC's "Register Batch"/"Initiate Recall"). */}
+      <DetailSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        title="New AR Threshold Alert"
+        description="Trigger an alert when a client's outstanding balance exceeds the threshold for the specified number of days."
+        icon={Bell}
+        footer={
+          <Button
+            className="w-full"
+            onClick={handleCreateAlert}
+            disabled={!alertForm.threshold_amount || createAlertMut.isPending}
+          >
+            {createAlertMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Create Rule
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Threshold Amount (₦) *
+            </label>
+            <Input
+              type="number"
+              placeholder="e.g. 2000000"
+              value={alertForm.threshold_amount}
+              onChange={(e) => setAlertForm((f) => ({ ...f, threshold_amount: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Minimum Days Overdue *
+            </label>
+            <Input
+              type="number"
+              value={alertForm.days_overdue_min}
+              onChange={(e) => setAlertForm((f) => ({ ...f, days_overdue_min: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Customer ID (blank = all customers)
+            </label>
+            <Input
+              placeholder="e.g. CST-001"
+              value={alertForm.customer_id}
+              onChange={(e) => setAlertForm((f) => ({ ...f, customer_id: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Description
+            </label>
+            <Input
+              placeholder="e.g. High-value overdue accounts"
+              value={alertForm.description}
+              onChange={(e) => setAlertForm((f) => ({ ...f, description: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Notify Emails (comma-separated)
+            </label>
+            <Input
+              placeholder="finance@company.com, director@company.com"
+              value={alertForm.notify_emails}
+              onChange={(e) => setAlertForm((f) => ({ ...f, notify_emails: e.target.value }))}
+            />
+          </div>
+        </div>
+      </DetailSheet>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // FinanceAR page
 // ---------------------------------------------------------------------------
 export default function FinanceAR() {
@@ -75,14 +352,6 @@ export default function FinanceAR() {
   const [matchPeriod, setMatchPeriod] = useState("");
   const [matchResult, setMatchResult] = useState<any>(null);
   const [matchLoading, setMatchLoading] = useState(false);
-  const [addAlertOpen, setAddAlertOpen] = useState(false);
-  const [alertForm, setAlertForm] = useState({
-    threshold_amount: "",
-    days_overdue_min: "30",
-    customer_id: "",
-    description: "",
-    notify_emails: "",
-  });
   const [plPeriod, setPlPeriod] = useState("");
   const [plPdfLoading, setPlPdfLoading] = useState(false);
 
@@ -100,6 +369,11 @@ export default function FinanceAR() {
     refetchInterval: 120_000,
   });
 
+  // Kept here (in addition to AlertRulesTab's own copy) purely to read
+  // unacknowledged_events.length for the TabsList badge below — that badge
+  // sits outside the tab's own render tree. TanStack Query dedupes by
+  // queryKey, so this shares AlertRulesTab's cache/network request rather
+  // than doubling it.
   const alertsQ = useQuery({
     queryKey: ["finance-ar-alerts"],
     queryFn: () => api.finance.listArAlerts(),
@@ -128,36 +402,6 @@ export default function FinanceAR() {
     queryKey: ["finance-credit-risk"],
     queryFn: () => api.finance.creditRiskScores(),
     refetchInterval: 300_000,
-  });
-
-  // --- mutations ---
-  const createAlertMut = useMutation({
-    mutationFn: (payload: any) => api.finance.createArAlert(payload),
-    onSuccess: () => {
-      toast({ title: "Alert rule created" });
-      void qc.invalidateQueries({ queryKey: ["finance-ar-alerts"] });
-      setAddAlertOpen(false);
-      setAlertForm({ threshold_amount: "", days_overdue_min: "30", customer_id: "", description: "", notify_emails: "" });
-    },
-    onError: (err: any) =>
-      toast({ title: "Failed to create alert", description: err.message, variant: "destructive" }),
-  });
-
-  const deleteAlertMut = useMutation({
-    mutationFn: (ruleId: string) => api.finance.deleteArAlert(ruleId),
-    onSuccess: () => {
-      toast({ title: "Alert rule deactivated" });
-      void qc.invalidateQueries({ queryKey: ["finance-ar-alerts"] });
-    },
-    onError: (err: any) =>
-      toast({ title: "Failed to deactivate", description: err.message, variant: "destructive" }),
-  });
-
-  const ackEventMut = useMutation({
-    mutationFn: (eventId: string) => api.finance.ackAlertEvent(eventId),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["finance-ar-alerts"] });
-    },
   });
 
   // --- handlers ---
@@ -201,18 +445,6 @@ export default function FinanceAR() {
     }
   }
 
-  function handleCreateAlert() {
-    const payload: any = {
-      threshold_amount: parseFloat(alertForm.threshold_amount),
-      days_overdue_min: parseInt(alertForm.days_overdue_min, 10),
-    };
-    if (alertForm.customer_id) payload.customer_id = alertForm.customer_id;
-    if (alertForm.description) payload.description = alertForm.description;
-    if (alertForm.notify_emails)
-      payload.notify_emails = alertForm.notify_emails.split(",").map((s) => s.trim()).filter(Boolean);
-    createAlertMut.mutate(payload);
-  }
-
   async function handlePayrollPdf() {
     setPayrollPdfLoading(true);
     try {
@@ -247,8 +479,9 @@ export default function FinanceAR() {
   const customers: any[] = aging.customers ?? [];
   const triggeredAlerts: any[] = aging.triggered_alerts ?? [];
 
+  // Only events.length is read here (TabsList badge); rules/create/delete/
+  // ack all live in AlertRulesTab now.
   const alerts = (alertsQ.data as any) ?? {};
-  const rules: any[] = alerts.rules ?? [];
   const events: any[] = alerts.unacknowledged_events ?? [];
 
   const pl = (plQ.data as any) ?? {};
@@ -304,7 +537,11 @@ export default function FinanceAR() {
         )}
       </div>
 
-      {/* Active alert banner */}
+      {/* Active alert banner — capped to the top offenders (server already
+          sorts by outstanding_balance desc); a threshold rule can
+          legitimately match hundreds of customers, and rendering all of
+          them inline turns this summary banner into an unbounded wall of
+          near-identical rows. */}
       {triggeredAlerts.length > 0 && (
         <Card className="border-destructive/40 bg-destructive/5">
           <CardHeader className="py-3">
@@ -313,7 +550,7 @@ export default function FinanceAR() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 space-y-2">
-            {triggeredAlerts.map((a, i) => (
+            {triggeredAlerts.slice(0, 8).map((a, i) => (
               <div key={i} className="text-sm flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
                 <span>
@@ -323,6 +560,11 @@ export default function FinanceAR() {
                 </span>
               </div>
             ))}
+            {triggeredAlerts.length > 8 && (
+              <p className="text-xs text-muted-foreground pt-1">
+                +{triggeredAlerts.length - 8} more customer{triggeredAlerts.length - 8 > 1 ? "s" : ""} over this threshold. See the AR Aging tab for the full customer list.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -470,110 +712,10 @@ export default function FinanceAR() {
         </TabsContent>
 
         {/* ================================================================ */}
-        {/* TAB: ALERT RULES                                                  */}
+        {/* TAB: ALERT RULES — extracted, see AlertRulesTab() above           */}
         {/* ================================================================ */}
         <TabsContent value="alerts" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">Threshold Alert Rules</h2>
-            <Button size="sm" onClick={() => setAddAlertOpen(true)}>
-              <Plus className="w-4 h-4 mr-1" /> New Rule
-            </Button>
-          </div>
-
-          {/* Unacknowledged events */}
-          {events.length > 0 && (
-            <Card className="border-orange-500/30 bg-orange-500/5">
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm text-orange-600 dark:text-orange-400">
-                  Unacknowledged Events ({events.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="space-y-2">
-                  {events.map((ev: any) => (
-                    <div
-                      key={ev.id}
-                      className="flex items-center justify-between text-sm border border-border/50 rounded-lg px-3 py-2"
-                    >
-                      <div>
-                        <strong>{ev.customer_id ?? ev.customer_name}</strong>:{" "}
-                        {fmt(ev.outstanding_balance)} outstanding — {ev.days_overdue}d overdue
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {ev.triggered_at?.slice(0, 16)}
-                        </span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => ackEventMut.mutate(ev.id)}
-                        disabled={ackEventMut.isPending}
-                      >
-                        <Check className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Rules table */}
-          <div className="rounded-xl border border-border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Threshold (₦)</TableHead>
-                  <TableHead>Min Days Overdue</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {alertsQ.isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
-                      <Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
-                    </TableCell>
-                  </TableRow>
-                ) : rules.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
-                      No alert rules configured
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rules.map((r: any) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="font-mono font-semibold">
-                        {fmt(r.threshold_amount)}
-                      </TableCell>
-                      <TableCell>{r.days_overdue_min}d</TableCell>
-                      <TableCell>{r.customer_id ?? <span className="text-muted-foreground">All</span>}</TableCell>
-                      <TableCell className="text-sm">{r.description ?? "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant={r.is_active ? "default" : "secondary"}>
-                          {r.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteAlertMut.mutate(r.id)}
-                          disabled={deleteAlertMut.isPending}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <AlertRulesTab />
         </TabsContent>
 
         {/* ================================================================ */}
@@ -1240,86 +1382,6 @@ export default function FinanceAR() {
           )}
         </TabsContent>
       </Tabs>
-
-      {/* ================================================================== */}
-      {/* DIALOG: Add Alert Rule                                              */}
-      {/* ================================================================== */}
-      <Dialog open={addAlertOpen} onOpenChange={setAddAlertOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New AR Threshold Alert</DialogTitle>
-            <DialogDescription>
-              Trigger an alert when a client's outstanding balance exceeds the threshold for the
-              specified number of days.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Threshold Amount (₦) *
-              </label>
-              <Input
-                type="number"
-                placeholder="e.g. 2000000"
-                value={alertForm.threshold_amount}
-                onChange={(e) => setAlertForm((f) => ({ ...f, threshold_amount: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Minimum Days Overdue *
-              </label>
-              <Input
-                type="number"
-                value={alertForm.days_overdue_min}
-                onChange={(e) => setAlertForm((f) => ({ ...f, days_overdue_min: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Customer ID (blank = all customers)
-              </label>
-              <Input
-                placeholder="e.g. CST-001"
-                value={alertForm.customer_id}
-                onChange={(e) => setAlertForm((f) => ({ ...f, customer_id: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Description
-              </label>
-              <Input
-                placeholder="e.g. High-value overdue accounts"
-                value={alertForm.description}
-                onChange={(e) => setAlertForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Notify Emails (comma-separated)
-              </label>
-              <Input
-                placeholder="finance@company.com, director@company.com"
-                value={alertForm.notify_emails}
-                onChange={(e) => setAlertForm((f) => ({ ...f, notify_emails: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddAlertOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateAlert}
-              disabled={!alertForm.threshold_amount || createAlertMut.isPending}
-            >
-              {createAlertMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Create Rule
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </motion.div>
   );
 }

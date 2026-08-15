@@ -12,7 +12,7 @@ class DeepSeek:
         self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
         logging.info(f"DeepSeek model set to: {self.model}")
 
-    def generate_response(self, context: str, question: str, instruction: str | None = None) -> str:
+    def generate_response(self, context: str, question: str, instruction: str | None = None, max_tokens: int | None = None) -> str:
         if not instruction:
             instruction = (
                 f"You are {BOT_NAME}, an intelligent assistant for {BOT_BRAND}. "
@@ -39,9 +39,11 @@ class DeepSeek:
                 {"role": "user", "content": user_content}
             ]
         }
+        if max_tokens is not None:
+            data["max_tokens"] = max_tokens
         logging.info(f"Calling DeepSeek with model: {self.model}")
         try:
-            response = requests.post(self.url, headers=headers, json=data)
+            response = requests.post(self.url, headers=headers, json=data, timeout=45)
             if response.status_code == 200:
                 content = response.json()["choices"][0]["message"]["content"]
                 return content

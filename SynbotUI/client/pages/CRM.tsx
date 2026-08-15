@@ -1,16 +1,10 @@
-import { useState } from "react";
-import { TrendingUp, AlertTriangle, Pencil, Eye } from "lucide-react";
+import { useMemo, useState } from "react";
+import { TrendingUp, AlertTriangle, Loader2, RefreshCw, Users } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   LineChart,
   Line,
@@ -36,30 +30,38 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
 
 const CRM = () => {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const { toast } = useToast();
 
-  const [editCustomer, setEditCustomer] = useState<any | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
-  const [view360Customer, setView360Customer] = useState<any | null>(null);
 
   const updateMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: Record<string, any> }) =>
       api.crm.updateCustomer(id, patch),
     onSuccess: () => {
+      toast({ title: "Customer updated" });
       void queryClient.invalidateQueries({ queryKey: ["crm-customers"] });
-      setEditCustomer(null);
     },
+    onError: (e: any) => toast({ title: "Update failed", description: e?.message, variant: "destructive" }),
   });
 
+  // Reuses the same /crm/customers/{id}/360 endpoint CustomerWorkspace.tsx
+  // consumes — a different job (bulk browse-all-customers admin view here
+  // vs. search-first single-customer workflow there), same shared data, no
+  // new endpoint. See ACE-Workspace-Standard.md Ch.10.6/§9.8.
   const { data: customer360Data, isLoading: loading360 } = useQuery({
-    queryKey: ["customer-360", view360Customer?.id],
-    queryFn: () => api.crm.customer360(view360Customer!.id),
-    enabled: !!view360Customer?.id,
+    queryKey: ["customer-360", selectedId],
+    queryFn: () => api.crm.customer360(selectedId!),
+    enabled: !!selectedId,
   });
 
   useRealtimeChannel("workflow_updates", () => {
@@ -90,6 +92,42 @@ const CRM = () => {
     queryFn: () => api.crm.customers(300),
   });
   const customersList: any[] = Array.isArray(customersRaw) ? customersRaw : [];
+
+  // Derived from the list query (not a separate snapshot) so the Detail
+  // Workspace automatically reflects the latest data after any mutation's
+  // invalidation — same pattern as QualityControl.tsx's CapaTab.
+  const selected = useMemo(
+    () => customersList.find((c) => c.id === selectedId) ?? null,
+    [customersList, selectedId],
+  );
+
+  function selectCustomer(c: any) {
+    setSelectedId(c.id);
+    setEditForm({
+      credit_limit: c.credit_limit ?? "",
+      payment_terms_days: c.payment_terms_days ?? "",
+      facility_type: c.facility_type ?? "",
+      client_type: c.client_type ?? "",
+      last_ordered_at: c.last_ordered_at ?? "",
+      storage_capacity: c.storage_capacity ?? "",
+      competing_supplier: c.competing_supplier ?? "",
+    });
+  }
+
+  function handleSaveEdit() {
+    if (!selected) return;
+    const patch: Record<string, any> = {};
+    for (const [k, v] of Object.entries(editForm)) {
+      if (v !== "" && v != null) {
+        patch[k] = (k === "credit_limit" || k === "storage_capacity")
+          ? Number(v)
+          : k === "payment_terms_days"
+          ? parseInt(String(v), 10)
+          : v;
+      }
+    }
+    updateMutation.mutate({ id: selected.id, patch });
+  }
 
   const dataValid =
     !!fetchedData &&
@@ -248,13 +286,11 @@ const CRM = () => {
       transition={motionTransitions.standard}
       className="space-y-8"
     >
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">CRM</h1>
-        <p className="text-muted-foreground mt-2">
-          Revenue & risk visibility for Placeware Nigeria sales pipeline
-        </p>
-      </div>
+      <PageHeader
+        icon={Users}
+        title="CRM"
+        subtitle="Revenue & risk visibility for Placeware Nigeria sales pipeline"
+      />
       {isLoading && <p className="text-sm text-muted-foreground">Loading CRM data...</p>}
       {(isError || (!isLoading && !dataValid)) && (
         <p className="text-sm text-destructive">
@@ -263,33 +299,15 @@ const CRM = () => {
         </p>
       )}
 
-      {/* KPI Grid */}
       {riskIsError && (
         <p className="text-sm text-destructive">Risk data error: {(riskError as Error)?.message || "Failed to load CRM risk scores."}</p>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, idx) => (
-          <Card key={idx}>
-            <CardHeader className="pb-2">
-              <CardDescription className="text-sm font-medium text-muted-foreground mb-1">
-              {kpi.label}
-              </CardDescription>
-              <CardTitle className="text-3xl font-bold text-foreground mb-1">
-              {dataValid ? kpi.value : (isLoading ? "Loading..." : "-")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-2 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-warning" />
-              <span className="text-sm font-medium text-warning">
-                {kpi.change}
-              </span>
-              </div>
-              <p className="text-xs text-muted-foreground">{kpi.sublabel}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <KpiStrip
+        items={kpis.map((kpi) => ({
+          label: kpi.label,
+          value: dataValid ? kpi.value : (isLoading ? "Loading..." : "-"),
+        }))}
+      />
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -529,282 +547,236 @@ const CRM = () => {
         </div>
         </CardContent>
       </Card>
-      {/* Customer List */}
-      <Card>
-        <CardHeader className="mb-2">
-          <CardTitle className="text-lg font-semibold text-foreground">
-            Customer Accounts
-          </CardTitle>
-          <CardDescription className="text-sm text-muted-foreground">
-            {customersList.length} customers from Sage 50
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[60px]">Code</TableHead>
-                  <TableHead className="min-w-[200px]">Name</TableHead>
-                  <TableHead className="min-w-[100px]">Type</TableHead>
-                  <TableHead className="min-w-[120px]">Phone</TableHead>
-                  <TableHead className="min-w-[180px]">Email</TableHead>
-                  <TableHead className="min-w-[100px]">City</TableHead>
-                  <TableHead className="min-w-[90px]">Terms</TableHead>
-                  <TableHead className="min-w-[110px] text-right">Credit Limit</TableHead>
-                  <TableHead className="min-w-[80px] text-right">Risk</TableHead>
-                  <TableHead className="min-w-[90px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {customersList.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                      {customersRaw === undefined ? "Loading..." : "No customers found"}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  customersList.map((c: any, i: number) => (
-                    <TableRow key={c.id ?? i}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {c.customer_code || c.id || "—"}
-                      </TableCell>
-                      <TableCell className="font-medium">{c.name || "—"}</TableCell>
-                      <TableCell>
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground capitalize">
-                          {c.client_type || c.facility_type || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {(c.contact_details as any)?.phone || c.phone || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {(c.contact_details as any)?.email || c.email || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {(c.contact_details as any)?.city || (c.contact_details as any)?.region || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {(c.metadata as any)?.terms || (c.payment_terms_days != null ? `${c.payment_terms_days}d` : "—")}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {Number(c.credit_limit) > 0 ? `₦${Number(c.credit_limit).toLocaleString()}` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {c.risk_score != null ? Number(c.risk_score).toFixed(0) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            title="Edit customer"
-                            onClick={() => { setEditCustomer(c); setEditForm({ credit_limit: c.credit_limit ?? "", payment_terms_days: c.payment_terms_days ?? "", facility_type: c.facility_type ?? "", client_type: c.client_type ?? "", last_ordered_at: c.last_ordered_at ?? "", storage_capacity: c.storage_capacity ?? "", competing_supplier: c.competing_supplier ?? "" }); }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            title="Customer 360"
-                            onClick={() => setView360Customer(c)}
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-      {/* Customer Edit Modal */}
-      <Dialog open={!!editCustomer} onOpenChange={(o) => { if (!o) setEditCustomer(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Customer — {editCustomer?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            {[
-              { key: "client_type", label: "Client Type" },
-              { key: "facility_type", label: "Facility Type" },
-              { key: "credit_limit", label: "Credit Limit (₦)", type: "number" },
-              { key: "payment_terms_days", label: "Payment Terms (days)", type: "number" },
-              { key: "storage_capacity", label: "Storage Capacity", type: "number" },
-              { key: "competing_supplier", label: "Competing Supplier" },
-              { key: "last_ordered_at", label: "Last Ordered At", type: "date" },
-            ].map(({ key, label, type }) => (
-              <div key={key} className="grid grid-cols-3 items-center gap-2">
-                <Label className="text-right text-sm col-span-1">{label}</Label>
-                <Input
-                  type={type ?? "text"}
-                  className="col-span-2"
-                  value={editForm[key] ?? ""}
-                  onChange={(e) => setEditForm((f) => ({ ...f, [key]: e.target.value }))}
-                />
+      {/* Customer Accounts — full retrofit: List / Detail (inline, reuses
+          the same 360 data the old dialog fetched + inline edit) /
+          QuickActions. Detail Workspace has no dismiss button by design
+          (Ch.5.1) — change context by selecting a different customer. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">
+        {/* List Panel */}
+        <Card className="lg:max-h-[600px] flex flex-col">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Customer Accounts ({customersList.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-y-auto space-y-2 flex-1">
+            {customersList.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground text-sm">
+                {customersRaw === undefined ? "Loading..." : "No customers found"}
               </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditCustomer(null)}>Cancel</Button>
-            <Button
-              disabled={updateMutation.isPending}
-              onClick={() => {
-                const patch: Record<string, any> = {};
-                for (const [k, v] of Object.entries(editForm)) {
-                  if (v !== "" && v != null) {
-                    patch[k] = (k === "credit_limit" || k === "storage_capacity")
-                      ? Number(v)
-                      : k === "payment_terms_days"
-                      ? parseInt(String(v), 10)
-                      : v;
-                  }
-                }
-                updateMutation.mutate({ id: editCustomer.id, patch });
-              }}
-            >
-              {updateMutation.isPending ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Customer 360 Modal */}
-      <Dialog open={!!view360Customer} onOpenChange={(o) => { if (!o) setView360Customer(null); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Customer 360 — {view360Customer?.name}</DialogTitle>
-          </DialogHeader>
-          {loading360 ? (
-            <p className="text-sm text-muted-foreground py-4">Loading…</p>
-          ) : customer360Data ? (
-            (() => {
-              const prof360 = customer360Data.customer ?? {};
-              const recv = customer360Data.receivables ?? {};
-              const pnl = customer360Data.profitability;
-              const items: any[] = customer360Data.top_items ?? [];
-              const util = recv.credit_utilization_pct;
-              return (
-                <div className="space-y-4 py-1">
-                  {/* Profile */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Profile</p>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-                      {[
-                        ["Contact", prof360.contact_person],
-                        ["Phone", prof360.phone],
-                        ["Address", prof360.address],
-                        ["City", prof360.city],
-                        ["Trade Terms", prof360.terms],
-                        ["Customer Since", prof360.customer_since ? new Date(prof360.customer_since).toLocaleDateString() : null],
-                      ].map(([label, value]) => (
-                        <div key={String(label)} className="flex justify-between gap-3 border-b border-dashed pb-1">
-                          <span className="text-muted-foreground text-xs">{label}</span>
-                          <span className="text-right text-xs font-medium truncate" title={String(value ?? "")}>{value || "—"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Receivables */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Receivables</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        { label: "Outstanding", value: `₦${Number(recv.outstanding ?? 0).toLocaleString()}`, alert: false },
-                        { label: "Open Invoices", value: recv.invoice_count ?? 0, alert: false },
-                        { label: "Overdue", value: `₦${Number(recv.overdue_amount ?? 0).toLocaleString()}`, alert: Number(recv.overdue_amount) > 0 },
-                        { label: "Credit Limit", value: prof360.credit_limit > 0 ? `₦${Number(prof360.credit_limit).toLocaleString()}` : "—", alert: false },
-                      ].map(({ label, value, alert }) => (
-                        <div key={label} className={`rounded border p-2.5 ${alert ? "border-destructive/40" : ""}`}>
-                          <p className="text-[11px] text-muted-foreground">{label}</p>
-                          <p className={`text-sm font-semibold mt-0.5 tabular-nums ${alert ? "text-destructive" : ""}`}>{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {util != null && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${util > 100 ? "bg-destructive" : util > 75 ? "bg-amber-400" : "bg-emerald-500"}`}
-                            style={{ width: `${Math.min(util, 100)}%` }}
-                          />
-                        </div>
-                        <span className={`text-xs tabular-nums ${util > 100 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
-                          {util}% of credit limit
-                        </span>
-                      </div>
+            ) : (
+              customersList.map((c: any, i: number) => (
+                <button
+                  key={c.id ?? i}
+                  onClick={() => selectCustomer(c)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 hover:bg-muted/40 transition-colors ${
+                    selectedId === c.id ? "border-primary bg-muted/40" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate">{c.name || "—"}</span>
+                    {c.risk_score != null && (
+                      <span className="text-xs font-mono text-muted-foreground shrink-0">{Number(c.risk_score).toFixed(0)}</span>
                     )}
                   </div>
+                  <div className="text-xs text-muted-foreground font-mono">{c.customer_code || c.id || "—"}</div>
+                </button>
+              ))
+            )}
+          </CardContent>
+        </Card>
 
-                  {/* Profitability */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Lifetime Profitability (Sage)</p>
-                    {pnl ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[
-                          { label: "Sales", value: `₦${Number(pnl.sales).toLocaleString()}` },
-                          { label: "Cost of Sales", value: `₦${Number(pnl.cost_of_sales).toLocaleString()}` },
-                          { label: "Gross Profit", value: `₦${Number(pnl.gross_profit).toLocaleString()}` },
-                          { label: "Margin", value: `${Number(pnl.gross_margin_pct).toFixed(1)}%` },
-                        ].map(({ label, value }) => (
-                          <div key={label} className="rounded border p-2.5">
-                            <p className="text-[11px] text-muted-foreground">{label}</p>
-                            <p className="text-sm font-semibold mt-0.5 tabular-nums">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">No sales history recorded for this customer.</p>
-                    )}
-                  </div>
-
-                  {/* Top purchased items */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Top Purchased Items</p>
-                    {items.length > 0 ? (
-                      <div className="rounded border overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/40">
-                            <tr>
-                              <th className="text-left p-2 font-medium text-muted-foreground">Item</th>
-                              <th className="text-right p-2 font-medium text-muted-foreground">Qty</th>
-                              <th className="text-right p-2 font-medium text-muted-foreground">Amount</th>
-                              <th className="text-right p-2 font-medium text-muted-foreground">Gross Profit</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {items.map((it) => (
-                              <tr key={it.item_id} className="border-t">
-                                <td className="p-2">{it.item_id}</td>
-                                <td className="p-2 text-right tabular-nums">{Number(it.quantity).toLocaleString()}</td>
-                                <td className="p-2 text-right tabular-nums">₦{Number(it.amount).toLocaleString()}</td>
-                                <td className="p-2 text-right tabular-nums">₦{Number(it.gross_profit).toLocaleString()}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">No line-level purchase history for this customer.</p>
-                    )}
-                  </div>
+        {/* Detail Workspace */}
+        <Card>
+          <CardContent className="pt-6">
+            {!selected && (
+              <p className="text-sm text-muted-foreground text-center py-12">Select a customer to view details.</p>
+            )}
+            {selected && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <div className="font-bold text-lg">{selected.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono">{selected.customer_code}</div>
                 </div>
-              );
-            })()
-          ) : (
-            <p className="text-sm text-muted-foreground py-4">No 360 data available for this customer yet.</p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setView360Customer(null)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+                {loading360 ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : customer360Data ? (
+                  (() => {
+                    const prof360 = customer360Data.customer ?? {};
+                    const recv = customer360Data.receivables ?? {};
+                    const pnl = customer360Data.profitability;
+                    const items: any[] = customer360Data.top_items ?? [];
+                    const util = recv.credit_utilization_pct;
+                    return (
+                      <div className="space-y-4">
+                        {/* Profile */}
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Profile</p>
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                            {[
+                              ["Contact", prof360.contact_person],
+                              ["Phone", prof360.phone],
+                              ["Address", prof360.address],
+                              ["City", prof360.city],
+                              ["Trade Terms", prof360.terms],
+                              ["Customer Since", prof360.customer_since ? new Date(prof360.customer_since).toLocaleDateString() : null],
+                            ].map(([label, value]) => (
+                              <div key={String(label)} className="flex justify-between gap-3 border-b border-dashed pb-1">
+                                <span className="text-muted-foreground text-xs">{label}</span>
+                                <span className="text-right text-xs font-medium truncate" title={String(value ?? "")}>{value || "—"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Receivables */}
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Receivables</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {[
+                              { label: "Outstanding", value: `₦${Number(recv.outstanding ?? 0).toLocaleString()}`, alert: false },
+                              { label: "Open Invoices", value: recv.invoice_count ?? 0, alert: false },
+                              { label: "Overdue", value: `₦${Number(recv.overdue_amount ?? 0).toLocaleString()}`, alert: Number(recv.overdue_amount) > 0 },
+                              { label: "Credit Limit", value: prof360.credit_limit > 0 ? `₦${Number(prof360.credit_limit).toLocaleString()}` : "—", alert: false },
+                            ].map(({ label, value, alert }) => (
+                              <div key={label} className={`rounded border p-2.5 ${alert ? "border-destructive/40" : ""}`}>
+                                <p className="text-[11px] text-muted-foreground">{label}</p>
+                                <p className={`text-sm font-semibold mt-0.5 tabular-nums ${alert ? "text-destructive" : ""}`}>{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {util != null && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${util > 100 ? "bg-destructive" : util > 75 ? "bg-amber-400" : "bg-emerald-500"}`}
+                                  style={{ width: `${Math.min(util, 100)}%` }}
+                                />
+                              </div>
+                              <span className={`text-xs tabular-nums ${util > 100 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                                {util}% of credit limit
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Profitability */}
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Lifetime Profitability (Sage)</p>
+                          {pnl ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              {[
+                                { label: "Sales", value: `₦${Number(pnl.sales).toLocaleString()}` },
+                                { label: "Cost of Sales", value: `₦${Number(pnl.cost_of_sales).toLocaleString()}` },
+                                { label: "Gross Profit", value: `₦${Number(pnl.gross_profit).toLocaleString()}` },
+                                { label: "Margin", value: `${Number(pnl.gross_margin_pct).toFixed(1)}%` },
+                              ].map(({ label, value }) => (
+                                <div key={label} className="rounded border p-2.5">
+                                  <p className="text-[11px] text-muted-foreground">{label}</p>
+                                  <p className="text-sm font-semibold mt-0.5 tabular-nums">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">No sales history recorded for this customer.</p>
+                          )}
+                        </div>
+
+                        {/* Top purchased items */}
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Top Purchased Items</p>
+                          {items.length > 0 ? (
+                            <div className="rounded border overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted/40">
+                                  <tr>
+                                    <th className="text-left p-2 font-medium text-muted-foreground">Item</th>
+                                    <th className="text-right p-2 font-medium text-muted-foreground">Qty</th>
+                                    <th className="text-right p-2 font-medium text-muted-foreground">Amount</th>
+                                    <th className="text-right p-2 font-medium text-muted-foreground">Gross Profit</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {items.map((it) => (
+                                    <tr key={it.item_id} className="border-t">
+                                      <td className="p-2">{it.item_id}</td>
+                                      <td className="p-2 text-right tabular-nums">{Number(it.quantity).toLocaleString()}</td>
+                                      <td className="p-2 text-right tabular-nums">₦{Number(it.amount).toLocaleString()}</td>
+                                      <td className="p-2 text-right tabular-nums">₦{Number(it.gross_profit).toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">No line-level purchase history for this customer.</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="text-xs text-muted-foreground">No 360 data available for this customer yet.</p>
+                )}
+
+                <Separator />
+
+                {/* Inline edit — Ch.3 prefers inline editing over a separate
+                    modal; matches CapaTab's Detail Workspace precedent
+                    (always-editable fields + Save, not a toggled Edit dialog). */}
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Edit</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { key: "client_type", label: "Client Type" },
+                      { key: "facility_type", label: "Facility Type" },
+                      { key: "credit_limit", label: "Credit Limit (₦)", type: "number" },
+                      { key: "payment_terms_days", label: "Payment Terms (days)", type: "number" },
+                      { key: "storage_capacity", label: "Storage Capacity", type: "number" },
+                      { key: "competing_supplier", label: "Competing Supplier" },
+                      { key: "last_ordered_at", label: "Last Ordered At", type: "date" },
+                    ].map(({ key, label, type }) => (
+                      <div key={key}>
+                        <Label className="text-xs text-muted-foreground mb-1 block">{label}</Label>
+                        <Input
+                          type={type ?? "text"}
+                          value={editForm[key] ?? ""}
+                          onChange={(e) => setEditForm((f) => ({ ...f, [key]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="mt-3"
+                    disabled={updateMutation.isPending}
+                    onClick={handleSaveEdit}
+                  >
+                    {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                    Save
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Button
+              variant="outline" className="w-full" size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ["crm-customers"] })}
+            >
+              <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </motion.div>
   );
 };

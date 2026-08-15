@@ -5,35 +5,7 @@ import { AuthError } from "@/lib/auth-client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { FlaskConical, ShieldCheck, BarChart3, Loader2, Eye, EyeOff } from "lucide-react";
-
-// ── Feature highlight panels (mirror the 3-image strip in the template) ──────
-const FEATURES = [
-  {
-    icon: BarChart3,
-    title: "Real-Time Business Intelligence",
-    desc: "Live dashboards for inventory, finance, HR and sales — unified in one secure platform.",
-    gradient: "from-cyan-500/20 to-blue-600/10",
-    border: "border-cyan-500/25",
-    iconColor: "text-cyan-300",
-  },
-  {
-    icon: FlaskConical,
-    title: "NAFDAC & Quality Control",
-    desc: "Cold-chain monitoring, CAPA, expiry alerts and batch registry built for pharma compliance.",
-    gradient: "from-teal-500/20 to-cyan-600/10",
-    border: "border-teal-400/25",
-    iconColor: "text-teal-300",
-  },
-  {
-    icon: ShieldCheck,
-    title: "GMP Compliance & Audit-Ready",
-    desc: "SOP tracking, deviation management and regulatory workflows for Nigerian pharma standards.",
-    gradient: "from-blue-600/20 to-teal-500/10",
-    border: "border-blue-400/25",
-    iconColor: "text-blue-300",
-  },
-] as const;
+import { Loader2, Eye, EyeOff } from "lucide-react";
 
 const Login = () => {
   const { login, isLoading } = useAuth();
@@ -66,7 +38,7 @@ const Login = () => {
         backgroundImage: [
           "radial-gradient(ellipse 80% 55% at 15% 40%, rgba(0,180,180,0.09) 0%, transparent 65%)",
           "radial-gradient(ellipse 65% 75% at 85% 65%, rgba(0,90,200,0.07) 0%, transparent 65%)",
-          "radial-gradient(ellipse 40% 40% at 50% 10%, rgba(0,200,220,0.05) 0%, transparent 60%)",
+          "radial-gradient(ellipse 40% 40% at 50% 10%, rgba(47,162,74,0.05) 0%, transparent 60%)",
           "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.018) 1px, transparent 1px)",
         ].join(", "),
         backgroundSize: "auto, auto, auto, 28px 28px",
@@ -95,11 +67,11 @@ const Login = () => {
             background: "linear-gradient(to bottom, #06101e 0%, rgba(6,16,30,0.6) 18%, transparent 40%, rgba(6,16,30,0.55) 80%, #06101e 100%)",
           }}
         />
-        {/* Cyan tint wash over the image to harmonise with the teal palette */}
+        {/* Blue-green tint wash over the image, matching the brand gradient */}
         <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(135deg, transparent 30%, rgba(0,160,180,0.06) 60%, rgba(0,80,200,0.05) 100%)",
+            background: "linear-gradient(135deg, transparent 30%, rgba(47,162,74,0.05) 60%, rgba(21,104,196,0.05) 100%)",
           }}
         />
       </div>
@@ -122,9 +94,11 @@ const Login = () => {
         <div
           className="relative inline-flex overflow-hidden rounded-2xl px-5 py-3"
           style={{
-            background: "linear-gradient(135deg, rgba(0,200,220,0.08) 0%, rgba(0,80,200,0.06) 100%)",
-            border: "1px solid rgba(0,200,220,0.18)",
-            boxShadow: "0 0 32px rgba(0,200,220,0.12), 0 0 60px rgba(0,90,200,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
+            // Two-tone brand glow (blue #1568C4 + green #2FA24A) echoing the
+            // logo's own blue-to-green wordmark, instead of the old cyan-only chrome.
+            background: "linear-gradient(135deg, rgba(21,104,196,0.09) 0%, rgba(47,162,74,0.07) 100%)",
+            border: "1px solid rgba(47,162,74,0.20)",
+            boxShadow: "0 0 28px rgba(21,104,196,0.14), 0 0 50px rgba(47,162,74,0.09), inset 0 1px 0 rgba(255,255,255,0.08)",
           }}
         >
           {/* Top specular highlight */}
@@ -140,70 +114,53 @@ const Login = () => {
             alt="Placeware Nigeria Limited"
             className="relative h-14 w-auto object-contain"
             style={{
-              filter: "drop-shadow(0 2px 12px rgba(0,200,220,0.4)) drop-shadow(0 0 4px rgba(255,255,255,0.12))",
+              filter: "drop-shadow(0 2px 10px rgba(21,104,196,0.35)) drop-shadow(0 2px 10px rgba(47,162,74,0.25)) drop-shadow(0 0 4px rgba(255,255,255,0.12))",
             }}
           />
         </div>
 
-        {/* Hero copy */}
-        <div className="max-w-[520px] space-y-5">
+        {/* Hero copy — kept short and warm on purpose: this is a staff
+            sign-in, not a marketing page. One welcome line, one tagline,
+            one sentence of context, done. */}
+        <div className="max-w-[480px] space-y-4">
           <motion.p
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.25 }}
-            className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/75"
+            className="text-[11px] font-bold uppercase tracking-[0.22em] text-green-400/75"
           >
-            Welcome to ACE
+            ACE · Placeware Intelligence System
           </motion.p>
 
           <motion.h1
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="text-[2.6rem] font-extrabold leading-[1.12] tracking-tight text-white lg:text-[3.1rem]"
+            className="text-[2.6rem] font-extrabold leading-[1.12] tracking-tight text-white lg:text-[3.4rem]"
           >
-            ENTERPRISE<br />
-            <span className="bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent">
-              PHARMACEUTICAL
-            </span><br />
-            INTELLIGENCE
+            Welcome to{" "}
+            <span className="bg-gradient-to-r from-blue-400 to-green-400 bg-clip-text text-transparent">
+              Placeware
+            </span>
           </motion.h1>
 
           <motion.p
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className="max-w-md text-sm leading-relaxed text-white/45"
+            transition={{ duration: 0.5, delay: 0.38 }}
+            className="text-lg font-medium text-white/70"
           >
-            A unified platform for Placeware Nigeria — combining AI-powered analytics, pharma
-            compliance, cold-chain monitoring, and real-time business intelligence in a single
-            secure dashboard.
+            Designed for Placeware — built to grow, and built to last.
           </motion.p>
 
-          {/* Feature cards — echoing the 3-image strip in the reference */}
-          <div className="mt-2 space-y-3">
-            {FEATURES.map((f, i) => {
-              const Icon = f.icon;
-              return (
-                <motion.div
-                  key={f.title}
-                  initial={{ opacity: 0, x: -18 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.5, delay: 0.45 + i * 0.13, ease: [0.22, 1, 0.36, 1] }}
-                  className={`flex items-start gap-4 rounded-xl border bg-gradient-to-r p-4 ${f.gradient} ${f.border}`}
-                  style={{ backdropFilter: "blur(8px)" }}
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/8">
-                    <Icon className={`h-5 w-5 ${f.iconColor}`} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{f.title}</p>
-                    <p className="mt-0.5 text-xs leading-relaxed text-white/45">{f.desc}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.46 }}
+            className="max-w-sm text-sm leading-relaxed text-white/40"
+          >
+            Everything your team needs to run the business — inventory, finance, compliance, and more — in one place.
+          </motion.p>
         </div>
 
         {/* Bottom credit */}
@@ -232,9 +189,9 @@ const Login = () => {
             <div
               className="relative inline-flex overflow-hidden rounded-xl px-4 py-2.5"
               style={{
-                background: "linear-gradient(135deg, rgba(0,200,220,0.08) 0%, rgba(0,80,200,0.06) 100%)",
-                border: "1px solid rgba(0,200,220,0.18)",
-                boxShadow: "0 0 24px rgba(0,200,220,0.12), inset 0 1px 0 rgba(255,255,255,0.07)",
+                background: "linear-gradient(135deg, rgba(21,104,196,0.09) 0%, rgba(47,162,74,0.07) 100%)",
+                border: "1px solid rgba(47,162,74,0.20)",
+                boxShadow: "0 0 20px rgba(21,104,196,0.13), 0 0 36px rgba(47,162,74,0.08), inset 0 1px 0 rgba(255,255,255,0.07)",
               }}
             >
               <div
@@ -249,7 +206,7 @@ const Login = () => {
                 alt="Placeware Nigeria Limited"
                 className="relative mx-auto h-11 w-auto object-contain"
                 style={{
-                  filter: "drop-shadow(0 2px 10px rgba(0,200,220,0.35)) drop-shadow(0 0 3px rgba(255,255,255,0.1))",
+                  filter: "drop-shadow(0 2px 8px rgba(21,104,196,0.30)) drop-shadow(0 2px 8px rgba(47,162,74,0.22)) drop-shadow(0 0 3px rgba(255,255,255,0.1))",
                 }}
               />
             </div>
@@ -264,13 +221,13 @@ const Login = () => {
               WebkitBackdropFilter: "blur(28px)",
             }}
           >
-            {/* Nav accent strip — mirrors the teal nav bar in the template */}
+            {/* Nav accent strip — green brand accent for visual variety against the blue logo chrome above */}
             <div
               className="mb-7 flex items-center gap-2 rounded-xl px-4 py-2.5"
-              style={{ background: "linear-gradient(90deg, rgba(0,195,195,0.18) 0%, rgba(0,110,200,0.12) 100%)", border: "1px solid rgba(0,200,220,0.18)" }}
+              style={{ background: "linear-gradient(90deg, rgba(47,162,74,0.18) 0%, rgba(21,104,196,0.10) 100%)", border: "1px solid rgba(47,162,74,0.20)" }}
             >
-              <div className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(0,200,220,0.8)]" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-cyan-300/80">
+              <div className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(47,162,74,0.8)]" />
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-green-300/80">
                 Secure Access Portal
               </span>
             </div>
@@ -335,7 +292,7 @@ const Login = () => {
                 disabled={isLoading}
                 className="mt-1 w-full border-0 font-semibold text-white"
                 style={{
-                  background: "linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%)",
+                  background: "linear-gradient(90deg, #1568C4 0%, #2FA24A 100%)",
                 }}
               >
                 {isLoading ? (

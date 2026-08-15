@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
 from src.schemas.staff_dashboard import StaffDashboard, ActivityItem, PendingApproval, TaskItem, KPIWidget, Badge, AssignedProjectItem
 from src.middleware import verify_jwt, require_role
+from src.services.staff_ops import resolve_staff_identity
 from typing import List
 import os, json, logging
 import datetime as dt
@@ -133,9 +134,9 @@ async def get_staff_dashboard(request: Request, user_id: str):
     try:
         project_rows = (
             db.table("placeware_projects")
-            .select("id,name,status,workflow_stage,activity_type,supplier_name,quality_check_status,nafdac_sampling_status,updated_at")
+            .select("id,name,status,workflow_stage,activity_type,supplier_name,quality_check_status,nafdac_sampling_status,created_at")
             .eq("assigned_staff_id", user_id)
-            .order("updated_at", desc=True)
+            .order("created_at", desc=True)
             .limit(50)
             .execute()
         ).data or []
@@ -150,7 +151,7 @@ async def get_staff_dashboard(request: Request, user_id: str):
                     supplier_name=row.get("supplier_name"),
                     quality_check_status=row.get("quality_check_status"),
                     nafdac_sampling_status=row.get("nafdac_sampling_status"),
-                    updated_at=row.get("updated_at"),
+                    updated_at=row.get("created_at"),
                 )
             )
     except Exception:
@@ -167,8 +168,11 @@ async def get_staff_dashboard(request: Request, user_id: str):
     if len([t for t in tasks if t.status == "done"]) >= 10:
         badges.append(Badge(id="task_master", name="Task Master", description="Completed 10+ tasks"))
 
+    identity = resolve_staff_identity(user_id)
+
     dashboard = StaffDashboard(
         user_id=user_id,
+        identity=identity,
         activities=activities,
         pending_approvals=pending[:10],
         tasks=tasks,

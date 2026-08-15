@@ -26,6 +26,7 @@ class FinancialAnalystAgent(BaseAgent):
         results = data.get("results", [])
         ar_buckets: Dict[str, float] = {"0-30": 0.0, "31-60": 0.0, "61-90": 0.0, "90+": 0.0}
         product_stats: Dict[str, Dict[str, float]] = {}
+        gl_account_ids: set = set()
         total_revenue = 0.0
         total_cost = 0.0
         overdue_customers_90plus: List[Dict[str, Any]] = []
@@ -74,6 +75,11 @@ class FinancialAnalystAgent(BaseAgent):
                         stat["revenue"] += rev
                         stat["cost"] += cost
                         stat["units"] += float(row.get("units") or 0)
+                        # gl_profitability rows are GL account-level aggregates (chart-of-accounts
+                        # codes), not real per-SKU product data — sage_gl_snapshot has no product
+                        # grain. Track this so findings don't misrepresent GL accounts as products.
+                        if row.get("entity_kind") == "gl_account":
+                            gl_account_ids.add(pid)
 
             except Exception:
                 errors.append(f"failed to parse result for spec={spec}")
@@ -89,6 +95,7 @@ class FinancialAnalystAgent(BaseAgent):
 
         # detect margin compression: simple heuristic comparing top product margins
         compressed_products = [p for p, s in product_stats.items() if s.get("margin_pct", 0) < 10]
+        compressed_is_gl_only = bool(compressed_products) and all(p in gl_account_ids for p in compressed_products)
 
         metrics = {
             "ar_buckets": ar_buckets,
@@ -120,6 +127,7 @@ class FinancialAnalystAgent(BaseAgent):
             "metrics": metrics,
             "product_stats": product_stats,
             "compressed_products": compressed_products,
+            "compressed_is_gl_only": compressed_is_gl_only,
             "overdue_customers_90plus": overdue_customers_90plus,
             "errors": errors,
         }
@@ -128,6 +136,7 @@ class FinancialAnalystAgent(BaseAgent):
         metrics = analysis.get("metrics", {})
         product_stats = analysis.get("product_stats", {})
         compressed = analysis.get("compressed_products", [])
+        compressed_is_gl_only = analysis.get("compressed_is_gl_only", False)
         errors = analysis.get("errors", [])
 
         insight = Insight()
@@ -182,7 +191,8 @@ class FinancialAnalystAgent(BaseAgent):
                 logger.warning(f"margin_driver_report unavailable in financial_agent: {_drv_exc}")
 
         if compressed:
-            insight.findings.append(f"{len(compressed)} products with margin < 10%")
+            entity_label = "GL cost/expense accounts" if compressed_is_gl_only else "products"
+            insight.findings.append(f"{len(compressed)} {entity_label} with margin < 10%")
             insight.supporting_refs.extend([{"product_id": p, **product_stats.get(p, {})} for p in compressed[:10]])
 
         currency_delta = metrics.get("currency_delta_pct", 0)

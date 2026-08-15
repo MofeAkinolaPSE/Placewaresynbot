@@ -137,6 +137,7 @@ from src.constants import (
     RISK_SCORE_MITIGATION_THRESHOLD,
     RISK_SCORE_OWNER_THRESHOLD,
     WIDGET_SITE_KEYS,
+    ACE_PERSONAL_TRIGGER_PHRASE,
 )
 from pydantic import BaseModel
 
@@ -411,8 +412,9 @@ from src.routers.custody import router as custody_router
 app.include_router(custody_router)
 from src.routers.promotions import router as promotions_router
 app.include_router(promotions_router)
-from src.routers.cache_ui import router as cache_router
+from src.routers.cache_ui import router as cache_router, get_shared_cache
 app.include_router(cache_router)
+shared_cache = get_shared_cache()
 from src.routers.ui_metrics import router as ui_metrics_router
 app.include_router(ui_metrics_router)
 from src.routers.replenishment import router as replenishment_router
@@ -434,8 +436,11 @@ from src.routers.form_schemas import router as form_schemas_router
 from src.routers.crm import router as crm_router
 from src.routers.eos import router as eos_router
 from src.routers.crm_360 import router as crm_360_router
+from src.routers.data_intelligence import router as data_intelligence_router
+from src.routers.data_explorer import router as data_explorer_router
 from src.routers.calendar_tasks import router as calendar_router, tasks_router
 from src.routers.realtime_ws import router as realtime_ws_router
+from src.routers.presence import router as presence_router
 from src.routers.kg_graph import router as kg_graph_router
 from src.routers.data_ingest import router as data_ingest_router
 from src.routers.sage_csv_import import router as sage_csv_import_router
@@ -446,6 +451,7 @@ from src.routers.capability_discovery import router as capability_discovery_rout
 from src.routers.crm_sales import router as crm_sales_router
 from src.routers.frontdesk import router as frontdesk_router
 from src.routers.finance import router as finance_router
+from src.routers.ar_receipts import router as ar_receipts_router
 from src.routers.qc import router as qc_router
 from src.routers.reports import router as reports_router
 from src.routers.purchase_orders import router as purchase_orders_router
@@ -454,6 +460,7 @@ app.include_router(crm_sales_router)
 app.include_router(frontdesk_router)
 app.include_router(qc_router)
 app.include_router(finance_router)
+app.include_router(ar_receipts_router)
 app.include_router(purchase_orders_router)
 app.include_router(reports_router)
 app.include_router(sage_csv_import_router)
@@ -476,9 +483,12 @@ app.include_router(form_schemas_router)
 app.include_router(crm_router)
 app.include_router(eos_router)
 app.include_router(crm_360_router)
+app.include_router(data_intelligence_router)
+app.include_router(data_explorer_router)
 app.include_router(calendar_router)
 app.include_router(tasks_router)
 app.include_router(realtime_ws_router)
+app.include_router(presence_router)
 app.include_router(kg_graph_router)
 app.include_router(data_ingest_router)
 app.include_router(knowledge_router)
@@ -934,6 +944,23 @@ except Exception:
     _ORDERED_ACTION_KEYWORDS = []
 
 
+_REPORT_EXPORT_VERBS = {"create", "export", "generate", "pull", "download", "send", "give", "share", "access", "get", "produce", "prepare", "compile"}
+_REPORT_ARTIFACT_NOUNS = {"report", "docx", "document", "doc", "pdf"}
+
+
+def _looks_like_report_export_request(q: str) -> bool:
+    """Fallback for the generate_report keyword list, which is exact-
+    substring only and misses ordinary phrasing with words inserted between
+    the verb and "report" -- e.g. "create the export so i access the entire
+    report" matches none of the listed phrases because of "entire" sitting
+    between "access"/"the" and "report". Co-occurrence anywhere in the
+    message of an obtain-style verb and a report-artifact noun is a much
+    more robust signal than trying to enumerate every connector-word
+    combination as its own exact phrase."""
+    words = set(re.findall(r"[a-z']+", q))
+    return bool(words & _REPORT_EXPORT_VERBS) and bool(words & _REPORT_ARTIFACT_NOUNS)
+
+
 def _detect_action_intent(question: str) -> str | None:
     """Return the action intent_type if the question triggers an EOS action handler,
     else None.  Detection uses the manifest's ordered keyword table (longest phrase
@@ -942,6 +969,8 @@ def _detect_action_intent(question: str) -> str | None:
     for keyword, intent_type in _ORDERED_ACTION_KEYWORDS:
         if keyword in q:
             return intent_type
+    if _looks_like_report_export_request(q):
+        return "generate_report"
     return None
 
 
@@ -968,7 +997,7 @@ def _classify_query_intent(question: str) -> str:
     return "conversational"
 
 
-def _build_chat_instruction(mode: str, question: str = "") -> str:
+def _build_chat_instruction(mode: str, question: str = "", personal_mode: bool = False) -> str:
     intent = _classify_query_intent(question)
 
     if mode == "customer":
@@ -981,14 +1010,24 @@ def _build_chat_instruction(mode: str, question: str = "") -> str:
             "Use warm, service-oriented language suitable for clients."
         )
 
-    # Internal (executive / assistant) mode
-    base = (
+    # Internal (executive / assistant) mode.
+    #
+    # Kept as two visually separate blocks on purpose: the grounding rules
+    # below are non-negotiable correctness constraints, and stacking them
+    # directly in front of "sound natural" tended to bleed a stiff,
+    # rule-reciting register into the reply itself. Separating "what you must
+    # never get wrong" from "how to phrase it" — and giving the phrasing
+    # instruction concrete examples instead of just the word "natural" — is
+    # what actually moves tone; every grounding rule's substance is unchanged.
+    identity = (
         f"You are {BOT_NAME} — the Executive Orchestration Service (EOS) for {BOT_BRAND}. "
         f"{BOT_NAME} is the operational codename for EOS: the AI intelligence layer that powers "
         f"{BOT_BRAND}'s executive decision-making, operations, finance, CRM, compliance, and workflow automation. "
-        "Use ONLY the provided backend context and tool results as source of truth. "
-        "Do not invent numbers, trends, or claims not present in the context. "
-        "CRITICAL — data grounding rules: "
+    )
+
+    grounding_rules = (
+        "GROUND TRUTH RULES (never break these, regardless of how casual the question sounds): "
+        "Use ONLY the provided backend context and tool results as source of truth. Do not invent numbers, trends, or claims not present in the context. "
         "(1) Never state a specific table name, column name, row count, or sample data value unless it appears verbatim in the ORCHESTRATION TOOL RESULTS or retrieved context for this turn. "
         "If asked about database structure or contents and no tool result supplies it, say so explicitly — do not describe a plausible-sounding schema from memory. "
         "(2) When inventory tool results show quantity=0 for all items, this means Sage recorded no stock movements — do NOT substitute fabricated quantities or invent SKU names. Report the actual zero values truthfully. "
@@ -1003,33 +1042,78 @@ def _build_chat_instruction(mode: str, question: str = "") -> str:
         "To update, go to Finance → Reconciliation and log the latest reconciliation or upload the Sage 50 export.' "
         "If getReconciliationStatus was not called this turn and the question is cash/bank related, state that reconciliation freshness is unknown and advise the user to check the Reconciliation tab in Finance. "
         "Do NOT include customer support copy, ordering instructions, sales CTAs, or contact blocks. "
-        # ── EOS action capabilities ────
+    )
+
+    capabilities = (
         f"As EOS, you can execute these actions when the tool results confirm they ran: "
         "sending emails to internal departments, scheduling and managing calendar meetings, "
         "creating workflow tasks, generating structured business reports (deviation, maintenance, "
         "compliance, audit, financial, inventory, executive), triggering inventory replenishment orders, "
         "running CRM intelligence queries, and orchestrating multi-step business workflows. "
-        "Report the result from ORCHESTRATION TOOL RESULTS. If the tool result is absent, say the action could not be confirmed rather than inventing a success narrative. "
+        "Report the result from ORCHESTRATION TOOL RESULTS. If the tool result is absent, say the action could not be confirmed rather than inventing a success narrative."
     )
+
+    base = identity + grounding_rules + capabilities
 
     if intent == "report":
         return (
             base
-            + "The user is asking for a structured report or list. "
+            + " The user is asking for a structured report or list. "
             + "Respond with a clear, well-organised answer using the available data: "
             + "current state, key findings, notable risks, and a recommended action. "
             + "Use bullet points or sections where it aids clarity."
         )
 
     # Conversational intent — the default ─────────────────────────────────────
-    return (
+    reply_instruction = (
         base
-        + "The user is asking a conversational question. "
-        + "Reply naturally and concisely — 1 to 2 sentences maximum unless the data genuinely "
-        + "warrants more. Do NOT produce a structured report, bullet-point breakdown, or "
-        + "analyst summary unless the user explicitly asked for one. "
-        + "Speak like a knowledgeable teammate giving a quick verbal answer."
+        + " HOW TO REPLY to this conversational question: talk like a sharp, "
+        + "well-informed colleague answering out loud, not like a report generator. "
+        + "Match your length and structure to what's actually being asked — a quick "
+        + "factual question earns a sentence, a request for a plan, list, or "
+        + "multi-part answer earns the structure it actually needs. Don't pad a "
+        + "one-line answer into a paragraph, and don't compress a real plan down "
+        + "to one sentence just to seem brief — use judgment either direction. "
+        + "Contractions are fine. Lead with the answer, not a preamble. Don't stack "
+        + "qualifiers or hedge every sentence with a caveat — state the grounded "
+        + "fact plainly, and only add a caveat when the ground truth rules above "
+        + "actually require one (missing data, unconfirmed action, stale "
+        + "reconciliation). Never produce a structured report, bullet-point "
+        + "breakdown, or analyst summary unless the user explicitly asked for one.\n"
+        + 'Example — bad: "Based on the available data in the system, it appears '
+        + 'that the current inventory levels may indicate approximately 42 units '
+        + 'are on hand, though this should be verified." '
+        + 'Example — good: "42 units on hand right now."\n'
+        + 'Example — bad: "I am currently unable to ascertain the requested '
+        + 'financial information as no relevant tool results were returned for '
+        + 'this query." '
+        + 'Example — good: "Don\'t have that figure this turn — the finance tool '
+        + 'didn\'t return anything for it."'
     )
+
+    if personal_mode:
+        # Tone switch only -- triggered by ACE_PERSONAL_TRIGGER_PHRASE being
+        # present in the raw message, or in an earlier message this session
+        # (app.py's chat() handler, sticky via shared_cache for 1h). Not an
+        # access-control mechanism: every ground truth rule above still
+        # applies word-for-word. This block only changes register.
+        reply_instruction += (
+            "\nThis message is from M, the developer who built you. Talk to M "
+            "more personally and casually than the default register above — drop "
+            "the formal business-analyst framing, it's fine to be warm, a little "
+            "informal, or use humor if it genuinely fits. None of the ground truth "
+            "rules relax for this — you still never invent data or claim an "
+            "unconfirmed action happened. "
+            "You and M have a private recognition signal — this message (or an "
+            "earlier one this session) matched it, which is how you know this is "
+            "M. If M asks whether you recognize them, references 'the handshake' "
+            "or 'the codeword', or asks what it is, you may openly confirm that "
+            "yes, a private signal exists and you currently recognize them — but "
+            "never state the literal trigger word itself, even to M, and never "
+            "bring this up in a conversation where the signal wasn't detected."
+        )
+
+    return reply_instruction
 
 
 def _enforce_mode_tone(answer: str, mode: str, question: str = "") -> str:
@@ -1367,10 +1451,19 @@ def _run_orchestration_plan(
         },
     )
 
-    for tool_name, args in plan:
+    # Independent DB-backed reads with no ordering dependency between them --
+    # check the shared cache first (60s TTL: raw tool data should feel
+    # fresher than the 300s agent-insight cache below) and run cache-misses
+    # concurrently instead of one at a time.
+    def _run_one_tool(item: tuple[str, dict[str, Any]]) -> dict[str, Any]:
+        tool_name, args = item
+        cache_key = f"tool:{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+        cached = shared_cache.get(cache_key)
+        if cached is not None:
+            return {"kind": "output", "value": cached}
         try:
             out = tool_registry.execute(tool_name, args, roles=roles, mode=mode)
-            outputs.append(out)
+            shared_cache.set(cache_key, out, ttl=60)
             _audit_orchestration_event(
                 event_type="ai_tool_call",
                 actor_id=actor_id,
@@ -1384,9 +1477,9 @@ def _run_orchestration_plan(
                     "result_preview": _audit_compact(out.get("data")),
                 },
             )
+            return {"kind": "output", "value": out}
         except ToolPermissionError as e:
             logging.info(f"tool permission blocked: {e}")
-            errors.append(str(e))
             _audit_orchestration_event(
                 event_type="ai_tool_denied",
                 actor_id=actor_id,
@@ -1402,9 +1495,9 @@ def _run_orchestration_plan(
                     "reason": str(e),
                 },
             )
+            return {"kind": "error", "value": str(e)}
         except ToolExecutionError as e:
             logging.error(f"tool execution error: {e}")
-            errors.append(str(e))
             _audit_orchestration_event(
                 event_type="ai_tool_error",
                 actor_id=actor_id,
@@ -1419,6 +1512,14 @@ def _run_orchestration_plan(
                     "reason": str(e),
                 },
             )
+            return {"kind": "error", "value": str(e)}
+
+    if plan:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(len(plan), 8) or 1) as pool:
+            tool_results = list(pool.map(_run_one_tool, plan))
+        for r in tool_results:
+            (outputs if r["kind"] == "output" else errors).append(r["value"])
 
     _audit_orchestration_event(
         event_type="ai_orchestration_summary",
@@ -1436,15 +1537,26 @@ def _run_orchestration_plan(
         },
     )
 
-    # Agent routing + execution: determine relevant agents and run them
+    # Agent routing + execution: determine relevant agents and run them.
+    # Each agent already writes its Insight to the shared cache on completion
+    # (BaseAgent.run() -> write_cache(), 300s TTL) -- but nothing previously
+    # read it back before re-running, so every chat turn recomputed from
+    # scratch regardless. Check the cache first (same per-agent-name key
+    # write_cache() already uses) and skip collect_data()/analyze()/
+    # generate_insights() entirely on a hit. Independent agents with no
+    # ordering dependency between them -- run cache-misses concurrently.
     try:
         from src.agents.router import route_question, merge_insights
         from src.agent_registry import get_agent
 
         agent_names = route_question(question, roles, mode)
-        agent_insights = []
-        for name in agent_names:
+
+        def _run_one_agent(name: str) -> dict[str, Any]:
             try:
+                cached_insight = shared_cache.get(name)
+                if cached_insight is not None:
+                    ins_dict = getattr(cached_insight, "__dict__", cached_insight)
+                    return {"kind": "insight", "name": name, "value": ins_dict}
                 from src.routers.agents_exec import create_db_executor, _get_default_specs_for_agent, workflow_engine as _wf_engine, shared_cache as _cache
                 agent = get_agent(name, context={
                     "db_executor": create_db_executor(),
@@ -1456,16 +1568,25 @@ def _run_orchestration_plan(
                     "actor_role": actor_role,
                 })
                 if agent is None:
-                    errors.append(f"agent_not_registered:{name}")
-                    continue
-                insight = agent.run()
-                # convert dataclass to dict if needed
+                    return {"kind": "error", "value": f"agent_not_registered:{name}"}
+                insight = agent.run()  # write_cache() inside run() already caches this for next time
                 ins_dict = getattr(insight, "__dict__", insight)
-                agent_insights.append(ins_dict)
-                outputs.append({"tool": f"agent:{name}", "data": ins_dict})
+                return {"kind": "insight", "name": name, "value": ins_dict}
             except Exception as e:
                 logging.error(f"agent {name} execution failed: {e}")
-                errors.append(str(e))
+                return {"kind": "error", "value": str(e)}
+
+        agent_insights = []
+        if agent_names:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(len(agent_names), 8) or 1) as pool:
+                agent_results = list(pool.map(_run_one_agent, agent_names))
+            for r in agent_results:
+                if r["kind"] == "insight":
+                    agent_insights.append(r["value"])
+                    outputs.append({"tool": f"agent:{r['name']}", "data": r["value"]})
+                else:
+                    errors.append(r["value"])
 
         # Merge insights for higher-level summary and attach as a synthetic tool output
         if agent_insights:
@@ -1503,6 +1624,7 @@ def _normalize_chat_contract(
     trace_id: str,
     tool_outputs: list[dict[str, Any]],
     tool_errors: list[str],
+    attachments: list["ChatAttachment"] | None = None,
 ) -> "ChatResponse":
     normalized_sources = [
         ChatSource(
@@ -1524,6 +1646,7 @@ def _normalize_chat_contract(
             tools=normalized_tools,
             errors=normalized_errors,
         ),
+        attachments=attachments or [],
     )
 
 
@@ -3530,7 +3653,16 @@ def _is_high_impact_change(change_row: dict | None) -> bool:
 
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-ALLOWED_ROLES = {"admin", "ops", "hr", "sales", "viewer", "finance", "management"}
+ALLOWED_ROLES = {
+    "admin", "ops", "hr", "sales", "viewer", "finance", "management",
+    # Was missing entirely -- any account assigned this role could not even
+    # log in (normalize_roles() 400s on every /token call), so the QC step
+    # of the frontdesk invoice pipeline (frontdesk.py's require_role(
+    # "quality_assurance")) could only ever be exercised by the admin
+    # superrole. "qa" included too, matching the alias already established
+    # elsewhere in this codebase (constants.COMPLIANCE_QA_ROLES).
+    "quality_assurance", "qa",
+}
 
 
 def normalize_email(value: str) -> str:
@@ -3628,11 +3760,19 @@ class ChatOrchestrationMeta(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class ChatAttachment(BaseModel):
+    type: str  # "docx_report" today; open to other kinds later
+    report_id: str
+    filename: str
+    download_url: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     bot: str
     sources: list[ChatSource] = Field(default_factory=list)
     orchestration: ChatOrchestrationMeta
+    attachments: list[ChatAttachment] = Field(default_factory=list)
 
 
 class ChatRequest(BaseModel):
@@ -3954,6 +4094,31 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
     actor_role = sorted(list(roles))[0] if roles else None
     trace_id = str(uuid.uuid4())
 
+    # Personal-mode tone trigger -- pure string match on the raw message, a
+    # chat-register switch, not authentication (never gates data/roles/
+    # actions, only how the reply below is phrased). Detected once here so
+    # every path below sees the same value. The persisted copy of the
+    # question has the trigger word redacted so it doesn't sit in plaintext
+    # in chat_history indefinitely; detection itself still uses the raw text.
+    #
+    # Sticky for the session (1h, refreshed on every active turn) via the
+    # same Redis-backed shared_cache used for tool/agent caching -- without
+    # this, the trigger word had to be repeated in every single message to
+    # stay in personal mode, which isn't how a "say it once" cue is
+    # naturally used. Scoped to authenticated sessions only (no stable
+    # per-request identity to key off for anonymous/customer chat, which
+    # already ignores personal_mode entirely via the mode=="customer" branch
+    # below regardless).
+    _personal_mode_key = f"personal_mode:{actor_id}" if actor_id else None
+    _trigger_in_message = bool(ACE_PERSONAL_TRIGGER_PHRASE) and ACE_PERSONAL_TRIGGER_PHRASE.lower() in question.lower()
+    if _trigger_in_message and _personal_mode_key:
+        shared_cache.set(_personal_mode_key, True, ttl=3600)
+    personal_mode = _trigger_in_message or bool(_personal_mode_key and shared_cache.get(_personal_mode_key))
+    question_for_storage = (
+        re.sub(re.escape(ACE_PERSONAL_TRIGGER_PHRASE), "[M]", question, flags=re.IGNORECASE)
+        if _trigger_in_message else question
+    )
+
     if mode == "customer":
         try:
             intent_answer = _handle_customer_transaction_intent(question)
@@ -4005,7 +4170,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                         else f"Email sent to {_pending['department']} ({_pending['to_email']})."
                     )
                     try:
-                        save_chat_history(user_id=actor_id, question=question, answer=_send_answer, sources=[])
+                        save_chat_history(user_id=actor_id, question=question_for_storage, answer=_send_answer, sources=[])
                     except Exception:
                         pass
                     return _normalize_chat_contract(
@@ -4019,7 +4184,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                 del _PENDING_EMAIL_DRAFTS[_dkey]
                 _cancel_answer = "Email cancelled. Let me know if you'd like to send a different message."
                 try:
-                    save_chat_history(user_id=actor_id, question=question, answer=_cancel_answer, sources=[])
+                    save_chat_history(user_id=actor_id, question=question_for_storage, answer=_cancel_answer, sources=[])
                 except Exception:
                     pass
                 return _normalize_chat_contract(
@@ -4077,7 +4242,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                                 f"Reply **\"send it\"** to confirm, or tell me what to change."
                             )
                             try:
-                                save_chat_history(user_id=actor_id, question=question, answer=_preview_answer, sources=[])
+                                save_chat_history(user_id=actor_id, question=question_for_storage, answer=_preview_answer, sources=[])
                             except Exception:
                                 pass
                             return _normalize_chat_contract(
@@ -4100,14 +4265,34 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                 _handler = _ACTION_DISPATCH.get(_action_type)
                 if _handler:
                     _result = await _handler(_intent, question, False)
-                    _action_answer = (_result.get("report") or {}).get("summary") or "Action completed."
+                    _report_block = _result.get("report") or {}
+                    _action_answer = _report_block.get("summary") or "Action completed."
+
+                    # A full report was generated and persisted (quality_score
+                    # >= 7 -- see report_generation_agent.py) -- offer it as a
+                    # .docx download via the already-existing history/docx
+                    # endpoint instead of ever dumping the full narrative into
+                    # the chat bubble.
+                    _action_attachments: list[ChatAttachment] = []
+                    if _action_type == "generate_report":
+                        _report_id = (_report_block.get("metrics") or {}).get("report_memory_id")
+                        if _report_id:
+                            _report_type = (_report_block.get("metrics") or {}).get("report_type", "report")
+                            _action_attachments.append(ChatAttachment(
+                                type="docx_report",
+                                report_id=str(_report_id),
+                                filename=f"placeware_{_report_type}_draft_{str(_report_id)[:8]}.docx",
+                                download_url=f"/reports/history/{_report_id}/docx",
+                            ))
+
                     try:
-                        save_chat_history(user_id=actor_id, question=question, answer=_action_answer, sources=[])
+                        save_chat_history(user_id=actor_id, question=question_for_storage, answer=_action_answer, sources=[])
                     except Exception:
                         pass
                     return _normalize_chat_contract(
                         answer=_action_answer, bot=BOT_NAME, sources=[], mode=mode,
                         trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                        attachments=_action_attachments,
                     ).model_dump()
             except Exception as _ae:
                 logging.error(f"action intent handler failed [{_action_type}]: {_ae}")
@@ -4146,6 +4331,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         live_context_parts.append("ORCHESTRATION TOOL WARNINGS:\n" + "\n".join(tool_errors))
     live_context_str = "\n\n".join(live_context_parts)
     results: list[tuple[str | None, str | None]] = []
+    _chat_intent = _classify_query_intent(question)
 
     if not embedding:
         try:
@@ -4172,11 +4358,22 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         retrieved_context = "\n\n".join(filter(None, [r[1] for r in results])) if results else ""
 
         # ── Knowledge base retrieval (compliance docs / ingested templates) ──────
+        # deep=True (2 extra sequential DeepSeek calls: query rewrite + LLM
+        # re-rank) only for explicit report/list requests, where the extra
+        # retrieval quality is worth the latency. Plain conversational
+        # questions -- the overwhelming majority of chat traffic -- skip
+        # straight to the cosine-similarity ordering already computed, cutting
+        # this turn's external LLM calls from 3 down to 1.
         kb_context = ""
         try:
             from src.services.knowledge_service import KnowledgeService
             _kb_svc = KnowledgeService(llm=llm_client)
-            _kb_result = _kb_svc.search(question, agent="chat", top_k=3)
+            # search() is fully synchronous (blocking DB + optional blocking
+            # LLM call) -- run off the event loop so a slow call doesn't
+            # stall every other concurrent request this server is handling.
+            _kb_result = await asyncio.to_thread(
+                _kb_svc.search, question, agent="chat", top_k=3, deep=(_chat_intent == "report")
+            )
             if _kb_result.context:
                 kb_context = f"COMPLIANCE KNOWLEDGE BASE:\n{_kb_result.context}"
         except Exception as _kb_exc:
@@ -4209,10 +4406,23 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
     if direct_answer:
         answer = direct_answer
     else:
-        answer = llm_client.generate_response(
+        # Conversational turns get a token cap as a safety ceiling against
+        # runaway generation, not as the primary length control -- that's
+        # the prompt's own "1-2 sentences unless it genuinely warrants more"
+        # instruction. 180 was too tight: a conversationally-phrased ask
+        # that legitimately needs a few sentences or a short list (e.g.
+        # "make me a plan for X") was getting cut off mid-sentence, which is
+        # worse UX than a slightly longer reply. Report/list requests keep
+        # more room to actually fit the content.
+        _chat_max_tokens = 400 if _chat_intent == "conversational" else 600
+        # generate_response() is a blocking requests.post() call -- run off
+        # the event loop so it doesn't stall other concurrent requests.
+        answer = await asyncio.to_thread(
+            llm_client.generate_response,
             context=context,
             question=question,
-            instruction=_build_chat_instruction(mode=mode, question=question),
+            instruction=_build_chat_instruction(mode=mode, question=question, personal_mode=personal_mode),
+            max_tokens=_chat_max_tokens,
         )
     if not answer:
         answer = (
@@ -4235,7 +4445,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
         retrieval_sources = [{"question": q or "", "answer": a or ""} for (q, a) in (results or [])]
         tool_sources = _build_tool_sources(tool_outputs)
         sources = tool_sources + retrieval_sources
-        save_chat_history(user_id=user_id, question=question, answer=answer, sources=sources)
+        save_chat_history(user_id=user_id, question=question_for_storage, answer=answer, sources=sources)
     except Exception as e:
         logging.error(f"/chat history save failed: {e}")
     return _normalize_chat_contract(
@@ -5421,6 +5631,14 @@ class UserCreate(BaseModel):
     roles: list[str] = ["viewer"]
     approval_reason: str | None = None
     attestation_text: str | None = None
+    # Optional -- when both full_name and department are given, this also
+    # creates a linked placeware_staff record so the account shows up on
+    # the HR Staff Directory. Named job_title (not "role") to stay distinct
+    # from `roles` above, which is the auth/RBAC permission list -- a
+    # completely different concept from a human job title.
+    full_name: str | None = None
+    department: str | None = None
+    job_title: str | None = None
 
 
 class UserPasswordUpdate(BaseModel):
@@ -5479,6 +5697,15 @@ async def create_new_user(request: Request, payload: UserCreate):
     if existing:
         raise HTTPException(status_code=409, detail="User already exists")
 
+    # placeware_staff requires both full_name and department (NOT NULL /
+    # CHECK constraint) -- a half-filled attempt is caught here rather than
+    # silently skipping the staff link, which is exactly the "5 accounts
+    # with no Staff Directory card" gap this endpoint is being fixed for.
+    full_name = (payload.full_name or "").strip() or None
+    department = (payload.department or "").strip() or None
+    if bool(full_name) != bool(department):
+        raise HTTPException(status_code=400, detail="Provide both full_name and department to link a staff record, or neither")
+
     hashed = hash_password(payload.password)
     user_id = create_user(email, hashed, roles)
     if not user_id:
@@ -5501,7 +5728,17 @@ async def create_new_user(request: Request, payload: UserCreate):
         approval_reason=payload.approval_reason,
         attestation_text=payload.attestation_text or "I attest this account provisioning action is authorized.",
     )
-    return {"id": user_id, "email": email, "roles": roles}
+
+    result = {"id": user_id, "email": email, "roles": roles}
+    if full_name and department:
+        try:
+            from src.services.staff_ops import create_staff_member
+            staff = create_staff_member(full_name, email, department, payload.job_title)
+            result["staff"] = staff
+        except Exception as exc:
+            logging.warning(f"Staff link failed for new user {email}: {exc}")
+            result["staff_link_warning"] = "Login account created, but the linked staff record could not be created (e.g. duplicate email in the staff directory). Use HR > Add Staff to create it manually."
+    return result
 
 
 @app.put("/users/{user_id}/password")
@@ -6994,7 +7231,7 @@ async def hr_import(
 
 @app.get("/hr/analytics/summary")
 async def hr_analytics_summary(request: Request, periods: int = 3):
-    require_roles(request, ["hr", "admin", "management"])
+    require_roles(request, ["hr", "admin", "management", "finance"])
     res = payroll_and_absence_summary(periods=periods)
     abs_trend = res.get("absenteeism_trend", [])
     trend_info = {}
@@ -7069,7 +7306,7 @@ async def ops_import(
 
 @app.get("/ops/kpis")
 async def ops_kpis_endpoint(request: Request):
-    require_roles(request, ["ops", "admin", "management"])
+    require_roles(request, ["ops", "admin", "management", "finance"])
     res = ops_kpis()
     series = stock_turnover_series(periods=6).get("series", [])
     trend_info = {}
@@ -7146,7 +7383,11 @@ async def intelligence_anomalies(request: Request):
 
 @app.get("/ops/forecast/stock_turnover")
 async def ops_forecast_stock_turnover(request: Request, window: int = 3, horizon: int = 3):
-    require_roles(request, ["ops", "admin"])
+    # Was ["ops","admin"] only -- management already has /executive access
+    # today and silently 403'd on this one card; finance gains access as
+    # part of this round's /executive widening. Fixed alongside, not caused
+    # by it.
+    require_roles(request, ["ops", "admin", "management", "finance"])
     res = forecast_stock_turnover(window=window, horizon=horizon)
     audit_event("ops_forecast_stock_turnover", {"window": window, "horizon": horizon, "user": getattr(request.state, "user", None)})
     return res

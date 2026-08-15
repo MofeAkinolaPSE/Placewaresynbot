@@ -216,7 +216,7 @@ def _build_report_docx(
     wm_run.font.color.rgb = WATERMARK_COLOR
 
     doc.add_paragraph("")
-    doc.add_paragraph("â”€" * 72)
+    doc.add_paragraph("─" * 72)
     doc.add_paragraph("")
 
     # Report title
@@ -238,7 +238,7 @@ def _build_report_docx(
         ("Entity / Scope",  client_scope),
         ("Generated",       now_str),
         ("Prepared By",     "ACE - Placeware Nigeria AI Executive Intelligence"),
-        ("Classification",  "CONFIDENTIAL â€” For Authorised Recipients Only"),
+        ("Classification",  "CONFIDENTIAL — For Authorised Recipients Only"),
     ]:
         meta_p = doc.add_paragraph()
         meta_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -246,7 +246,7 @@ def _build_report_docx(
         _add_coloured_run(meta_p, value, GREY, size=10)
 
     doc.add_paragraph("")
-    doc.add_paragraph("â”€" * 72)
+    doc.add_paragraph("─" * 72)
 
     # Page break after cover
     doc.add_page_break()
@@ -342,7 +342,7 @@ def _render_sections(
 
         if status == "incomplete":
             p = doc.add_paragraph()
-            r = p.add_run("[Section incomplete â€” insufficient data available for this period.]")
+            r = p.add_run("[Section incomplete — insufficient data available for this period.]")
             r.italic = True
             r.font.color.rgb = grey
         elif content:
@@ -395,7 +395,7 @@ def _render_markdown_body(
                 h.runs[0].font.color.rgb = navy
 
         elif stripped.startswith("---"):
-            doc.add_paragraph("â”€" * 72)
+            doc.add_paragraph("─" * 72)
 
         elif re.match(r"^\d+\.", stripped):
             item_text = stripped[stripped.index(".") + 1:].strip()
@@ -501,7 +501,7 @@ def _build_invoice_docx(scope_params: Dict[str, Any], service_description: str =
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r2 = sub.add_run("TAX INVOICE"); r2.bold = True; r2.font.size = Pt(18); r2.font.color.rgb = NAVY
 
-    doc.add_paragraph("â”€" * 72)
+    doc.add_paragraph("─" * 72)
     doc.add_paragraph("")
 
     # Client + invoice metadata two-column layout via table
@@ -595,7 +595,7 @@ def _build_invoice_docx(scope_params: Dict[str, Any], service_description: str =
         doc.add_paragraph(notes)
 
     doc.add_paragraph("")
-    doc.add_paragraph("â”€" * 72)
+    doc.add_paragraph("─" * 72)
     footer_p = doc.add_paragraph()
     footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     fr = footer_p.add_run("Placeware Nigeria Limited | Thank you for your business.")

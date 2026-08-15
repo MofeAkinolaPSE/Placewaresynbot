@@ -160,6 +160,7 @@ async def knowledge_search(
             department=department,
             document_type=doc_type,
             top_k=top_k,
+            deep=True,  # this endpoint's whole purpose is the full pipeline
         )
     except Exception as exc:
         logger.exception("Knowledge search error: %s", exc)

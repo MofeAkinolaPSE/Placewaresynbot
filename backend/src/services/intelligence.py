@@ -11,12 +11,12 @@ from ..cache import ttl_cache, invalidate_cache_tags
 from .realtime import realtime_hub
 import asyncio
 from .sage_adapter.service import kpis as finance_kpis, ar_trend_summary, ar_aging_buckets
-from .inventory import get_inventory_summary, get_latest_batch_sku_count, get_recent_inventory_movements
+from .inventory import get_inventory_summary, get_latest_batch_sku_count, get_recent_inventory_movements, classify_stock_status
 from .ops import kpis as ops_kpis, stock_turnover_series
 from .hr import payroll_and_absence_summary
-from .crm import risk_scores as crm_risk_scores
+from .crm import risk_scores as crm_risk_scores, get_crm_stats
 from .staff_ops import get_timesheets
-from .sage_adapter.service import get_sage_kpi_batch_id
+from .qc import get_qc_summary
 
 logger = logging.getLogger("intelligence")
 
@@ -55,15 +55,16 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
     - Recent movements
     - Coverage risk
     """
-    summary = get_inventory_summary(limit=100, client=client)
-
-    # KPI counts must cover the whole catalog — computing them from the
-    # 100-row summary sample produced arbitrary numbers. v_inventory has one
-    # row per item with its latest-batch stock.
+    # KPI counts and the critical-items list must both come from the same
+    # v_inventory read — previously the counts scanned up to 5000 v_inventory
+    # rows while the critical_items list was independently derived from a
+    # different, 100-row-limited get_inventory_summary() call using a flat
+    # <10 rule that ignored reorder_level entirely, so the two numbers shown
+    # together on one screen could disagree with each other.
     try:
         inv_rows = (
             client.table("v_inventory")
-            .select("sku,current_stock,reorder_level,expiry_date")
+            .select("sku,name,current_stock,reorder_level,expiry_date")
             .limit(5000)
             .execute()
             .data
@@ -111,23 +112,28 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
         low_stock_count = 0
         out_of_stock_count = 0
         catalog_zero_stock_count = 0
+        low_stock_rows: List[Dict[str, Any]] = []
         for r in inv_rows:
             qty = float(r.get("current_stock") or 0)
-            reorder = float(r.get("reorder_level") or 0)
-            threshold = reorder if reorder > 0 else 10
-            if qty <= 0:
+            status = classify_stock_status(qty, r.get("reorder_level"))
+            if status == "out_of_stock":
                 catalog_zero_stock_count += 1
                 if _future_expiry(r) or r.get("sku") in traded_skus:
                     out_of_stock_count += 1
-            elif qty < threshold:
+            elif status in ("critical", "warning"):
                 low_stock_count += 1
+                low_stock_rows.append({**r, "current_stock": qty, "stock_status": status})
+        # Most urgent first: critical before warning, lowest stock first within each tier.
+        low_stock_rows.sort(key=lambda r: (r["stock_status"] != "critical", r["current_stock"]))
+        critical_items = low_stock_rows[:limit]
     else:
+        summary = get_inventory_summary(limit=100, client=client)
         total_active_skus = get_latest_batch_sku_count(client=client) or len(summary)
-        low_stock_count = sum(1 for i in summary if 0 < i["current_stock"] < 10)
-        out_of_stock_count = sum(1 for i in summary if i["current_stock"] <= 0)
+        low_stock_count = sum(1 for i in summary if i.get("stock_status") in ("critical", "warning"))
+        out_of_stock_count = sum(1 for i in summary if i.get("stock_status") == "out_of_stock")
         catalog_zero_stock_count = out_of_stock_count
+        critical_items = [i for i in summary if i.get("stock_status") in ("critical", "warning")][:limit]
 
-    low_stock = [i for i in summary if i['current_stock'] < 10]
     recent_movements = get_recent_inventory_movements(limit=limit, client=client)
 
     return {
@@ -137,7 +143,7 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
             "out_of_stock_count": out_of_stock_count,
             "catalog_zero_stock_count": catalog_zero_stock_count,
         },
-        "critical_items": low_stock[:limit],
+        "critical_items": critical_items,
         "recent_movements": recent_movements,
     }
 
@@ -241,6 +247,192 @@ def get_active_alerts(client: DBClient = db) -> List[Dict[str, Any]]:
         .limit(20)\
         .execute().data or []
 
+
+def filter_alerts_by_category(alerts: List[Dict[str, Any]], viewer_roles: List[str]) -> List[Dict[str, Any]]:
+    """Restrict a raw alert list to only the categories the viewer's roles
+    may see, per constants.ALERT_CATEGORY_VISIBILITY. get_active_alerts()
+    itself stays unfiltered/cached (role-variance doesn't belong inside a
+    cached function's key) -- this is the actual boundary that stops e.g. an
+    ops-role viewer of GET /dashboard/alerts from seeing finance-category
+    "Treasury Alert" text with a real embedded ₦ figure, which the endpoint's
+    role gate alone didn't prevent (ops is in that gate's allowed set)."""
+    from ..constants import ALERT_CATEGORY_VISIBILITY
+    roles = {str(r).lower() for r in viewer_roles}
+    out = []
+    for a in alerts:
+        category = a.get("category")
+        allowed_roles = ALERT_CATEGORY_VISIBILITY.get(category, {"admin", "management"})
+        if allowed_roles is None or roles & allowed_roles:
+            out.append(a)
+    return out
+
+# --- ACE Workstation (org-wide dashboard) Engine ---
+
+def get_workstation_summary(roles: List[str], client: DBClient = db) -> Dict[str, Any]:
+    """
+    One shallow status card per department for the org-wide ACE Workstation
+    (GET /dashboard/workstation) -- every authenticated user gets a response,
+    but sensitive (₦-denominated) fields are only included in the dict for
+    roles allowed to see them (constants.py's FINANCIAL_DATA_ROLES /
+    CRM_PIPELINE_VALUE_ROLES / PROCUREMENT_VALUE_ROLES). Redaction happens
+    here, server-side, before the response is built -- a role without access
+    never receives the key at all, it isn't merely hidden client-side.
+
+    Reuses each department's existing summary function rather than
+    re-querying -- this is purely an aggregation + redaction layer.
+    """
+    from ..constants import FINANCIAL_DATA_ROLES, CRM_PIPELINE_VALUE_ROLES, PROCUREMENT_VALUE_ROLES, WORKSTATION_DRILL_IN_ROLES
+    # Deferred import: purchase_orders.py is a router, not a service module
+    # (compute_po_summary was extracted in-place there per this round's
+    # plan, not into a new service file) -- importing at module load time
+    # would be a backwards services->routers dependency; deferring avoids
+    # any load-order coupling, matching the existing deferred-import
+    # convention already used elsewhere in this codebase (e.g.
+    # services/inventory.py's scan_and_alert_expiring importing create_alert).
+    from ..routers.purchase_orders import compute_po_summary
+
+    role_set = {str(r).lower() for r in roles}
+
+    def can_drill_in(dept: str) -> bool:
+        return bool(role_set & WORKSTATION_DRILL_IN_ROLES.get(dept, set()))
+
+    # A bare count (unlike the raw alert title/message, which can embed a
+    # real ₦ figure -- see filter_alerts_by_category's docstring) leaks
+    # nothing on its own, so every department's card shows its own true
+    # count regardless of viewer role -- deliberately NOT run through
+    # filter_alerts_by_category, which would fail-closed to 0 for a
+    # QC/HR/CRM/Operations viewer looking at their own department's card,
+    # since only "finance"/"inventory"/"system" are mapped in
+    # ALERT_CATEGORY_VISIBILITY.
+    all_alerts = get_active_alerts(client=client)
+
+    def alert_count(category: str) -> int:
+        return sum(1 for a in all_alerts if a.get("category") == category)
+
+    departments: Dict[str, Any] = {}
+
+    # --- Inventory --- (no ₦ in this payload at all, no redaction needed)
+    try:
+        inv = get_inventory_dashboard(client=client)
+        inv_summary = inv.get("summary", {})
+        low = inv_summary.get("low_stock_count", 0)
+        out = inv_summary.get("out_of_stock_count", 0)
+        departments["inventory"] = {
+            "total_active_skus": inv_summary.get("total_active_skus", 0),
+            "low_stock_count": low,
+            "out_of_stock_count": out,
+            "status": "critical" if out > 0 else ("attention" if low > 0 else "healthy"),
+            "alert_count": alert_count("inventory"),
+            "can_drill_in": can_drill_in("inventory"),
+            "drill_in_path": "/inventory",
+        }
+    except Exception as e:
+        logger.warning(f"workstation: inventory card failed: {e}")
+        departments["inventory"] = {"status": "unknown", "can_drill_in": can_drill_in("inventory"), "drill_in_path": "/inventory"}
+
+    # --- Finance ---
+    try:
+        finance = finance_kpis(client)
+        ar = finance.get("ar", {})
+        overdue_ar = ar.get("overdue_count", 0)
+        card = {
+            # Matches risk_signals()'s existing >10 "at risk" threshold, for
+            # consistency across every place this app frames AR as at-risk.
+            "status": "at_risk" if overdue_ar > 10 else "healthy",
+            "overdue_ar_count": overdue_ar,
+            "alert_count": alert_count("finance"),
+            "can_drill_in": can_drill_in("finance"),
+            "drill_in_path": "/finance/analytics",
+        }
+        if role_set & FINANCIAL_DATA_ROLES:
+            ap = finance.get("ap", {})
+            card["ar_total_balance"] = ar.get("total_balance", 0)
+            card["ap_total_balance"] = ap.get("total_balance", 0)
+            card["ap_overdue_count"] = ap.get("overdue_count", 0)
+        departments["finance"] = card
+    except Exception as e:
+        logger.warning(f"workstation: finance card failed: {e}")
+        departments["finance"] = {"status": "unknown", "can_drill_in": can_drill_in("finance"), "drill_in_path": "/finance/analytics"}
+
+    # --- HR --- (headcount/hours only, never pay -- no redaction needed)
+    try:
+        wf = get_workforce_dashboard(client=client)
+        departments["hr"] = {
+            "active_staff_count": wf.get("active_staff_count", 0),
+            "total_hours_this_week": wf.get("total_hours", 0),
+            "status": "healthy",
+            "alert_count": alert_count("hr"),
+            "can_drill_in": can_drill_in("hr"),
+            "drill_in_path": "/hr",
+        }
+    except Exception as e:
+        logger.warning(f"workstation: hr card failed: {e}")
+        departments["hr"] = {"status": "unknown", "can_drill_in": can_drill_in("hr"), "drill_in_path": "/hr"}
+
+    # --- Quality Control --- (already broadly visible, non-financial, correctly org-wide)
+    try:
+        qc = get_qc_summary(client=client)
+        expiring = qc.get("expiring_critical_30d", 0)
+        deviations = qc.get("open_deviations", 0)
+        temp = qc.get("temp_alerts_today", 0)
+        departments["quality_control"] = {
+            "expiring_critical_30d": expiring,
+            "open_deviations": deviations,
+            "temp_alerts_today": temp,
+            "status": "critical" if (expiring > 0 or deviations > 0 or temp > 0) else "healthy",
+            "alert_count": alert_count("quality_control"),
+            "can_drill_in": can_drill_in("quality_control"),
+            "drill_in_path": "/quality-control",
+        }
+    except Exception as e:
+        logger.warning(f"workstation: qc card failed: {e}")
+        departments["quality_control"] = {"status": "unknown", "can_drill_in": can_drill_in("quality_control"), "drill_in_path": "/quality-control"}
+
+    # --- CRM ---
+    try:
+        crm = get_crm_stats(client)
+        card = {
+            "open_prospects_count": crm.get("active_opps", 0),
+            "win_rate_pct": crm.get("win_rate", 0),
+            "status": "healthy",
+            "alert_count": alert_count("crm"),
+            "can_drill_in": can_drill_in("crm"),
+            "drill_in_path": "/crm",
+        }
+        if role_set & CRM_PIPELINE_VALUE_ROLES:
+            card["pipeline_value"] = crm.get("pipeline_value", 0)
+        departments["crm"] = card
+    except Exception as e:
+        logger.warning(f"workstation: crm card failed: {e}")
+        departments["crm"] = {"status": "unknown", "can_drill_in": can_drill_in("crm"), "drill_in_path": "/crm"}
+
+    # --- Operations (Purchase Orders) ---
+    try:
+        po = compute_po_summary(client=client)
+        overdue_po = po.get("overdue_pos", 0)
+        card = {
+            "open_po_count": po.get("open_pos", 0),
+            "overdue_po_count": overdue_po,
+            "status": "attention" if overdue_po > 0 else "healthy",
+            "alert_count": alert_count("operations"),
+            "can_drill_in": can_drill_in("operations"),
+            "drill_in_path": "/operations",
+        }
+        if role_set & PROCUREMENT_VALUE_ROLES:
+            card["total_value"] = po.get("total_value", 0)
+            card["open_value"] = po.get("open_value", 0)
+            card["overdue_value"] = po.get("overdue_value", 0)
+        departments["operations"] = card
+    except Exception as e:
+        logger.warning(f"workstation: operations card failed: {e}")
+        departments["operations"] = {"status": "unknown", "can_drill_in": can_drill_in("operations"), "drill_in_path": "/operations"}
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "departments": departments,
+    }
+
+
 # --- Executive Briefing Engine ---
 
 @ttl_cache(ttl_seconds=300, ignore_kwargs=("client",), tags=("executive", "executive_briefing"))
@@ -329,8 +521,12 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
             "ar_invoice_count": ar_invoice_count,
             "note": (
                 f"Database contains {customer_count} customers, {inventory_sku_count} inventory SKUs, "
-                f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects. "
-                "AR/AP invoices are not yet entered in Sage — revenue figures will show once invoices are posted."
+                f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects."
+                + (
+                    " AR/AP invoices are not yet entered in Sage — revenue figures will show once invoices are posted."
+                    if ar_invoice_count == 0 and finance['ap']['total_balance'] == 0
+                    else f" {ar_invoice_count:,} AR invoices on file."
+                )
             )
         }
     }
@@ -442,14 +638,21 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
     # Deduplicate focus list
     focus = list(dict.fromkeys(focus))
 
-    # Data freshness: timestamp of most recent AR snapshot row so EOS can detect stale pipelines
+    # Data freshness: timestamp of most recent AR snapshot row so EOS can detect stale
+    # pipelines. Deliberately unscoped by the promoted KPI batch — that pointer is a
+    # coarse, cross-table marker that isn't guaranteed to be re-promoted on every
+    # import, so filtering by it here previously pinned this timestamp to whichever
+    # batch was first ever promoted, making the freshness check itself always stale.
     data_freshness: str | None = None
     try:
-        batch_id = get_sage_kpi_batch_id()
-        q = db.table("sage_ar_snapshot").select("imported_at").order("imported_at", desc=True).limit(1)
-        if batch_id:
-            q = q.eq("batch_id", batch_id)
-        freshness_row = q.execute().data
+        freshness_row = (
+            db.table("sage_ar_snapshot")
+            .select("imported_at")
+            .order("imported_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
         if freshness_row:
             data_freshness = _dt_to_str(freshness_row[0].get("imported_at"))
     except Exception:
@@ -504,8 +707,16 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
             "prospect_count": prospect_count,
             "note": (
                 f"Database contains {customer_count} customers, {inventory_sku_count} inventory SKUs, "
-                f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects. "
-                "AR/AP invoices not yet entered in Sage — revenue figures will show once invoices are recorded."
+                f"{gl_transaction_count:,} GL journal entries, and {prospect_count} CRM prospects."
+                + (
+                    " AR/AP invoices not yet entered in Sage — revenue figures will show once invoices are recorded."
+                    if finance.get("ar", {}).get("total_amount", 0) == 0
+                    and finance.get("ap", {}).get("total_amount", 0) == 0
+                    else (
+                        f" {finance.get('ar', {}).get('overdue_count', 0):,} AR and "
+                        f"{finance.get('ap', {}).get('overdue_count', 0):,} AP invoices overdue."
+                    )
+                )
             ),
         },
     }

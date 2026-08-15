@@ -1,6 +1,7 @@
 import {
   InventoryDashboardData,
   WorkforceDashboardData,
+  WorkstationSummary,
   ExecutiveBriefing,
   Alert,
   StaffMember,
@@ -261,6 +262,7 @@ async function sendDelete<T>(endpoint: string): Promise<T> {
 
 export const api = {
   dashboard: {
+    workstation: () => fetchRaw<{ data: WorkstationSummary }>("/dashboard/workstation").then((r) => r.data),
     inventory: () => fetchJson<InventoryDashboardData>("/dashboard/inventory"),
     workforce: () => fetchJson<WorkforceDashboardData>("/dashboard/workforce"),
     crm: () => fetchJson<any>("/dashboard/crm"),
@@ -268,11 +270,20 @@ export const api = {
     briefing: () => fetchJson<ExecutiveBriefing>("/dashboard/executive-briefing"),
     finance: () => fetchJson<any>("/dashboard/finance"),
   },
+  presence: {
+    /** Called every 30s by PresenceHeartbeat.tsx for the whole authenticated session. */
+    heartbeat: () => sendJson<{ status: string }>("/presence/heartbeat", "POST", {}),
+    /** Global "who's online right now" roster -- not department-scoped. */
+    online: () =>
+      fetchRaw<{ users: { user_id: string; email: string; roles: string[]; last_seen: string }[]; count: number }>("/presence/online"),
+  },
   staff: {
     list: (dept?: string) => fetchJson<StaffMember[]>(`/staff${dept ? `?department=${dept}` : ""}`),
     snapshot: () => fetchJson<StaffMember[]>(`/staff/snapshot`),
     timesheets: (department?: string, limit: number = 50) =>
       fetchJson<any[]>(`/timesheets${department ? `?department=${encodeURIComponent(department)}&limit=${limit}` : `?limit=${limit}`}`),
+    timesheetsForStaff: (staffId: string, limit: number = 20) =>
+      fetchJson<any[]>(`/timesheets/staff/${encodeURIComponent(staffId)}?limit=${limit}`),
     submitTimesheet: (payload: {
       staff_id: string;
       date: string;
@@ -295,6 +306,11 @@ export const api = {
       fetchJson<{ data: any[] }>(`/imports/jobs?limit=${limit}&domain=sage`),
     supportedTypes: () =>
       Promise.resolve({ file_types: ["customers", "ar", "ap", "gl", "inventory", "staff"] }),
+    /** Last-imported timestamps for the daily invoice-refresh tables. */
+    freshness: () =>
+      fetchJson<{ last_imported: { sales_invoices: string | null; sales_invoice_lines: string | null } }>(
+        "/sage/import/freshness",
+      ),
   },
   audit: {
     logs: () => fetchJson<any[]>("/audit/logs"),
@@ -330,6 +346,10 @@ export const api = {
       roles: string[];
       approval_reason: string;
       attestation_text: string;
+      /** Optional -- when full_name + department are both given, also creates a linked placeware_staff record. */
+      full_name?: string;
+      department?: string;
+      job_title?: string;
     }) => sendJson<any>("/users", "POST", payload),
     resetPassword: (
       userId: string,
@@ -387,10 +407,6 @@ export const api = {
     // /reports/ar_aging route never existed on the backend.
     arAging: () =>
       fetchRaw<any>("/finance/ar/aging").then((r) => r?.summary ?? r),
-    arAgingCustomers: (bucket: string) =>
-      fetchRaw<any>(`/finance/ar/aging?bucket=${encodeURIComponent(bucket)}`).then(
-        (r) => ({ customers: r?.customers ?? [] }),
-      ),
 
     // --- Tier-1 Finance Module (from 078 requirements) ---
 
@@ -487,6 +503,61 @@ export const api = {
       sendDelete<any>(`/finance/vendor/payments/${id}`),
 
     // -----------------------------------------------------------------------
+    // Customer Receipts & Accounts (AR write-side counterpart to arAging/matchInvoices)
+    // -----------------------------------------------------------------------
+
+    /** List AR receipts. Optional filters + a server-computed summary block. */
+    listArReceipts: (params?: {
+      status?: string;
+      customer_id?: string;
+      payment_method?: string;
+      date_from?: string;
+      date_to?: string;
+      q?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const p = new URLSearchParams();
+      if (params?.status) p.set("status", params.status);
+      if (params?.customer_id) p.set("customer_id", params.customer_id);
+      if (params?.payment_method) p.set("payment_method", params.payment_method);
+      if (params?.date_from) p.set("date_from", params.date_from);
+      if (params?.date_to) p.set("date_to", params.date_to);
+      if (params?.q) p.set("q", params.q);
+      p.set("limit", String(params?.limit ?? 50));
+      p.set("offset", String(params?.offset ?? 0));
+      return fetchRaw<any>(`/finance/ar/receipts?${p}`);
+    },
+
+    /** Get one receipt with its invoice allocations. */
+    getArReceipt: (id: string) => fetchRaw<any>(`/finance/ar/receipts/${encodeURIComponent(id)}`),
+
+    /** Record and post a new receipt (immutable after posting). */
+    createArReceipt: (payload: {
+      customer_id: string;
+      customer_name?: string;
+      amount: number;
+      payment_method: string;
+      reference?: string;
+      collector?: string;
+      receipt_date?: string;
+      notes?: string;
+      applications?: { invoice_id: string; amount_applied: number }[];
+    }) => sendJson<any>("/finance/ar/receipts", "POST", payload),
+
+    /** Void a posted receipt (reason required — never edit/delete). */
+    voidArReceipt: (id: string, reason: string) =>
+      sendJson<any>(`/finance/ar/receipts/${encodeURIComponent(id)}/void`, "PATCH", { reason }),
+
+    /** Customer autocomplete for the Record Receipt flow. */
+    searchArReceiptCustomers: (q: string) =>
+      fetchRaw<any>(`/finance/ar/receipts/customers/search?q=${encodeURIComponent(q)}`),
+
+    /** A customer's open invoices with true outstanding balance (net of prior receipts). */
+    getCustomerOpenInvoices: (customerId: string) =>
+      fetchRaw<any>(`/finance/ar/receipts/customers/${encodeURIComponent(customerId)}/open-invoices`),
+
+    // -----------------------------------------------------------------------
     // Tier 3 — Credit Risk Scoring
     // -----------------------------------------------------------------------
 
@@ -581,6 +652,27 @@ export const api = {
     customer360: (id: number) => fetchRaw<any>(`/crm/customers/${id}/360`),
     updateCustomer: (id: number, patch: Record<string, any>) =>
       sendJson<any>(`/crm/customers/${id}`, "PATCH", patch),
+    /** Customer search for EntityAutocomplete — id is customers.id (numeric PK). */
+    searchCustomers: (q: string, limit?: number) => {
+      const qs = new URLSearchParams({ q });
+      if (limit) qs.set("limit", String(limit));
+      return fetchRaw<any>(`/crm/customers/search?${qs.toString()}`);
+    },
+    /** Customers ranked by reorder urgency, from real dated AR history. */
+    reorderQueue: (limit: number = 50) =>
+      fetchRaw<{ data: any[] }>(`/crm/reorder-queue?limit=${limit}`).then((r) => r.data ?? []),
+  },
+  dataIntel: {
+    tables: () => fetchRaw<any>("/data-intel/tables"),
+    relationships: () => fetchRaw<any>("/data-intel/relationships"),
+    orphans: (relationshipName: string, limit: number = 50) =>
+      fetchRaw<any>(`/data-intel/relationships/${encodeURIComponent(relationshipName)}/orphans?limit=${limit}`),
+    integrityScore: () => fetchRaw<any>("/data-intel/integrity-score"),
+    coverage: () => fetchRaw<any>("/data-intel/coverage"),
+    search: (q: string, limitPerEntity: number = 8) =>
+      fetchRaw<any>(`/explorer/search?q=${encodeURIComponent(q)}&limit_per_entity=${limitPerEntity}`),
+    record: (entityType: string, key: string) =>
+      fetchRaw<any>(`/explorer/record/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`),
   },
   threads: {
     list: () => fetchRaw<any[]>("/threads"),
@@ -681,7 +773,10 @@ export const api = {
     // Try to fetch a lead by id (backend route optional)
     get: (leadId: number) => fetchJson<any>(`/leads/${leadId}`),
     // Admin list (backend may expose `/admin/leads` in future)
-    list: (limit: number = 100) => fetchJson<any[]>(`/admin/leads?limit=${limit}`),
+    // Real response shape is {data, count}, not a bare array — mistyped as
+    // any[] previously, which let a genuine Array.isArray(data) bug in
+    // LeadsQueue.tsx go unnoticed (always false, queue silently empty).
+    list: (limit: number = 100) => fetchJson<{ data: any[]; count: number }>(`/admin/leads?limit=${limit}`),
   },
   orders: {
     // Submit order endpoint (uses `lead_id` when present)
@@ -720,6 +815,12 @@ export const api = {
       return fetchRaw<any[]>(`/procurement/purchase-orders${q.toString() ? `?${q}` : ""}`);
     },
     purchaseOrdersSummary: () => fetchRaw<any>("/procurement/purchase-orders/summary"),
+    updatePoStatus: (poId: string, payload: { status: "closed" | "cancelled"; reason?: string }) =>
+      sendJson<{ success: boolean; po_id: string; status: string }>(
+        `/procurement/purchase-orders/${encodeURIComponent(poId)}/status`,
+        "PATCH",
+        payload,
+      ),
   },
     ops: {
       kpis: () => fetchRaw<OpsKpis>("/ops/kpis"),
@@ -735,22 +836,36 @@ export const api = {
     },
     latestSnapshot: () => fetchRaw<any>("/inventory/items?limit=2000").then(d => d.data ?? []),
     // simple search endpoint used by staff UI autocomplete
-    search: (query: string) => fetchJson<any[]>(`/inventory?query=${encodeURIComponent(query)}`),
-    recordMovement: (payload: {
-      item_id: string;
-      change: number;
-      movement_type: string;
-      source?: string;
-      destination?: string;
-      created_by?: string;
-      metadata?: Record<string, any>;
-    }) => sendJson<{ status: string; movement: any }>("/inventory/movements", "POST", payload),
+    search: (query: string) =>
+      fetchRaw<{ data: any[] }>(`/inventory/search?q=${encodeURIComponent(query)}`).then((r) => r.data ?? []),
     addStock: (payload: {
       sku: string;
       quantity_change: number;
       event_type: string;
       reference?: string;
     }) => sendJson<{ success: boolean; event: any }>("/inventory/event", "POST", payload),
+    workspaceCards: (params?: { company_id?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.company_id) q.set("company_id", params.company_id);
+      if (params?.search) q.set("search", params.search);
+      return fetchRaw<{ data: any[]; total: number }>(`/inventory/workspace/cards${q.toString() ? `?${q}` : ""}`).then((r) => r.data ?? []);
+    },
+    familyDetail: (family: string, companyId?: string) => {
+      const q = new URLSearchParams({ family });
+      if (companyId) q.set("company_id", companyId);
+      return fetchRaw<{ data: any }>(`/inventory/workspace/families/detail?${q.toString()}`).then((r) => r.data);
+    },
+    topSellers: (limit: number = 10, companyId?: string) => {
+      const q = new URLSearchParams({ limit: String(limit) });
+      if (companyId) q.set("company_id", companyId);
+      return fetchRaw<{ data: any[] }>(`/inventory/workspace/top-sellers?${q.toString()}`).then((r) => r.data ?? []);
+    },
+    pendingReordersCount: () =>
+      fetchRaw<{ count: number }>("/inventory/workspace/pending-reorders-count").then((r) => r.count ?? 0),
+  },
+  replenishment: {
+    create: (payload: { sku: string; product_id?: string; requested_qty: number }) =>
+      sendJson<{ id: string; sku: string; requested_qty: number; status: string }>("/replenishment/create", "POST", payload),
   },
   projects: {
     readiness: () => fetchRaw<{ ready: boolean; reason?: string; checks?: Record<string, boolean> }>("/controls/readiness"),
@@ -871,11 +986,11 @@ export const api = {
     status: () => fetchRaw<any>("/compliance/status"),
     audits: (status?: string) => {
       const q = status ? `?status=${status}` : "";
-      return fetchRaw<{ data: any[] }>(`/compliance/audits${q}`);
+      return fetchRaw<{ audits: any[] }>(`/compliance/audits${q}`);
     },
     startAudit: (auditId: string) =>
       sendJson<any>(`/compliance/audits/${auditId}/start`, "POST", {}),
-    completeAudit: (auditId: string, payload: { findings?: string; recommendations?: string; score?: number }) =>
+    completeAudit: (auditId: string, payload: { findings?: string[]; recommendations?: string[] }) =>
       sendJson<any>(`/compliance/audits/${auditId}/complete`, "POST", payload),
     generateAuditReport: (auditId: string, payload: {
       auditor_name?: string;
@@ -887,7 +1002,7 @@ export const api = {
     }) => sendJson<any>(`/compliance/audits/${auditId}/generate-report`, "POST", payload),
     deviations: (status?: string) => {
       const q = status ? `?status=${status}` : "";
-      return fetchRaw<{ data: any[] }>(`/compliance/deviations${q}`);
+      return fetchRaw<{ deviations: any[] }>(`/compliance/deviations${q}`);
     },
     createDeviation: (payload: {
       title: string;
@@ -903,14 +1018,17 @@ export const api = {
     generateDeviationReport: (devId: string) =>
       sendJson<any>(`/compliance/deviations/${devId}/generate-report`, "POST", {}),
     equipment: () => fetchRaw<{ data: any[] }>("/compliance/equipment"),
-    maintenance: (filter?: "overdue" | "upcoming" | "all") => {
-      const q = filter && filter !== "all" ? `?filter=${filter}` : "";
-      return fetchRaw<{ data: any[] }>(`/compliance/maintenance${q}`);
+    // Real query param is `status` (list_maintenance's only filter) — the
+    // previous `?filter=overdue|upcoming` param doesn't exist on this
+    // endpoint at all, so selecting either pill silently did nothing.
+    maintenance: (status?: string) => {
+      const q = status ? `?status=${status}` : "";
+      return fetchRaw<{ maintenance: any[] }>(`/compliance/maintenance${q}`);
     },
     completeMaintenance: (maintenanceId: string, payload: {
-      completed_by: string;
-      notes?: string;
-      next_due_date?: string;
+      performed_by: string;
+      completion_notes?: string;
+      next_maintenance_date?: string;
     }) => sendJson<any>(`/compliance/maintenance/${maintenanceId}/complete`, "POST", payload),
     generateMaintenanceCertificate: (maintenanceId: string, payload: {
       performed_by: string;
@@ -920,7 +1038,7 @@ export const api = {
     }) => sendJson<any>(`/compliance/maintenance/${maintenanceId}/generate-certificate`, "POST", payload),
     recalls: (status?: string) => {
       const q = status ? `?status=${status}` : "";
-      return fetchRaw<{ data: any[] }>(`/compliance/recalls${q}`);
+      return fetchRaw<{ recalls: any[] }>(`/compliance/recalls${q}`);
     },
     initiateRecall: (payload: {
       product_name: string;
@@ -1112,9 +1230,15 @@ export const api = {
     getWalkIn: (id: string) => fetchRaw<any>(`/frontdesk/walk-ins/${id}`),
 
     createInvoice: (walkInId: string, payload: {
-      items: { product: string; quantity: number; unit_price: number }[];
+      items: { product: string; quantity: number; unit_price: number; batch_number?: string; manufacture_date?: string; expiry_date?: string }[];
       payment_method?: string;
       notes?: string;
+      billing_address?: string;
+      shipping_address?: string;
+      customer_po?: string;
+      payment_terms?: string;
+      shipping_method?: string;
+      tax_amount?: number;
     }) => sendJson<any>(`/frontdesk/walk-ins/${walkInId}/invoice`, "POST", payload),
 
     submitQc: (invoiceId: string, payload: {
@@ -1132,6 +1256,10 @@ export const api = {
 
     notifyExecutive: (invoiceId: string, message?: string) =>
       sendJson<any>(`/frontdesk/invoices/${invoiceId}/notify`, "POST", { message }),
+
+    /** Hand a finance-approved invoice off to Logistics (creates a `deliveries` row). */
+    sendForDelivery: (invoiceId: string) =>
+      sendJson<any>(`/frontdesk/invoices/${invoiceId}/send-for-delivery`, "POST", {}),
 
     // --- New endpoints ---
 
@@ -1163,6 +1291,10 @@ export const api = {
     getInvoice: (invoiceId: string) =>
       fetchRaw<any>(`/frontdesk/invoices/${invoiceId}`),
 
+    /** Full lifecycle trail (create -> QC -> finance -> dispatch -> completed), oldest first. */
+    invoiceHistory: (invoiceId: string) =>
+      fetchRaw<any>(`/frontdesk/invoices/${invoiceId}/history`),
+
     stockCheck: (products: string[]) => {
       const qs = new URLSearchParams({ products: products.join(",") });
       return fetchRaw<any>(`/frontdesk/stock-check?${qs.toString()}`);
@@ -1176,6 +1308,20 @@ export const api = {
 
     cancelWalkIn: (id: string, reason?: string) =>
       sendJson<any>(`/frontdesk/walk-ins/${id}/cancel`, "POST", reason ? { reason } : {}),
+
+    /** Centralized Customer Workspace — raise an invoice request for a known CRM customer in one call. */
+    quickRequest: (customerId: number, payload: {
+      items: { product: string; quantity: number; unit_price: number; batch_number?: string; manufacture_date?: string; expiry_date?: string }[];
+      payment_method?: string;
+      notes?: string;
+      purpose?: string;
+      billing_address?: string;
+      shipping_address?: string;
+      customer_po?: string;
+      payment_terms?: string;
+      shipping_method?: string;
+      tax_amount?: number;
+    }) => sendJson<any>(`/frontdesk/customers/${customerId}/quick-request`, "POST", payload),
   },
 
   // -------------------------------------------------------------------------
@@ -1332,15 +1478,42 @@ export const api = {
     createRider: (payload: { name: string; phone?: string; vehicle?: string }) =>
       sendJson<any>("/logistics/riders", "POST", payload),
 
+    /** All riders (any status) — unlike livePositions() (active + GPS-having only). */
+    listRiders: (active?: boolean) => {
+      const qs = new URLSearchParams();
+      if (active !== undefined) qs.set("active", String(active));
+      return fetchRaw<any>(`/logistics/riders${qs.toString() ? `?${qs.toString()}` : ""}`);
+    },
+
+    // Real Delivery schema (backend/src/schemas/logistics.py, extra="forbid"):
+    // {reference?, customer_id?, address?, quantity?, status?} — the previous
+    // {destination, recipient_name, recipient_phone, dest_lat, dest_lng} shape
+    // here didn't match any of those fields, so every create 422'd. destination/
+    // recipient fields now nest into `address` (matching the shape Frontdesk's
+    // send-for-delivery handoff already writes).
     createDelivery: (payload: {
-      destination: string;
-      recipient_name?: string;
-      recipient_phone?: string;
-      dest_lat?: number;
-      dest_lng?: number;
+      reference?: string;
+      customer_id?: string;
+      address?: { destination?: string; recipient_name?: string; recipient_phone?: string; [key: string]: any };
+      quantity?: number;
+      status?: string;
     }) => sendJson<any>("/logistics/deliveries", "POST", payload),
 
+    /** All deliveries (any status), enriched with rider info — unlike
+     * activeDeliveries() (assigned/in_transit only). */
+    listDeliveries: (params?: { status?: string; limit?: number; offset?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.status) qs.set("status", params.status);
+      if (params?.limit) qs.set("limit", String(params.limit));
+      if (params?.offset) qs.set("offset", String(params.offset));
+      return fetchRaw<any>(`/logistics/deliveries${qs.toString() ? `?${qs.toString()}` : ""}`);
+    },
+
     assignRoutes: () => sendJson<any>("/logistics/assign", "POST", {}),
+
+    /** Manually assign one specific rider to one specific delivery. */
+    assignDelivery: (deliveryId: string, riderId: string) =>
+      sendJson<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/assign`, "POST", { rider_id: riderId }),
 
     getRiderRoute: (riderId: string) =>
       fetchRaw<any>(`/logistics/riders/${encodeURIComponent(riderId)}/route`),

@@ -5,7 +5,9 @@ from src.services.intelligence import (
     get_inventory_dashboard,
     get_workforce_dashboard,
     get_active_alerts,
-    generate_executive_briefing
+    filter_alerts_by_category,
+    generate_executive_briefing,
+    get_workstation_summary,
 )
 from src.services.crm import get_crm_stats
 from src.services.sage_adapter.service import kpis as finance_kpis
@@ -26,11 +28,28 @@ def require_management(request: Request) -> Dict[str, Any]:
         raise HTTPException(403, "Insufficient privileges for dashboard access")
     return payload
 
-def require_executive(request: Request) -> Dict[str, Any]:
-    """Strategic View: Admin, Management only."""
+def require_workforce_view(request: Request) -> Dict[str, Any]:
+    """Separate, slightly wider gate than require_management just for
+    /dashboard/workforce -- an hr-role account needs to see workforce/
+    timesheet aggregates, but must NOT gain access to require_management's
+    other endpoints (finance/inventory/CRM/alerts) as a side effect, so this
+    is its own dependency rather than adding "hr" to require_management
+    itself. Was previously gated by require_management, which doesn't
+    include "hr" at all -- every hr-role login 403'd on the HR Overview
+    tab's own workforce KPI card."""
     payload = verify_jwt(request)
     roles = payload.get("roles", [])
-    allowed = {"admin", "management"}
+    allowed = {"admin", "management", "finance", "ops", "hr"}
+    if not any(r in allowed for r in roles):
+        raise HTTPException(403, "Insufficient privileges for dashboard access")
+    return payload
+
+
+def require_executive(request: Request) -> Dict[str, Any]:
+    """Strategic View: Admin, Management, Finance."""
+    payload = verify_jwt(request)
+    roles = payload.get("roles", [])
+    allowed = {"admin", "management", "finance"}
     if not any(r in allowed for r in roles):
         raise HTTPException(403, "Executive Briefing is restricted")
     return payload
@@ -56,7 +75,7 @@ async def dashboard_inventory(response: Response, user: Dict[str, Any] = Depends
     return {"data": get_inventory_dashboard()}
 
 @router.get("/workforce")
-async def dashboard_workforce(response: Response, user: Dict[str, Any] = Depends(require_management)):
+async def dashboard_workforce(response: Response, user: Dict[str, Any] = Depends(require_workforce_view)):
     """Workforce specific dashboard data."""
     response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_workforce_dashboard()}
@@ -69,9 +88,29 @@ async def dashboard_crm(response: Response, user: Dict[str, Any] = Depends(requi
 
 @router.get("/alerts")
 async def list_alerts(response: Response, user: Dict[str, Any] = Depends(require_management)):
-    """Active system alerts."""
+    """Active system alerts, filtered to only the categories the caller's
+    roles may see (constants.ALERT_CATEGORY_VISIBILITY) -- require_management
+    alone lets 'ops' through, but ops must never see finance-category alert
+    text (e.g. "Treasury Alert" embeds a real ₦ figure)."""
     response.headers["Cache-Control"] = "no-store, no-cache"
-    return {"data": get_active_alerts()}
+    visible = filter_alerts_by_category(get_active_alerts(), user.get("roles", []))
+    return {"data": visible}
+
+@router.get("/workstation")
+async def dashboard_workstation(response: Response, user: Dict[str, Any] = Depends(verify_jwt)):
+    """
+    ACE Workstation — org-wide cover-page summary. Any authenticated user
+    gets a response (unlike every other /dashboard/* endpoint, which is
+    role-restricted at the route boundary); the redaction of sensitive
+    (₦-denominated) fields happens inside get_workstation_summary() based on
+    the caller's own roles, not at this route's gate.
+    """
+    response.headers["Cache-Control"] = "no-store, no-cache"
+    try:
+        return {"data": get_workstation_summary(user.get("roles", []))}
+    except Exception as e:
+        logging.error(f"Workstation summary error: {e}")
+        raise HTTPException(500, "Failed to load workstation summary")
 
 @router.get("/executive-briefing")
 async def executive_briefing(response: Response, user: Dict[str, Any] = Depends(require_executive)):

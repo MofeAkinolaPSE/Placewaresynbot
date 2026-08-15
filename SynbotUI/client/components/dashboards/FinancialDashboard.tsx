@@ -87,6 +87,14 @@ export function FinancialDashboard() {
   const arHealthy = ar.overdue_count === 0;
   const apHealthy = ap.overdue_count === 0;
 
+  // A 403 (no finance/admin/management role) previously rendered identically
+  // to "still loading" on these 4 cards -- "Loading..."/"Waiting for KPI
+  // data" either way -- so a permission-denied session looked like a stuck
+  // spinner rather than an access wall. The top-level banner above already
+  // distinguishes this correctly via describeDashboardError; these cards
+  // didn't.
+  const isForbidden = error instanceof ApiError && error.kind === "permission";
+
   return (
     <div className="flex flex-col gap-5">
       {error && (
@@ -104,10 +112,10 @@ export function FinancialDashboard() {
           </CardHeader>
           <CardContent className="pb-4">
             <div className="text-3xl font-bold tabular-nums">
-              {financeValid ? `₦${ar.total_amount.toLocaleString()}` : (kpiLoading ? "Loading..." : "—")}
+              {financeValid ? `₦${ar.total_amount.toLocaleString()}` : (kpiLoading ? "Loading..." : isForbidden ? "Restricted" : "—")}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {financeValid ? `Outstanding: ₦${ar.total_balance.toLocaleString()}` : "Waiting for KPI data"}
+              {financeValid ? `Outstanding: ₦${ar.total_balance.toLocaleString()}` : isForbidden ? "You don't have access to this data." : "Waiting for KPI data"}
             </p>
           </CardContent>
         </Card>
@@ -118,7 +126,7 @@ export function FinancialDashboard() {
           </CardHeader>
           <CardContent className="pb-4">
             <div className={cn("text-3xl font-bold tabular-nums", !arHealthy && "text-destructive")}>
-              {financeValid ? ar.overdue_count : (kpiLoading ? "..." : "—")}
+              {financeValid ? ar.overdue_count : (kpiLoading ? "..." : isForbidden ? "Restricted" : "—")}
             </div>
             <div className={cn("mt-1 flex items-center gap-1 text-xs font-medium", arHealthy ? "text-success" : "text-destructive")}>
               {arHealthy ? "All invoices current" : "Needs immediate attention"}
@@ -132,10 +140,10 @@ export function FinancialDashboard() {
           </CardHeader>
           <CardContent className="pb-4">
             <div className="text-3xl font-bold tabular-nums">
-              {financeValid ? `₦${ap.total_amount.toLocaleString()}` : (kpiLoading ? "Loading..." : "—")}
+              {financeValid ? `₦${ap.total_amount.toLocaleString()}` : (kpiLoading ? "Loading..." : isForbidden ? "Restricted" : "—")}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {financeValid ? `Outstanding: ₦${ap.total_balance.toLocaleString()}` : "Waiting for KPI data"}
+              {financeValid ? `Outstanding: ₦${ap.total_balance.toLocaleString()}` : isForbidden ? "You don't have access to this data." : "Waiting for KPI data"}
             </p>
           </CardContent>
         </Card>
@@ -146,7 +154,7 @@ export function FinancialDashboard() {
           </CardHeader>
           <CardContent className="pb-4">
             <div className={cn("text-3xl font-bold tabular-nums", !apHealthy && "text-destructive")}>
-              {financeValid ? ap.overdue_count : (kpiLoading ? "..." : "—")}
+              {financeValid ? ap.overdue_count : (kpiLoading ? "..." : isForbidden ? "Restricted" : "—")}
             </div>
             <div className={cn("mt-1 flex items-center gap-1 text-xs font-medium", apHealthy ? "text-success" : "text-destructive")}>
               {apHealthy ? "All bills current" : "Needs attention"}
@@ -170,8 +178,8 @@ export function FinancialDashboard() {
                   <AreaChart data={cashflowData} margin={{ top: 8, right: 16, left: 8, bottom: 10 }}>
                     <defs>
                       <linearGradient id="inflowGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#14AAF5" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#14AAF5" stopOpacity={0.02} />
+                        <stop offset="5%" stopColor="#1568C4" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#1568C4" stopOpacity={0.02} />
                       </linearGradient>
                       <linearGradient id="outflowGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
@@ -182,7 +190,7 @@ export function FinancialDashboard() {
                     <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} stroke="hsl(var(--muted-foreground))" />
                     <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${v}M`} width={56} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip formatter={(v: number, name: string) => [`₦${v.toFixed(2)}M`, name]} contentStyle={{ fontSize: "13px", borderRadius: "8px" }} />
-                    <Area type="monotone" dataKey="inflow" name="Inflow" stroke="#14AAF5" strokeWidth={2} fill="url(#inflowGrad)" />
+                    <Area type="monotone" dataKey="inflow" name="Inflow" stroke="#1568C4" strokeWidth={2} fill="url(#inflowGrad)" />
                     <Area type="monotone" dataKey="outflow" name="Outflow" stroke="#ef4444" strokeWidth={2} fill="url(#outflowGrad)" />
                   </AreaChart>
                 </ResponsiveContainer>

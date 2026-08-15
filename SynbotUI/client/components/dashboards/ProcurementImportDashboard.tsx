@@ -6,7 +6,17 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { Package, AlertTriangle, Clock, TrendingDown } from "lucide-react";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { api } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-base";
 import { authClient } from "@/lib/auth-client";
@@ -48,6 +58,7 @@ export function ProcurementImportDashboard() {
   const queryClient = useQueryClient();
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string>("none");
   const [busyShipmentId, setBusyShipmentId] = useState<string | null>(null);
+  const [escalateTarget, setEscalateTarget] = useState<ProcurementShipment | null>(null);
 
   const shipmentsQuery = useQuery({
     queryKey: ["procurement-shipments"],
@@ -151,49 +162,21 @@ export function ProcurementImportDashboard() {
       toast.error((error as Error).message || "Failed to escalate shipment.");
     } finally {
       setBusyShipmentId(null);
+      setEscalateTarget(null);
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Tracked Shipments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{shipments.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Under Clearance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{inClearanceCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Delayed Shipments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{delayedCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Estimated Delay Impact</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{estimatedImpact.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Realtime event: {lastRealtimeEvent}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <KpiStrip
+        items={[
+          { label: "Tracked Shipments", value: shipments.length, icon: Package },
+          { label: "Under Clearance", value: inClearanceCount, icon: Clock, tone: inClearanceCount > 0 ? "warning" : "default" },
+          { label: "Delayed Shipments", value: delayedCount, icon: AlertTriangle, tone: delayedCount > 0 ? "danger" : "default" },
+          { label: "Est. Delay Impact", value: estimatedImpact.toLocaleString(), icon: TrendingDown },
+        ]}
+      />
+      <p className="text-xs text-muted-foreground -mt-2">Realtime event: {lastRealtimeEvent}</p>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -294,7 +277,7 @@ export function ProcurementImportDashboard() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => escalateShipment(shipment)}
+                      onClick={() => setEscalateTarget(shipment)}
                       disabled={busyShipmentId === shipment.id}
                     >
                       Escalate
@@ -315,6 +298,28 @@ export function ProcurementImportDashboard() {
           ))}
         </CardContent>
       </Card>
+
+      <Dialog open={!!escalateTarget} onOpenChange={(open) => { if (!open) setEscalateTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Escalate Shipment?</DialogTitle>
+            <DialogDescription>
+              This notifies regulatory and the executive dashboard for{" "}
+              <span className="font-medium">{escalateTarget?.shipment_ref}</span>. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEscalateTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => escalateTarget && escalateShipment(escalateTarget)}
+              disabled={!!busyShipmentId}
+            >
+              Escalate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

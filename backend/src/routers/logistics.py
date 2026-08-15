@@ -9,13 +9,62 @@ import os
 import asyncio
 import json
 import math
+import secrets
 from src.services.routing_adapter import compute_route
 
 router = APIRouter()
 
+# Excludes 0/O/1/I -- a rider is expected to actually type this on a phone,
+# so avoiding look-alike characters matters more than raw entropy here.
+_RIDER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _generate_rider_code() -> str:
+    return "".join(secrets.choice(_RIDER_CODE_ALPHABET) for _ in range(6))
+
 # ---------------------------------------------------------------------------
 # Geo helpers
 # ---------------------------------------------------------------------------
+
+def _complete_linked_invoice(delivery: dict, actor_id: str | None = None) -> None:
+    """When a delivery reaches 'delivered' (geofence auto-detect or manual
+    confirm), reflect that back on the originating frontdesk invoice --
+    previously nothing wrote this back, so the invoice stayed at
+    "dispatched" forever even after the rider actually confirmed delivery.
+    "completed" is already a valid frontdesk_invoices.status value (migration
+    099's CHECK constraint) -- no schema change needed.
+
+    actor_id is None for the geofence auto-detect and rider-token-confirmed
+    paths (there's no staff actor -- that's correct, not a gap) and the real
+    staff user id when a logged-in ops/admin confirmed it manually."""
+    if delivery.get('source') != 'frontdesk_walk_in':
+        return
+    invoice_id = delivery.get('source_ref_id')
+    if not invoice_id:
+        return
+    try:
+        db.table('frontdesk_invoices').update({'status': 'completed'}).eq('id', invoice_id).execute()
+    except Exception:
+        return
+    # Every earlier lifecycle step (create/QC/finance/dispatch) already logs
+    # to placeware_audit_logs via audit_event(subject_type="invoice") in
+    # frontdesk.py -- this final step is the one exception, since it's
+    # reached from this router instead. Without it, GET /frontdesk/invoices/
+    # {id}/history's timeline stopped at "dispatched" even after a real
+    # delivery confirmation completed the invoice.
+    try:
+        audit_event(
+            'frontdesk_invoice_completed',
+            {'invoice_id': invoice_id, 'delivery_id': delivery.get('id')},
+            actor_id=actor_id,
+            event_class='frontdesk',
+            action='delivery_confirmed',
+            subject_type='invoice',
+            subject_id=invoice_id,
+        )
+    except Exception:
+        pass
+
 
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Return distance in metres between two WGS-84 coordinates."""
@@ -34,6 +83,7 @@ async def create_rider(request: Request, payload: Rider):
     r['id'] = str(uuid.uuid4())
     r['active'] = True
     r['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
+    r['access_code'] = _generate_rider_code()
     try:
         resp = db.table('riders').insert(r).execute()
         created = resp.data[0] if resp.data else r
@@ -45,6 +95,25 @@ async def create_rider(request: Request, payload: Rider):
     except Exception:
         pass
     return {'status': 'created', 'rider': created}
+
+
+@router.get('/logistics/riders')
+async def list_riders(request: Request, active: bool | None = None):
+    """All riders (any status), optionally filtered — unlike /logistics/live-positions
+    (active + GPS-having only), this is the real "list every rider" endpoint the
+    Riders tab needs. Added alongside /logistics/deliveries below: LogisticsMonitor.tsx
+    previously had no way to list existing rows at all, only ever showing what was
+    created in the current browser session."""
+    verify_jwt(request)
+    try:
+        q = db.table('riders').select('id,name,phone,vehicle,active,last_lat,last_lng,last_seen_at,created_at,access_code')
+        if active is not None:
+            q = q.eq('active', active)
+        resp = q.order('created_at', desc=True).execute()
+        riders = resp.data or []
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to fetch riders')
+    return {'riders': riders, 'count': len(riders)}
 
 
 @router.post('/logistics/deliveries', status_code=201)
@@ -65,6 +134,99 @@ async def create_delivery(request: Request, payload: Delivery):
     except Exception:
         pass
     return {'status': 'created', 'delivery': created}
+
+
+@router.get('/logistics/deliveries')
+async def list_deliveries(request: Request, status: str | None = None, limit: int = 100, offset: int = 0):
+    """All deliveries (any status), optionally filtered, enriched with rider info —
+    unlike /logistics/active-deliveries (assigned/in_transit only), this is the real
+    "list every delivery" endpoint the Deliveries tab needs, including everything
+    Frontdesk's send-for-delivery handoff writes directly into this table."""
+    verify_jwt(request)
+    try:
+        q = db.table('deliveries').select(
+            'id,reference,status,address,quantity,customer_id,dest_lat,dest_lng,eta_text,'
+            'last_ping_at,picked_up_at,delivered_at,assigned_rider,source,source_ref_id,'
+            'tracking_token,created_at'
+        )
+        if status:
+            q = q.eq('status', status)
+        resp = q.order('created_at', desc=True).range(offset, offset + limit - 1).execute()
+        deliveries = resp.data or []
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to fetch deliveries')
+
+    rider_ids = list({d['assigned_rider'] for d in deliveries if d.get('assigned_rider')})
+    rider_map: dict = {}
+    if rider_ids:
+        try:
+            rresp = db.table('riders').select('id,name,phone,vehicle').in_('id', rider_ids).execute()
+            for r in (rresp.data or []):
+                rider_map[r['id']] = r
+        except Exception:
+            pass
+    for d in deliveries:
+        d['rider'] = rider_map.get(d.get('assigned_rider'))
+
+    return {'deliveries': deliveries, 'count': len(deliveries)}
+
+
+@router.post('/logistics/deliveries/{delivery_id}/assign')
+async def assign_delivery(request: Request, delivery_id: str, payload: dict):
+    """Manually assign one specific rider to one specific delivery -- the
+    single-record counterpart to /logistics/assign's round-robin bulk
+    assigner below. Staff need this to demo/operate the pipeline (create
+    invoice -> QC -> finance -> dispatch -> assign a named rider) without
+    relying on auto-assign picking an arbitrary rider."""
+    verify_jwt(request, required_role='ops')
+    rider_id = payload.get('rider_id')
+    if not rider_id:
+        raise HTTPException(status_code=400, detail='rider_id is required')
+    try:
+        rresp = db.table('riders').select('id,active').eq('id', rider_id).execute()
+        rider = rresp.data[0] if rresp.data else None
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to look up rider')
+    if not rider:
+        raise HTTPException(status_code=404, detail='Rider not found')
+    if not rider.get('active'):
+        raise HTTPException(status_code=400, detail='Rider is inactive')
+    try:
+        dresp = db.table('deliveries').select('id,status').eq('id', delivery_id).execute()
+        delivery = dresp.data[0] if dresp.data else None
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to look up delivery')
+    if not delivery:
+        raise HTTPException(status_code=404, detail='Delivery not found')
+    if delivery.get('status') in ('delivered', 'failed'):
+        raise HTTPException(status_code=409, detail=f"Cannot reassign a {delivery.get('status')} delivery")
+    try:
+        resp = db.table('deliveries').update({'assigned_rider': rider_id, 'status': 'assigned'}).eq('id', delivery_id).execute()
+        updated = resp.data[0] if resp.data else None
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to assign delivery')
+    if not updated:
+        raise HTTPException(status_code=404, detail='Delivery not found')
+    try:
+        rresp2 = db.table('routes').select('*').eq('rider_id', rider_id).execute()
+        routes = rresp2.data or []
+        if routes:
+            route = routes[0]
+            deliveries_list = route.get('deliveries', [])
+            if delivery_id not in deliveries_list:
+                deliveries_list.append(delivery_id)
+                db.table('routes').update({'deliveries': deliveries_list}).eq('id', route.get('id')).execute()
+        else:
+            route = {'id': str(uuid.uuid4()), 'rider_id': rider_id, 'deliveries': [delivery_id], 'route_meta': {}, 'created_at': dt.datetime.utcnow().isoformat() + 'Z'}
+            db.table('routes').insert(route).execute()
+    except Exception:
+        pass
+    try:
+        actor = getattr(request.state, 'user', None)
+        audit_event('assign_delivery', {'delivery_id': delivery_id, 'rider_id': rider_id}, actor_id=(actor.get('sub') if actor else None), event_class='logistics', action='assign', subject_type='delivery', subject_id=delivery_id)
+    except Exception:
+        pass
+    return {'status': 'assigned', 'delivery': updated}
 
 
 @router.post('/logistics/assign')
@@ -139,10 +301,31 @@ async def get_rider_route(request: Request, rider_id: str):
 
 @router.post('/logistics/deliveries/{delivery_id}/status')
 async def update_delivery_status(request: Request, delivery_id: str, payload: dict):
-    verify_jwt(request, required_role='ops')
+    # Staff JWT (ops/admin) OR the delivery's own tracking_token authenticates
+    # this call. RiderTrack.tsx's manual "Confirm Delivery" button is on a
+    # public, unauthenticated page (the token IS the rider's credential,
+    # same pattern as /logistics/location-ping) -- without this alternate
+    # path it always required a staff JWT it doesn't have, so the button
+    # silently 401'd and never worked.
+    token = payload.get('token')
+    actor_id = None
+    if token:
+        try:
+            tok_resp = db.table('deliveries').select('id,tracking_token').eq('id', delivery_id).execute()
+            tok_row = tok_resp.data[0] if tok_resp.data else None
+        except Exception:
+            tok_row = None
+        if not tok_row or tok_row.get('tracking_token') != token:
+            raise HTTPException(status_code=403, detail='Invalid tracking token for this delivery')
+    else:
+        jwt_payload = verify_jwt(request, required_role='ops')
+        actor_id = jwt_payload.get('sub')
+
     try:
-        update = {'status': payload.get('status')}
-        update['last_update'] = dt.datetime.utcnow().isoformat() + 'Z'
+        new_status = payload.get('status')
+        update: dict = {'status': new_status}
+        if new_status == 'delivered':
+            update['delivered_at'] = dt.datetime.utcnow().isoformat() + 'Z'
         resp = db.table('deliveries').update(update).eq('id', delivery_id).execute()
         updated = resp.data[0] if resp.data else None
     except Exception:
@@ -156,10 +339,11 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
     except Exception:
         pass
     try:
-        actor = getattr(request.state, 'user', None)
-        audit_event('update_delivery_status', {'delivery_id': delivery_id, 'status': updated.get('status')}, actor_id=(actor.get('sub') if actor else None), event_class='logistics', action='update_status', subject_type='delivery', subject_id=delivery_id)
+        audit_event('update_delivery_status', {'delivery_id': delivery_id, 'status': updated.get('status')}, actor_id=actor_id, event_class='logistics', action='update_status', subject_type='delivery', subject_id=delivery_id)
     except Exception:
         pass
+    if updated.get('status') == 'delivered':
+        _complete_linked_invoice(updated, actor_id=actor_id)
     return {'status': 'updated', 'delivery_id': delivery_id}
 
 
@@ -194,12 +378,10 @@ async def start_delivery(request: Request, delivery_id: str):
     """Mark delivery in_transit, mint a tracking token, return the PWA URL."""
     verify_jwt(request, required_role='ops')
     token = str(uuid.uuid4())
-    now = dt.datetime.utcnow().isoformat() + 'Z'
     try:
         resp = db.table('deliveries').update({
             'status': 'in_transit',
             'tracking_token': token,
-            'last_update': now,
         }).eq('id', delivery_id).execute()
         updated = resp.data[0] if resp.data else None
     except Exception:
@@ -241,6 +423,66 @@ async def get_delivery_by_token(token: str):
 
 
 # ---------------------------------------------------------------------------
+# ACE Riders sign-in: persistent access_code -> currently assigned delivery
+# (no JWT -- the code IS the rider's credential, same trust model as the
+# per-delivery tracking_token above, just durable across multiple trips
+# instead of being reissued by staff every time).
+# ---------------------------------------------------------------------------
+@router.get('/logistics/riders/by-code/{code}')
+async def resolve_rider_by_code(code: str):
+    """Public, code-authenticated lookup. Resolves a rider's persistent
+    access_code to whichever delivery is currently assigned to them,
+    auto-starting it (minting a tracking_token, same effect as staff's
+    "Start" button) the first time the rider opens their tracker for it --
+    this is what lets a rider sign in once instead of waiting on staff to
+    hand them a fresh link per delivery."""
+    code = (code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail='code is required')
+    try:
+        resp = db.table('riders').select('id,name,phone,vehicle,active').eq('access_code', code).execute()
+        rows = resp.data or []
+    except Exception:
+        raise HTTPException(status_code=500, detail='Lookup failed')
+    if not rows:
+        raise HTTPException(status_code=404, detail='Invalid rider code')
+    rider = rows[0]
+    if not rider.get('active'):
+        raise HTTPException(status_code=403, detail='Rider account is inactive')
+
+    try:
+        d_resp = (
+            db.table('deliveries')
+            .select('*')
+            .eq('assigned_rider', rider['id'])
+            .in_('status', ['assigned', 'in_transit'])
+            .order('created_at', desc=True)
+            .limit(1)
+            .execute()
+        )
+        deliveries = d_resp.data or []
+    except Exception:
+        raise HTTPException(status_code=500, detail='Failed to look up assigned delivery')
+
+    if not deliveries:
+        return {'rider': rider, 'delivery': None}
+
+    delivery = deliveries[0]
+    if delivery.get('status') == 'assigned':
+        token = str(uuid.uuid4())
+        try:
+            upd = db.table('deliveries').update({
+                'status': 'in_transit',
+                'tracking_token': token,
+            }).eq('id', delivery['id']).execute()
+            delivery = upd.data[0] if upd.data else delivery
+        except Exception:
+            raise HTTPException(status_code=500, detail='Failed to start delivery')
+
+    return {'rider': rider, 'delivery': delivery}
+
+
+# ---------------------------------------------------------------------------
 # GPS ping — called by the rider PWA every 5 seconds
 # ---------------------------------------------------------------------------
 @router.post('/logistics/location-ping')
@@ -267,7 +509,7 @@ async def location_ping(request: Request):
 
     # Validate token
     try:
-        resp = db.table('deliveries').select('id,assigned_rider,status,dest_lat,dest_lng').eq('tracking_token', token).execute()
+        resp = db.table('deliveries').select('id,assigned_rider,status,dest_lat,dest_lng,source,source_ref_id').eq('tracking_token', token).execute()
         rows = resp.data or []
     except Exception:
         raise HTTPException(status_code=500, detail='Token validation failed')
@@ -324,9 +566,9 @@ async def location_ping(request: Request):
                 db.table('deliveries').update({
                     'status':       'delivered',
                     'delivered_at': now_iso,
-                    'last_update':  now_iso,
                 }).eq('id', delivery_id).execute()
                 auto_delivered = True
+                _complete_linked_invoice(delivery)
         except Exception:
             pass
 

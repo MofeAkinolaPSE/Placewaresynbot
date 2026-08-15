@@ -1,185 +1,248 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  TrendingUp,
-  TrendingDown,
-  AlertCircle,
-  Users,
   Package,
-  Activity,
-  CreditCard,
+  DollarSign,
+  Users,
+  ShieldCheck,
+  ShoppingCart,
+  Factory,
+  AlertCircle,
+  RotateCcw,
+  ReceiptText,
+  ClipboardList,
+  BarChart3,
+  MessageSquare,
+  CalendarDays,
+  Loader2,
   Truck,
+  MapPin,
   CheckCircle2,
-  AlertTriangle,
-  X,
-  Thermometer,
-  Target,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  LineChart, Line, AreaChart, Area,
-} from "recharts";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useQuery } from "@tanstack/react-query";
-import { useQueryClient } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { useAuth } from "@/components/AuthProvider";
+import { useToast } from "@/hooks/use-toast";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
-import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import type { DepartmentCard, WorkstationSummary } from "@shared/dashboard-types";
+
+// ── Department card definitions ─────────────────────────────────────────────
+// Each department's shallow metrics + a can_drill_in-aware "View Full X" link.
+// Sensitive fields (ar_total_balance, pipeline_value, total_value, etc.) are
+// simply absent from the payload for a role without access -- see
+// backend/src/services/intelligence.py's get_workstation_summary() -- so
+// this component never has to decide what to hide, only what to render if present.
+const DEPARTMENTS: {
+  key: keyof WorkstationSummary["departments"];
+  label: string;
+  icon: typeof Package;
+  metrics: (d: DepartmentCard) => { label: string; value: string | number }[];
+}[] = [
+  {
+    key: "inventory",
+    label: "Inventory",
+    icon: Package,
+    metrics: (d) => [
+      { label: "Active SKUs", value: d.total_active_skus ?? "—" },
+      { label: "Low Stock", value: d.low_stock_count ?? "—" },
+      { label: "Out of Stock", value: d.out_of_stock_count ?? "—" },
+    ],
+  },
+  {
+    key: "finance",
+    label: "Finance",
+    icon: DollarSign,
+    metrics: (d) => {
+      const rows = [{ label: "Overdue AR Invoices", value: d.overdue_ar_count ?? "—" }];
+      if (d.ar_total_balance != null) rows.push({ label: "AR Balance", value: `₦${Number(d.ar_total_balance).toLocaleString()}` });
+      if (d.ap_total_balance != null) rows.push({ label: "AP Balance", value: `₦${Number(d.ap_total_balance).toLocaleString()}` });
+      return rows;
+    },
+  },
+  {
+    key: "hr",
+    label: "HR / Workforce",
+    icon: Users,
+    metrics: (d) => [
+      { label: "Staff Active This Week", value: d.active_staff_count ?? "—" },
+      { label: "Hours Logged", value: d.total_hours_this_week ?? "—" },
+    ],
+  },
+  {
+    key: "quality_control",
+    label: "Quality Control",
+    icon: ShieldCheck,
+    metrics: (d) => [
+      { label: "Expiring (30d)", value: d.expiring_critical_30d ?? "—" },
+      { label: "Open Deviations", value: d.open_deviations ?? "—" },
+      { label: "Temp Alerts Today", value: d.temp_alerts_today ?? "—" },
+    ],
+  },
+  {
+    key: "crm",
+    label: "CRM / Sales",
+    icon: ShoppingCart,
+    metrics: (d) => {
+      const rows = [
+        { label: "Open Prospects", value: d.open_prospects_count ?? "—" },
+        { label: "Win Rate", value: d.win_rate_pct != null ? `${d.win_rate_pct}%` : "—" },
+      ];
+      if (d.pipeline_value != null) rows.push({ label: "Pipeline Value", value: `₦${Number(d.pipeline_value).toLocaleString()}` });
+      return rows;
+    },
+  },
+  {
+    key: "operations",
+    label: "Operations",
+    icon: Factory,
+    metrics: (d) => {
+      const rows = [
+        { label: "Open POs", value: d.open_po_count ?? "—" },
+        { label: "Overdue POs", value: d.overdue_po_count ?? "—" },
+      ];
+      if (d.total_value != null) rows.push({ label: "Total PO Value", value: `₦${Number(d.total_value).toLocaleString()}` });
+      return rows;
+    },
+  },
+];
+
+const STATUS_BORDER: Record<string, string> = {
+  healthy: "border-l-4 border-l-success",
+  attention: "border-l-4 border-l-warning",
+  critical: "border-l-4 border-l-destructive",
+  at_risk: "border-l-4 border-l-warning",
+  unknown: "border-l-4 border-l-muted",
+};
+
+// ── Quick Actions ────────────────────────────────────────────────────────────
+// Day-to-day cross-department shortcuts, role-filtered, capped at 5 -- a
+// "quick access" row that tries to cover everything stops being quick.
+// Each reuses an already-built flow (no duplicated forms) except "Reorder
+// Stock", simple enough (SKU + qty, one endpoint) to embed directly here.
+type QuickAction =
+  | { id: string; label: string; icon: typeof Package; roles: string[]; kind: "embedded" }
+  | { id: string; label: string; icon: typeof Package; roles: string[]; kind: "navigate"; target: string };
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { id: "reorder", label: "Reorder Stock", icon: RotateCcw, roles: ["admin", "ops", "operations", "finance", "procurement"], kind: "embedded" },
+  { id: "invoice", label: "Create Invoice", icon: ReceiptText, roles: ["admin", "crm", "sales"], kind: "navigate", target: "/customers/workspace?action=new-request" },
+  { id: "receipt", label: "Approve Receipt", icon: ClipboardList, roles: ["admin", "finance"], kind: "navigate", target: "/finance/ar/receipts" },
+  { id: "inventory", label: "View Inventory", icon: Package, roles: ["admin", "ops", "operations", "finance", "sales"], kind: "navigate", target: "/inventory" },
+  { id: "timesheet", label: "Log Timesheet", icon: CalendarDays, roles: ["admin", "hr", "ops", "management"], kind: "navigate", target: "/staff/time-tracker" },
+];
+
+type InventorySearchResult = { sku?: string; name: string };
+
+const QUICK_LINKS: { label: string; href: string; icon: typeof BarChart3; roles?: string[] }[] = [
+  { label: "Executive Briefing", href: "/executive", icon: BarChart3, roles: ["admin", "management", "finance"] },
+  { label: "Finance Analytics", href: "/finance/analytics", icon: DollarSign, roles: ["admin", "finance"] },
+  { label: "Calendar", href: "/calendar", icon: CalendarDays },
+  { label: "Compliance & QMS", href: "/compliance", icon: ShieldCheck, roles: ["admin", "quality_assurance", "qa", "operations", "ops", "management"] },
+  { label: "Ask ACE", href: "/synbot", icon: MessageSquare },
+];
 
 const Dashboard = () => {
   const queryClient = useQueryClient();
-  const isMobile = useIsMobile();
-  const [alertDismissed, setAlertDismissed] = useState(false);
+  const navigate = useNavigate();
+  const { roles } = useAuth();
+  const { toast } = useToast();
 
-  useRealtimeChannel("alerts_updates", () => {
-    queryClient.invalidateQueries({ queryKey: ["dashboard-alerts"] });
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [reorderItem, setReorderItem] = useState<{ sku: string; name: string } | null>(null);
+  const [reorderQty, setReorderQty] = useState("20");
+
+  const [selectedDelivery, setSelectedDelivery] = useState<any | null>(null);
+
+  const invalidateWorkstation = () => queryClient.invalidateQueries({ queryKey: ["workstation-summary"] });
+  const invalidateOpsQueue = () => queryClient.invalidateQueries({ queryKey: ["ops-active-deliveries"] });
+  const invalidateLogistics = () => { invalidateWorkstation(); invalidateOpsQueue(); };
+
+  useRealtimeChannel("alerts_updates", invalidateWorkstation);
+  useRealtimeChannel("inventory_updates", invalidateWorkstation);
+  useRealtimeChannel("finance_updates", invalidateWorkstation);
+  useRealtimeChannel("workflow_updates", invalidateWorkstation);
+  useRealtimeChannel("logistics_updates", invalidateLogistics);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["workstation-summary"],
+    queryFn: () => api.dashboard.workstation(),
+    refetchInterval: 60000,
   });
-  useRealtimeChannel("inventory_updates", () => {
-    queryClient.invalidateQueries({ queryKey: ["dashboard-stock"] });
+
+  // Same query key Layout.tsx's top-bar pill uses -- TanStack Query dedupes
+  // this automatically. Spliced into the HR department card's metrics below
+  // rather than threaded through the backend's DepartmentCard shape, to
+  // keep presence a fully separate, always-live subsystem.
+  const { data: presenceData } = useQuery({
+    queryKey: ["presence-online"],
+    queryFn: () => api.presence.online(),
+    refetchInterval: 30000,
   });
-  useRealtimeChannel("workflow_updates", (message) => {
-    const evt = message?.event;
-    if (["batch_locked", "batch_approved"].includes(evt)) {
-      queryClient.invalidateQueries({ queryKey: ["dashboard-alerts"] });
+  const onlineCount = presenceData?.count ?? 0;
+
+  // Operations Queue — in-flight deliveries, straight from the pipeline the
+  // invoice/QC/finance/dispatch flow feeds into. No new backend endpoint:
+  // this is the same data GET /logistics/active-deliveries already returns
+  // for LogisticsMonitor.tsx's own live map.
+  const { data: opsQueueData, isLoading: opsQueueLoading } = useQuery({
+    queryKey: ["ops-active-deliveries"],
+    queryFn: () => api.logistics.activeDeliveries(),
+    refetchInterval: 30000,
+  });
+  const activeDeliveries: any[] = opsQueueData?.deliveries ?? [];
+  const assignedCount = activeDeliveries.filter((d) => d.status === "assigned").length;
+  const inTransitCount = activeDeliveries.filter((d) => d.status === "in_transit").length;
+
+  const markDeliveredMutation = useMutation({
+    mutationFn: (deliveryId: string) => api.logistics.updateDeliveryStatus(deliveryId, "delivered"),
+    onSuccess: () => {
+      toast({ title: "Delivery confirmed" });
+      setSelectedDelivery(null);
+      invalidateOpsQueue();
+    },
+    onError: (err: any) => toast({ title: "Failed to confirm delivery", description: err.message, variant: "destructive" }),
+  });
+
+  const departments = data?.departments;
+  const canView = (allowed?: string[]) => !allowed || roles.some((r) => allowed.includes(r));
+  // Keep a card while its data is still loading (undefined) so cards don't
+  // flicker in/out as the summary arrives; once loaded, drop any the
+  // viewer's role can't drill into.
+  const visibleDepartments = DEPARTMENTS.filter(({ key }) => {
+    const d = departments?.[key];
+    return !d || d.can_drill_in;
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: () => api.replenishment.create({ sku: reorderItem!.sku, requested_qty: parseFloat(reorderQty) || 1 }),
+    onSuccess: () => {
+      toast({ title: "Reorder requested", description: `${reorderQty} units of ${reorderItem?.name}` });
+      setReorderOpen(false);
+      setReorderItem(null);
+      setReorderQty("20");
+    },
+    onError: (err: any) => toast({ title: "Reorder request failed", description: err.message, variant: "destructive" }),
+  });
+
+  const handleQuickAction = (action: QuickAction) => {
+    if (action.kind === "navigate") {
+      navigate(action.target);
+    } else if (action.id === "reorder") {
+      setReorderOpen(true);
     }
-  });
-  useRealtimeChannel("finance_updates", () => {
-    queryClient.invalidateQueries({ queryKey: ["dashboard-revenue"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard-trend"] });
-  });
-  useRealtimeChannel("logistics_updates", () => {
-    queryClient.invalidateQueries({ queryKey: ["dashboard-stock"] });
-  });
-
-  const { data: financeData, isLoading: financeLoading, isError: financeIsError } = useQuery({
-    queryKey: ["dashboard-revenue"],
-    queryFn: api.dashboard.finance,
-  });
-  const { data: trendData, isLoading: trendLoading, isError: trendIsError } = useQuery({
-    queryKey: ["dashboard-trend"],
-    queryFn: () => api.finance.trend(),
-  });
-  const { data: stockData, isLoading: stockLoading, isError: stockIsError } = useQuery({
-    queryKey: ["dashboard-stock"],
-    queryFn: () => api.inventory.stock(),
-  });
-  const { data: workforceData, isLoading: workforceLoading, isError: workforceIsError } = useQuery({
-    queryKey: ["dashboard-workforce"],
-    queryFn: () => api.dashboard.workforce(),
-  });
-  const { data: alertsData, isLoading: alertsLoading, isError: alertsIsError } = useQuery({
-    queryKey: ["dashboard-alerts"],
-    queryFn: () => api.dashboard.alerts(),
-  });
-
-  const financeValid = !!financeData && typeof (financeData as any).ar?.total_amount === "number";
-  const trendValid = !!trendData && Array.isArray((trendData as any).periods);
-  const stockValid = Array.isArray(stockData);
-  const workforceValid =
-    !!workforceData &&
-    typeof (workforceData as any).active_staff_count === "number" &&
-    typeof (workforceData as any).department_breakdown === "object";
-  const alertsValid = Array.isArray(alertsData);
-
-  const revenue = financeValid ? (financeData as any).ar.total_amount : null;
-
-  const cashflowData = trendValid
-    ? ((trendData as any).periods as any[])
-        .map((p: any) => ({
-          month: p.period,
-          inflow: Number(p.inflow ?? p.amount ?? 0) / 1_000_000,
-          outflow: Number(p.outflow ?? 0) / 1_000_000,
-        }))
-        .sort((a: any, b: any) => a.month.localeCompare(b.month))
-    : [];
-
-  const criticalItems = (stockValid ? stockData : [])
-    .filter((item: any) => (item.current_stock !== undefined ? item.current_stock : item.quantity || 0) < 10)
-    .map((item: any) => ({
-      sku: item.sku,
-      name: item.name,
-      stock: item.current_stock !== undefined ? item.current_stock : item.quantity,
-      status: (item.current_stock !== undefined ? item.current_stock : item.quantity) <= 0 ? "Out of Stock" : "Low Stock",
-    }));
-
-  const lowStockCount = criticalItems.length;
-  const totalSkus = stockValid ? (stockData as any[]).length : null;
-  const activeWorkforce = workforceValid ? (workforceData as any).active_staff_count : null;
-  const deptBreakdown = workforceValid ? (workforceData as any).department_breakdown : {};
-  const deptChartData = Object.keys(deptBreakdown).map((k) => ({ name: k, count: deptBreakdown[k] }));
-  const alerts = alertsValid ? (alertsData as any[]) : [];
-  const criticalAlerts = alerts.filter((a: any) => a.severity === "critical");
-  const hasCritical = criticalAlerts.length > 0 && !alertDismissed;
-
-  const { data: crmDashData } = useQuery({
-    queryKey: ["dashboard-crm-count"],
-    queryFn: () => api.dashboard.crm(),
-  });
-  const customerCount = (crmDashData as any)?.customer_count ?? 0;
-
-  const { data: expiryAlertsData } = useQuery({
-    queryKey: ["dashboard-expiry-alerts"],
-    queryFn: () => api.qc.expiryAlerts(),
-  });
-  const expiryBuckets = (expiryAlertsData as any)?.buckets;
-  const nearExpiryCount = expiryBuckets
-    ? (expiryBuckets.expired?.length ?? 0) + (expiryBuckets.critical?.length ?? 0) + (expiryBuckets.high?.length ?? 0)
-    : null;
-
-  const { data: deviationsData } = useQuery({
-    queryKey: ["dashboard-cold-deviations"],
-    queryFn: () => api.qc.activeDeviations(),
-  });
-  const coldDeviationCount = Array.isArray(deviationsData)
-    ? (deviationsData as any[]).length
-    : (deviationsData as any)?.total ?? (deviationsData as any)?.count ?? null;
-
-  const { data: pipelineData } = useQuery({
-    queryKey: ["dashboard-prospect-pipeline"],
-    queryFn: () => api.dashboard.crm(),
-  });
-  const prospectPipeline = (pipelineData as any)?.pipeline_value ?? null;
-
-  const { data: poSummaryData } = useQuery({
-    queryKey: ["dashboard-po-summary"],
-    queryFn: () => api.procurement.purchaseOrdersSummary(),
-  });
-  const openPoCount = (poSummaryData as any)?.open_pos ?? null;
-
-  // Detect if all data loaded but every value is genuinely zero/empty (no Sage import yet)
-  const allLoaded = !financeLoading && !trendLoading && !stockLoading && !workforceLoading && !alertsLoading;
-  const noSageData =
-    allLoaded &&
-    !financeIsError &&
-    !stockIsError &&
-    !workforceIsError &&
-    (revenue === 0 || revenue === null) &&
-    (totalSkus === 0 || totalSkus === null) &&
-    (activeWorkforce === 0 || activeWorkforce === null) &&
-    customerCount === 0;
-
-  // KPI health helpers
-  const stockHealthy = lowStockCount === 0;
-  const stockBorderClass = stockHealthy
-    ? "border-l-4 border-l-success"
-    : lowStockCount > 5
-    ? "border-l-4 border-l-destructive"
-    : "border-l-4 border-l-warning";
+  };
 
   return (
     <motion.div
@@ -188,559 +251,279 @@ const Dashboard = () => {
       transition={motionTransitions.standard}
       className="flex flex-col gap-5"
     >
-      {/* ── No Sage Data Banner ─────────────────────────────────── */}
-      {noSageData && (
-        <div className="flex items-center gap-3 rounded-xl border border-muted-foreground/20 bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
-          <Activity className="h-4 w-4 shrink-0" />
-          <span className="flex-1">
-            No Sage data has been imported yet. Use the{" "}
-            <Link to="/knowledge" className="font-medium underline underline-offset-2 hover:text-foreground">Knowledge Base</Link>{" "}
-            page to import CSV exports from Sage.
-          </span>
+      <PageHeader
+        icon={Factory}
+        title="ACE Workstation"
+        subtitle="Every department, at a glance — drill in to what you have access to."
+      />
+
+      {isError && (
+        <div className="text-sm text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5">
+          Failed to load the workstation summary. Try refreshing.
         </div>
       )}
 
-      {/* ── Global Critical Alert Banner ─────────────────────────── */}
-      {hasCritical && (
-        <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span className="flex-1 font-medium">
-            {criticalAlerts[0].title}: {criticalAlerts[0].message}
-          </span>
-          <button
-            onClick={() => setAlertDismissed(true)}
-            className="rounded p-0.5 hover:bg-destructive/20 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      {/* ── Quick Actions ────────────────────────────────────────── */}
+      {(() => {
+        const visible = QUICK_ACTIONS.filter((a) => canView(a.roles));
+        if (visible.length === 0) return null;
+        return (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {visible.map((action) => (
+                  <Button
+                    key={action.id}
+                    variant="outline"
+                    className="h-auto flex-col gap-1.5 py-3"
+                    onClick={() => handleQuickAction(action)}
+                  >
+                    <action.icon className="h-4 w-4" />
+                    <span className="text-xs font-medium">{action.label}</span>
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* ── Department cards ────────────────────────────────────────── */}
+      {/* Only show departments this role can actually drill into --
+          previously every card rendered regardless, with its "View Full"
+          button replaced by a static "Restricted" span for departments the
+          viewer couldn't open. can_drill_in is already computed server-side
+          per the caller's roles (get_workstation_summary, includes admin in
+          every department's allowed set, so admin's view is unaffected).
+          Cards stay visible while loading (d undefined) so they don't
+          flicker in/out once the summary arrives. */}
+      {!isLoading && visibleDepartments.length === 0 && (
+        <div className="rounded-lg border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+          No department views available for your role.
         </div>
       )}
-
-      {/* ── Page Header ─────────────────────────────────────────── */}
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Business Overview</h1>
-          <p className="text-sm text-muted-foreground">Real-time operational command center</p>
-        </div>
-        <div className="flex gap-2">
-          <Link to="/executive">
-            <Button variant="default" size="sm">
-              <Activity className="mr-2 h-4 w-4" />
-              Executive Briefing
-            </Button>
-          </Link>
-          <Button variant="outline" size="sm" onClick={() => {
-              void queryClient.invalidateQueries();
-            }}>
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {/* ── KPI Cards ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {/* Revenue */}
-        <Card className="border-l-4 border-l-primary bg-gradient-to-br from-primary/5 to-card">
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Total Revenue (AR)</CardDescription>
-              <CreditCard className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {financeLoading ? (
-                <Skeleton className="h-8 w-32" />
-              ) : financeValid ? (
-                `₦${(revenue as number).toLocaleString()}`
-              ) : (
-                <span className="text-base text-muted-foreground">—</span>
-              )}
-            </div>
-            <div className="mt-2 flex items-center gap-1 text-xs text-success font-medium">
-              <TrendingUp className="h-3 w-3" />
-              Real-time from Sage
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Stock Health */}
-        <Card className={cn("bg-gradient-to-br from-card", stockBorderClass)}>
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Stock Health</CardDescription>
-              <Truck className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {stockLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : stockValid ? (
-                lowStockCount
-              ) : (
-                <span className="text-base text-muted-foreground">—</span>
-              )}
-            </div>
-            <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium",
-              stockHealthy ? "text-success" : lowStockCount > 5 ? "text-destructive" : "text-warning"
-            )}>
-              {stockLoading ? (
-                <Skeleton className="h-3 w-24" />
-              ) : stockHealthy ? (
-                <><CheckCircle2 className="h-3 w-3" /> All items healthy</>
-              ) : (
-                <><AlertCircle className="h-3 w-3" /> {lowStockCount} low stock items</>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Inventory Overview */}
-        <Card className="border-l-4 border-l-secondary bg-gradient-to-br from-secondary/5 to-card">
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Inventory</CardDescription>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {stockLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : stockValid ? (
-                totalSkus
-              ) : (
-                <span className="text-base text-muted-foreground">—</span>
-              )}
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">
-              {stockLoading ? <Skeleton className="h-3 w-20" /> : stockValid ? `${lowStockCount} alerts` : "No data"}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Workforce */}
-        <Card className="border-l-4 border-l-info bg-gradient-to-br from-info/5 to-card">
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Active Workforce</CardDescription>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {workforceLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : workforceValid ? (
-                activeWorkforce
-              ) : (
-                <span className="text-base text-muted-foreground">—</span>
-              )}
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">Staff members online</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Operational Alert Cards ─────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {/* Near-Expiry */}
-        <Card className={cn("border-l-4", nearExpiryCount !== null && nearExpiryCount > 0 ? "border-l-warning" : "border-l-success")}>
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Near-Expiry Items</CardDescription>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {nearExpiryCount !== null ? nearExpiryCount : <span className="text-base text-muted-foreground">—</span>}
-            </div>
-            <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium",
-              nearExpiryCount !== null && nearExpiryCount > 0 ? "text-warning" : "text-success"
-            )}>
-              <AlertCircle className="h-3 w-3" />
-              {nearExpiryCount !== null && nearExpiryCount > 0 ? `${nearExpiryCount} items need attention` : "All items OK"}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Cold-Chain Deviations */}
-        <Card className={cn("border-l-4", coldDeviationCount !== null && coldDeviationCount > 0 ? "border-l-destructive" : "border-l-success")}>
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Temp Deviations</CardDescription>
-              <Thermometer className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {coldDeviationCount !== null ? coldDeviationCount : <span className="text-base text-muted-foreground">—</span>}
-            </div>
-            <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium",
-              coldDeviationCount !== null && coldDeviationCount > 0 ? "text-destructive" : "text-success"
-            )}>
-              <Thermometer className="h-3 w-3" />
-              {coldDeviationCount !== null && coldDeviationCount > 0 ? "Active temperature breaches" : "All readings normal"}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Prospect Pipeline */}
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Prospect Pipeline</CardDescription>
-              <Target className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {prospectPipeline !== null
-                ? `₦${(Number(prospectPipeline) / 1_000_000).toFixed(1)}M`
-                : <span className="text-base text-muted-foreground">—</span>}
-            </div>
-            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-              <TrendingUp className="h-3 w-3" />
-              Total open opportunity value
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Open POs */}
-        <Card className="border-l-4 border-l-secondary">
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-xs font-medium uppercase tracking-wide">Open Purchase Orders</CardDescription>
-              <Truck className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">
-              {openPoCount !== null ? openPoCount : <span className="text-base text-muted-foreground">—</span>}
-            </div>
-            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-              <Activity className="h-3 w-3" />
-              Pending procurement orders
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Main Charts Row ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Financial Performance — col-span-8 */}
-        <Card className="lg:col-span-8">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base font-semibold">Financial Performance</CardTitle>
-                <CardDescription className="text-xs">Accounts Receivable Trend (Last 6 Months)</CardDescription>
-              </div>
-              <Link to="/finance/analytics">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  View Report <ArrowRight className="ml-1 h-3 w-3" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="h-[340px]">
-              {trendValid && cashflowData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={cashflowData} margin={{ top: 8, right: 20, left: 8, bottom: 8 }}>
-                    <defs>
-                      <linearGradient id="colorInflow" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
-                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${v}M`} width={56} />
-                    <Tooltip
-                      formatter={(value: number) => [`₦${value.toFixed(2)}M`, "AR Inflow"]}
-                      contentStyle={{ fontSize: "12px", borderRadius: "8px" }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="inflow"
-                      name="Invoiced (AR)"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      fill="url(#colorInflow)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : trendLoading ? (
-                <div className="flex h-full flex-col gap-3 p-4">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-5/6" />
-                  <Skeleton className="h-4 w-4/6" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {visibleDepartments.map(({ key, label, icon: Icon, metrics }) => {
+          const d = departments?.[key];
+          return (
+            <Card key={key} className={cn(d ? STATUS_BORDER[d.status] ?? STATUS_BORDER.unknown : STATUS_BORDER.unknown)}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    {label}
+                  </CardTitle>
+                  {d && d.alert_count > 0 && (
+                    <Badge variant="destructive" className="text-[10px]">{d.alert_count} alert{d.alert_count === 1 ? "" : "s"}</Badge>
+                  )}
                 </div>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-                  <Activity className="h-6 w-6 opacity-40" />
-                  <span>No AR trend data available.</span>
-                  <span className="text-xs opacity-70">Import Sage invoices to populate this chart.</span>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Critical Inventory — col-span-4 */}
-        <Card className="lg:col-span-4">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base font-semibold">Critical Inventory</CardTitle>
-                <CardDescription className="text-xs">Items needing attention</CardDescription>
-              </div>
-              <Link to="/operations">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  Manage <ArrowRight className="ml-1 h-3 w-3" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {isMobile ? (
-              <div className="space-y-3 p-3">
-                {stockLoading ? (
-                  <div className="flex flex-col gap-2 px-1 py-2">
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-5/6" />
-                    <Skeleton className="h-4 w-4/6" />
-                  </div>
-                ) : !stockValid ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">Stock data unavailable.</p>
-                ) : criticalItems.length > 0 ? (
-                  criticalItems.map((item: any) => (
-                    <div key={item.sku} className="rounded-lg border bg-card p-3 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium leading-tight">{item.name}</p>
-                          <p className="text-[11px] text-muted-foreground">{item.sku}</p>
-                        </div>
-                        <Badge
-                          variant={item.stock === 0 ? "destructive" : "outline"}
-                          className={cn("text-[10px]", item.stock > 0 && "border-warning/70 text-warning")}
-                        >
-                          {item.status}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-xs">Stock: <span className="font-semibold tabular-nums">{item.stock}</span></p>
-                    </div>
-                  ))
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {isLoading || !d ? (
+                  <p className="text-xs text-muted-foreground">Loading…</p>
                 ) : (
-                  <div className="flex flex-col items-center gap-1.5 py-8 text-success">
-                    <CheckCircle2 className="h-7 w-7" />
-                    <p className="text-sm">All items healthy</p>
+                  <div className="space-y-1.5">
+                    {(key === "hr" ? [...metrics(d), { label: "Currently Online", value: onlineCount }] : metrics(d)).map((m) => (
+                      <div key={m.label} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{m.label}</span>
+                        <span className="font-semibold tabular-nums">{m.value}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="max-h-[300px] overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm">
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-10 min-w-[220px] bg-muted/90 text-xs">Item</TableHead>
-                      <TableHead className="min-w-[90px] text-right text-xs">Stock</TableHead>
-                      <TableHead className="min-w-[100px] text-right text-xs">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stockLoading ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="py-6 text-center">
-                          <div className="flex flex-col gap-2 px-4">
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-5/6" />
-                            <Skeleton className="h-4 w-4/6" />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : !stockValid ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="py-8 text-center text-sm text-muted-foreground">
-                          Stock data unavailable.
-                        </TableCell>
-                      </TableRow>
-                    ) : criticalItems.length > 0 ? (
-                      criticalItems.map((item: any) => (
-                        <TableRow key={item.sku} className="text-sm">
-                          <TableCell className="sticky left-0 z-10 bg-background">
-                            <div className="font-medium leading-tight">{item.name}</div>
-                            <div className="text-[11px] text-muted-foreground">{item.sku}</div>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">{item.stock}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge
-                              variant={item.stock === 0 ? "destructive" : "outline"}
-                              className={cn("text-[10px]", item.stock > 0 && "border-warning/70 text-warning")}
-                            >
-                              {item.status}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={3} className="py-8 text-center">
-                          <div className="flex flex-col items-center gap-1.5 text-success">
-                            <CheckCircle2 className="h-7 w-7" />
-                            <p className="text-sm">All items healthy</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Second Row: Workforce + Notifications ────────────────── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Workforce Distribution — col-span-4 */}
-        <Card className="lg:col-span-4">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base font-semibold">Workforce Distribution</CardTitle>
-                <CardDescription className="text-xs">Headcount by Department</CardDescription>
-              </div>
-              <Link to="/hr">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  HR <ArrowRight className="ml-1 h-3 w-3" />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full mt-1"
+                  disabled={!d}
+                  asChild={!!d}
+                >
+                  {d ? (
+                    <Link to={d.drill_in_path}>
+                      View Full {label} <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                    </Link>
+                  ) : (
+                    <span>Loading…</span>
+                  )}
                 </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="px-2 pb-4">
-            <div className="h-[240px]">
-              {workforceLoading ? (
-                <div className="flex h-full flex-col gap-3 p-4">
-                  <Skeleton className="h-5 w-full" />
-                  <Skeleton className="h-5 w-4/5" />
-                  <Skeleton className="h-5 w-3/5" />
-                  <Skeleton className="h-5 w-full" />
-                </div>
-              ) : workforceValid && deptChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={deptChartData} layout="vertical">
-                    <XAxis type="number" hide />
-                    <YAxis
-                      dataKey="name"
-                      type="category"
-                      width={90}
-                      tickLine={false}
-                      axisLine={false}
-                      style={{ fontSize: "11px" }}
-                    />
-                    <Tooltip contentStyle={{ fontSize: "12px", borderRadius: "8px" }} />
-                    <Bar
-                      dataKey="count"
-                      name="Staff Count"
-                      fill="hsl(var(--secondary))"
-                      radius={[0, 6, 6, 0]}
-                      barSize={18}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-                  <Users className="h-6 w-6 opacity-40" />
-                  <span>No workforce data yet.</span>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
-        {/* System Notifications — col-span-8 */}
-        <Card className="lg:col-span-8 border-border/50 bg-muted/20">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Activity className="h-4 w-4 text-primary" />
-              System Notifications
+      {/* ── Operations Queue ────────────────────────────────────────
+          In-flight deliveries — reuses the same live data LogisticsMonitor.tsx's
+          map already shows, summarized here so operations has a queue view on
+          the org-wide dashboard the same way every other department already does. */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Truck className="h-4 w-4 text-muted-foreground" />
+              Operations Queue
             </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="max-h-[240px] space-y-2 overflow-y-auto pr-1">
-              {alertsLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-14 w-full rounded-xl" />
-                  <Skeleton className="h-14 w-full rounded-xl" />
-                </div>
-              ) : !alertsValid ? (
-                <div className="py-4 text-sm text-muted-foreground">Alerts temporarily unavailable.</div>
-              ) : alerts.length > 0 ? (
-                alerts.map((alert: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "flex items-start gap-3 rounded-xl border p-3",
-                      alert.severity === "critical"
-                        ? "border-l-4 border-l-destructive bg-destructive/5 border-destructive/30"
-                        : "border-l-4 border-l-warning bg-warning/5 border-border/50",
-                    )}
-                  >
-                    {alert.severity === "critical" ? (
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                    ) : (
-                      <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium leading-tight">{alert.title}</p>
-                      <p className="text-xs text-muted-foreground">{alert.message}</p>
-                      <p className="mt-0.5 text-[10px] text-muted-foreground/60">
-                        {new Date(alert.created_at).toLocaleTimeString()}
-                      </p>
-                    </div>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/operations/logistics">
+                View Full Logistics <ArrowRight className="ml-2 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <KpiStrip
+            items={[
+              { label: "In-Flight Deliveries", value: activeDeliveries.length, icon: Truck },
+              { label: "Assigned", value: assignedCount },
+              { label: "In Transit", value: inTransitCount, tone: inTransitCount > 0 ? "warning" : "default" },
+            ]}
+          />
+          {opsQueueLoading ? (
+            <p className="text-xs text-muted-foreground py-2">Loading…</p>
+          ) : activeDeliveries.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No deliveries in flight right now.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {activeDeliveries.slice(0, 5).map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => setSelectedDelivery(d)}
+                  className="w-full flex items-center justify-between gap-3 rounded-lg border border-border/50 px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-muted/40"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{d.reference || `Delivery ${String(d.id).slice(0, 8)}`}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {d.rider?.name ? `Rider: ${d.rider.name}` : "Unassigned rider"}
+                      {d.eta_text ? ` · ETA ${d.eta_text}` : ""}
+                    </p>
                   </div>
-                ))
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                  <CheckCircle2 className="mb-2 h-8 w-8 text-success/70" />
-                  <p className="text-sm">No new system alerts</p>
-                </div>
+                  <Badge variant={d.status === "in_transit" ? "default" : "secondary"} className="shrink-0 text-[10px]">
+                    {d.status === "in_transit" ? "In Transit" : "Assigned"}
+                  </Badge>
+                </button>
+              ))}
+              {activeDeliveries.length > 5 && (
+                <p className="text-xs text-muted-foreground pt-1">
+                  +{activeDeliveries.length - 5} more — see Full Logistics for all of them.
+                </p>
               )}
             </div>
-            {(financeIsError || trendIsError || stockIsError || workforceIsError || alertsIsError) && (
-              <p className="mt-2 text-xs text-muted-foreground/70">
-                Some cards show fallback values while data refreshes.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Quick Links ──────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2">
+        {QUICK_LINKS.filter((l) => canView(l.roles)).map((link) => (
+          <Button key={link.href} variant="secondary" size="sm" asChild>
+            <Link to={link.href}>
+              <link.icon className="mr-2 h-4 w-4" />
+              {link.label}
+            </Link>
+          </Button>
+        ))}
       </div>
 
-      {/* ── Compact Reminders / Quick Links ─────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-muted/20 px-4 py-2.5 text-sm">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick Links:</span>
-        <Link to="/executive">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">📊 Executive Briefing</Badge>
-        </Link>
-        <Link to="/finance/analytics">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">💰 Finance Analytics</Badge>
-        </Link>
-        <Link to="/calendar">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">📅 Calendar & Tasks</Badge>
-        </Link>
-        <Link to="/compliance">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🛡 Compliance</Badge>
-        </Link>
-        <Link to="/synbot">
-          <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">🤖 Ask ACE</Badge>
-        </Link>
-      </div>
+      {/* Reorder Stock — the one Quick Action simple enough to embed here
+          directly (SKU search + qty, one endpoint) rather than navigating
+          away; reuses api.inventory.search / api.replenishment.create, both
+          already built for the Inventory Workspace. */}
+      <DetailSheet
+        open={reorderOpen}
+        onOpenChange={(open) => { setReorderOpen(open); if (!open) setReorderItem(null); }}
+        title="Reorder Stock"
+        description="Search for a SKU and submit a replenishment request."
+        icon={RotateCcw}
+        footer={
+          <Button
+            className="w-full"
+            disabled={!reorderItem || reorderMutation.isPending || !parseFloat(reorderQty)}
+            onClick={() => reorderMutation.mutate()}
+          >
+            {reorderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Submit Reorder Request
+          </Button>
+        }
+      >
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">Item / SKU</label>
+          <EntityAutocomplete<InventorySearchResult>
+            fetchFn={(q) => api.inventory.search(q)}
+            getKey={(p) => p.sku ?? p.name}
+            getLabel={(p) => p.name}
+            getSubtitle={(p) => p.sku}
+            placeholder="Search inventory…"
+            onSelect={(p) => setReorderItem({ sku: p.sku || p.name, name: p.name })}
+          />
+          {reorderItem && (
+            <p className="text-xs text-muted-foreground">Selected: {reorderItem.name} ({reorderItem.sku})</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">Quantity</label>
+          <Input type="number" min="1" value={reorderQty} onChange={(e) => setReorderQty(e.target.value)} />
+        </div>
+      </DetailSheet>
+
+      {/* Operations Queue delivery detail — quick look + confirm, without
+          leaving the dashboard for the full logistics workspace. */}
+      <DetailSheet
+        open={!!selectedDelivery}
+        onOpenChange={(open) => { if (!open) setSelectedDelivery(null); }}
+        title={selectedDelivery?.reference || "Delivery Detail"}
+        description="In-flight delivery from the Operations Queue."
+        icon={Truck}
+        footer={
+          selectedDelivery && selectedDelivery.status !== "delivered" ? (
+            <Button
+              className="w-full gap-2"
+              disabled={markDeliveredMutation.isPending}
+              onClick={() => markDeliveredMutation.mutate(selectedDelivery.id)}
+            >
+              {markDeliveredMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Mark Delivered
+            </Button>
+          ) : undefined
+        }
+      >
+        {selectedDelivery && (
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Status</span>
+              <Badge variant={selectedDelivery.status === "in_transit" ? "default" : "secondary"}>
+                {selectedDelivery.status === "in_transit" ? "In Transit" : "Assigned"}
+              </Badge>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Rider</span>
+              <span className="font-medium">{selectedDelivery.rider?.name || "Unassigned"}</span>
+            </div>
+            {selectedDelivery.eta_text && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ETA</span>
+                <span className="font-medium">{selectedDelivery.eta_text}</span>
+              </div>
+            )}
+            {selectedDelivery.address?.destination && (
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-muted-foreground shrink-0">Destination</span>
+                <span className="font-medium text-right flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" /> {selectedDelivery.address.destination}
+                </span>
+              </div>
+            )}
+            {selectedDelivery.rider?.last_seen_at && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Last Position Update</span>
+                <span className="font-medium">{new Date(selectedDelivery.rider.last_seen_at).toLocaleTimeString()}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </DetailSheet>
     </motion.div>
   );
 };

@@ -12,7 +12,7 @@
    * A different format will require also updating the theme in tailwind.config.ts.
   */
   :root {
-    /* ── Placeware Light — operational / blue-led tech platform ── */
+    /* ── Placeware Light — matches the real logo: azure blue + fresh green ── */
     --background: 210 17% 98%;           /* #F8F9FA */
     --foreground: 156 14% 7%;            /* #101513 */
 
@@ -22,16 +22,16 @@
     --popover: 0 0% 100%;
     --popover-foreground: 156 14% 7%;
 
-    --primary: 229 63% 42%;              /* #2740AE — core brand blue */
+    --primary: 211 79% 43%;              /* #1568C4 — brand blue, matches logo's "PLACE" */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 209 65% 41%;            /* #256CAE — support blue */
+    --secondary: 134 55% 42%;            /* #2FA24A — brand green, matches logo's "WARE" */
     --secondary-foreground: 0 0% 100%;
 
     --muted: 225 47% 96%;                /* #EFEFFD — light blue panel */
     --muted-foreground: 0 0% 46%;        /* #767676 */
 
-    --accent: 200 91% 52%;               /* #14AAF5 — cyan accent */
+    --accent: 200 91% 52%;               /* #14AAF5 — cyan accent (informational, distinct from brand) */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 6 63% 46%;            /* #C0392B */
@@ -39,12 +39,12 @@
 
     --border: 223 9% 85%;                /* #D6D8DD */
     --input: 0 0% 100%;
-    --ring: 229 63% 42%;
+    --ring: 211 79% 43%;
 
     --warning: 38 92% 50%;
     --warning-foreground: 156 14% 7%;
 
-    --success: 125 47% 58%;              /* #62C76A */
+    --success: 134 47% 55%;              /* nudged toward brand green family, still its own status token */
     --success-foreground: 0 0% 100%;
 
     --info: 200 91% 52%;                 /* #14AAF5 */
@@ -57,26 +57,26 @@
     --background-2: 225 47% 96%;         /* #EFEFFD */
     --background-3: 223 9% 85%;          /* #D6D8DD */
 
-    --gradient-primary: linear-gradient(135deg, hsl(229 63% 42%) 0%, hsl(200 91% 52%) 100%);
-    --gradient-soft: linear-gradient(135deg, hsl(229 63% 42% / 0.10) 0%, hsl(200 91% 52% / 0.10) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(211 79% 43%) 0%, hsl(134 55% 42%) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(211 79% 43% / 0.10) 0%, hsl(134 55% 42% / 0.10) 100%);
 
-    --shadow-elevation-1: 0 1px 4px hsl(229 63% 10% / 0.06), 0 2px 8px hsl(229 63% 10% / 0.04);
-    --shadow-elevation-2: 0 4px 16px hsl(229 63% 10% / 0.08), 0 8px 24px hsl(229 63% 10% / 0.05);
-    --shadow-elevation-3: 0 12px 40px hsl(229 63% 10% / 0.12), 0 20px 52px hsl(229 63% 10% / 0.07);
-    --shadow-glow: 0 0 28px hsl(229 63% 42% / 0.28);
+    --shadow-elevation-1: 0 1px 4px hsl(211 63% 10% / 0.06), 0 2px 8px hsl(211 63% 10% / 0.04);
+    --shadow-elevation-2: 0 4px 16px hsl(211 63% 10% / 0.08), 0 8px 24px hsl(211 63% 10% / 0.05);
+    --shadow-elevation-3: 0 12px 40px hsl(211 63% 10% / 0.12), 0 20px 52px hsl(211 63% 10% / 0.07);
+    --shadow-glow: 0 0 28px hsl(211 79% 43% / 0.28);
 
-    --sidebar-background: 216 100% 28%;  /* #003A91 — deep brand blue */
+    --sidebar-background: 211 79% 26%;   /* #0B3D78 — deep brand blue, hue-corrected */
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 200 91% 52%;      /* #14AAF5 — cyan for active nav items */
+    --sidebar-primary: 134 55% 48%;      /* brand green for active nav items -- was cyan */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 229 63% 35%;       /* darker primary for hover */
+    --sidebar-accent: 211 79% 30%;       /* darker primary for hover */
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 216 70% 35%;
-    --sidebar-ring: 200 91% 52%;
+    --sidebar-border: 211 70% 35%;
+    --sidebar-ring: 134 55% 48%;
   }
 
   .dark {
-    /* ── Placeware Dark — deep navy, blue-led operations platform ── */
+    /* ── Placeware Dark — same blue+green brand pair, brightened for dark bg ── */
     --background: 220 40% 10%;
     --foreground: 210 17% 95%;
 
@@ -86,10 +86,10 @@
     --popover: 220 38% 14%;
     --popover-foreground: 210 17% 95%;
 
-    --primary: 229 70% 62%;              /* brightened #2740AE for dark bg */
+    --primary: 211 82% 62%;              /* brightened #1568C4 for dark bg */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 209 60% 55%;            /* brightened #256CAE for dark bg */
+    --secondary: 134 58% 58%;            /* brightened #2FA24A for dark bg */
     --secondary-foreground: 0 0% 100%;
 
     --muted: 220 30% 20%;
@@ -103,12 +103,12 @@
 
     --border: 220 25% 25%;
     --input: 220 35% 16%;
-    --ring: 229 70% 62%;
+    --ring: 211 82% 62%;
 
     --warning: 38 92% 52%;
     --warning-foreground: 220 40% 10%;
 
-    --success: 125 47% 60%;
+    --success: 134 47% 58%;
     --success-foreground: 220 40% 10%;
 
     --info: 200 91% 60%;
@@ -119,22 +119,22 @@
     --background-2: 220 32% 18%;
     --background-3: 220 28% 24%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(229 70% 62%) 0%, hsl(200 91% 60%) 100%);
-    --gradient-soft: linear-gradient(135deg, hsl(229 70% 62% / 0.16) 0%, hsl(200 91% 60% / 0.16) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(211 82% 62%) 0%, hsl(134 58% 58%) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(211 82% 62% / 0.16) 0%, hsl(134 58% 58% / 0.16) 100%);
 
     --shadow-elevation-1: 0 2px 8px hsl(220 60% 2% / 0.25);
     --shadow-elevation-2: 0 16px 40px hsl(220 60% 2% / 0.38);
     --shadow-elevation-3: 0 24px 56px hsl(220 60% 2% / 0.48);
-    --shadow-glow: 0 0 24px hsl(229 70% 62% / 0.30);
+    --shadow-glow: 0 0 24px hsl(211 82% 62% / 0.30);
 
-    --sidebar-background: 220 45% 12%;
+    --sidebar-background: 211 45% 12%;
     --sidebar-foreground: 210 17% 95%;
-    --sidebar-primary: 200 91% 60%;
+    --sidebar-primary: 134 58% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 35% 22%;
+    --sidebar-accent: 211 35% 22%;
     --sidebar-accent-foreground: 210 17% 95%;
-    --sidebar-border: 220 30% 22%;
-    --sidebar-ring: 200 91% 60%;
+    --sidebar-border: 211 30% 22%;
+    --sidebar-ring: 134 58% 58%;
   }
 }
 
@@ -147,7 +147,7 @@
     @apply bg-background text-foreground antialiased;
     background-image:
       radial-gradient(circle at 18% 18%, hsl(var(--primary) / 0.06), transparent 45%),
-      radial-gradient(circle at 82% 0%, hsl(200 91% 52% / 0.04), transparent 35%);
+      radial-gradient(circle at 82% 0%, hsl(var(--secondary) / 0.05), transparent 35%);
   }
 
   :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
@@ -172,7 +172,7 @@
     @apply pointer-events-none absolute inset-0;
     background:
       radial-gradient(circle at 20% 20%, hsl(var(--primary) / 0.05), transparent 42%),
-      radial-gradient(circle at 80% 10%, hsl(200 91% 52% / 0.03), transparent 36%);
+      radial-gradient(circle at 80% 10%, hsl(var(--secondary) / 0.04), transparent 36%);
   }
 
   .pw-surface-base {

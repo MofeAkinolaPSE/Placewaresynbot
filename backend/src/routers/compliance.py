@@ -83,8 +83,8 @@ def _qas_safe(query, *filters):
 
 
 def _require_qa(user: Dict) -> None:
-    role = (user.get("role") or "").lower()
-    if role not in COMPLIANCE_QA_ROLES:
+    roles = {str(r).lower() for r in (user.get("roles") or [])}
+    if not roles & COMPLIANCE_QA_ROLES:
         raise HTTPException(403, "QA or Admin role required.")
 
 
@@ -108,6 +108,46 @@ def _generate_sequential_id(prefix: str, table: str, id_col: str) -> str:
         return f"{prefix}-{year}-{last_num + 1:03d}"
     except Exception:
         return f"{prefix}-{year}-{uuid.uuid4().hex[:4].upper()}"
+
+
+def _enrich_maintenance_with_equipment(rows: List[Dict]) -> List[Dict]:
+    """Attach each maintenance row's equipment_registry details under an
+    `equipment_registry` key, matching the shape _generate_maintenance_cert_bg
+    already expects. The Supabase-style embedded-relation select this file
+    used to call (`.select("*, equipment_registry(...)")`) isn't supported by
+    this app's local TableQuery wrapper -- it's a flat SELECT builder with no
+    join/embed parsing, so that string was passed through literally into the
+    SQL and always failed. Because TableQuery swallows SELECT exceptions and
+    returns an empty result rather than re-raising, every one of these calls
+    silently returned zero rows instead of erroring visibly. Mirrors the
+    rider/staff/document-archive enrichment pattern used elsewhere in this
+    session's retrofit."""
+    equipment_ids = list({r["equipment_id"] for r in rows if r.get("equipment_id")})
+    if not equipment_ids:
+        return rows
+    try:
+        eq_resp = db.table(TABLE_EQUIPMENT_REGISTRY).select("*").in_("id", equipment_ids).execute()
+        eq_map = {e["id"]: e for e in (eq_resp.data or [])}
+    except Exception:
+        eq_map = {}
+    for r in rows:
+        r["equipment_registry"] = eq_map.get(r.get("equipment_id"))
+    return rows
+
+
+def _fetch_maintenance_with_equipment(schedule_id: str) -> Dict:
+    """Single-row equivalent of _enrich_maintenance_with_equipment, for the
+    complete/generate-certificate handlers that previously relied on the same
+    broken embedded-relation select with .single()."""
+    res = db.table(TABLE_MAINTENANCE_SCHEDULE).select("*").eq("id", schedule_id).single().execute()
+    sched: Dict = res.data or {}
+    if sched and sched.get("equipment_id"):
+        try:
+            eq_res = db.table(TABLE_EQUIPMENT_REGISTRY).select("*").eq("id", sched["equipment_id"]).single().execute()
+            sched["equipment_registry"] = eq_res.data or None
+        except Exception:
+            sched["equipment_registry"] = None
+    return sched
 
 
 async def _archive_document(
@@ -297,7 +337,7 @@ async def create_activity(body: ActivityCreate, user=Depends(verify_jwt)):
             "scheduled_date": body.scheduled_date.isoformat(),
             "status": "scheduled",
         }).execute()
-        audit_event(user, "compliance.activity.create", {"activity": body.activity_name})
+        audit_event("compliance.activity.create", {"activity": body.activity_name}, actor_id=user.get("sub"), event_class="compliance")
         return {"activity": (row.data or [{}])[0]}
     except Exception as exc:
         logger.exception("create_activity failed")
@@ -317,7 +357,7 @@ async def update_activity(activity_id: str, body: ActivityUpdate, user=Depends(v
             .eq("id", activity_id)
             .execute()
         )
-        audit_event(user, "compliance.activity.update", {"id": activity_id, "changes": update_data})
+        audit_event("compliance.activity.update", {"id": activity_id, "changes": update_data}, actor_id=user.get("sub"), event_class="compliance")
         return {"activity": (row.data or [{}])[0]}
     except Exception as exc:
         logger.exception("update_activity failed")
@@ -343,7 +383,24 @@ async def list_audits(
         if status:
             q = q.eq("status", status)
         res = q.order("month_due").execute()
-        return {"audits": res.data or []}
+        audits = res.data or []
+
+        # Resolve each completed audit's report_document_id to a real
+        # download URL — the frontend has always expected a report_url that
+        # was never provided, so the "download" action on a completed audit
+        # could never appear. Mirrors the rider-enrichment pattern in
+        # logistics.py's list_deliveries().
+        doc_ids = list({a["report_document_id"] for a in audits if a.get("report_document_id")})
+        if doc_ids:
+            try:
+                doc_resp = db.table(TABLE_DOCUMENT_ARCHIVE).select("id,download_url").in_("id", doc_ids).execute()
+                doc_map = {d["id"]: d.get("download_url") for d in (doc_resp.data or [])}
+            except Exception:
+                doc_map = {}
+            for a in audits:
+                a["report_url"] = doc_map.get(a.get("report_document_id"))
+
+        return {"audits": audits}
     except Exception as exc:
         logger.exception("list_audits failed")
         raise HTTPException(500, str(exc))
@@ -382,7 +439,7 @@ async def start_audit(audit_id: str, user=Depends(verify_jwt)):
             .eq("id", audit_id)
             .execute()
         )
-        audit_event(user, "compliance.audit.start", {"id": audit_id})
+        audit_event("compliance.audit.start", {"id": audit_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"audit": (row.data or [{}])[0]}
     except Exception as exc:
         raise HTTPException(500, str(exc))
@@ -432,7 +489,7 @@ async def complete_audit(
             generated_by=user.get("username") or "system",
         )
 
-        audit_event(user, "compliance.audit.complete", {"id": audit_id})
+        audit_event("compliance.audit.complete", {"id": audit_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"message": "Audit marked complete. Report is being generated.", "audit_id": audit_id}
     except HTTPException:
         raise
@@ -526,7 +583,7 @@ async def generate_audit_report(
             body_data=body.model_dump(exclude_none=True),
             generated_by=user.get("username") or "system",
         )
-        audit_event(user, "compliance.audit.report.generate", {"id": audit_id})
+        audit_event("compliance.audit.report.generate", {"id": audit_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"message": "Audit report generation queued.", "audit_id": audit_id}
     except HTTPException:
         raise
@@ -613,7 +670,7 @@ async def create_deviation(body: DeviationCreate, user=Depends(verify_jwt)):
             "capa_actions":             body.capa_actions or [],
         }
         row = db.table(TABLE_DEVIATION_REPORTS).insert(row_data).execute()
-        audit_event(user, "compliance.deviation.create", {"deviation_id": dev_id})
+        audit_event("compliance.deviation.create", {"deviation_id": dev_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"deviation": (row.data or [{}])[0]}
     except Exception as exc:
         logger.exception("create_deviation failed")
@@ -633,7 +690,7 @@ async def update_deviation(deviation_id: str, body: DeviationUpdate, user=Depend
             .eq("id", deviation_id)
             .execute()
         )
-        audit_event(user, "compliance.deviation.update", {"id": deviation_id})
+        audit_event("compliance.deviation.update", {"id": deviation_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"deviation": (row.data or [{}])[0]}
     except Exception as exc:
         raise HTTPException(500, str(exc))
@@ -682,7 +739,7 @@ async def generate_deviation_report(deviation_id: str, user=Depends(verify_jwt))
             generated_by=user.get("username") or "system",
         )
         db.table(TABLE_DEVIATION_REPORTS).update({"report_document_id": doc_id}).eq("id", deviation_id).execute()
-        audit_event(user, "compliance.deviation.report.generate", {"id": deviation_id, "doc_id": doc_id})
+        audit_event("compliance.deviation.report.generate", {"id": deviation_id, "doc_id": doc_id}, actor_id=user.get("sub"), event_class="compliance")
 
         return {"doc_id": doc_id, "message": "Deviation report generated successfully."}
     except HTTPException:
@@ -761,7 +818,7 @@ async def register_equipment(body: EquipmentCreate, user=Depends(verify_jwt)):
             **body.model_dump(),
             "status": "active",
         }).execute()
-        audit_event(user, "compliance.equipment.register", {"name": body.equipment_name})
+        audit_event("compliance.equipment.register", {"name": body.equipment_name}, actor_id=user.get("sub"), event_class="compliance")
         return {"equipment": (row.data or [{}])[0]}
     except Exception as exc:
         raise HTTPException(500, str(exc))
@@ -778,16 +835,13 @@ async def list_maintenance(
     user=Depends(verify_jwt),
 ):
     try:
-        q = (
-            db.table(TABLE_MAINTENANCE_SCHEDULE)
-            .select("*, equipment_registry(equipment_name, equipment_type, location)")
-        )
+        q = db.table(TABLE_MAINTENANCE_SCHEDULE).select("*")
         if status:
             q = q.eq("status", status)
         if maintenance_type:
             q = q.eq("maintenance_type", maintenance_type)
         res = q.order("next_maintenance_date").execute()
-        return {"maintenance": res.data or []}
+        return {"maintenance": _enrich_maintenance_with_equipment(res.data or [])}
     except Exception as exc:
         raise HTTPException(500, str(exc))
 
@@ -797,12 +851,12 @@ async def overdue_maintenance(user=Depends(verify_jwt)):
     try:
         res = (
             db.table(TABLE_MAINTENANCE_SCHEDULE)
-            .select("*, equipment_registry(equipment_name, equipment_type, location)")
+            .select("*")
             .eq("status", "overdue")
             .order("next_maintenance_date")
             .execute()
         )
-        return {"overdue_maintenance": res.data or []}
+        return {"overdue_maintenance": _enrich_maintenance_with_equipment(res.data or [])}
     except Exception as exc:
         raise HTTPException(500, str(exc))
 
@@ -814,14 +868,14 @@ async def upcoming_maintenance(window_days: int = 14, user=Depends(verify_jwt)):
         horizon = (today + timedelta(days=window_days)).isoformat()
         res = (
             db.table(TABLE_MAINTENANCE_SCHEDULE)
-            .select("*, equipment_registry(equipment_name, equipment_type, location)")
+            .select("*")
             .eq("status", "scheduled")
             .lte("next_maintenance_date", horizon)
             .gte("next_maintenance_date", today.isoformat())
             .order("next_maintenance_date")
             .execute()
         )
-        return {"upcoming_maintenance": res.data or []}
+        return {"upcoming_maintenance": _enrich_maintenance_with_equipment(res.data or [])}
     except Exception as exc:
         raise HTTPException(500, str(exc))
 
@@ -841,14 +895,7 @@ async def complete_maintenance(
 ):
     _require_qa(user)
     try:
-        sched_res = (
-            db.table(TABLE_MAINTENANCE_SCHEDULE)
-            .select("*, equipment_registry(*)")
-            .eq("id", schedule_id)
-            .single()
-            .execute()
-        )
-        sched: Dict = sched_res.data or {}
+        sched = _fetch_maintenance_with_equipment(schedule_id)
         if not sched:
             raise HTTPException(404, "Schedule not found")
 
@@ -880,7 +927,7 @@ async def complete_maintenance(
             generated_by=user.get("username") or "system",
         )
 
-        audit_event(user, "compliance.maintenance.complete", {"schedule_id": schedule_id})
+        audit_event("compliance.maintenance.complete", {"schedule_id": schedule_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"message": "Maintenance recorded. Certificate being generated.", "schedule_id": schedule_id}
     except HTTPException:
         raise
@@ -946,14 +993,7 @@ async def generate_maintenance_certificate(
     """
     _require_qa(user)
     try:
-        sched_res = (
-            db.table(TABLE_MAINTENANCE_SCHEDULE)
-            .select("*, equipment_registry(*)")
-            .eq("id", schedule_id)
-            .single()
-            .execute()
-        )
-        sched: Dict = sched_res.data or {}
+        sched = _fetch_maintenance_with_equipment(schedule_id)
         if not sched:
             raise HTTPException(404, "Schedule not found")
 
@@ -964,7 +1004,7 @@ async def generate_maintenance_certificate(
             body_data=body.model_dump(exclude_none=True),
             generated_by=user.get("username") or "system",
         )
-        audit_event(user, "compliance.maintenance.certificate.generate", {"schedule_id": schedule_id})
+        audit_event("compliance.maintenance.certificate.generate", {"schedule_id": schedule_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"message": "Certificate generation queued.", "schedule_id": schedule_id}
     except HTTPException:
         raise
@@ -982,6 +1022,8 @@ class RecallCreate(BaseModel):
     product_name:         str
     recall_reason:        str
     scope:                str = "voluntary"
+    severity:             str = "major"
+    nafdac_notified:      bool = False
     regulatory_authority: Optional[str] = "NAFDAC"
     distribution_data:    Optional[List[Dict]] = None
 
@@ -1051,7 +1093,7 @@ async def initiate_recall(
             recall_data=inserted,
             generated_by=user.get("username") or "system",
         )
-        audit_event(user, "compliance.recall.initiate", {"recall_id": recall_id})
+        audit_event("compliance.recall.initiate", {"recall_id": recall_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"recall": inserted}
     except Exception as exc:
         logger.exception("initiate_recall failed")
@@ -1066,7 +1108,7 @@ async def update_recall(recall_id: str, body: RecallUpdate, user=Depends(verify_
         if update_data.get("status") in ("completed", "closed"):
             update_data["resolved_at"] = date.today().isoformat()
         row = db.table(TABLE_RECALL_CASES).update(update_data).eq("id", recall_id).execute()
-        audit_event(user, "compliance.recall.update", {"id": recall_id})
+        audit_event("compliance.recall.update", {"id": recall_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"recall": (row.data or [{}])[0]}
     except Exception as exc:
         raise HTTPException(500, str(exc))
@@ -1098,7 +1140,7 @@ async def generate_recall_documents(
             recall=recall,
             generated_by=user.get("username") or "system",
         )
-        audit_event(user, "compliance.recall.docs.generate", {"id": recall_id})
+        audit_event("compliance.recall.docs.generate", {"id": recall_id}, actor_id=user.get("sub"), event_class="compliance")
         return {"message": "Recall documents are being generated.", "recall_id": recall_id}
     except HTTPException:
         raise
@@ -1233,10 +1275,10 @@ async def ingest_docx(
         uploaded_by=user.get("username") or "system",
     )
 
-    audit_event(user, "compliance.sop.ingest", {
+    audit_event("compliance.sop.ingest", {
         "filename": file.filename,
         "sop_id":   resolved_sop_id,
-    })
+    }, actor_id=user.get("sub"), event_class="compliance")
     return {
         "message":  "SOP document accepted for processing.",
         "sop_id":   resolved_sop_id,

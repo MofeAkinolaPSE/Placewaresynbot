@@ -79,7 +79,7 @@ export function ProfitabilityDashboard() {
                   <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${(v / 1_000_000).toFixed(1)}M`} />
                   <Tooltip formatter={(value: any) => formatNaira(Number(value))} />
                   <Legend />
-                  <Bar dataKey="revenue" name="Revenue" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="revenue" name="Revenue" fill="#2FA24A" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="expenses" name="Expenses" fill="#dc2626" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -104,7 +104,7 @@ export function ProfitabilityDashboard() {
                   <XAxis dataKey="period" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${(v / 1_000_000).toFixed(1)}M`} />
                   <Tooltip formatter={(value: any) => formatNaira(Number(value))} />
-                  <Line type="monotone" dataKey="profit" name="Profit" stroke="#2740AE" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="profit" name="Profit" stroke="#1568C4" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (

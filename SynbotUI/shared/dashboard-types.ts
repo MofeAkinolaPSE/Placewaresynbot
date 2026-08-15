@@ -29,6 +29,56 @@ export interface InventoryDashboardData {
   recent_movements: InventoryMovement[];
 }
 
+// ACE Workstation — org-wide cover-page dashboard (GET /dashboard/workstation).
+// Sensitive (₦-denominated) fields are redacted server-side per viewer role
+// (see backend/src/services/intelligence.py's get_workstation_summary) --
+// they are simply absent from the payload for a role without access, not
+// just hidden client-side, so these fields are always optional here.
+export interface DepartmentCard {
+  status: "healthy" | "attention" | "critical" | "at_risk" | "unknown";
+  alert_count: number;
+  can_drill_in: boolean;
+  drill_in_path: string;
+  // Inventory (shallow, no redaction)
+  total_active_skus?: number;
+  low_stock_count?: number;
+  out_of_stock_count?: number;
+  // Finance (shallow always; deep fields only if role has FINANCIAL_DATA_ROLES)
+  overdue_ar_count?: number;
+  ar_total_balance?: number;
+  ap_total_balance?: number;
+  ap_overdue_count?: number;
+  // HR (shallow, no redaction)
+  active_staff_count?: number;
+  total_hours_this_week?: number;
+  // Quality Control (shallow, no redaction)
+  expiring_critical_30d?: number;
+  open_deviations?: number;
+  temp_alerts_today?: number;
+  // CRM (shallow always; pipeline_value only if role has CRM_PIPELINE_VALUE_ROLES)
+  open_prospects_count?: number;
+  win_rate_pct?: number;
+  pipeline_value?: number;
+  // Operations (shallow always; deep fields only if role has PROCUREMENT_VALUE_ROLES)
+  open_po_count?: number;
+  overdue_po_count?: number;
+  total_value?: number;
+  open_value?: number;
+  overdue_value?: number;
+}
+
+export interface WorkstationSummary {
+  generated_at: string;
+  departments: {
+    inventory: DepartmentCard;
+    finance: DepartmentCard;
+    hr: DepartmentCard;
+    quality_control: DepartmentCard;
+    crm: DepartmentCard;
+    operations: DepartmentCard;
+  };
+}
+
 export interface InventoryMovement {
   id: string | number;
   sku: string;

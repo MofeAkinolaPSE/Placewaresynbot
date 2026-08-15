@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Kanban,
@@ -42,17 +42,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { motion } from "framer-motion";
 import { motionVariants } from "@/lib/motion";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // --- Types ---
 
@@ -342,6 +338,11 @@ export default function SalesCRM() {
     queryFn: () => api.salesCrm.dueReminders(48),
   });
   const reminders: Reminder[] = (remindersData as any)?.reminders ?? [];
+  const reminderKpis = useMemo(() => ({
+    total: reminders.length,
+    overdue: reminders.filter((r) => isOverdue(r.due_at)).length,
+    onTime: reminders.filter((r) => !isOverdue(r.due_at)).length,
+  }), [reminders]);
 
   const doneReminder = useMutation({
     mutationFn: (id: string) => api.salesCrm.updateReminder(id, "done"),
@@ -552,16 +553,26 @@ export default function SalesCRM() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Sales CRM</h1>
-          <p className="text-sm text-muted-foreground">Pipeline � Reminders � Reports � Leaderboard � ACE</p>
-        </div>
-        <Button onClick={() => setBulkOpen(true)} className="gap-2">
-          <Send className="h-4 w-4" />
-          Bulk Message
-        </Button>
-      </div>
+      <PageHeader
+        icon={Kanban}
+        title="Sales CRM"
+        subtitle="Pipeline · Reminders · Reports · Leaderboard · ACE"
+        actions={
+          <>
+            {/* Fixes a real bug found during retrofit research: this dialog
+                was fully wired (form + mutation + validation) but no button
+                anywhere opened it. */}
+            <Button variant="outline" onClick={() => setNewLeadOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Lead
+            </Button>
+            <Button onClick={() => setBulkOpen(true)} className="gap-2">
+              <Send className="h-4 w-4" />
+              Bulk Message
+            </Button>
+          </>
+        }
+      />
 
       <Tabs defaultValue="pipeline">
         <TabsList className="flex-wrap h-auto gap-1">
@@ -637,9 +648,19 @@ export default function SalesCRM() {
           )}
         </TabsContent>
 
-        {/* Reminders tab */}
+        {/* Reminders tab — partial retrofit: KpiStrip + DetailSheet for the
+            create form, flat card list kept as-is (every card already
+            shows its full detail, Done is already a single click away).
+            See ACE-Workspace-Standard.md §9.5/§9.8. */}
         <TabsContent value="reminders" className="mt-4">
           <motion.div {...motionVariants.cardEnter} className="space-y-3 max-w-2xl">
+            <KpiStrip
+              items={[
+                { label: "Due (48h)", value: reminderKpis.total },
+                { label: "Overdue", value: reminderKpis.overdue, tone: "danger" },
+                { label: "On Time", value: reminderKpis.onTime, tone: "success" },
+              ]}
+            />
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">Follow-ups due in the next 48 hours</p>
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddReminderOpen(true)}>
@@ -928,8 +949,8 @@ export default function SalesCRM() {
               <>
                 {/* Summary row */}
                 {(tvaData as any)?.total_target !== undefined && (
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
+                  <KpiStrip
+                    items={[
                       { label: "Team Target", value: formatCurrency((tvaData as any).total_target) },
                       { label: "Team Actual (Won)", value: formatCurrency((tvaData as any).total_actual) },
                       {
@@ -938,15 +959,8 @@ export default function SalesCRM() {
                           ? `${((tvaData as any).total_actual / (tvaData as any).total_target * 100).toFixed(1)}%`
                           : "N/A",
                       },
-                    ].map(({ label, value }) => (
-                      <Card key={label}>
-                        <CardContent className="pt-4 pb-3">
-                          <p className="text-xs text-muted-foreground">{label}</p>
-                          <p className="text-xl font-bold font-mono mt-0.5">{value}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                    ]}
+                  />
                 )}
 
                 {/* Per-rep table */}
@@ -990,146 +1004,144 @@ export default function SalesCRM() {
         </TabsContent>
       </Tabs>
 
-      {/* Add Reminder dialog */}
-      <Dialog open={addReminderOpen} onOpenChange={setAddReminderOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Add Follow-up Reminder</DialogTitle>
-            <DialogDescription>Schedule a reminder for a lead or client.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Lead ID <span className="text-muted-foreground text-xs">(optional)</span></label>
-              <Input type="number" placeholder="e.g. 42" value={reminderLeadId} onChange={(e) => setReminderLeadId(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Reminder type</label>
-              <Select value={reminderType} onValueChange={setReminderType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="follow_up">Follow-up call</SelectItem>
-                  <SelectItem value="product_demo">Product demo</SelectItem>
-                  <SelectItem value="proposal_review">Proposal review</SelectItem>
-                  <SelectItem value="payment_check">Payment check</SelectItem>
-                  <SelectItem value="order_follow_up">Order follow-up</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Due date and time</label>
-              <Input type="datetime-local" value={reminderDueAt} onChange={(e) => setReminderDueAt(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Note <span className="text-muted-foreground text-xs">(optional)</span></label>
-              <Textarea placeholder="e.g. Follow up on Amoxicillin quotation..." value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} rows={2} className="resize-none" />
-            </div>
+      {/* Add Reminder — ephemeral create task, DetailSheet per Ch.5.2. */}
+      <DetailSheet
+        open={addReminderOpen}
+        onOpenChange={setAddReminderOpen}
+        title="Add Follow-up Reminder"
+        description="Schedule a reminder for a lead or client."
+        icon={Bell}
+        footer={
+          <Button className="w-full gap-2" disabled={!reminderDueAt || createReminder.isPending} onClick={() => createReminder.mutate()}>
+            {createReminder.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+            Save Reminder
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Lead ID <span className="text-muted-foreground text-xs">(optional)</span></label>
+            <Input type="number" placeholder="e.g. 42" value={reminderLeadId} onChange={(e) => setReminderLeadId(e.target.value)} />
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setAddReminderOpen(false)}>Cancel</Button>
-            <Button disabled={!reminderDueAt || createReminder.isPending} onClick={() => createReminder.mutate()} className="gap-2">
-              {createReminder.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-              Save Reminder
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Reminder type</label>
+            <Select value={reminderType} onValueChange={setReminderType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="follow_up">Follow-up call</SelectItem>
+                <SelectItem value="product_demo">Product demo</SelectItem>
+                <SelectItem value="proposal_review">Proposal review</SelectItem>
+                <SelectItem value="payment_check">Payment check</SelectItem>
+                <SelectItem value="order_follow_up">Order follow-up</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Due date and time</label>
+            <Input type="datetime-local" value={reminderDueAt} onChange={(e) => setReminderDueAt(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Note <span className="text-muted-foreground text-xs">(optional)</span></label>
+            <Textarea placeholder="e.g. Follow up on Amoxicillin quotation..." value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} rows={2} className="resize-none" />
+          </div>
+        </div>
+      </DetailSheet>
 
-      {/* Bulk message dialog */}
-      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Send Bulk Message</DialogTitle>
-            <DialogDescription>Broadcast a message to your client list via WhatsApp or Email.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Channel</label>
-              <Select value={bulkChannel} onValueChange={setBulkChannel}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="whatsapp">WhatsApp (via Termii)</SelectItem>
-                  <SelectItem value="email">Email (via Gmail SMTP)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {bulkChannel === "email" && (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Subject</label>
-                <Input placeholder="Email subject..." value={bulkSubject} onChange={(e) => setBulkSubject(e.target.value)} />
-              </div>
-            )}
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Message</label>
-              <Textarea placeholder="Type your message to clients..." value={bulkText} onChange={(e) => setBulkText(e.target.value)} rows={5} className="resize-none" />
-              <p className="text-xs text-muted-foreground text-right">{bulkText.length} / 4096</p>
-            </div>
+      {/* Send Bulk Message — ephemeral create/act flow, DetailSheet per
+          Ch.5.2, page-header-level action (not tied to any single tab). */}
+      <DetailSheet
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        title="Send Bulk Message"
+        description="Broadcast a message to your client list via WhatsApp or Email."
+        icon={Send}
+        footer={
+          <Button className="w-full gap-2" disabled={bulkText.trim().length === 0 || sendBulk.isPending} onClick={() => sendBulk.mutate()}>
+            {sendBulk.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Queue Message
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Channel</label>
+            <Select value={bulkChannel} onValueChange={setBulkChannel}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="whatsapp">WhatsApp (via Termii)</SelectItem>
+                <SelectItem value="email">Email (via Gmail SMTP)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setBulkOpen(false)}>Cancel</Button>
-            <Button disabled={bulkText.trim().length === 0 || sendBulk.isPending} onClick={() => sendBulk.mutate()} className="gap-2">
-              {sendBulk.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Queue Message
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {bulkChannel === "email" && (
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Subject</label>
+              <Input placeholder="Email subject..." value={bulkSubject} onChange={(e) => setBulkSubject(e.target.value)} />
+            </div>
+          )}
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Message</label>
+            <Textarea placeholder="Type your message to clients..." value={bulkText} onChange={(e) => setBulkText(e.target.value)} rows={5} className="resize-none" />
+            <p className="text-xs text-muted-foreground text-right">{bulkText.length} / 4096</p>
+          </div>
+        </div>
+      </DetailSheet>
 
-      {/* Pre-call Brief Sheet */}
-      <Sheet open={briefLeadId !== null} onOpenChange={(open) => { if (!open) setBriefLeadId(null); }}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-primary" />
-              Pre-call Intelligence Brief
-            </SheetTitle>
-            <SheetDescription>AI-generated summary for Lead #{briefLeadId}</SheetDescription>
-          </SheetHeader>
-          <div className="mt-4 space-y-4">
-            {briefLoading ? (
-              <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
-            ) : briefData ? (
-              <>
-                {(briefData as any).ai_brief && (
-                  <Card className="border-primary/40">
-                    <CardHeader className="pb-2"><CardTitle className="text-sm text-primary">AI Brief</CardTitle></CardHeader>
-                    <CardContent>
-                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{(briefData as any).ai_brief}</p>
-                    </CardContent>
-                  </Card>
-                )}
-                {(briefData as any).recent_reminders?.length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1.5"><Bell className="h-4 w-4" />Recent Reminders</CardTitle></CardHeader>
-                    <CardContent className="space-y-1">
-                      {(briefData as any).recent_reminders.map((r: any) => (
-                        <div key={r.id} className="text-xs text-muted-foreground flex justify-between">
-                          <span>{r.reminder_type?.replace(/_/g, " ")}</span>
-                          <span>{formatDate(r.due_at)}</span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
-                {(briefData as any).recent_invoices?.length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1.5"><History className="h-4 w-4" />Recent Invoices</CardTitle></CardHeader>
-                    <CardContent className="space-y-1">
-                      {(briefData as any).recent_invoices.map((inv: any) => (
-                        <div key={inv.id} className="text-xs flex justify-between">
-                          <span className="text-muted-foreground">#{String(inv.id).slice(-8)}</span>
-                          <span>{formatCurrency(inv.total_amount ?? inv.amount)}</span>
-                          <Badge variant={inv.status === "paid" ? "default" : "secondary"} className="text-[10px]">{inv.status}</Badge>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-8">No brief data available.</p>
+      {/* Pre-call Intelligence Brief — this was the hand-rolled Sheet
+          ACE-Workspace-Standard.md Ch.5 cites as the real-world precedent
+          that justified building DetailSheet in the first place. Converting
+          it closes that loop. */}
+      <DetailSheet
+        open={briefLeadId !== null}
+        onOpenChange={(open) => { if (!open) setBriefLeadId(null); }}
+        title="Pre-call Intelligence Brief"
+        description={`AI-generated summary for Lead #${briefLeadId}`}
+        icon={Brain}
+      >
+        {briefLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        ) : briefData ? (
+          <>
+            {(briefData as any).ai_brief && (
+              <Card className="border-primary/40">
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-primary">AI Brief</CardTitle></CardHeader>
+                <CardContent>
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{(briefData as any).ai_brief}</p>
+                </CardContent>
+              </Card>
             )}
-          </div>
-        </SheetContent>
-      </Sheet>
+            {(briefData as any).recent_reminders?.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1.5"><Bell className="h-4 w-4" />Recent Reminders</CardTitle></CardHeader>
+                <CardContent className="space-y-1">
+                  {(briefData as any).recent_reminders.map((r: any) => (
+                    <div key={r.id} className="text-xs text-muted-foreground flex justify-between">
+                      <span>{r.reminder_type?.replace(/_/g, " ")}</span>
+                      <span>{formatDate(r.due_at)}</span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+            {(briefData as any).recent_invoices?.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1.5"><History className="h-4 w-4" />Recent Invoices</CardTitle></CardHeader>
+                <CardContent className="space-y-1">
+                  {(briefData as any).recent_invoices.map((inv: any) => (
+                    <div key={inv.id} className="text-xs flex justify-between">
+                      <span className="text-muted-foreground">#{String(inv.id).slice(-8)}</span>
+                      <span>{formatCurrency(inv.total_amount ?? inv.amount)}</span>
+                      <Badge variant={inv.status === "paid" ? "default" : "secondary"} className="text-[10px]">{inv.status}</Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-8">No brief data available.</p>
+        )}
+      </DetailSheet>
 
       {/* Product Availability Dialog */}
       <Dialog open={stockLeadId !== null} onOpenChange={(open) => { if (!open) setStockLeadId(null); }}>
@@ -1176,169 +1188,170 @@ export default function SalesCRM() {
         </DialogContent>
       </Dialog>
 
-      {/* New Lead Dialog */}
-      <Dialog open={newLeadOpen} onOpenChange={setNewLeadOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add New Lead</DialogTitle>
-            <DialogDescription>Enter the details to add a new opportunity to the pipeline.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+      {/* Add New Lead — ephemeral create task, DetailSheet per Ch.5.2.
+          Previously unreachable (see the header action fix above). */}
+      <DetailSheet
+        open={newLeadOpen}
+        onOpenChange={setNewLeadOpen}
+        title="Add New Lead"
+        description="Enter the details to add a new opportunity to the pipeline."
+        icon={Plus}
+        footer={
+          <Button
+            className="w-full gap-2"
+            disabled={!newLeadCompany.trim() || createLead.isPending}
+            onClick={() => createLead.mutate()}
+          >
+            {createLead.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Add Lead
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium">Company Name *</label>
+            <Input placeholder="e.g. Lagos Island General Hospital" value={newLeadCompany} onChange={e => setNewLeadCompany(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-sm font-medium">Company Name *</label>
-              <Input placeholder="e.g. Lagos Island General Hospital" value={newLeadCompany} onChange={e => setNewLeadCompany(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-sm font-medium">Contact Person</label>
-                <Input placeholder="Dr. Abiodun" value={newLeadContact} onChange={e => setNewLeadContact(e.target.value)} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Phone</label>
-                <Input placeholder="080..." value={newLeadPhone} onChange={e => setNewLeadPhone(e.target.value)} />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Products Interested In</label>
-              <Input placeholder="Lantus, MMR, Flu (comma-separated)" value={newLeadProducts} onChange={e => setNewLeadProducts(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-sm font-medium">Stage</label>
-                <Select value={newLeadStage} onValueChange={setNewLeadStage}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["new","qualified","proposal","negotiation","payment_plan"].map(s => (
-                      <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Expected Value (₦)</label>
-                <Input type="number" placeholder="5000000" value={newLeadValue} onChange={e => setNewLeadValue(e.target.value)} />
-              </div>
+              <label className="text-sm font-medium">Contact Person</label>
+              <Input placeholder="Dr. Abiodun" value={newLeadContact} onChange={e => setNewLeadContact(e.target.value)} />
             </div>
             <div>
-              <label className="text-sm font-medium">Payment Terms</label>
-              <Input placeholder="e.g. 30 days net" value={newLeadTerms} onChange={e => setNewLeadTerms(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Notes</label>
-              <Textarea placeholder="Any context about this lead..." value={newLeadNotes} onChange={e => setNewLeadNotes(e.target.value)} rows={2} className="resize-none" />
+              <label className="text-sm font-medium">Phone</label>
+              <Input placeholder="080..." value={newLeadPhone} onChange={e => setNewLeadPhone(e.target.value)} />
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setNewLeadOpen(false)}>Cancel</Button>
-            <Button
-              disabled={!newLeadCompany.trim() || createLead.isPending}
-              onClick={() => createLead.mutate()}
-              className="gap-2"
-            >
-              {createLead.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Add Lead
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Log Interaction Dialog */}
-      <Dialog open={logLeadId !== null} onOpenChange={(o) => !o && setLogLeadId(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Log Interaction — Lead #{logLeadId}</DialogTitle>
-            <DialogDescription>Record a call, visit, site visit, demo, or meeting.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium">Products Interested In</label>
+            <Input placeholder="Lantus, MMR, Flu (comma-separated)" value={newLeadProducts} onChange={e => setNewLeadProducts(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-sm font-medium">Type</label>
-              <Select value={logType} onValueChange={setLogType}>
+              <label className="text-sm font-medium">Stage</label>
+              <Select value={newLeadStage} onValueChange={setNewLeadStage}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {["call","visit","site_visit","demo","email","whatsapp","meeting"].map(t => (
-                    <SelectItem key={t} value={t}>{t.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>
+                  {["new","qualified","proposal","negotiation","payment_plan"].map(s => (
+                    <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <label className="text-sm font-medium">Summary *</label>
-              <Textarea
-                placeholder="e.g. Called Dr. Abiodun, confirmed interest in Lantus 100U. Requested quotation."
-                value={logSummary}
-                onChange={e => setLogSummary(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Outcome</label>
-              <Input placeholder="e.g. Interested, requested sample" value={logOutcome} onChange={e => setLogOutcome(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Next Step</label>
-              <Input placeholder="e.g. Send quotation by Friday" value={logNextStep} onChange={e => setLogNextStep(e.target.value)} />
+              <label className="text-sm font-medium">Expected Value (₦)</label>
+              <Input type="number" placeholder="5000000" value={newLeadValue} onChange={e => setNewLeadValue(e.target.value)} />
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setLogLeadId(null)}>Cancel</Button>
-            <Button
-              disabled={!logSummary.trim() || logInteractionMutation.isPending}
-              onClick={() => logInteractionMutation.mutate()}
-              className="gap-2"
-            >
-              {logInteractionMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
-              Log Interaction
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div>
+            <label className="text-sm font-medium">Payment Terms</label>
+            <Input placeholder="e.g. 30 days net" value={newLeadTerms} onChange={e => setNewLeadTerms(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Notes</label>
+            <Textarea placeholder="Any context about this lead..." value={newLeadNotes} onChange={e => setNewLeadNotes(e.target.value)} rows={2} className="resize-none" />
+          </div>
+        </div>
+      </DetailSheet>
 
-      {/* Set Target Dialog */}
-      <Dialog open={newTargetOpen} onOpenChange={setNewTargetOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Set Sales Target</DialogTitle>
-            <DialogDescription>Period: {targetPeriod}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium">Rep ID (leave blank for team)</label>
-              <Input placeholder="UUID or leave blank for team target" value={ntRepId} onChange={e => setNtRepId(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Period Type</label>
-              <Select value={ntPeriodType} onValueChange={setNtPeriodType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="quarterly">Quarterly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Target Value (₦) *</label>
-              <Input type="number" placeholder="e.g. 50000000" value={ntValue} onChange={e => setNtValue(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Target Deals (optional)</label>
-              <Input type="number" placeholder="e.g. 10" value={ntDeals} onChange={e => setNtDeals(e.target.value)} />
-            </div>
+      {/* Log Interaction — ephemeral act flow triggered from a Kanban card,
+          DetailSheet per Ch.5.2. DetailSheet composes independently of the
+          Pipeline tab's own untouched Kanban shape (Ch.9.5). */}
+      <DetailSheet
+        open={logLeadId !== null}
+        onOpenChange={(o) => !o && setLogLeadId(null)}
+        title={`Log Interaction — Lead #${logLeadId}`}
+        description="Record a call, visit, site visit, demo, or meeting."
+        icon={Phone}
+        footer={
+          <Button
+            className="w-full gap-2"
+            disabled={!logSummary.trim() || logInteractionMutation.isPending}
+            onClick={() => logInteractionMutation.mutate()}
+          >
+            {logInteractionMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+            Log Interaction
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium">Type</label>
+            <Select value={logType} onValueChange={setLogType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {["call","visit","site_visit","demo","email","whatsapp","meeting"].map(t => (
+                  <SelectItem key={t} value={t}>{t.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setNewTargetOpen(false)}>Cancel</Button>
-            <Button
-              disabled={!ntValue || createTarget.isPending}
-              onClick={() => createTarget.mutate()}
-              className="gap-2"
-            >
-              {createTarget.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
-              Save Target
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div>
+            <label className="text-sm font-medium">Summary *</label>
+            <Textarea
+              placeholder="e.g. Called Dr. Abiodun, confirmed interest in Lantus 100U. Requested quotation."
+              value={logSummary}
+              onChange={e => setLogSummary(e.target.value)}
+              rows={3}
+              className="resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Outcome</label>
+            <Input placeholder="e.g. Interested, requested sample" value={logOutcome} onChange={e => setLogOutcome(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Next Step</label>
+            <Input placeholder="e.g. Send quotation by Friday" value={logNextStep} onChange={e => setLogNextStep(e.target.value)} />
+          </div>
+        </div>
+      </DetailSheet>
+
+      {/* Set Sales Target — ephemeral create task, DetailSheet per Ch.5.2,
+          same shape as FinanceBudget.tsx's Budget Targets create form. */}
+      <DetailSheet
+        open={newTargetOpen}
+        onOpenChange={setNewTargetOpen}
+        title="Set Sales Target"
+        description={`Period: ${targetPeriod}`}
+        icon={TrendingUp}
+        footer={
+          <Button
+            className="w-full gap-2"
+            disabled={!ntValue || createTarget.isPending}
+            onClick={() => createTarget.mutate()}
+          >
+            {createTarget.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+            Save Target
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium">Rep ID (leave blank for team)</label>
+            <Input placeholder="UUID or leave blank for team target" value={ntRepId} onChange={e => setNtRepId(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Period Type</label>
+            <Select value={ntPeriodType} onValueChange={setNtPeriodType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">Monthly</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="quarterly">Quarterly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Target Value (₦) *</label>
+            <Input type="number" placeholder="e.g. 50000000" value={ntValue} onChange={e => setNtValue(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Target Deals (optional)</label>
+            <Input type="number" placeholder="e.g. 10" value={ntDeals} onChange={e => setNtDeals(e.target.value)} />
+          </div>
+        </div>
+      </DetailSheet>
     </div>
   );
 }

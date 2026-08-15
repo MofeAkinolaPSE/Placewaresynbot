@@ -323,7 +323,10 @@ export default function RiderTrack() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "delivered" }),
+          // This page has no staff JWT (it's public, token-authenticated) --
+          // the tracking token itself now authenticates this call, same
+          // credential model as the location-ping calls above.
+          body: JSON.stringify({ status: "delivered", token }),
         }
       );
       if (res.ok) {

@@ -35,6 +35,12 @@ type UserRecord = {
 
 const DEFAULT_ATTESTATION = "I attest this access management action is authorized and policy-compliant.";
 
+// Must match placeware_staff's CHECK constraint exactly (backend/migrations/
+// 000_full_schema_with_rls.sql) -- these are Staff Directory departments,
+// a different concept from the Access Role select below (which controls
+// RBAC via `roles`, not the HR directory).
+const STAFF_DEPARTMENTS = ["Finance", "Sales", "Operations", "HR", "Management"];
+
 const parseRoles = (value: string): string[] =>
   value
     .split(",")
@@ -62,6 +68,12 @@ const AdminUsers = () => {
   const [newRoles, setNewRoles] = useState("viewer");
   const [createReason, setCreateReason] = useState("");
   const [createAttestation, setCreateAttestation] = useState(DEFAULT_ATTESTATION);
+  // Optional Staff Directory link -- when both are filled, POST /users also
+  // creates a matching placeware_staff record so the account actually shows
+  // up on the HR page. Previously nothing did this at all.
+  const [newFullName, setNewFullName] = useState("");
+  const [newDepartment, setNewDepartment] = useState("");
+  const [newJobTitle, setNewJobTitle] = useState("");
 
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [passwordUserId, setPasswordUserId] = useState<string>("");
@@ -100,15 +112,27 @@ const AdminUsers = () => {
         roles,
         approval_reason: createReason.trim(),
         attestation_text: createAttestation.trim(),
+        full_name: newFullName.trim() || undefined,
+        department: newDepartment || undefined,
+        job_title: newJobTitle.trim() || undefined,
       });
     },
-    onSuccess: () => {
-      toast.success("User created");
+    onSuccess: (data: any) => {
+      if (data?.staff_link_warning) {
+        toast.warning(data.staff_link_warning);
+      } else if (data?.staff) {
+        toast.success("User created and added to the Staff Directory");
+      } else {
+        toast.success("User created");
+      }
       setNewEmail("");
       setNewPassword("");
       setNewRoles("viewer");
       setCreateReason("");
       setCreateAttestation(DEFAULT_ATTESTATION);
+      setNewFullName("");
+      setNewDepartment("");
+      setNewJobTitle("");
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (error: any) => {
@@ -156,12 +180,16 @@ const AdminUsers = () => {
   });
 
   const pwdError = passwordStrengthError(newPassword);
+  // Staff Directory link is optional as a pair -- either both full name and
+  // department are filled, or neither. Matches POST /users' own 400 case.
+  const staffLinkIncomplete = Boolean(newFullName.trim()) !== Boolean(newDepartment);
   const canCreate =
     newEmail.trim().length > 0 &&
     pwdError === null &&
     parseRoles(newRoles).length > 0 &&
     createReason.trim().length > 0 &&
-    createAttestation.trim().length > 0;
+    createAttestation.trim().length > 0 &&
+    !staffLinkIncomplete;
 
   return (
     <motion.div
@@ -211,6 +239,7 @@ const AdminUsers = () => {
               <SelectItem value="hr">HR</SelectItem>
               <SelectItem value="ops">Operations</SelectItem>
               <SelectItem value="finance">Finance</SelectItem>
+              <SelectItem value="quality_assurance">Quality Assurance</SelectItem>
               <SelectItem value="management">Management</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
             </SelectContent>
@@ -222,6 +251,43 @@ const AdminUsers = () => {
             aria-label="Approval reason"
           />
         </div>
+
+        <div className="pt-2 border-t">
+          <p className="text-sm font-medium text-foreground">Staff Directory link (optional)</p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Fill in both name and department to also create a matching card on the HR Staff Directory page. Leave both blank to create a login-only account (e.g. a service/rider account).
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Input
+              value={newFullName}
+              onChange={(e) => setNewFullName(e.target.value)}
+              placeholder="Full name"
+              aria-label="Full name"
+            />
+            <Select value={newDepartment} onValueChange={setNewDepartment}>
+              <SelectTrigger aria-label="Department">
+                <SelectValue placeholder="Department" />
+              </SelectTrigger>
+              <SelectContent>
+                {STAFF_DEPARTMENTS.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={newJobTitle}
+              onChange={(e) => setNewJobTitle(e.target.value)}
+              placeholder="Job title (optional, e.g. Warehouse Lead)"
+              aria-label="Job title"
+            />
+          </div>
+          {staffLinkIncomplete && (
+            <p className="text-xs text-destructive mt-1">
+              Provide both full name and department to link a staff record, or clear both.
+            </p>
+          )}
+        </div>
+
         <Textarea
           value={createAttestation}
           onChange={(e) => setCreateAttestation(e.target.value)}

@@ -26,6 +26,8 @@ import {
   Sun,
   Moon,
   ScrollText,
+  Database,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
@@ -84,7 +86,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       label: "Executive Summary",
       icon: BarChart3,
       href: "/executive",
-      roles: ["admin", "management"],
+      roles: ["admin", "management", "finance"],
     },
     {
       label: "Finance",
@@ -94,6 +96,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         { label: "Analytics", href: "/finance/analytics" },
         { label: "Reports", href: "/finance/reports" },
         { label: "AR & Alerts", href: "/finance/ar" },
+        { label: "Customer Receipts", href: "/finance/ar/receipts" },
         { label: "Vendor Payments", href: "/finance/vendor-payments" },
         { label: "Budget", href: "/finance/budget" },
         { label: "Sage Import", href: "/finance/sage-import" },
@@ -116,6 +119,12 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       ],
     },
     {
+      label: "Inventory",
+      icon: Package,
+      href: "/inventory",
+      roles: ["admin", "ops", "operations", "finance", "sales"],
+    },
+    {
       label: "Operations",
       icon: Factory,
       roles: ["admin", "ops", "operations"],
@@ -133,6 +142,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin", "crm", "sales"],
       children: [
         { label: "Overview", href: "/crm" },
+        { label: "Customer Workspace", href: "/customers/workspace" },
         { label: "Sales Pipeline", href: "/crm/sales" },
         { label: "Lead Finder", href: "/crm/lead-finder" },
         { label: "Leads", href: "/admin/leads" },
@@ -143,7 +153,10 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       label: "Compliance & QMS",
       icon: ShieldCheck,
       href: "/compliance",
-      roles: ["admin", "quality_assurance", "qa", "management"],
+      // Reconciled to match constants.COMPLIANCE_OPS_ROLES and
+      // ProtectedRoute.tsx's own /compliance rule -- previously excluded
+      // ops/operations even though the route itself already let them in.
+      roles: ["admin", "quality_assurance", "qa", "operations", "ops", "management"],
     },
     {
       label: "Quality Control",
@@ -161,6 +174,12 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       label: "User Access",
       icon: Shield,
       href: "/admin/users",
+      roles: ["admin"],
+    },
+    {
+      label: "Data Intelligence",
+      icon: Database,
+      href: "/admin/data-intelligence",
       roles: ["admin"],
     },
     {
@@ -238,9 +257,11 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
           <div
             className="relative overflow-hidden rounded-xl px-3 py-2"
             style={{
-              background: "linear-gradient(135deg, rgba(0,200,220,0.07) 0%, rgba(0,90,200,0.05) 100%)",
-              border: "1px solid rgba(0,200,220,0.15)",
-              boxShadow: "0 0 18px rgba(0,200,220,0.08), inset 0 1px 0 rgba(255,255,255,0.06)",
+              // Two-tone brand glow (blue #1568C4 + green #2FA24A) echoing the
+              // logo's own blue-to-green wordmark, instead of the old cyan-only chrome.
+              background: "linear-gradient(135deg, rgba(21,104,196,0.08) 0%, rgba(47,162,74,0.06) 100%)",
+              border: "1px solid rgba(47,162,74,0.18)",
+              boxShadow: "0 0 16px rgba(21,104,196,0.09), 0 0 16px rgba(47,162,74,0.07), inset 0 1px 0 rgba(255,255,255,0.06)",
             }}
           >
             {/* Radial highlight shimmer */}
@@ -257,7 +278,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
               className="relative w-full h-auto object-contain"
               style={{
                 maxHeight: "48px",
-                filter: "drop-shadow(0 2px 8px rgba(0,200,220,0.28)) drop-shadow(0 0 2px rgba(255,255,255,0.15))",
+                filter: "drop-shadow(0 2px 6px rgba(21,104,196,0.22)) drop-shadow(0 2px 6px rgba(47,162,74,0.18)) drop-shadow(0 0 2px rgba(255,255,255,0.15))",
               }}
             />
           </div>

@@ -24,6 +24,14 @@ _ALLOWED_CHANNELS: dict[str, set[str]] = {
     "staff_updates": {"admin", "management", "hr", "ops"},
     "crm_updates": {"admin", "management", "crm", "sales"},
     "chat_updates": {"admin", "management", "hr", "ops", "crm", "sales", "staff"},
+    # Was missing entirely -- every connection attempt from Frontdesk.tsx/
+    # CustomerWorkspace.tsx hit the "unknown channel" branch below and got
+    # closed (4404), so the QC/Finance/Dispatch queue silently never
+    # auto-refreshed live; it just retried the same failing connection
+    # forever. Role set covers everyone who touches the invoice pipeline
+    # (frontdesk/QC/finance/dispatch) plus CustomerWorkspace's own
+    # audience (crm/sales), matching frontdesk.py's actual role gates.
+    "frontdesk_updates": {"admin", "management", "finance", "ops", "quality_assurance", "qa", "crm", "sales"},
 }
 
 

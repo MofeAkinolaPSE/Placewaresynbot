@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from "react";
+﻿import { useState, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
@@ -22,16 +22,7 @@ import {
   Activity, Target, Briefcase, ArrowRight,
 } from "lucide-react";
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-function formatName(subject: string | null): string {
-  if (!subject) return "there";
-  return subject
-    .replace(/^(user:|staff:|uid:)/, "")
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim() || subject;
-}
+// ── Helpers ──────────────────────────────────────────────────────────────
 
 function getGreeting(name: string) {
   const h = new Date().getHours();
@@ -58,13 +49,13 @@ function pctColor(v: number): string {
 }
 
 function scoreLabel(s: number): string {
-  if (s >= 85) return "ðŸ”¥ Fantastic job";
-  if (s >= 70) return "âš¡ Keep it up";
-  if (s >= 50) return "ðŸ’ª Good progress";
-  return "ðŸ“‹ Let's get moving";
+  if (s >= 85) return "🔥 Fantastic job";
+  if (s >= 70) return "⚡ Keep it up";
+  if (s >= 50) return "💪 Good progress";
+  return "📋 Let's get moving";
 }
 
-// â”€â”€ SVG micro-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SVG micro-components ────────────────────────────────────────────────
 
 function RingProgress({ value, size = 48 }: { value: number; size?: number }) {
   const r = (size - 8) / 2;
@@ -99,36 +90,16 @@ function ScoreGauge({ value }: { value: number }) {
   );
 }
 
-function Sparkline({ values, color = "#22c55e" }: { values: number[]; color?: string }) {
-  if (values.length < 2) return <svg width="80" height="28" viewBox="0 0 80 28" />;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
-  const pts = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * 76 + 2;
-    const y = 24 - ((v - min) / range) * 20;
-    return `${x},${y}`;
-  }).join(" ");
-  return (
-    <svg width="80" height="28" viewBox="0 0 80 28">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="2"
-        strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Main component ──────────────────────────────────────────────────────
 
 export default function StaffDashboard() {
   const queryClient = useQueryClient();
   const subject = authClient.getSubject();
   const { toast } = useToast();
-  const name = formatName(subject);
-  const { text: greetText, Icon: GreetIcon, color: greetColor } = getGreeting(name);
 
   const [logHoursOpen, setLogHoursOpen] = useState(false);
   const [timesheetForm, setTimesheetForm] = useState({
-    staff_id: subject || "",
+    staff_id: "",
     date: new Date().toISOString().slice(0, 10),
     hours_worked: "8",
     department: "Operations",
@@ -138,7 +109,6 @@ export default function StaffDashboard() {
   useRealtimeChannel("staff_updates", () => {
     if (!subject) return;
     void queryClient.invalidateQueries({ queryKey: ["staff-dashboard", subject] });
-    void queryClient.invalidateQueries({ queryKey: ["timesheets"] });
   }, !!subject);
 
   const { data, isLoading } = useQuery({
@@ -147,26 +117,26 @@ export default function StaffDashboard() {
     enabled: !!subject,
   });
 
-  const { data: tsRaw } = useQuery({
-    queryKey: ["timesheets"],
-    queryFn: () => api.staff.timesheets(undefined, 30),
-    enabled: !!subject,
-  });
+  const identity = data?.identity;
+  const name = identity?.display_name || "there";
+  const { text: greetText, Icon: GreetIcon, color: greetColor } = getGreeting(name);
+  const hoursThisWeek = identity?.hours_this_week ?? 0;
+
+  // Pre-fill the Log Hours form's Staff ID once the real staff_id resolves
+  // (linked via email to placeware_staff) -- never overwrite a value the
+  // user already typed themselves.
+  useEffect(() => {
+    if (identity?.staff_id) {
+      setTimesheetForm((p) => (p.staff_id ? p : { ...p, staff_id: identity.staff_id as string }));
+    }
+  }, [identity?.staff_id]);
 
   const tasks         = Array.isArray(data?.tasks)              ? data.tasks              : [];
   const projects      = Array.isArray(data?.assigned_projects)  ? data.assigned_projects  : [];
   const activities    = Array.isArray(data?.activities)         ? data.activities         : [];
   const pending       = Array.isArray(data?.pending_approvals)  ? data.pending_approvals  : [];
-  const kpis          = Array.isArray(data?.kpis)               ? data.kpis               : [];
 
-  // handle {data:[]} or [] return shape from timesheets
-  const timesheets = useMemo(() => {
-    if (Array.isArray(tsRaw)) return tsRaw;
-    if (Array.isArray((tsRaw as any)?.data)) return (tsRaw as any).data;
-    return [];
-  }, [tsRaw]);
-
-  // â”€â”€ Derived metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Derived metrics ─────────────────────────────────────────────────
   const completedCount = tasks.filter((t: any) =>
     t.status === "completed" || t.status === "done").length;
   const activeCount = tasks.filter((t: any) =>
@@ -174,24 +144,10 @@ export default function StaffDashboard() {
   const today = new Date();
   const dueTodayCount = tasks.filter((t: any) =>
     t.due_date && new Date(t.due_date).toDateString() === today.toDateString()).length;
-  const score    = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 72;
-  const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 40;
+  const score    = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
+  const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
-  const hoursThisWeek = useMemo(() => {
-    const wkStart = new Date();
-    wkStart.setDate(wkStart.getDate() - ((wkStart.getDay() + 6) % 7));
-    wkStart.setHours(0, 0, 0, 0);
-    return timesheets
-      .filter((t: any) => new Date(t.date) >= wkStart)
-      .reduce((s: number, t: any) => s + (Number(t.hours_worked) || 0), 0);
-  }, [timesheets]);
-
-  const actSparkline = useMemo(() => {
-    const base = [2, 3, 2, 4, 3, 4];
-    return [...base, Math.max(activities.length, 1)];
-  }, [activities.length]);
-
-  // â”€â”€ Timesheet mutation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Timesheet mutation ───────────────────────────────────────────────
   const tsSubmit = useMutation({
     mutationFn: () =>
       api.staff.submitTimesheet({
@@ -205,7 +161,6 @@ export default function StaffDashboard() {
       toast({ title: "Hours logged", description: "Timesheet entry recorded." });
       setLogHoursOpen(false);
       setTimesheetForm((p) => ({ ...p, activity_note: "", hours_worked: "8", date: new Date().toISOString().slice(0, 10) }));
-      void queryClient.invalidateQueries({ queryKey: ["timesheets"] });
       if (subject) void queryClient.invalidateQueries({ queryKey: ["staff-dashboard", subject] });
       void queryClient.invalidateQueries({ queryKey: ["workforce-dashboard"] });
     },
@@ -223,29 +178,17 @@ export default function StaffDashboard() {
     { label: "Due Today",     value: dueTodayCount,     icon: AlertCircle,  color: "text-orange-400"  },
   ];
 
+  // Each row shows a real, currently-available number — no fabricated
+  // trend badges or sparklines. There's no stored historical snapshot for
+  // personal performance anywhere in this schema, so a genuine period-over-
+  // period change can't be computed honestly yet.
   const statsPanel = [
-    {
-      label: "Performance",  sub: "Based on tasks",
-      change: `+${Math.min(activeCount * 7 + 12, 48)}%`,
-      color: "#f59e0b",
-      values: [2, 3, 2, 4, 3, activeCount + 2, activeCount + 3],
-    },
-    {
-      label: "Projects",    sub: "Completion rate",
-      change: `+${Math.min(completedCount * 8 + 15, 62)}%`,
-      color: "#22c55e",
-      tag: completedCount >= 3 ? "keep going ðŸ”¥" : undefined,
-      values: [1, 2, 2, 3, 2, completedCount, completedCount + 1],
-    },
-    {
-      label: "Activity",    sub: "Recent events",
-      change: `+${Math.min(activities.length * 4 + 8, 35)}%`,
-      color: "#38bdf8",
-      values: actSparkline,
-    },
+    { label: "Performance", sub: "Based on tasks",    value: tasks.length > 0 ? `${progress}%` : "No tasks yet",         color: "#f59e0b" },
+    { label: "Projects",    sub: "Completion rate",    value: `${completedCount} completed`,                             color: "#22c55e" },
+    { label: "Activity",    sub: "Recent events",      value: `${activities.length} event${activities.length === 1 ? "" : "s"}`, color: "#38bdf8" },
   ];
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -334,15 +277,14 @@ export default function StaffDashboard() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-lg font-bold truncate">{name}</p>
-              <p className="text-sm text-muted-foreground">{kpis[0]?.label || "Staff Member"}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> Placeware Pharma</span>
+                <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {identity?.department || identity?.email || "—"}</span>
                 <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {hoursThisWeek.toFixed(1)}h this week</span>
               </div>
             </div>
             {resumeTask && (
               <div className="hidden md:flex flex-col items-start gap-1.5 rounded-xl border border-border/50 bg-muted/30 p-3 min-w-[180px] max-w-[220px]">
-                <p className="text-xs font-medium text-muted-foreground">Continue where you left off â†©</p>
+                <p className="text-xs font-medium text-muted-foreground">Continue where you left off ↩</p>
                 <p className="text-sm font-semibold line-clamp-2 leading-snug">{resumeTask.title}</p>
                 <Button variant="outline" size="sm" className="mt-0.5 h-7 gap-1 text-xs">
                   Jump to task <ArrowRight className="h-3 w-3" />
@@ -369,7 +311,7 @@ export default function StaffDashboard() {
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-xs text-muted-foreground">{s.label}</p>
-                  <p className={`text-2xl font-bold mt-0.5 ${s.color}`}>{isLoading ? "â€“" : s.value}</p>
+                  <p className={`text-2xl font-bold mt-0.5 ${s.color}`}>{isLoading ? "–" : s.value}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <Icon className={`h-5 w-5 ${s.color} opacity-70`} />
@@ -395,7 +337,7 @@ export default function StaffDashboard() {
             <CardContent className="space-y-2.5">
               {isLoading ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading tasksâ€¦
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading tasks…
                 </div>
               ) : tasks.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground text-center">No assigned tasks. You're all caught up!</p>
@@ -488,14 +430,10 @@ export default function StaffDashboard() {
                 <div key={stat.label}
                   className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 p-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-semibold">{stat.label}</p>
-                      {stat.tag && <span className="text-[10px] text-muted-foreground">{stat.tag}</span>}
-                    </div>
+                    <p className="text-sm font-semibold">{stat.label}</p>
                     <p className="text-xs text-muted-foreground">{stat.sub}</p>
-                    <p className="text-sm font-bold mt-0.5" style={{ color: stat.color }}>{stat.change}</p>
                   </div>
-                  <Sparkline values={stat.values} color={stat.color} />
+                  <p className="text-sm font-bold shrink-0" style={{ color: stat.color }}>{stat.value}</p>
                 </div>
               ))}
             </CardContent>

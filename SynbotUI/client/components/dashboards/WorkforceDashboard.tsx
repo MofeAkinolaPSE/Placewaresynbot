@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WorkforceDashboardData } from "@shared/dashboard-types";
-import { Users, Clock, Building2 } from "lucide-react";
+import { Users, Clock, Building2, Circle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
 
 export function WorkforceDashboard({ data: initialData }: { data?: WorkforceDashboardData }) {
   const { data: fetchedData, isLoading, error } = useQuery({
@@ -11,6 +12,15 @@ export function WorkforceDashboard({ data: initialData }: { data?: WorkforceDash
     queryFn: () => api.dashboard.workforce(),
     enabled: !initialData
   });
+
+  // Same query key Layout.tsx's top-bar pill uses -- TanStack Query dedupes
+  // this automatically, no extra network cost for having it in both places.
+  const { data: presenceData } = useQuery({
+    queryKey: ["presence-online"],
+    queryFn: () => api.presence.online(),
+    refetchInterval: 30_000,
+  });
+  const onlineCount = presenceData?.count ?? 0;
 
   const data = initialData || fetchedData;
 
@@ -38,46 +48,17 @@ export function WorkforceDashboard({ data: initialData }: { data?: WorkforceDash
           Data error: workforce payload is unavailable or malformed.
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-1 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active Staff</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">{workforceValid ? data.active_staff_count : (isLoading ? "Loading..." : "—")}</div>
-            <p className="mt-1 text-xs text-muted-foreground">Registered in system</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-info">
-          <CardHeader className="pb-1 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hours Logged (Week)</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold tabular-nums">{workforceValid ? data.total_hours : (isLoading ? "..." : "—")}</div>
-            <p className="mt-1 text-xs text-muted-foreground">Total operational effort</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-secondary">
-          <CardHeader className="pb-1 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top Department</CardTitle>
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-3xl font-bold">{topDepartment}</div>
-            <p className="mt-1 text-xs text-muted-foreground">Highest activity level</p>
-          </CardContent>
-        </Card>
-      </div>
+      <KpiStrip
+        items={[
+          // "Currently Online" (real-time presence) is a genuinely different
+          // metric from the one below it -- renamed from "Active Staff" to
+          // avoid the two being confused for the same thing.
+          { label: "Currently Online", value: onlineCount, icon: Circle, tone: onlineCount > 0 ? "success" : "default" },
+          { label: "Staff Logged Time (Week)", value: workforceValid ? data.active_staff_count : (isLoading ? "Loading..." : "—"), icon: Users },
+          { label: "Hours Logged (Week)", value: workforceValid ? data.total_hours : (isLoading ? "..." : "—"), icon: Clock },
+          { label: "Top Department", value: topDepartment, icon: Building2 },
+        ]}
+      />
 
       <Card>
         <CardHeader className="pb-2">

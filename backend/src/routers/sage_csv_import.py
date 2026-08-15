@@ -23,6 +23,7 @@ import csv
 import datetime
 import io
 import logging
+import re
 import uuid
 import zipfile
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -37,6 +38,51 @@ from src.middleware import verify_jwt, require_role
 logger = logging.getLogger("sage_csv_import")
 
 router = APIRouter(prefix="/sage/import", tags=["sage-import"])
+
+
+def _prune_old_batches(table: str, keep: int = 14) -> int:
+    """Delete rows from all but the most recent `keep` batches of `table`.
+
+    Snapshot tables are pure-append (insert_snapshot never deletes), which is
+    fine for one-time historical loads but grows unbounded under a recurring
+    upload cadence — every prior day's batch stays in the table forever,
+    invisible to reads (which always filter to the latest batch_id) but still
+    taking up space. Called after each sales_invoices/sales_invoice_lines
+    import so the daily-refresh flow doesn't need any separate scheduled job.
+    Best-effort: failures are logged, never raised — pruning is a housekeeping
+    step, not something that should fail an otherwise-successful upload.
+    """
+    from src.db import get_psycopg_dsn
+    try:
+        import psycopg2
+    except ImportError:
+        return 0
+
+    sql = f"""
+        DELETE FROM public."{table}"
+        WHERE batch_id NOT IN (
+            SELECT batch_id FROM (
+                SELECT DISTINCT batch_id, MAX(imported_at) AS latest
+                FROM public."{table}"
+                GROUP BY batch_id
+                ORDER BY latest DESC
+                LIMIT %s
+            ) recent
+        )
+    """
+    try:
+        conn = psycopg2.connect(get_psycopg_dsn())
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(sql, (keep,))
+            deleted = cur.rowcount
+        conn.close()
+        if deleted > 0:
+            logger.info(f"_prune_old_batches: removed {deleted} rows from {table} outside the last {keep} batches")
+        return deleted
+    except Exception as exc:
+        logger.warning(f"_prune_old_batches: failed for {table} (non-fatal): {exc}")
+        return 0
 
 
 def _sync_placeware_invoices(batch_id: str) -> None:
@@ -133,6 +179,52 @@ def _safe_date(val: Optional[str]) -> Optional[str]:
     if not val or val.strip() in ("", "None", "N/A", "null"):
         return None
     return val.strip()
+
+
+def _norm_header(h: Any) -> str:
+    """Normalise a header cell to a clean snake_case key.
+
+    Same regex-based approach as data-assimilation/ingest_sage_exports.py's
+    _norm_header — handles the punctuation Sage 50 report headers actually
+    contain ("Invoice/CM #", "Invoice No.", "Amnt Remaining") that a plain
+    space/dash replace misses.
+    """
+    if h is None:
+        return ""
+    s = str(h).replace("\n", " ").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    return s.strip("_")
+
+
+def _read_xlsx_rows(raw_bytes: bytes) -> List[Dict[str, str]]:
+    """Parse an .xlsx file into a list of normalised-header row dicts,
+    matching the shape csv.DictReader produces so the rest of the pipeline
+    (mappers, validation) is identical regardless of upload format."""
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        raw_rows = list(ws.iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+    if not raw_rows:
+        return []
+
+    headers = [_norm_header(h) for h in raw_rows[0]]
+    rows: List[Dict[str, str]] = []
+    for values in raw_rows[1:]:
+        if all(v is None or str(v).strip() == "" for v in values):
+            continue
+        row: Dict[str, str] = {}
+        for i, h in enumerate(headers):
+            if not h:
+                continue
+            v = values[i] if i < len(values) else None
+            row[h] = "" if v is None else str(v)
+        rows.append(row)
+    return rows
 
 
 # -- individual mapper functions --------------------------------------------
@@ -280,14 +372,25 @@ def _map_purchase_orders(row: Dict[str, str]) -> Dict[str, Any]:
         "tax_amount": _safe_float(row.get("tax_amount")),
         "discount_amount": _safe_float(row.get("discount_amount")),
         "net_amount": _safe_float(row.get("net_amount")),
-        "status": row.get("status", "open").strip() or "open",
+        # Blank status is left NULL, not fabricated as "open" — a bulk historical
+        # PO export with a mostly-empty status column would otherwise count every
+        # row as a currently-open order (see purchase_orders_summary()'s stale-date
+        # handling for how NULL status is actually resolved into open/closed).
+        "status": row.get("status", "").strip() or None,
         "warehouse_id": row.get("warehouse_id", "").strip() or None,
         "created_by": row.get("created_by", "").strip() or None,
     }
 
 
 def _map_sales_invoices(row: Dict[str, str]) -> Dict[str, Any]:
-    """Maps sales_invoices.csv → sage_ar_snapshot columns."""
+    """Maps sales_invoices.csv/.xlsx → sage_ar_snapshot columns.
+
+    Also accepts Sage 50's "Customer Management Details" report shape
+    directly (invoice_no, date_due, amnt_remaining) — the recurring daily AR
+    refresh source. That report carries the real outstanding balance per
+    invoice, so amnt_remaining is used as both amount and balance rather than
+    the amount==balance guess used for sources that only have a status flag.
+    """
     invoice_id = (row.get("invoice_id") or row.get("invoice_no") or row.get("inv_no") or "").strip()
     customer_id = (row.get("customer_id") or row.get("customer_no") or row.get("account_id") or "").strip()
     if not invoice_id:
@@ -295,15 +398,27 @@ def _map_sales_invoices(row: Dict[str, str]) -> Dict[str, Any]:
     if not customer_id:
         raise ValueError("customer_id is required")
     raw_date = _safe_date(row.get("invoice_date") or row.get("date")) or datetime.date.today().isoformat()
-    net_amount = _safe_float(row.get("net_amount") or row.get("amount") or row.get("total_amount") or row.get("invoice_amount") or row.get("net_amount_due"))
-    status = row.get("status", "unpaid").strip().lower()
-    # AR balance: for paid invoices it's 0; for unpaid/partial it's net_amount
-    balance = 0.0 if status == "paid" else net_amount
+
+    remaining_raw = row.get("amnt_remaining")
+    if remaining_raw not in (None, "", "None", "N/A"):
+        # Real outstanding balance from Sage — use it for both amount and
+        # balance since this report shape has no separate original-total column.
+        remaining = _safe_float(remaining_raw)
+        net_amount = remaining
+        balance = remaining
+        status = (row.get("status") or ("paid" if remaining <= 0 else "open")).strip().lower()
+    else:
+        net_amount = _safe_float(row.get("net_amount") or row.get("amount") or row.get("total_amount") or row.get("invoice_amount") or row.get("net_amount_due"))
+        status = row.get("status", "unpaid").strip().lower()
+        # AR balance: for paid invoices it's 0; for unpaid/partial it's net_amount
+        balance = 0.0 if status == "paid" else net_amount
+
+    due_date = _safe_date(row.get("due_date") or row.get("date_due"))
     return {
         "invoice_id": invoice_id,
         "customer_id": customer_id,
         "date": raw_date,
-        "due_date": _safe_date(row.get("due_date")),
+        "due_date": due_date,
         "amount": net_amount,
         "balance": balance,
         "status": status,
@@ -311,22 +426,52 @@ def _map_sales_invoices(row: Dict[str, str]) -> Dict[str, Any]:
 
 
 def _map_invoice_lines(row: Dict[str, str]) -> Dict[str, Any]:
+    """Maps sales_invoice_lines.csv/.xlsx → sage_invoice_lines_snapshot columns.
+
+    Also accepts Sage 50's "Items sold to customers" report shape directly
+    (customer_id, item_id, qty, amount, cost_of_sales, gross_profit) — that
+    report has no invoice-number column at all (it's a customer-level product
+    listing, not per-invoice lines), so when line_id/invoice_id are absent
+    they're synthesized from customer_id+item_id. This is a real limitation
+    of the source data, not a bug: rows can't be tied back to a specific
+    invoice. Downstream consumers (e.g. CRM 360 "top purchased items") sum by
+    item_id anyway, so this is fine for that use case.
+    """
+    item_id = (row.get("item_id") or "").strip() or None
+    customer_id = (row.get("customer_id") or "").strip()
+
     line_id = row.get("line_id", "").strip()
     invoice_id = row.get("invoice_id", "").strip()
-    if not line_id:
-        raise ValueError("line_id is required")
     if not invoice_id:
-        raise ValueError("invoice_id is required")
+        if not customer_id:
+            raise ValueError("invoice_id (or customer_id, to synthesize one) is required")
+        invoice_id = f"SOLD_{customer_id}"
+    if not line_id:
+        line_id = f"{invoice_id}_{item_id}" if item_id else invoice_id
+
+    quantity = _safe_float(row.get("quantity") or row.get("qty"))
+    line_total = _safe_float(row.get("line_total") or row.get("amount"))
+    cost_at_sale = _safe_float(row.get("cost_at_sale") or row.get("cost_of_sales"))
+    gross_profit_raw = row.get("gross_profit")
+    gross_profit = (
+        _safe_float(gross_profit_raw)
+        if gross_profit_raw not in (None, "", "None", "N/A")
+        else round(line_total - cost_at_sale, 4)
+    )
+    unit_price = _safe_float(row.get("unit_price")) or (
+        round(line_total / quantity, 4) if quantity else 0.0
+    )
+
     return {
         "line_id": line_id,
         "invoice_id": invoice_id,
-        "item_id": row.get("item_id", "").strip() or None,
-        "quantity": _safe_float(row.get("quantity")),
-        "unit_price": _safe_float(row.get("unit_price")),
+        "item_id": item_id,
+        "quantity": quantity,
+        "unit_price": unit_price,
         "discount": _safe_float(row.get("discount")),
-        "line_total": _safe_float(row.get("line_total")),
-        "cost_at_sale": _safe_float(row.get("cost_at_sale")),
-        "gross_profit": _safe_float(row.get("gross_profit")),
+        "line_total": line_total,
+        "cost_at_sale": cost_at_sale,
+        "gross_profit": gross_profit,
     }
 
 
@@ -701,6 +846,37 @@ async def list_supported_types():
     return {"file_types": SUPPORTED_TYPES}
 
 
+@router.get("/freshness")
+async def import_freshness(request: Request):
+    """Return the most recent import timestamp for the daily-refresh tables.
+
+    Powers the "AR data last updated: N days ago" banner on the Sage Import
+    page — no auth-role gate beyond a valid JWT, since this is just a
+    read-only staleness indicator.
+    """
+    verify_jwt(request)
+    tables = {
+        "sales_invoices": "sage_ar_snapshot",
+        "sales_invoice_lines": "sage_invoice_lines_snapshot",
+    }
+    result: Dict[str, Optional[str]] = {}
+    for file_type, table in tables.items():
+        try:
+            resp = (
+                db.table(table)
+                .select("imported_at")
+                .order("imported_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            rows = resp.data or []
+            result[file_type] = rows[0]["imported_at"] if rows else None
+        except Exception as exc:
+            logger.warning(f"import_freshness: query failed for {table}: {exc}")
+            result[file_type] = None
+    return {"last_imported": result}
+
+
 @router.get("/jobs")
 async def list_import_jobs(request: Request, limit: int = 20):
     """Return the most recent CSV import jobs (newest first).
@@ -747,42 +923,50 @@ async def upload_csv(
 
     # ── 2. Validate MIME / filename ──────────────────────────────────────────
     filename = (file.filename or "upload.csv").lower()
-    if not filename.endswith(".csv"):
+    is_xlsx = filename.endswith(".xlsx")
+    if not (filename.endswith(".csv") or is_xlsx):
         raise HTTPException(
             status_code=415,
-            detail="Only .csv files are accepted",
+            detail="Only .csv or .xlsx files are accepted",
         )
 
-    # ── 3. Read & decode file ────────────────────────────────────────────────
+    # ── 3. Read file ─────────────────────────────────────────────────────────
     raw_bytes = await file.read()
     if len(raw_bytes) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
     if len(raw_bytes) > 20 * 1024 * 1024:  # 20 MB safety cap
         raise HTTPException(status_code=413, detail="File exceeds 20 MB limit")
 
-    try:
-        content = raw_bytes.decode("utf-8-sig")  # strips BOM if present
-    except UnicodeDecodeError:
+    # ── 4. Parse into row dicts (CSV and XLSX converge on the same shape) ────
+    if is_xlsx:
         try:
-            content = raw_bytes.decode("latin-1")
-        except UnicodeDecodeError as exc:
-            raise HTTPException(status_code=400, detail=f"Cannot decode file: {exc}") from exc
+            raw_rows = _read_xlsx_rows(raw_bytes)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Cannot parse .xlsx file: {exc}") from exc
+        if not raw_rows:
+            raise HTTPException(status_code=400, detail="XLSX has a header but no data rows")
+        row_iter = enumerate(raw_rows, start=2)  # row 1 is the header row
+    else:
+        try:
+            content = raw_bytes.decode("utf-8-sig")  # strips BOM if present
+        except UnicodeDecodeError:
+            try:
+                content = raw_bytes.decode("latin-1")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(status_code=400, detail=f"Cannot decode file: {exc}") from exc
 
-    # ── 4. Parse CSV ─────────────────────────────────────────────────────────
-    reader = csv.DictReader(io.StringIO(content))
-    if reader.fieldnames is None:
-        raise HTTPException(status_code=400, detail="CSV has no header row")
-    # Normalise headers so Sage 50 exports like "Quantity on Hand" or "Unit Cost"
-    # match the mapper's snake_case keys ("quantity_on_hand", "unit_cost").
-    reader.fieldnames = [
-        h.strip().lower().replace(" ", "_").replace("-", "_")
-        for h in reader.fieldnames
-    ]
+        reader = csv.DictReader(io.StringIO(content))
+        if reader.fieldnames is None:
+            raise HTTPException(status_code=400, detail="CSV has no header row")
+        # Normalise headers so Sage 50 exports like "Amnt Remaining" or
+        # "Invoice/CM #" match the mapper's snake_case keys.
+        reader.fieldnames = [_norm_header(h) for h in reader.fieldnames]
+        row_iter = ((n, dict(r)) for n, r in enumerate(reader, start=2))
 
     mapped_rows: List[Dict[str, Any]] = []
     validation_errors: List[Dict[str, Any]] = []
 
-    for line_num, raw_row in enumerate(reader, start=2):  # line 1 is header
+    for line_num, raw_row in row_iter:
         try:
             raw_dict = dict(raw_row)
             # Inject company_id from Form param so mappers can pick it up
@@ -801,7 +985,7 @@ async def upload_csv(
     total_parsed = len(mapped_rows)
 
     if total_parsed == 0 and not validation_errors:
-        raise HTTPException(status_code=400, detail="CSV has a header but no data rows")
+        raise HTTPException(status_code=400, detail="File has a header but no data rows")
 
     if validation_errors and total_parsed == 0:
         raise HTTPException(
@@ -861,6 +1045,12 @@ async def upload_csv(
             logger.info(f"upload_csv: synced placeware_invoices from batch={batch_id}")
         except Exception as exc:
             logger.warning(f"upload_csv: placeware_invoices sync failed (non-fatal): {exc}")
+
+    # ── 6a-ii. Prune old batches for recurring-upload tables ─────────────────
+    # sales_invoices / sales_invoice_lines are the daily-refresh targets — cap
+    # history so the tables don't grow unbounded across many upload cycles.
+    if file_type in ("sales_invoices", "sales_invoice_lines") and rows_inserted > 0:
+        _prune_old_batches(target_table, keep=14)
 
     # ── 6b. Mirror purchase orders into AP snapshot ───────────────────────────
     # AP data originates from purchase_orders.csv — open POs represent payables.

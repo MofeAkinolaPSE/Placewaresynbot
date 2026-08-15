@@ -1,20 +1,12 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { InventoryDashboard } from "@/components/dashboards/InventoryDashboard";
+import { Card, CardContent } from "@/components/ui/card";
 import { LogisticsDashboard } from "@/components/dashboards/LogisticsDashboard";
 import { OperationsSettings } from "@/components/dashboards/OperationsSettings";
 import { ProcurementImportDashboard } from "@/components/dashboards/ProcurementImportDashboard";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Loader2 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Boxes, PlusCircle, Loader2, Package, ArrowRight, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,22 +18,55 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
-import InventoryAutoComplete from "@/components/leads/InventoryAutoComplete";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
+
+function InventoryTabSummary() {
+  const { data } = useQuery({ queryKey: ["dashboard-inventory"], queryFn: () => api.dashboard.inventory() });
+  const summary = data?.summary;
+  return (
+    <div className="flex flex-col gap-4">
+      <KpiStrip
+        items={[
+          { label: "Total Active SKUs", value: summary?.total_active_skus ?? "—", icon: Package },
+          { label: "Low Stock Alerts", value: summary?.low_stock_count ?? "—", icon: AlertCircle, tone: (summary?.low_stock_count ?? 0) > 0 ? "warning" : "default" },
+          { label: "Out of Stock", value: summary?.out_of_stock_count ?? "—", icon: AlertCircle, tone: (summary?.out_of_stock_count ?? 0) > 0 ? "danger" : "default" },
+        ]}
+      />
+      <Card>
+        <CardContent className="flex items-center justify-between p-4">
+          <p className="text-sm text-muted-foreground">
+            Grouped stock cards, batch-level detail, reorder requests, and top-selling vaccines now live in the full Inventory Workspace.
+          </p>
+          <Button asChild size="sm">
+            <Link to="/inventory">
+              View Full Inventory Workspace <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+type InventorySearchResult = { id?: number; sku?: string; name: string };
 
 export default function Operations() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    item_id: "",
-    change: 0,
-    movement_type: "ADJUSTMENT",
-    source: "",
-    destination: "",
+    sku: "",
+    item_name: "",
+    quantity_change: 0,
+    event_type: "ADJUSTMENT",
+    reference: "",
   });
   const { toast } = useToast();
 
@@ -61,30 +86,33 @@ export default function Operations() {
     void queryClient.invalidateQueries({ queryKey: ["ops-forecast-stock-turnover"] });
   });
 
+  const resetForm = () =>
+    setFormData({ sku: "", item_name: "", quantity_change: 0, event_type: "ADJUSTMENT", reference: "" });
+
   const handleSubmit = async () => {
-    if (!formData.item_id.trim() || formData.change === 0) {
-      toast({ title: "Validation Error", description: "Item ID and Change are required", variant: "destructive" });
+    if (!formData.sku.trim() || formData.quantity_change === 0) {
+      toast({ title: "Validation Error", description: "Item and Quantity Change are required", variant: "destructive" });
       return;
     }
     try {
       setSubmitting(true);
-      await api.inventory.recordMovement({
-        item_id: formData.item_id,
-        change: formData.change,
-        movement_type: formData.movement_type,
-        source: formData.source || undefined,
-        destination: formData.destination || undefined,
+      await api.inventory.addStock({
+        sku: formData.sku,
+        quantity_change: formData.quantity_change,
+        event_type: formData.event_type,
+        reference: formData.reference || undefined,
       });
-      toast({ title: "Movement Recorded", description: `${formData.movement_type} for ${formData.item_id} recorded.` });
+      toast({ title: "Adjustment Recorded", description: `${formData.event_type} for ${formData.sku} recorded.` });
       setDialogOpen(false);
-      setFormData({ item_id: "", change: 0, movement_type: "ADJUSTMENT", source: "", destination: "" });
+      resetForm();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["inventory-dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-all-stock"] }),
         queryClient.invalidateQueries({ queryKey: ["ops-kpis"] }),
         queryClient.invalidateQueries({ queryKey: ["ops-forecast-stock-turnover"] }),
       ]);
     } catch (err: any) {
-      toast({ title: "Failed to Record Movement", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to Record Adjustment", description: err.message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -97,97 +125,86 @@ export default function Operations() {
       transition={motionTransitions.standard}
       className="flex flex-col gap-5"
     >
-      {/* Header */}
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Operations</h1>
-          <p className="text-sm text-muted-foreground">Manage inventory and stock movements.</p>
+      <PageHeader
+        icon={Boxes}
+        title="Operations"
+        subtitle="Inventory · Logistics · Procurement & Import"
+        actions={
+          <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Log Adjustment
+          </Button>
+        }
+      />
+
+      <DetailSheet
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}
+        title="Log Stock Adjustment"
+        description="Record a sale, damage write-off, expiry, or manual adjustment. To add incoming stock, use the Add Stock button in the inventory table."
+        icon={Boxes}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Record
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="sku">Item/SKU</Label>
+          <EntityAutocomplete<InventorySearchResult>
+            fetchFn={(q) => api.inventory.search(q)}
+            getKey={(p) => p.sku ?? p.id ?? p.name}
+            getLabel={(p) => p.name}
+            getSubtitle={(p) => p.sku}
+            placeholder="Search inventory..."
+            onSelect={(p) => setFormData({ ...formData, sku: p.sku || p.name, item_name: p.name })}
+          />
+          {formData.sku && (
+            <p className="text-xs text-muted-foreground">Selected: {formData.item_name || formData.sku} ({formData.sku})</p>
+          )}
         </div>
-        <div className="flex gap-2">
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline">
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Log Adjustment
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Log Stock Adjustment</DialogTitle>
-                <DialogDescription>Record a sale, damage write-off, expiry, or manual adjustment. To add incoming stock, use the Add Stock button in the inventory table.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="item_id" className="text-right">Item/SKU</Label>
-                  <div className="col-span-3">
-                    <InventoryAutoComplete
-                      onSelect={(p) =>
-                        setFormData({ ...formData, item_id: p.sku || p.name })
-                      }
-                    />
-                    {formData.item_id && (
-                      <p className="text-xs text-muted-foreground mt-1">Selected: {formData.item_id}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="movement_type" className="text-right">Type</Label>
-                  <Select value={formData.movement_type} onValueChange={(val) => setFormData({ ...formData, movement_type: val })}>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="SALE">Sale</SelectItem>
-                      <SelectItem value="DAMAGE">Damage / Write-off</SelectItem>
-                      <SelectItem value="EXPIRY">Expiry</SelectItem>
-                      <SelectItem value="ADJUSTMENT">Adjustment</SelectItem>
-                      <SelectItem value="TRANSFER">Transfer</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="change" className="text-right">Qty Change</Label>
-                  <Input
-                    id="change"
-                    type="number"
-                    className="col-span-3"
-                    value={formData.change}
-                    onChange={(e) => setFormData({ ...formData, change: parseFloat(e.target.value) || 0 })}
-                    placeholder="+100 or -50"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="source" className="text-right">Source</Label>
-                  <Input
-                    id="source"
-                    className="col-span-3"
-                    value={formData.source}
-                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                    placeholder="Optional (e.g., Warehouse A)"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="destination" className="text-right">Destination</Label>
-                  <Input
-                    id="destination"
-                    className="col-span-3"
-                    value={formData.destination}
-                    onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                    placeholder="Optional (e.g., Clinic B)"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleSubmit} disabled={submitting}>
-                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Record
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+        <div className="space-y-2">
+          <Label htmlFor="event_type">Type</Label>
+          <Select value={formData.event_type} onValueChange={(val) => setFormData({ ...formData, event_type: val })}>
+            <SelectTrigger id="event_type">
+              <SelectValue placeholder="Select type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="SALE">Sale</SelectItem>
+              <SelectItem value="RESTOCK">Restock</SelectItem>
+              <SelectItem value="DAMAGE">Damage / Write-off</SelectItem>
+              <SelectItem value="EXPIRY">Expiry</SelectItem>
+              <SelectItem value="ADJUSTMENT">Adjustment</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      </div>
+        <div className="space-y-2">
+          <Label htmlFor="quantity_change">Qty Change</Label>
+          <Input
+            id="quantity_change"
+            type="number"
+            value={formData.quantity_change}
+            onChange={(e) => setFormData({ ...formData, quantity_change: parseFloat(e.target.value) || 0 })}
+            placeholder="+100 or -50"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="reference">Reference</Label>
+          <Input
+            id="reference"
+            value={formData.reference}
+            onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+            placeholder="Optional — e.g. reason or PO#"
+          />
+        </div>
+      </DetailSheet>
 
       {/* Tabs */}
       <Tabs defaultValue="inventory">
@@ -198,7 +215,7 @@ export default function Operations() {
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
         <TabsContent value="inventory">
-          <InventoryDashboard />
+          <InventoryTabSummary />
         </TabsContent>
         <TabsContent value="logistics">
           <LogisticsDashboard />

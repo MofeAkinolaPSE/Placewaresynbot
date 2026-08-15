@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search, Download } from "lucide-react";
+import { Search, Download, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,11 +17,11 @@ import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
 
 const FinanceReports = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const [searchAR, setSearchAR] = useState("");
   const [searchInventory, setSearchInventory] = useState("");
   const { data: arAgingRaw, isLoading: arLoading, error: arError } = useQuery({
     queryKey: ["reports-ar-aging"],
@@ -99,51 +99,23 @@ const FinanceReports = () => {
   const arPayloadInvalid = !arLoading && !arError && arAgingData.length === 0;
   const inventoryPayloadInvalid = !invLoading && !invError && !Array.isArray(stockRows);
 
-  const filteredAR = arAgingData.filter(
-    (item) =>
-      item.customer.toLowerCase().includes(searchAR.toLowerCase()) ||
-      item.bucket.toLowerCase().includes(searchAR.toLowerCase())
-  );
-
   const filteredInventory = inventoryData.filter(
     (item) =>
       item.name.toLowerCase().includes(searchInventory.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchInventory.toLowerCase())
   );
 
-  const handleExportCSV = (dataType: "ar" | "inventory") => {
-    const data = dataType === "ar" ? filteredAR : filteredInventory;
-    const headers =
-      dataType === "ar"
-        ? ["Customer", "Amount (₦)", "Bucket", "Days Overdue", "Due Date"]
-        : ["SKU", "Name", "Quantity", "Unit Cost (₦)", "Valuation (₦)"];
-
+  const handleExportInventoryCSV = () => {
+    const headers = ["SKU", "Name", "Quantity", "Unit Cost (₦)", "Valuation (₦)"];
     let csv = headers.join(",") + "\n";
-    data.forEach((item) => {
-      if (dataType === "ar") {
-        const row = [
-          item.customer,
-          item.amount,
-          item.bucket,
-          item.days,
-          item.dueDate,
-        ];
-        csv += row.join(",") + "\n";
-      } else {
-        const row = [
-          item.sku,
-          item.name,
-          item.quantity,
-          item.unitCost,
-          item.valuation,
-        ];
-        csv += row.join(",") + "\n";
-      }
+    filteredInventory.forEach((item) => {
+      const row = [item.sku, item.name, item.quantity, item.unitCost, item.valuation];
+      csv += row.join(",") + "\n";
     });
 
     const element = document.createElement("a");
     element.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURI(csv));
-    element.setAttribute("download", `${dataType}-report-${Date.now()}.csv`);
+    element.setAttribute("download", `inventory-report-${Date.now()}.csv`);
     element.click();
   };
 
@@ -152,12 +124,6 @@ const FinanceReports = () => {
     "31-60 days": arAgingData.find((a) => a.bucket === "31-60 days")?.amount,
     "61-90 days": arAgingData.find((a) => a.bucket === "61-90 days")?.amount,
     "90+ days": arAgingData.find((a) => a.bucket === "90+ days")?.amount,
-  };
-
-  const getArBucketClass = (bucket: string) => {
-    if (bucket === "0-30 days") return "bg-success/15 text-success";
-    if (bucket === "90+ days") return "bg-destructive/10 text-destructive";
-    return "bg-warning/15 text-warning";
   };
 
   const getInventoryStatusClass = (status: string) => {
@@ -187,139 +153,28 @@ const FinanceReports = () => {
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
         </TabsList>
 
-        {/* AR Aging Tab */}
+        {/* AR Aging Tab — consolidated onto FinanceAR.tsx's richer AR Aging
+            tab (full per-customer table, search, triggered-alerts banner,
+            inline expand), which duplicated this coarse 4-row bucket-total
+            table. This tab now shows only the at-a-glance totals plus a
+            link through. See ACE-Workspace-Standard.md Ch.9.7. */}
         <TabsContent value="ar" className="space-y-4">
           <div className="pw-surface-interactive p-6 space-y-4">
             {arError && <p className="text-sm text-destructive">Data error: {(arError as Error).message || "Failed to load AR aging."}</p>}
             {arPayloadInvalid && <p className="text-sm text-destructive">Data error: malformed AR aging payload.</p>}
-            {/* Summary Buckets */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-              {Object.entries(arBuckets).map(([bucket, amount]) => (
-                <div
-                  key={bucket}
-                  className="rounded-xl border border-border/50 bg-muted/30 p-3 text-center"
-                >
-                  <p className="text-xs font-semibold text-muted-foreground uppercase">
-                    {bucket}
-                  </p>
-                  <p className="text-2xl font-bold text-foreground mt-1">
-                    {typeof amount === "number" ? `₦${Number(amount).toLocaleString()}` : "Data error"}
-                  </p>
-                </div>
-              ))}
-            </div>
 
-            {/* Search and Export */}
-            <div className="flex gap-2 flex-col sm:flex-row sm:items-center">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by customer or bucket..."
-                  value={searchAR}
-                  onChange={(e) => setSearchAR(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => handleExportCSV("ar")}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export CSV
-              </Button>
-            </div>
+            <KpiStrip
+              items={[
+                { label: "0-30 days", value: typeof arBuckets["0-30 days"] === "number" ? `₦${Number(arBuckets["0-30 days"]).toLocaleString()}` : "—", tone: "success" },
+                { label: "31-60 days", value: typeof arBuckets["31-60 days"] === "number" ? `₦${Number(arBuckets["31-60 days"]).toLocaleString()}` : "—", tone: "warning" },
+                { label: "61-90 days", value: typeof arBuckets["61-90 days"] === "number" ? `₦${Number(arBuckets["61-90 days"]).toLocaleString()}` : "—", tone: "warning" },
+                { label: "90+ days", value: typeof arBuckets["90+ days"] === "number" ? `₦${Number(arBuckets["90+ days"]).toLocaleString()}` : "—", tone: "danger" },
+              ]}
+            />
 
-            {/* Table */}
-            {isMobile ? (
-              <div className="space-y-3">
-                {filteredAR.length > 0 ? (
-                  filteredAR.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 cursor-pointer"
-                      onClick={() => {
-                        const bucketParam = encodeURIComponent(item.bucket);
-                        navigate(`/finance/reports/ar/${bucketParam}`);
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-semibold text-foreground">{item.customer}</p>
-                        <p className="font-mono font-semibold text-foreground">₦{item.amount.toLocaleString()}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className={`rounded px-2 py-1 text-xs font-medium ${getArBucketClass(item.bucket)}`}>
-                          {item.bucket}
-                        </span>
-                        <span className="rounded px-2 py-1 text-xs font-medium bg-muted text-muted-foreground">
-                          {item.days}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Due date: {item.dueDate}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">No results found</p>
-                )}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-10 min-w-[180px] bg-muted/90">Customer</TableHead>
-                      <TableHead className="text-right min-w-[140px]">Amount (₦)</TableHead>
-                      <TableHead className="min-w-[120px]">Bucket</TableHead>
-                      <TableHead className="text-center min-w-[110px]">Days Range</TableHead>
-                      <TableHead className="min-w-[100px]">Due Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAR.length > 0 ? (
-                      filteredAR.map((item) => (
-                        <TableRow
-                          key={item.id}
-                          className="cursor-pointer hover:bg-muted/40"
-                          onClick={() => {
-                            const bucketParam = encodeURIComponent(item.bucket);
-                            navigate(`/finance/reports/ar/${bucketParam}`);
-                          }}
-                        >
-                          <TableCell className="sticky left-0 z-10 bg-background font-medium">
-                            {item.customer}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {item.amount.toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={`rounded px-2 py-1 text-xs font-medium ${getArBucketClass(item.bucket)}`}
-                            >
-                              {item.bucket}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-center">{item.days}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {item.dueDate}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8">
-                          <p className="text-muted-foreground">
-                            No results found
-                          </p>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              Showing {filteredAR.length} of {arAgingData.length} records
-            </p>
+            <Button onClick={() => navigate("/finance/ar")} className="gap-2">
+              View Full AR Aging <ArrowRight className="w-4 h-4" />
+            </Button>
           </div>
         </TabsContent>
 
@@ -382,7 +237,7 @@ const FinanceReports = () => {
               </div>
               <Button
                 variant="outline"
-                onClick={() => handleExportCSV("inventory")}
+                onClick={handleExportInventoryCSV}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Export CSV

@@ -7,6 +7,11 @@ from src.services.inventory import (
     get_realtime_stock,
     get_inventory_summary
 )
+from src.services.inventory_workspace import (
+    get_workspace_cards,
+    get_family_detail,
+    get_top_selling_items,
+)
 from ..db import db
 import logging
 
@@ -142,3 +147,111 @@ async def list_items(
     except Exception as e:
         logging.error(f"Inventory items error: {e}")
         raise HTTPException(500, detail="Failed to retrieve inventory items")
+
+
+@router.get("/search")
+async def search_items(
+    q: str = Query(..., min_length=1),
+    limit: int = 20,
+    user: Dict[str, Any] = Depends(require_inventory_read),
+):
+    """
+    Item-name/SKU typeahead search, used by EntityAutocomplete pickers
+    (Add Stock, Log Adjustment, walk-in item selection). This is the fix for
+    api.inventory.search()'s previously-nonexistent GET /inventory?query=
+    call, which silently 404'd on every keystroke for every caller.
+    """
+    try:
+        rows = (
+            db.table("v_inventory")
+            .select("sku,name,category,current_stock,company_id,selling_price,batch_number,expiry_date")
+            .ilike("name", f"%{q}%")
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+        if len(rows) < limit:
+            sku_rows = (
+                db.table("v_inventory")
+                .select("sku,name,category,current_stock,company_id,selling_price,batch_number,expiry_date")
+                .ilike("sku", f"%{q}%")
+                .limit(limit - len(rows))
+                .execute()
+                .data
+                or []
+            )
+            seen = {r["sku"] for r in rows}
+            rows.extend(r for r in sku_rows if r["sku"] not in seen)
+        return {"data": rows}
+    except Exception as e:
+        logging.error(f"Inventory search error: {e}")
+        raise HTTPException(500, detail="Failed to search inventory")
+
+
+@router.get("/workspace/cards")
+async def workspace_cards(
+    company_id: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(require_inventory_read),
+):
+    """Grouped, live-stock-only cards for the Inventory Workspace's main grid."""
+    try:
+        cards = get_workspace_cards(company_id=company_id, search=search)
+        return {"data": cards, "total": len(cards)}
+    except Exception as e:
+        logging.error(f"Workspace cards error: {e}")
+        raise HTTPException(500, detail="Failed to retrieve inventory workspace cards")
+
+
+@router.get("/workspace/families/detail")
+async def workspace_family_detail(
+    family: str = Query(...),
+    company_id: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(require_inventory_read),
+):
+    """Full member/batch breakdown + open reorder requests + top customers
+    for one vaccine family -- the workspace's detail-popup payload."""
+    try:
+        return {"data": get_family_detail(company_id=company_id, family=family)}
+    except Exception as e:
+        logging.error(f"Workspace family detail error: {e}")
+        raise HTTPException(500, detail="Failed to retrieve family detail")
+
+
+@router.get("/workspace/top-sellers")
+async def workspace_top_sellers(
+    limit: int = 10,
+    company_id: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(require_inventory_read),
+):
+    """All-time top movers by lifetime quantity sold. Deliberately not
+    labeled "recently popular" -- there is no dated sales signal to build
+    that on (see get_top_selling_items's docstring)."""
+    try:
+        return {"data": get_top_selling_items(limit=limit, company_id=company_id)}
+    except Exception as e:
+        logging.error(f"Workspace top-sellers error: {e}")
+        raise HTTPException(500, detail="Failed to retrieve top sellers")
+
+
+@router.get("/workspace/pending-reorders-count")
+async def workspace_pending_reorders_count(user: Dict[str, Any] = Depends(require_inventory_read)):
+    """Count of not-yet-received replenishment requests, for the workspace
+    KPI strip. replenishment_requests has no list endpoint of its own today
+    (only create/approve/create_po/received action endpoints in
+    replenishment.py) -- this is a minimal read, not a full list surface."""
+    try:
+        rows = (
+            db.table("replenishment_requests")
+            .select("id")
+            .neq("status", "received")
+            .limit(5000)
+            .execute()
+            .data
+            or []
+        )
+        return {"count": len(rows)}
+    except Exception as e:
+        logging.error(f"Pending reorders count error: {e}")
+        raise HTTPException(500, detail="Failed to count pending reorders")

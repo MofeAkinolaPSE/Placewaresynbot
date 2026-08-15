@@ -47,20 +47,24 @@ def _require_roles(request: Request, allowed: set[str]) -> Dict[str, Any]:
 
 
 def _auto_promote_batch(domain: str, batch_id: str, job_id: Optional[str], quality_score: float = 100.0) -> bool:
-    """Promote batch_id to active KPI batch if none is currently promoted."""
+    """Promote batch_id to the active KPI batch for this domain.
+
+    Re-promotes on every successful ingest (upsert on domain) rather than only
+    the first-ever batch — a select-then-insert-only-if-none guard used to
+    leave every subsequent import unpromoted, pinning executive_summary()'s
+    freshness/AR-aging batch resolution to whichever batch happened to import
+    first and never updating it again.
+    """
     try:
-        existing = db.table(TABLE_KPI_PROMOTIONS).select("batch_id").eq("domain", domain).limit(1).execute()
-        if existing.data:
-            return False  # already promoted — don't override
-        db.table(TABLE_KPI_PROMOTIONS).insert({
-            "domain": domain,
-            "batch_id": batch_id,
-            "job_id": job_id,
-            "promoted_at": datetime.datetime.utcnow().isoformat(),
-            "quality_score": quality_score,
-            "rejection_rate": 0.0,
-            "promoted_reason": "auto_promote_first_batch",
-        }).execute()
+        from src.db import set_promoted_kpi_batch
+        set_promoted_kpi_batch(
+            domain=domain,
+            batch_id=batch_id,
+            job_id=job_id,
+            quality_score=quality_score,
+            rejection_rate=0.0,
+            reason="auto_promote_latest_batch",
+        )
         return True
     except Exception as exc:
         logger.warning(f"_auto_promote_batch failed for domain={domain}: {exc}")

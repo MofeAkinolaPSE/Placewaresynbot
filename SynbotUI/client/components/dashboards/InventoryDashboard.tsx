@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,15 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { AlertCircle, Package, Search, PlusCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Package, PlusCircle, Loader2 } from "lucide-react";
 import { InventoryDashboardData } from "@shared/dashboard-types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -27,6 +19,9 @@ import { api } from "@/lib/api-client";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { FilterBar } from "@/components/workspace/FilterBar";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,7 +61,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
   // view state
   const [viewMode, setViewMode] = useState<"in-stock" | "all">("in-stock");
   const [stockSearch, setStockSearch] = useState("");
-  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("");
 
   // stock-entry modal state
   const [selectedItem, setSelectedItem] = useState<{ sku: string; name: string } | null>(null);
@@ -126,7 +121,7 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
         String(r.sku ?? "").toLowerCase().includes(q) ||
         String(r.name ?? r.item_name ?? "").toLowerCase().includes(q);
       const matchCompany =
-        companyFilter === "all" || (r.company_id ?? "") === companyFilter;
+        !companyFilter || (r.company_id ?? "") === companyFilter;
       return matchSearch && matchCompany;
     });
 
@@ -190,56 +185,28 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
         </div>
       )}
 
-      {/* KPI Row — unchanged */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-1 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Active SKUs</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold tabular-nums">
-              {dataValid ? summary.total_active_skus : (isLoading ? "…" : "—")}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">Catalog items (Sage snapshot)</p>
-          </CardContent>
-        </Card>
-
-        <Card className={dataValid && summary.low_stock_count > 0 ? "border-l-4 border-l-warning" : "border-l-4 border-l-success"}>
-          <CardHeader className="pb-1 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Low Stock Alerts</CardTitle>
-              <AlertCircle className="h-4 w-4 text-warning" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold tabular-nums">{dataValid ? summary.low_stock_count : (isLoading ? "…" : "—")}</div>
-            <p className="mt-1 text-xs text-muted-foreground">Stocked items below reorder threshold</p>
-          </CardContent>
-        </Card>
-
-        <Card className={dataValid && summary.out_of_stock_count > 0 ? "border-l-4 border-l-destructive" : "border-l-4 border-l-success"}>
-          <CardHeader className="pb-1 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Out of Stock</CardTitle>
-              <AlertCircle className="h-4 w-4 text-destructive" />
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className={`text-2xl font-bold tabular-nums ${dataValid && summary.out_of_stock_count > 0 ? "text-destructive" : ""}`}>
-              {dataValid ? summary.out_of_stock_count : (isLoading ? "…" : "—")}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Active products at zero stock
-              {dataValid && (summary.catalog_zero_stock_count ?? 0) > summary.out_of_stock_count && (
-                <> · {(summary.catalog_zero_stock_count ?? 0) - summary.out_of_stock_count} inactive excluded</>
-              )}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* KPI Row */}
+      <KpiStrip
+        items={[
+          {
+            label: "Total Active SKUs",
+            value: dataValid ? summary.total_active_skus : (isLoading ? "…" : "—"),
+            icon: Package,
+          },
+          {
+            label: "Low Stock Alerts",
+            value: dataValid ? summary.low_stock_count : (isLoading ? "…" : "—"),
+            icon: AlertCircle,
+            tone: dataValid && summary.low_stock_count > 0 ? "warning" : "default",
+          },
+          {
+            label: "Out of Stock",
+            value: dataValid ? summary.out_of_stock_count : (isLoading ? "…" : "—"),
+            icon: AlertCircle,
+            tone: dataValid && summary.out_of_stock_count > 0 ? "danger" : "default",
+          },
+        ]}
+      />
 
       {/* Smart Inventory Table */}
       <Card>
@@ -279,30 +246,22 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
             </div>
 
             {/* Search + company filter */}
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative w-full sm:w-56">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search SKU or name…"
-                  value={stockSearch}
-                  onChange={(e) => setStockSearch(e.target.value)}
-                  className="h-8 pl-8 text-xs"
-                />
-              </div>
-              <div className="flex gap-1">
-                {(["all", "PlacewareNig", "PlacewarePha"] as const).map((c) => (
-                  <Button
-                    key={c}
-                    size="sm"
-                    variant={companyFilter === c ? "default" : "outline"}
-                    className="h-7 px-2.5 text-xs"
-                    onClick={() => setCompanyFilter(c)}
-                  >
-                    {c === "all" ? "All" : c}
-                  </Button>
-                ))}
-              </div>
-            </div>
+            <FilterBar
+              search={{ value: stockSearch, onChange: setStockSearch, placeholder: "Search SKU or name…" }}
+              selects={[
+                {
+                  label: "Company",
+                  value: companyFilter,
+                  onChange: setCompanyFilter,
+                  options: [
+                    { value: "PlacewareNig", label: "PlacewareNig" },
+                    { value: "PlacewarePha", label: "PlacewarePha" },
+                  ],
+                  placeholder: "All Companies",
+                  className: "h-8 w-[170px] text-xs",
+                },
+              ]}
+            />
           </div>
         </CardHeader>
 
@@ -502,96 +461,94 @@ export function InventoryDashboard({ data: initialData }: { data?: InventoryDash
         </CardContent>
       </Card>
 
-      {/* Stock Entry Modal */}
-      <Dialog open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }}>
-        <DialogContent className="sm:max-w-[460px]">
-          <DialogHeader>
-            <DialogTitle>Add Stock</DialogTitle>
-            <DialogDescription>
-              Record incoming stock for <span className="font-medium">{selectedItem?.name}</span>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            {/* Item read-only */}
-            <div className="grid grid-cols-4 items-center gap-3">
-              <Label className="text-right text-xs text-muted-foreground">Item</Label>
-              <div className="col-span-3 rounded-md border bg-muted/40 px-3 py-1.5 text-xs">
-                <span className="font-mono">{selectedItem?.sku}</span>
-                <span className="ml-2 text-muted-foreground">{selectedItem?.name}</span>
-              </div>
-            </div>
-            {/* Quantity */}
-            <div className="grid grid-cols-4 items-center gap-3">
-              <Label htmlFor="entry-qty" className="text-right text-xs">Quantity <span className="text-destructive">*</span></Label>
-              <Input
-                id="entry-qty"
-                type="number"
-                min="1"
-                step="1"
-                className="col-span-3 h-8 text-xs"
-                placeholder="e.g. 100"
-                value={entryQty}
-                onChange={(e) => setEntryQty(e.target.value)}
-              />
-            </div>
-            {/* Batch */}
-            <div className="grid grid-cols-4 items-center gap-3">
-              <Label htmlFor="entry-batch" className="text-right text-xs">Batch #</Label>
-              <Input
-                id="entry-batch"
-                className="col-span-3 h-8 text-xs"
-                placeholder="Optional — e.g. BN-2024-01"
-                value={entryBatch}
-                onChange={(e) => setEntryBatch(e.target.value)}
-              />
-            </div>
-            {/* Expiry */}
-            <div className="grid grid-cols-4 items-center gap-3">
-              <Label htmlFor="entry-expiry" className="text-right text-xs">Expiry Date</Label>
-              <Input
-                id="entry-expiry"
-                type="date"
-                className="col-span-3 h-8 text-xs"
-                value={entryExpiry}
-                onChange={(e) => setEntryExpiry(e.target.value)}
-              />
-            </div>
-            {/* Storage */}
-            <div className="grid grid-cols-4 items-center gap-3">
-              <Label className="text-right text-xs">Storage</Label>
-              <Select value={entryStorage} onValueChange={setEntryStorage}>
-                <SelectTrigger className="col-span-3 h-8 text-xs">
-                  <SelectValue placeholder="Select storage condition" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Not specified</SelectItem>
-                  <SelectItem value="Ambient">Ambient</SelectItem>
-                  <SelectItem value="Cold Chain (2–8°C)">Cold Chain (2–8°C)</SelectItem>
-                  <SelectItem value="Frozen (-20°C)">Frozen (-20°C)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Reference / PO */}
-            <div className="grid grid-cols-4 items-center gap-3">
-              <Label htmlFor="entry-ref" className="text-right text-xs">Reference / PO#</Label>
-              <Input
-                id="entry-ref"
-                className="col-span-3 h-8 text-xs"
-                placeholder="Optional — e.g. PO-2024-001"
-                value={entryRef}
-                onChange={(e) => setEntryRef(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
+      {/* Stock Entry Panel */}
+      <DetailSheet
+        open={!!selectedItem}
+        onOpenChange={(open) => { if (!open) setSelectedItem(null); }}
+        title="Add Stock"
+        description={selectedItem ? `Record incoming stock for ${selectedItem.name}` : undefined}
+        icon={PlusCircle}
+        footer={
+          <>
             <Button variant="outline" onClick={() => setSelectedItem(null)}>Cancel</Button>
             <Button onClick={handleAddStock} disabled={submitting || !entryQty || Number(entryQty) <= 0}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Add Stock
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        {/* Item read-only */}
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">Item</Label>
+          <div className="rounded-md border bg-muted/40 px-3 py-1.5 text-xs">
+            <span className="font-mono">{selectedItem?.sku}</span>
+            <span className="ml-2 text-muted-foreground">{selectedItem?.name}</span>
+          </div>
+        </div>
+        {/* Quantity */}
+        <div className="space-y-2">
+          <Label htmlFor="entry-qty" className="text-xs">Quantity <span className="text-destructive">*</span></Label>
+          <Input
+            id="entry-qty"
+            type="number"
+            min="1"
+            step="1"
+            className="h-8 text-xs"
+            placeholder="e.g. 100"
+            value={entryQty}
+            onChange={(e) => setEntryQty(e.target.value)}
+          />
+        </div>
+        {/* Batch */}
+        <div className="space-y-2">
+          <Label htmlFor="entry-batch" className="text-xs">Batch #</Label>
+          <Input
+            id="entry-batch"
+            className="h-8 text-xs"
+            placeholder="Optional — e.g. BN-2024-01"
+            value={entryBatch}
+            onChange={(e) => setEntryBatch(e.target.value)}
+          />
+        </div>
+        {/* Expiry */}
+        <div className="space-y-2">
+          <Label htmlFor="entry-expiry" className="text-xs">Expiry Date</Label>
+          <Input
+            id="entry-expiry"
+            type="date"
+            className="h-8 text-xs"
+            value={entryExpiry}
+            onChange={(e) => setEntryExpiry(e.target.value)}
+          />
+        </div>
+        {/* Storage */}
+        <div className="space-y-2">
+          <Label className="text-xs">Storage</Label>
+          <Select value={entryStorage} onValueChange={setEntryStorage}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select storage condition" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Not specified</SelectItem>
+              <SelectItem value="Ambient">Ambient</SelectItem>
+              <SelectItem value="Cold Chain (2–8°C)">Cold Chain (2–8°C)</SelectItem>
+              <SelectItem value="Frozen (-20°C)">Frozen (-20°C)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Reference / PO */}
+        <div className="space-y-2">
+          <Label htmlFor="entry-ref" className="text-xs">Reference / PO#</Label>
+          <Input
+            id="entry-ref"
+            className="h-8 text-xs"
+            placeholder="Optional — e.g. PO-2024-001"
+            value={entryRef}
+            onChange={(e) => setEntryRef(e.target.value)}
+          />
+        </div>
+      </DetailSheet>
     </div>
   );
 }

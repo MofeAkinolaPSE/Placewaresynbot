@@ -1,17 +1,25 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, X, Send, Minimize2, Maximize2, Loader2 } from "lucide-react";
+import { MessageSquare, X, Send, Minimize2, Maximize2, Loader2, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiUrl } from "@/lib/api-base";
 import { authClient } from "@/lib/auth-client";
 
+interface ChatAttachment {
+  type: string;
+  report_id: string;
+  filename: string;
+  download_url: string;
+}
+
 interface Message {
   id: number;
   type: "user" | "bot";
   content: string;
   timestamp: string;
+  attachments?: ChatAttachment[];
 }
 
 const FloatingChat = () => {
@@ -27,7 +35,35 @@ const FloatingChat = () => {
   ]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadAttachment = async (att: ChatAttachment) => {
+    setDownloadingId(att.report_id);
+    try {
+      let token = authClient.getAccessToken();
+      if (!token) {
+        const refreshed = await authClient.refresh();
+        if (refreshed) token = authClient.getAccessToken();
+      }
+      const res = await fetch(apiUrl(att.download_url), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = att.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      // Non-fatal for a floating widget -- the report is still readable via
+      // the Reports page if the download fails here.
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -101,6 +137,7 @@ const FloatingChat = () => {
         type: "bot",
         content: answer,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        attachments: Array.isArray(data.attachments) ? data.attachments : [],
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (e: unknown) {
@@ -211,6 +248,23 @@ const FloatingChat = () => {
                           }`}
                         >
                           <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          {msg.attachments?.map((att) => (
+                            <Button
+                              key={att.report_id}
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 h-7 gap-1.5 text-xs"
+                              disabled={downloadingId === att.report_id}
+                              onClick={() => handleDownloadAttachment(att)}
+                            >
+                              {downloadingId === att.report_id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <FileDown className="h-3 w-3" />
+                              )}
+                              Download Report (.docx)
+                            </Button>
+                          ))}
                           <p className={`text-xs mt-1 ${msg.type === "user" ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
                             {msg.timestamp}
                           </p>

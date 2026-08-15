@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Truck,
@@ -41,10 +41,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { motion } from "framer-motion";
 import { motionVariants } from "@/lib/motion";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // ---------------------------------------------------------------------------
 // Leaflet default icon fix (webpack/vite asset bundling quirk)
@@ -67,6 +71,10 @@ interface Rider {
   phone?: string;
   vehicle?: string;
   active?: boolean;
+  last_lat?: number;
+  last_lng?: number;
+  last_seen_at?: string;
+  created_at?: string;
 }
 
 interface LiveRider {
@@ -78,15 +86,74 @@ interface LiveRider {
   last_seen_at?: string;
 }
 
-interface Delivery {
-  id: string;
-  destination: string;
+interface DeliveryAddress {
+  destination?: string;
   recipient_name?: string;
   recipient_phone?: string;
+  customer_name?: string;
+  company_name?: string;
+  contact_phone?: string;
+  items_summary?: string;
+  [key: string]: any;
+}
+
+// Matches the real DB row (backend/src/schemas/logistics.py's Delivery model
+// + migration 084/099 columns) — the previous flat destination/recipient_name/
+// recipient_phone fields here didn't exist on the actual schema at all.
+interface Delivery {
+  id: string;
+  reference?: string;
+  customer_id?: string;
+  address?: DeliveryAddress;
+  quantity?: number;
   status: "unassigned" | "assigned" | "in_transit" | "delivered" | "failed";
   assigned_rider?: string;
+  rider?: { id: string; name: string; phone?: string; vehicle?: string } | null;
+  source?: string;
+  source_ref_id?: string;
+  tracking_token?: string;
+  dest_lat?: number;
+  dest_lng?: number;
+  eta_text?: string;
+  last_ping_at?: string;
+  picked_up_at?: string;
+  delivered_at?: string;
   created_at?: string;
-  last_update?: string;
+}
+
+interface Ping {
+  id: string;
+  lat: number;
+  lng: number;
+  speed_kmh?: number;
+  accuracy_m?: number;
+  battery_pct?: number;
+  ts: string;
+}
+
+// address shape varies by source: LogisticsMonitor's own create form uses
+// destination/recipient_name/recipient_phone; Frontdesk's delivery handoff
+// (backend/src/routers/frontdesk.py send_for_delivery) uses customer_name/
+// company_name/contact_phone/items_summary — both read here so either source
+// displays correctly.
+function deliveryLabel(d: Delivery): string {
+  const a = d.address || {};
+  return a.destination || a.company_name || a.customer_name || d.reference || `Delivery ${d.id.slice(0, 8)}`;
+}
+function deliveryRecipient(d: Delivery): string | undefined {
+  const a = d.address || {};
+  return a.recipient_name || a.customer_name || a.company_name;
+}
+function deliveryPhone(d: Delivery): string | undefined {
+  const a = d.address || {};
+  return a.recipient_phone || a.contact_phone;
+}
+function trackingUrlFor(d: Delivery, sessionLinks: Record<string, string>): string | undefined {
+  if (sessionLinks[d.id]) return sessionLinks[d.id];
+  if (d.tracking_token && typeof window !== "undefined") {
+    return `${window.location.origin}/rider-track/${d.tracking_token}`;
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,25 +193,63 @@ export default function LogisticsMonitor() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Local lists (populated from mutations)
-  const [riders, setRiders] = useState<Rider[]>([]);
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  // Real list queries — previously these were plain useState([]) arrays,
+  // populated only by this browser session's own create-mutation responses,
+  // so both tabs started empty on every page load regardless of real data
+  // (including everything Frontdesk's send-for-delivery handoff writes
+  // directly into `deliveries`). Backed by the new GET /logistics/deliveries
+  // and GET /logistics/riders endpoints.
+  const { data: deliveriesData, isLoading: deliveriesLoading, refetch: refetchDeliveries } = useQuery({
+    queryKey: ["logistics-deliveries"],
+    queryFn: () => api.logistics.listDeliveries({ limit: 200 }),
+  });
+  const deliveries: Delivery[] = deliveriesData?.deliveries ?? [];
+
+  const { data: ridersData, isLoading: ridersLoading, refetch: refetchRiders } = useQuery({
+    queryKey: ["logistics-riders"],
+    queryFn: () => api.logistics.listRiders(),
+  });
+  const riders: Rider[] = ridersData?.riders ?? [];
+
+  // Selected delivery — Detail Workspace (Ch.5.1, no dismiss button).
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
+  const selectedDelivery = useMemo(
+    () => deliveries.find((d) => d.id === selectedDeliveryId) ?? null,
+    [deliveries, selectedDeliveryId],
+  );
+
+  const { data: pingsData, isLoading: pingsLoading } = useQuery({
+    queryKey: ["logistics-delivery-pings", selectedDeliveryId],
+    queryFn: () => api.logistics.deliveryPings(selectedDeliveryId!),
+    enabled: !!selectedDeliveryId,
+  });
+  const pings: Ping[] = pingsData?.pings ?? [];
 
   // Create Rider dialog
   const [riderOpen, setRiderOpen] = useState(false);
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
   const [riderVehicle, setRiderVehicle] = useState("motorcycle");
+  // Shown once, right after creation -- access_code is the rider's
+  // persistent sign-in credential (ACE Riders, /rider), staff need to
+  // actually relay it to them, so the sheet stays open on a success view
+  // instead of closing immediately like every other create-flow in this app.
+  const [newRiderCode, setNewRiderCode] = useState<string | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // Create Delivery dialog
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [deliveryDest, setDeliveryDest] = useState("");
-  const [deliveryRecipient, setDeliveryRecipient] = useState("");
-  const [deliveryPhone, setDeliveryPhone] = useState("");
+  const [newDeliveryRecipient, setNewDeliveryRecipient] = useState("");
+  const [newDeliveryPhone, setNewDeliveryPhone] = useState("");
 
   // Update status
   const [statusTarget, setStatusTarget] = useState<Delivery | null>(null);
   const [newStatus, setNewStatus] = useState<string>("in_transit");
+
+  // Manual rider assignment (unassigned deliveries) — resets on selection change.
+  const [assignRiderId, setAssignRiderId] = useState<string>("");
+  useEffect(() => { setAssignRiderId(""); }, [selectedDeliveryId]);
 
   // Route viewer
   const [routeRiderId, setRouteRiderId] = useState<string | null>(null);
@@ -167,33 +272,38 @@ export default function LogisticsMonitor() {
         vehicle: riderVehicle,
       }),
     onSuccess: (data: any) => {
-      const created: Rider = data.rider;
-      setRiders((prev) => [...prev, created]);
-      toast({ title: "Rider registered", description: created.name });
-      setRiderOpen(false);
+      toast({ title: "Rider registered", description: data?.rider?.name });
+      setNewRiderCode(data?.rider?.access_code || null);
       setRiderName("");
       setRiderPhone("");
+      void queryClient.invalidateQueries({ queryKey: ["logistics-riders"] });
     },
     onError: (e: any) => {
       toast({ title: "Failed to create rider", description: e?.message, variant: "destructive" });
     },
   });
 
+  // Payload now matches the real Delivery schema (reference?, customer_id?,
+  // address?, quantity?, status?) — the previous {destination, recipient_name,
+  // recipient_phone} shape didn't match any field on the backend model
+  // (extra="forbid"), so every submission 422'd, unconditionally.
   const createDelivery = useMutation({
     mutationFn: () =>
       api.logistics.createDelivery({
-        destination: deliveryDest.trim(),
-        recipient_name: deliveryRecipient.trim() || undefined,
-        recipient_phone: deliveryPhone.trim() || undefined,
+        address: {
+          destination: deliveryDest.trim(),
+          recipient_name: newDeliveryRecipient.trim() || undefined,
+          recipient_phone: newDeliveryPhone.trim() || undefined,
+        },
       }),
     onSuccess: (data: any) => {
-      const created: Delivery = data.delivery;
-      setDeliveries((prev) => [...prev, created]);
-      toast({ title: "Delivery created", description: created.destination });
+      toast({ title: "Delivery created", description: deliveryDest.trim() });
       setDeliveryOpen(false);
       setDeliveryDest("");
-      setDeliveryRecipient("");
-      setDeliveryPhone("");
+      setNewDeliveryRecipient("");
+      setNewDeliveryPhone("");
+      void queryClient.invalidateQueries({ queryKey: ["logistics-deliveries"] });
+      if (data?.delivery?.id) setSelectedDeliveryId(data.delivery.id);
     },
     onError: (e: any) => {
       toast({ title: "Failed to create delivery", description: e?.message, variant: "destructive" });
@@ -204,10 +314,7 @@ export default function LogisticsMonitor() {
     mutationFn: () => api.logistics.assignRoutes(),
     onSuccess: (data: any) => {
       toast({ title: "Routes assigned", description: `${data.assigned_count ?? 0} deliveries assigned` });
-      // Update local deliveries to 'assigned' for unassigned ones
-      setDeliveries((prev) =>
-        prev.map((d) => (d.status === "unassigned" ? { ...d, status: "assigned" as const } : d))
-      );
+      void queryClient.invalidateQueries({ queryKey: ["logistics-deliveries"] });
     },
     onError: (e: any) => {
       toast({ title: "Assignment failed", description: e?.message, variant: "destructive" });
@@ -217,13 +324,26 @@ export default function LogisticsMonitor() {
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.logistics.updateDeliveryStatus(id, status),
-    onSuccess: (_data, { id, status }) => {
-      setDeliveries((prev) => prev.map((d) => (d.id === id ? { ...d, status: status as any } : d)));
+    onSuccess: () => {
       toast({ title: "Status updated" });
       setStatusTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ["logistics-deliveries"] });
     },
     onError: (e: any) => {
       toast({ title: "Update failed", description: e?.message, variant: "destructive" });
+    },
+  });
+
+  const assignDelivery = useMutation({
+    mutationFn: ({ id, riderId }: { id: string; riderId: string }) =>
+      api.logistics.assignDelivery(id, riderId),
+    onSuccess: () => {
+      toast({ title: "Rider assigned" });
+      setAssignRiderId("");
+      void queryClient.invalidateQueries({ queryKey: ["logistics-deliveries"] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to assign rider", description: e?.message, variant: "destructive" });
     },
   });
 
@@ -301,9 +421,7 @@ export default function LogisticsMonitor() {
       const url: string = data.tracking_url ?? "";
       setTrackingLinks((prev) => ({ ...prev, [deliveryId]: url }));
       toast({ title: "Tracking started", description: url ? "Tracking link generated" : undefined });
-      setDeliveries((prev) =>
-        prev.map((d) => (d.id === deliveryId ? { ...d, status: "in_transit" as const } : d))
-      );
+      void queryClient.invalidateQueries({ queryKey: ["logistics-deliveries"] });
     },
     onError: (e: any) => {
       toast({ title: "Failed to start tracking", description: e?.message, variant: "destructive" });
@@ -324,12 +442,11 @@ export default function LogisticsMonitor() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Logistics Monitor</h1>
-          <p className="text-sm text-muted-foreground">Riders · Deliveries · Route Assignment</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        icon={Truck}
+        title="Logistics Monitor"
+        subtitle="Riders · Deliveries · Route Assignment"
+        actions={
           <Button
             variant="outline"
             size="sm"
@@ -340,29 +457,18 @@ export default function LogisticsMonitor() {
             {assignRoutes.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}
             Assign Routes
           </Button>
-          <Button size="sm" className="gap-1.5" onClick={() => setDeliveryOpen(true)}>
-            <Truck className="h-4 w-4" /> New Delivery
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Stats bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {[
-          { label: "Total",       value: stats.total,      color: "text-foreground" },
-          { label: "Unassigned",  value: stats.unassigned, color: "text-muted-foreground" },
-          { label: "Assigned",    value: stats.assigned,   color: "text-blue-600 dark:text-blue-400" },
-          { label: "In Transit",  value: stats.in_transit, color: "text-yellow-600 dark:text-yellow-400" },
-          { label: "Delivered",   value: stats.delivered,  color: "text-green-600 dark:text-green-400" },
-        ].map((stat) => (
-          <Card key={stat.label} className="text-center">
-            <CardContent className="p-3">
-              <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-              <p className="text-xs text-muted-foreground">{stat.label}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <KpiStrip
+        items={[
+          { label: "Total", value: stats.total },
+          { label: "Unassigned", value: stats.unassigned },
+          { label: "Assigned", value: stats.assigned, tone: "warning" },
+          { label: "In Transit", value: stats.in_transit, tone: "warning" },
+          { label: "Delivered", value: stats.delivered, tone: "success" },
+        ]}
+      />
 
       <Tabs defaultValue="deliveries" onValueChange={(v) => { if (v === "livemap") connectSSE(); else disconnectSSE(); }}>
         <TabsList>
@@ -377,92 +483,215 @@ export default function LogisticsMonitor() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Deliveries Tab */}
+        {/* Deliveries Tab — full retrofit: List/Detail/QuickActions. Real
+            data has meaningfully more content than a flat row shows
+            (structured address, quantity, source provenance, full GPS ping
+            history) — closest precedent InvoicesTab. See
+            ACE-Workspace-Standard.md §9.10. */}
         <TabsContent value="deliveries" className="mt-4">
-          <motion.div {...motionVariants.cardEnter} className="space-y-3">
-            {deliveries.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center text-muted-foreground text-sm">
-                  <Truck className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                  No deliveries yet. Click <strong>"New Delivery"</strong> to add one.
-                </CardContent>
-              </Card>
-            ) : (
-              deliveries.map((delivery) => (
-                <Card key={delivery.id} className="border-border/60">
-                  <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
-                    <div className="min-w-0 space-y-0.5">
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">
+            {/* List Panel */}
+            <Card className="lg:max-h-[600px] flex flex-col">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Deliveries ({deliveries.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-y-auto space-y-2 flex-1">
+                {deliveriesLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : deliveries.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground text-sm">
+                    No deliveries yet. Use "New Delivery" to add one.
+                  </div>
+                ) : (
+                  deliveries.map((delivery) => (
+                    <button
+                      key={delivery.id}
+                      onClick={() => setSelectedDeliveryId(delivery.id)}
+                      className={`w-full text-left rounded-lg border px-3 py-2.5 hover:bg-muted/40 transition-colors ${
+                        selectedDeliveryId === delivery.id ? "border-primary bg-muted/40" : ""
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         <MapPin className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        <p className="text-sm font-medium truncate">{delivery.destination}</p>
+                        <span className="font-medium text-sm truncate">{deliveryLabel(delivery)}</span>
                       </div>
-                      {delivery.recipient_name && (
-                        <p className="text-xs text-muted-foreground pl-5">{delivery.recipient_name}</p>
-                      )}
-                      {delivery.assigned_rider && (
-                        <p className="text-xs text-muted-foreground pl-5 font-mono">
-                          Rider: {delivery.assigned_rider.slice(-8)}
-                        </p>
+                      <div className="mt-1"><StatusBadge status={delivery.status} /></div>
+                    </button>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Detail Workspace — inline, no dismiss button (Ch.5.1). */}
+            <Card>
+              <CardContent className="pt-6">
+                {!selectedDelivery && (
+                  <p className="text-sm text-muted-foreground text-center py-12">Select a delivery to view details.</p>
+                )}
+                {selectedDelivery && (
+                  <div className="space-y-4 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-lg">{deliveryLabel(selectedDelivery)}</div>
+                        {selectedDelivery.reference && (
+                          <div className="text-xs text-muted-foreground font-mono">{selectedDelivery.reference}</div>
+                        )}
+                      </div>
+                      <StatusBadge status={selectedDelivery.status} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Recipient", deliveryRecipient(selectedDelivery)],
+                        ["Phone", deliveryPhone(selectedDelivery)],
+                        ["Quantity", selectedDelivery.quantity],
+                        ["Source", selectedDelivery.source ?? "manual"],
+                        ["Rider", selectedDelivery.rider?.name],
+                        ["Rider Phone", selectedDelivery.rider?.phone],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="space-y-0.5">
+                          <div className="text-xs text-muted-foreground">{label}</div>
+                          <div className="text-xs font-medium truncate">{value ?? "—"}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {selectedDelivery.address?.items_summary && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Items</div>
+                        <div className="text-xs bg-muted/40 rounded p-2">{selectedDelivery.address.items_summary}</div>
+                      </div>
+                    )}
+
+                    <Separator />
+
+                    <div>
+                      <div className="text-xs font-semibold text-muted-foreground mb-2">TRACKING HISTORY</div>
+                      {pingsLoading ? (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : pings.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No GPS pings recorded yet.</p>
+                      ) : (
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {pings.map((p) => (
+                            <div key={p.id} className="text-xs flex justify-between bg-muted/30 rounded px-2 py-1">
+                              <span>{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</span>
+                              <span className="text-muted-foreground">{new Date(p.ts).toLocaleTimeString()}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <StatusBadge status={delivery.status} />
-                      {delivery.status === "assigned" && (
+
+                    <Separator />
+
+                    {selectedDelivery.status === "unassigned" && (
+                      <div className="flex items-center gap-2">
+                        <Select value={assignRiderId} onValueChange={setAssignRiderId}>
+                          <SelectTrigger className="h-8 text-xs flex-1">
+                            <SelectValue placeholder={riders.filter((r) => r.active).length === 0 ? "No active riders" : "Select rider…"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {riders.filter((r) => r.active).map((r) => (
+                              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs gap-1 text-green-600"
-                          disabled={startDelivery.isPending}
-                          onClick={() => startDelivery.mutate(delivery.id)}
+                          size="sm" className="gap-1 flex-shrink-0"
+                          disabled={!assignRiderId || assignDelivery.isPending}
+                          onClick={() => assignDelivery.mutate({ id: selectedDelivery.id, riderId: assignRiderId })}
                         >
-                          {startDelivery.isPending && startDelivery.variables === delivery.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Play className="h-3 w-3" />
-                          )}
+                          {assignDelivery.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <User className="h-3.5 w-3.5" />}
+                          Assign
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 flex-wrap">
+                      {selectedDelivery.status === "assigned" && (
+                        <Button
+                          size="sm" variant="outline" className="gap-1 text-green-600"
+                          disabled={startDelivery.isPending}
+                          onClick={() => startDelivery.mutate(selectedDelivery.id)}
+                        >
+                          {startDelivery.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                           Start
                         </Button>
                       )}
-                      {trackingLinks[delivery.id] && (
+                      {trackingUrlFor(selectedDelivery, trackingLinks) && (
                         <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs gap-1"
+                          size="sm" variant="ghost" className="gap-1"
                           onClick={() => {
-                            void navigator.clipboard.writeText(trackingLinks[delivery.id]);
+                            const url = trackingUrlFor(selectedDelivery, trackingLinks)!;
+                            void navigator.clipboard.writeText(url);
                             toast({ title: "Tracking link copied!" });
                           }}
                         >
-                          <Copy className="h-3 w-3" />
+                          <Copy className="h-3.5 w-3.5" /> Copy Tracking Link
                         </Button>
                       )}
-                      {delivery.status !== "delivered" && delivery.status !== "failed" && (
+                      {selectedDelivery.status !== "delivered" && selectedDelivery.status !== "failed" && (
                         <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => { setStatusTarget(delivery); setNewStatus("in_transit"); }}
+                          size="sm" variant="outline" className="gap-1"
+                          onClick={() => { setStatusTarget(selectedDelivery); setNewStatus("in_transit"); }}
                         >
-                          Update
+                          Update Status
                         </Button>
                       )}
                     </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </motion.div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" size="sm" onClick={() => setDeliveryOpen(true)}>
+                  <Truck className="h-4 w-4 mr-1" /> New Delivery
+                </Button>
+                <Button
+                  variant="outline" className="w-full" size="sm"
+                  onClick={() => refetchDeliveries()} disabled={deliveriesLoading}
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
-        {/* Riders Tab */}
+        {/* Riders Tab — partial retrofit: KpiStrip + DetailSheet for the
+            create form, flat card list kept as-is (every card already shows
+            what's relevant, "Route" is already a single Dialog click away).
+            See ACE-Workspace-Standard.md §9.5/§9.10. */}
         <TabsContent value="riders" className="mt-4">
           <motion.div {...motionVariants.cardEnter} className="space-y-3">
+            <KpiStrip
+              items={[
+                { label: "Total Riders", value: riders.length },
+                { label: "Active", value: riders.filter((r) => r.active).length, tone: "success" },
+                { label: "Inactive", value: riders.filter((r) => !r.active).length },
+              ]}
+            />
             <div className="flex justify-end">
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setRiderOpen(true)}>
                 <Plus className="h-3.5 w-3.5" /> Register Rider
               </Button>
             </div>
-            {riders.length === 0 ? (
+            {ridersLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : riders.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center text-muted-foreground text-sm">
                   <User className="h-8 w-8 mx-auto mb-2 opacity-40" />
@@ -603,14 +832,56 @@ export default function LogisticsMonitor() {
         </TabsContent>
       </Tabs>
 
-      {/* Register Rider Dialog */}
-      <Dialog open={riderOpen} onOpenChange={setRiderOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Register Rider</DialogTitle>
-            <DialogDescription>Add a new dispatch rider to the system.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
+      {/* Register Rider — ephemeral create task, DetailSheet per Ch.5.2.
+          After creation the sheet switches to a success view showing the
+          rider's persistent ACE Riders sign-in code (shown once, like an
+          API key) instead of closing immediately -- staff need to actually
+          relay this to the rider by phone/WhatsApp/etc. */}
+      <DetailSheet
+        open={riderOpen}
+        onOpenChange={(open) => {
+          setRiderOpen(open);
+          if (!open) { setNewRiderCode(null); setCodeCopied(false); }
+        }}
+        title={newRiderCode ? "Rider Registered" : "Register Rider"}
+        description={newRiderCode ? "Share this sign-in code with the rider." : "Add a new dispatch rider to the system."}
+        icon={User}
+        footer={
+          newRiderCode ? (
+            <Button className="w-full gap-2" onClick={() => setRiderOpen(false)}>
+              Done
+            </Button>
+          ) : (
+            <Button className="w-full gap-2" disabled={riderName.trim().length < 2 || createRider.isPending} onClick={() => createRider.mutate()}>
+              {createRider.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <User className="h-4 w-4" />}
+              Register
+            </Button>
+          )
+        }
+      >
+        {newRiderCode ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This code signs the rider in at <strong>/rider</strong> and stays valid across every future delivery — no need to send a new link each time.
+            </p>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 px-5 py-4">
+              <span className="text-2xl font-bold tracking-[0.3em]">{newRiderCode}</span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => {
+                  navigator.clipboard.writeText(newRiderCode);
+                  setCodeCopied(true);
+                  setTimeout(() => setCodeCopied(false), 2000);
+                }}
+              >
+                {codeCopied ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-sm font-medium">Name *</label>
               <Input placeholder="e.g. Ahmed Musa" value={riderName} onChange={(e) => setRiderName(e.target.value)} />
@@ -632,53 +903,45 @@ export default function LogisticsMonitor() {
               </Select>
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setRiderOpen(false)}>Cancel</Button>
-            <Button disabled={riderName.trim().length < 2 || createRider.isPending} onClick={() => createRider.mutate()} className="gap-2">
-              {createRider.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <User className="h-4 w-4" />}
-              Register
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </DetailSheet>
 
-      {/* New Delivery Dialog */}
-      <Dialog open={deliveryOpen} onOpenChange={setDeliveryOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>New Delivery</DialogTitle>
-            <DialogDescription>Create a new delivery job to be assigned.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Destination *</label>
-              <Input placeholder="e.g. 14 Broad Street, Lagos" value={deliveryDest} onChange={(e) => setDeliveryDest(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Recipient Name <span className="text-muted-foreground text-xs">(optional)</span></label>
-              <Input placeholder="e.g. Medway Pharmacy" value={deliveryRecipient} onChange={(e) => setDeliveryRecipient(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Recipient Phone <span className="text-muted-foreground text-xs">(optional)</span></label>
-              <Input type="tel" placeholder="+234 ..." value={deliveryPhone} onChange={(e) => setDeliveryPhone(e.target.value)} />
-            </div>
+      {/* New Delivery — ephemeral create task, DetailSheet per Ch.5.2. */}
+      <DetailSheet
+        open={deliveryOpen}
+        onOpenChange={setDeliveryOpen}
+        title="New Delivery"
+        description="Create a new delivery job to be assigned."
+        icon={Truck}
+        footer={
+          <Button className="w-full gap-2" disabled={deliveryDest.trim().length < 3 || createDelivery.isPending} onClick={() => createDelivery.mutate()}>
+            {createDelivery.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
+            Create Delivery
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Destination *</label>
+            <Input placeholder="e.g. 14 Broad Street, Lagos" value={deliveryDest} onChange={(e) => setDeliveryDest(e.target.value)} />
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeliveryOpen(false)}>Cancel</Button>
-            <Button disabled={deliveryDest.trim().length < 3 || createDelivery.isPending} onClick={() => createDelivery.mutate()} className="gap-2">
-              {createDelivery.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
-              Create Delivery
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Recipient Name <span className="text-muted-foreground text-xs">(optional)</span></label>
+            <Input placeholder="e.g. Medway Pharmacy" value={newDeliveryRecipient} onChange={(e) => setNewDeliveryRecipient(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Recipient Phone <span className="text-muted-foreground text-xs">(optional)</span></label>
+            <Input type="tel" placeholder="+234 ..." value={newDeliveryPhone} onChange={(e) => setNewDeliveryPhone(e.target.value)} />
+          </div>
+        </div>
+      </DetailSheet>
 
       {/* Update Status Dialog */}
       <Dialog open={statusTarget !== null} onOpenChange={(open) => { if (!open) setStatusTarget(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Update Delivery Status</DialogTitle>
-            <DialogDescription>{statusTarget?.destination}</DialogDescription>
+            <DialogDescription>{statusTarget ? deliveryLabel(statusTarget) : ""}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
@@ -728,8 +991,8 @@ export default function LogisticsMonitor() {
               ((routeData as any).deliveries as Delivery[]).map((d) => (
                 <div key={d.id} className="flex items-center justify-between gap-2 py-1 border-b last:border-0">
                   <div className="min-w-0">
-                    <p className="text-sm truncate">{d.destination}</p>
-                    {d.recipient_name && <p className="text-xs text-muted-foreground">{d.recipient_name}</p>}
+                    <p className="text-sm truncate">{deliveryLabel(d)}</p>
+                    {deliveryRecipient(d) && <p className="text-xs text-muted-foreground">{deliveryRecipient(d)}</p>}
                   </div>
                   <StatusBadge status={d.status} />
                 </div>

@@ -48,12 +48,59 @@ def _latest_batch_for_table(table: str, client: DBClient = db) -> str | None:
         return None
 
 
-def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[Dict[str, Any]]:
-    """Return latest inventory rows from snapshot table, aggregated per SKU.
+def _enrich_with_items_metadata(rows: List[Dict[str, Any]], client: DBClient = db) -> List[Dict[str, Any]]:
+    """Merge sage_items_snapshot catalog fields (expiry_date, batch_number, category,
+    reorder_level) onto inventory rows keyed by sku == item_id.
 
-    Multiple warehouse rows for the same SKU are merged: quantity and valuation
-    are summed across warehouses so each SKU appears exactly once.
+    sage_inventory_snapshot (stock qty/cost/valuation) and sage_items_snapshot
+    (catalog metadata incl. pharmaceutical expiry_date/batch_number) are separate
+    import pipelines with no FK between them — callers of latest_inventory_snapshot/
+    inventory_by_skus previously never saw expiry or batch data at all.
     """
+    if not rows:
+        return rows
+    skus = {r.get("sku") for r in rows if r.get("sku")}
+    if not skus:
+        return rows
+    try:
+        items_resp = (
+            client.table("sage_items_snapshot")
+            .select("item_id, item_name, category, reorder_level, expiry_date, batch_number")
+            .in_("item_id", list(skus))
+            .order("imported_at", desc=True)
+            .execute()
+        )
+    except Exception as e:
+        logging.warning(f"_enrich_with_items_metadata query failed (non-fatal): {e}")
+        return rows
+    # Keep the earliest expiry per SKU (most operationally relevant — the batch
+    # that runs out first), not just the latest-imported row.
+    meta_by_sku: Dict[str, Dict[str, Any]] = {}
+    for r in (items_resp.data or []):
+        sku = r.get("item_id")
+        if not sku:
+            continue
+        existing = meta_by_sku.get(sku)
+        if existing is None:
+            meta_by_sku[sku] = r
+            continue
+        new_exp, cur_exp = r.get("expiry_date"), existing.get("expiry_date")
+        if new_exp and (not cur_exp or str(new_exp) < str(cur_exp)):
+            meta_by_sku[sku] = r
+    for row in rows:
+        meta = meta_by_sku.get(row.get("sku") or "")
+        if meta:
+            row["category"] = meta.get("category") or None
+            row["reorder_level"] = meta.get("reorder_level")
+            row["expiry_date"] = meta.get("expiry_date")
+            row["batch_number"] = meta.get("batch_number") or None
+        else:
+            row.setdefault("expiry_date", None)
+            row.setdefault("batch_number", None)
+    return rows
+
+
+def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[Dict[str, Any]]:
     """Return latest inventory rows from snapshot table, aggregated per SKU.
 
     Multiple warehouse rows for the same SKU are merged: quantity and valuation
@@ -89,7 +136,7 @@ def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[D
 
     result = list(aggregated.values())
     if result:
-        return result
+        return _enrich_with_items_metadata(result, client)
 
     # Fallback: sage_inventory_snapshot is empty — read from inventory_items + stock_levels so
     # the public /stock endpoint stays populated when data was entered via the inventory module.
@@ -112,7 +159,7 @@ def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[D
             })
     except Exception:
         pass
-    return result
+    return _enrich_with_items_metadata(result, client)
 
 
 def inventory_by_skus(skus: List[str], client: DBClient = db) -> List[Dict[str, Any]]:
@@ -132,7 +179,7 @@ def inventory_by_skus(skus: List[str], client: DBClient = db) -> List[Dict[str, 
         s = row.get("sku")
         if s and s not in latest:
             latest[s] = row
-    return list(latest.values())
+    return _enrich_with_items_metadata(list(latest.values()), client)
 
 
 @ttl_cache(ttl_seconds=600, ignore_kwargs=("client",), tags=("finance", "finance_trend"))
@@ -140,7 +187,7 @@ def ar_trend_summary(client: DBClient = db, periods: int = 6) -> Dict[str, Any]:
     """Compute simple AR totals per period (last N periods).
     Groups by Month (YYYY-MM).
     """
-    ar_batch = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
+    ar_batch = _latest_batch_for_table("sage_ar_snapshot", client)
     q = client.table("sage_ar_snapshot").select("date,amount,balance").gt("amount", 0)
     if ar_batch:
         q = q.eq("batch_id", ar_batch)
@@ -294,7 +341,7 @@ def ar_aging_buckets(client: DBClient = db) -> Dict[str, Any]:
             return datetime.date.fromisoformat(d)
         except Exception:
             return None
-    batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
+    batch_id = _latest_batch_for_table("sage_ar_snapshot", client)
     q = client.table("sage_ar_snapshot").select("due_date,date,balance").gt("balance", 0)
     if batch_id:
         q = q.eq("batch_id", batch_id)
@@ -355,7 +402,7 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
         return []
 
     # Fetch AR invoices (real balances only — aged-summary rows carry 0)
-    batch_id = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_ar_snapshot", client)
+    batch_id = _latest_batch_for_table("sage_ar_snapshot", client)
     ar_q = client.table("sage_ar_snapshot").select(
         "invoice_id,customer_id,due_date,date,amount,balance,status"
     ).gt("balance", 0)
@@ -454,9 +501,11 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
 @ttl_cache(ttl_seconds=120, ignore_kwargs=("client",), tags=("finance", "finance_gl"))
 def get_latest_gl_snapshot(limit: int = 1000, client: DBClient = db) -> List[Dict[str, Any]]:
     """Return latest GL rows from snapshot table."""
-    # Prefer promoted batch if configured, but fall back to latest table batch
-    # when promoted batch has no rows (common with independent imports).
-    batch_id = get_sage_kpi_batch_id()
+    # Always use the truly most-recent GL batch, matching kpis()'s resolution —
+    # the promoted batch pointer is a single, coarse cross-table marker that
+    # isn't guaranteed to be re-promoted on every import, so preferring it here
+    # risked silently serving stale GL data even though newer rows existed.
+    batch_id = _latest_batch_for_table("sage_gl_snapshot", client)
     rows: List[Dict[str, Any]] = []
 
     if batch_id:
@@ -471,7 +520,7 @@ def get_latest_gl_snapshot(limit: int = 1000, client: DBClient = db) -> List[Dic
         rows = resp.data or []
 
     if not rows:
-        fallback_batch = _latest_batch_for_table("sage_gl_snapshot", client)
+        fallback_batch = get_sage_kpi_batch_id()
         if fallback_batch:
             resp = (
                 client.table("sage_gl_snapshot")

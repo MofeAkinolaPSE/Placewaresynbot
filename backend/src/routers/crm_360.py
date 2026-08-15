@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from src.middleware import verify_jwt
 import src.db as db
+from src.services.customer_reorder import get_customer_reorder_profile, get_reorder_priority_queue
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix='/crm', tags=['crm'])
@@ -128,6 +129,35 @@ def customer_360(customer_id: int, request: Request):
                 t['amount'] = round(t['amount'], 2)
                 t['gross_profit'] = round(t['gross_profit'], 2)
 
+        # ── Recent orders (Frontdesk) ───────────────────────────────────────
+        # "Customer Context Engine" -- translates the RoyanHealth Patient
+        # Context Engine pattern (one aggregated backend object, not many
+        # separate frontend calls) onto this app's existing 360 read model.
+        # Additive only -- does not change any of the 4 keys CRM.tsx's 360
+        # dialog already reads. Requires migration 100
+        # (frontdesk_walk_ins.customer_id); fails soft to [] otherwise.
+        orders = []
+        try:
+            wi_rows = (
+                db.db.table('frontdesk_walk_ins').select('id')
+                .eq('customer_id', customer_id).limit(500).execute().data or []
+            )
+            walk_in_ids = [w['id'] for w in wi_rows]
+            if walk_in_ids:
+                orders = (
+                    db.db.table('frontdesk_invoices')
+                    .select('id,invoice_number,walk_in_id,status,total_amount,created_at')
+                    .in_('walk_in_id', walk_in_ids)
+                    .order('created_at', desc=True)
+                    .limit(20)
+                    .execute()
+                    .data
+                    or []
+                )
+        except Exception:
+            log.exception('customer_360 orders lookup failed for id=%s', customer_id)
+            orders = []
+
         return {
             'customer': {
                 'id': c.get('id'),
@@ -157,9 +187,31 @@ def customer_360(customer_id: int, request: Request):
             },
             'profitability': profitability,
             'top_items': top_items,
+            'orders': orders,
+            'reorder_profile': get_customer_reorder_profile(code) if code else None,
         }
     except HTTPException:
         raise
     except Exception:
         log.exception('customer_360 failed for id=%s', customer_id)
+        raise HTTPException(status_code=500, detail='Internal server error')
+
+
+@router.get('/reorder-queue')
+def reorder_queue(request: Request, limit: int = 50):
+    """Priority queue of customers ranked by reorder urgency, computed from
+    real dated AR ledger history. Same read-only gate as customer_360 --
+    this is CRM data, not a new access tier.
+
+    Deliberately NOT nested under /customers/ -- crm.py's
+    GET /customers/{customer_id} (customer_id: int) is registered before
+    this router in app.py, so /customers/reorder-queue would 422 trying to
+    coerce "reorder-queue" to int before ever reaching this handler (the
+    same path-shape collision crm.py's own /customers/search comment
+    documents, just across router files instead of within one)."""
+    verify_jwt(request)
+    try:
+        return {'data': get_reorder_priority_queue(limit=limit)}
+    except Exception:
+        log.exception('reorder_queue failed')
         raise HTTPException(status_code=500, detail='Internal server error')

@@ -24,6 +24,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Redis — shared TTL cache for agent insights / tool results ───────────
+  # Pure performance cache, not a source of truth (everything is
+  # recomputable from Postgres) -- no persistence, no host port exposure,
+  # only reachable inside the compose network by service name.
+  redis:
+    image: redis:7-alpine
+    container_name: placeware-redis
+    command: ["redis-server", "--save", ""]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── FastAPI Backend (runs migrations automatically on start) ─────────────
   backend:
     container_name: chat-backend.v1
@@ -35,6 +50,8 @@ services:
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]

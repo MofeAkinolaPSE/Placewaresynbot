@@ -277,7 +277,13 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Inventory Status Report",
         "keywords": ["inventory", "stock", "expiry", "stock level", "low stock", "expiring"],
         "tables": [
-            {"table": "placeware_inventory_snapshot", "select": "*", "limit": 100},
+            # Ordered by current_qty desc: with only ~5% of SKUs holding real stock,
+            # an unordered LIMIT 100 over ~800 catalog rows would mostly return the
+            # zero-stock majority and mislead the LLM (and any reader) into an
+            # inflated stockout picture. Ordering by stock level surfaces the SKUs
+            # that actually have inventory first, alongside a genuine sample of the
+            # zero-stock tail.
+            {"table": "placeware_inventory_snapshot", "select": "*", "order": "current_qty", "limit": 100},
         ],
         "scope_fields": [
             _scope_field("date_from", "As At Date (From)", "date"),
@@ -318,7 +324,7 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "keywords": ["executive summary", "board report", "leadership brief", "business health", "kpi overview"],
         "tables": [
             {"table": "opportunities", "select": "*", "order": "created_at", "limit": 50},
-            {"table": "placeware_inventory_snapshot", "select": "*", "limit": 50},
+            {"table": "placeware_inventory_snapshot", "select": "*", "order": "current_qty", "limit": 50},
             {"table": "compliance_activity_log", "select": "*", "order": "scheduled_date", "limit": 30},
             {"table": "sage_payroll_snapshot", "select": "*", "order": "period", "limit": 20},
         ],

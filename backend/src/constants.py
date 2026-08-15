@@ -58,7 +58,7 @@ TABLE_SAGE_SYNC_TIMESTAMPS = "placeware_sage_sync_timestamps"
 
 
 # Stage 3 project-controls governance
-PROJECT_STATUS_ALLOWED = {"active", "on_hold", "completed", "cancelled"}
+PROJECT_STATUS_ALLOWED = {"planning", "active", "on_hold", "completed", "cancelled"}
 PROJECT_WORKFLOW_STAGES = {
     "port_clearing",
     "anti_room_received",
@@ -233,6 +233,35 @@ COMPLIANCE_QA_ROLES   = {"admin", "quality_assurance", "qa"}
 COMPLIANCE_MGMT_ROLES = {"admin", "management"}
 COMPLIANCE_OPS_ROLES  = {"admin", "quality_assurance", "qa", "operations", "ops", "management"}
 
+# ACE Workstation (org-wide dashboard) — cross-department financial visibility.
+# Sensitive (₦-denominated) fields are only included in /dashboard/workstation's
+# response for roles in these sets; other roles get the shallow, redacted fields
+# only. See services/intelligence.py get_workstation_summary().
+FINANCIAL_DATA_ROLES     = {"admin", "finance", "management"}
+CRM_PIPELINE_VALUE_ROLES = FINANCIAL_DATA_ROLES | {"crm", "sales"}
+PROCUREMENT_VALUE_ROLES  = {"admin", "ops", "finance", "procurement"}
+
+# Which roles may see alerts of a given category via GET /dashboard/alerts.
+# None = visible to every authenticated role. Categories not listed here
+# default to admin+management only (fail closed, not open).
+ALERT_CATEGORY_VISIBILITY = {
+    "finance":   FINANCIAL_DATA_ROLES,
+    "inventory": {"admin", "ops", "operations", "finance", "sales", "management"},
+    "system":    None,
+}
+
+# Which roles may drill in from a workstation department card to that
+# department's own deep page. MUST mirror SynbotUI/client/components/
+# ProtectedRoute.tsx's accessMap — update both together.
+WORKSTATION_DRILL_IN_ROLES = {
+    "inventory":       {"admin", "ops", "operations", "finance", "sales"},
+    "finance":         {"admin", "finance"},
+    "hr":              {"admin", "hr"},
+    "quality_control": {"admin", "quality_assurance", "qa", "management"},
+    "crm":             {"admin", "crm", "sales"},
+    "operations":      {"admin", "ops", "operations"},
+}
+
 # Deviation & Recall status workflows
 DEVIATION_STATUS_ALLOWED      = {"open", "under_investigation", "closed", "escalated"}
 RECALL_STATUS_ALLOWED         = {"initiated", "in_progress", "completed", "closed"}
@@ -290,6 +319,10 @@ LLM_SPACE_URL = os.getenv(ENV_LLM_SPACE_URL, "")
 LLM_SPACE_API_NAME = os.getenv(ENV_LLM_SPACE_API_NAME, "/predict")
 LLM_SPACE_API_KEY = os.getenv(ENV_LLM_SPACE_API_KEY, "")
 DEEPSEEK_API_KEY = os.getenv(ENV_DEEPSEEK_API_KEY, "")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Tone switch only, not authentication -- see _build_chat_instruction's
+# personal_mode param in app.py. Inert (feature never fires) when unset.
+ACE_PERSONAL_TRIGGER_PHRASE = os.getenv("ACE_PERSONAL_TRIGGER_PHRASE", "").strip()
 SAGE_MOCK = os.getenv(ENV_SAGE_MOCK, "false") not in ("0", "false", "False")
 JWT_SECRET = os.getenv(ENV_JWT_SECRET, "change-me-for-prod-replace-with-32plus-chars")
 

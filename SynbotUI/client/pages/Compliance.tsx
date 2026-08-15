@@ -21,7 +21,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -40,7 +39,6 @@ import {
   FileText,
   Plus,
   CheckCircle,
-  Clock,
   XCircle,
   Download,
   Upload,
@@ -51,7 +49,6 @@ import {
   Activity,
   Database,
   Eye,
-  Search,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/components/AuthProvider";
@@ -60,6 +57,11 @@ import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { FilterBar } from "@/components/workspace/FilterBar";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -165,32 +167,37 @@ function DocumentsTab() {
       )
     : docs;
 
+  const kpis = {
+    total: docs.length,
+    generated: docs.filter((d) => d.source === "generated").length,
+    ingested: docs.filter((d) => d.source !== "generated").length,
+  };
+
   return (
     <div className="space-y-4">
+      <KpiStrip
+        items={[
+          { label: "Total Documents", value: kpis.total },
+          { label: "Generated", value: kpis.generated },
+          { label: "Manually Ingested", value: kpis.ingested },
+        ]}
+      />
+
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {DOC_TYPE_FILTERS.map((f) => (
-            <Button
-              key={f.value}
-              size="sm"
-              variant={docTypeFilter === f.value ? "default" : "outline"}
-              onClick={() => setDocTypeFilter(f.value)}
-            >
-              {f.label}
-            </Button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8 w-48"
-              placeholder="Search documents…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
+        <FilterBar
+          search={{ value: searchQuery, onChange: setSearchQuery, placeholder: "Search documents…" }}
+          selects={[
+            {
+              label: "Type",
+              value: docTypeFilter,
+              onChange: setDocTypeFilter,
+              placeholder: "All Types",
+              options: DOC_TYPE_FILTERS.filter((f) => f.value).map((f) => ({ value: f.value, label: f.label })),
+            },
+          ]}
+        />
+        <div className="flex items-center gap-2 shrink-0">
           <Button size="sm" variant="outline" onClick={() => void refetch()}>
             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
           </Button>
@@ -441,82 +448,53 @@ function OverviewTab() {
       ? "from-yellow-500/20 to-amber-500/10"
       : "from-red-500/20 to-rose-500/10";
 
-  const summary = status?.summary ?? {};
+  const overdueAudits = status?.overdue_audits ?? 0;
+  const openDeviations = status?.open_deviations ?? 0;
+  const overdueMaintenance = status?.overdue_maintenance ?? 0;
+  const activeRecalls = status?.active_recalls ?? 0;
+  const missedActivities = status?.missed_activities ?? 0;
 
-  const summaryCards = [
-    {
-      label: "Audits Overdue",
-      value: summary.audits_overdue ?? status?.audits_overdue ?? "—",
-      icon: ClipboardList,
-      color: "text-orange-400",
-      bg: "bg-orange-500/10",
-    },
-    {
-      label: "Open Deviations",
-      value: summary.open_deviations ?? status?.open_deviations ?? "—",
-      icon: AlertTriangle,
-      color: "text-yellow-400",
-      bg: "bg-yellow-500/10",
-    },
-    {
-      label: "Maintenance Overdue",
-      value: summary.maintenance_overdue ?? status?.maintenance_overdue ?? "—",
-      icon: Wrench,
-      color: "text-blue-400",
-      bg: "bg-blue-500/10",
-    },
-    {
-      label: "Active Recalls",
-      value: summary.active_recalls ?? status?.active_recalls ?? "—",
-      icon: PackageX,
-      color: "text-red-400",
-      bg: "bg-red-500/10",
-    },
-  ];
-
-  const deductions: any[] = status?.deductions ?? [];
+  // The backend only ever returns the single reduced score, never a
+  // breakdown — but the breakdown is trivially derivable from the response's
+  // own real counts, using the exact same weights compliance_status() uses
+  // internally (overdue_audits*8, open_deviations*3, overdue_maintenance*4,
+  // missed_activities*5). No fabrication, no backend change needed.
+  const deductions = [
+    { label: "Overdue Audits", points: overdueAudits * 8 },
+    { label: "Open Deviations", points: openDeviations * 3 },
+    { label: "Overdue Maintenance", points: overdueMaintenance * 4 },
+    { label: "Missed Activities", points: missedActivities * 5 },
+  ].filter((d) => d.points > 0);
 
   return (
     <motion.div className="space-y-6" {...motionTransitions}>
       {/* Score gauge card */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card className={cn("md:col-span-1 bg-gradient-to-br", scoreGradient, "border-sidebar-border/60")}>
-          <CardHeader className="pb-2">
-            <CardDescription>Overall Compliance Score</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className={cn("text-6xl font-bold tabular-nums", scoreColor)}>{score}<span className="text-2xl opacity-60">%</span></p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {score >= 80 ? "Good standing" : score >= 60 ? "Needs attention" : "Critical — immediate action required"}
-            </p>
-            {score >= 80 ? (
-              <TrendingUp className="mt-2 h-5 w-5 text-green-400" />
-            ) : (
-              <TrendingDown className="mt-2 h-5 w-5 text-red-400" />
-            )}
-          </CardContent>
-        </Card>
+      <Card className={cn("bg-gradient-to-br", scoreGradient, "border-sidebar-border/60")}>
+        <CardHeader className="pb-2">
+          <CardDescription>Overall Compliance Score</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className={cn("text-6xl font-bold tabular-nums", scoreColor)}>{score}<span className="text-2xl opacity-60">%</span></p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {score >= 80 ? "Good standing" : score >= 60 ? "Needs attention" : "Critical — immediate action required"}
+          </p>
+          {score >= 80 ? (
+            <TrendingUp className="mt-2 h-5 w-5 text-green-400" />
+          ) : (
+            <TrendingDown className="mt-2 h-5 w-5 text-red-400" />
+          )}
+        </CardContent>
+      </Card>
 
-        {/* Summary stat cards */}
-        <div className="md:col-span-2 grid grid-cols-2 gap-4">
-          {summaryCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <Card key={card.label} className="border-sidebar-border/60">
-                <CardContent className="flex items-start gap-3 pt-5">
-                  <div className={cn("rounded-lg p-2", card.bg)}>
-                    <Icon className={cn("h-4 w-4", card.color)} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">{card.label}</p>
-                    <p className={cn("text-2xl font-bold tabular-nums", card.color)}>{card.value}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
+      <KpiStrip
+        items={[
+          { label: "Audits Overdue", value: overdueAudits, icon: ClipboardList, tone: overdueAudits > 0 ? "warning" : "default" },
+          { label: "Open Deviations", value: openDeviations, icon: AlertTriangle, tone: openDeviations > 0 ? "warning" : "default" },
+          { label: "Maintenance Overdue", value: overdueMaintenance, icon: Wrench, tone: overdueMaintenance > 0 ? "warning" : "default" },
+          { label: "Active Recalls", value: activeRecalls, icon: PackageX, tone: activeRecalls > 0 ? "danger" : "default" },
+          { label: "Missed Activities", value: missedActivities, icon: Activity, tone: missedActivities > 0 ? "danger" : "default" },
+        ]}
+      />
 
       {/* Deductions breakdown */}
       {deductions.length > 0 && (
@@ -527,34 +505,10 @@ function OverviewTab() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {deductions.map((d: any, i: number) => (
-                <div key={i} className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2 text-sm">
-                  <span className="text-muted-foreground">{d.reason ?? d.label}</span>
-                  <span className="font-semibold text-red-400">-{d.points ?? d.deduction} pts</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recent activity */}
-      {status?.recent_activities && status.recent_activities.length > 0 && (
-        <Card className="border-sidebar-border/60">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4" /> Recent Compliance Activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {status.recent_activities.slice(0, 8).map((a: any) => (
-                <div key={a.id} className="flex items-start justify-between border-b border-sidebar-border/40 pb-2 text-sm last:border-0">
-                  <div>
-                    <p className="font-medium">{a.activity_name}</p>
-                    <p className="text-xs text-muted-foreground">{a.department} · {formatDate(a.due_date)}</p>
-                  </div>
-                  {statusBadge(a.status)}
+              {deductions.map((d) => (
+                <div key={d.label} className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">{d.label}</span>
+                  <span className="font-semibold text-red-400">-{d.points} pts</span>
                 </div>
               ))}
             </div>
@@ -567,12 +521,17 @@ function OverviewTab() {
 
 // ─── Audits Tab ───────────────────────────────────────────────────────────────
 
+const AUDIT_STATUSES = ["scheduled", "in_progress", "completed", "overdue", "skipped"];
+
 function AuditsTab() {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [department, setDepartment] = useState("");
+  const [status, setStatus] = useState("");
   const [completeDialog, setCompleteDialog] = useState<any>(null);
-  const [completeForm, setCompleteForm] = useState({ findings: "", recommendations: "", score: "" });
+  const [completeForm, setCompleteForm] = useState({ findings: "", recommendations: "" });
   const [generateDialog, setGenerateDialog] = useState<any>(null);
   const [generateForm, setGenerateForm] = useState({
     auditor_name: "",
@@ -624,16 +583,57 @@ function AuditsTab() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const audits: any[] = data?.data ?? (Array.isArray(data) ? data : []);
+  const allAudits: any[] = data?.audits ?? [];
+
+  const departments = Array.from(new Set(allAudits.map((a) => a.department).filter(Boolean)));
+
+  const audits = allAudits.filter((a) => {
+    const q = search.trim().toLowerCase();
+    const matchQ = !q || (a.audit_type ?? "").toLowerCase().includes(q);
+    const matchDept = !department || a.department === department;
+    const matchStatus = !status || a.status === status;
+    return matchQ && matchDept && matchStatus;
+  });
+
+  const kpis = {
+    total: allAudits.length,
+    overdue: allAudits.filter((a) => a.status === "overdue").length,
+    inProgress: allAudits.filter((a) => a.status === "in_progress").length,
+    completed: allAudits.filter((a) => a.status === "completed").length,
+  };
 
   return (
     <motion.div className="space-y-4" {...motionTransitions}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Audit Schedule</h3>
-          <p className="text-sm text-muted-foreground">{audits.length} audits on record</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
+      <KpiStrip
+        items={[
+          { label: "Total Audits", value: kpis.total },
+          { label: "Overdue", value: kpis.overdue, tone: kpis.overdue > 0 ? "danger" : "default" },
+          { label: "In Progress", value: kpis.inProgress, tone: "warning" },
+          { label: "Completed", value: kpis.completed, tone: "success" },
+        ]}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: "Search audit type..." }}
+          selects={[
+            {
+              label: "Department",
+              value: department,
+              onChange: setDepartment,
+              placeholder: "All Departments",
+              options: departments.map((d) => ({ value: d, label: d })),
+            },
+            {
+              label: "Status",
+              value: status,
+              onChange: setStatus,
+              placeholder: "All Statuses",
+              options: AUDIT_STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ") })),
+            },
+          ]}
+        />
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="shrink-0">
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
         </Button>
       </div>
@@ -652,13 +652,13 @@ function AuditsTab() {
                 audits.map((a: any) => (
                   <div key={a.id} className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium text-sm leading-5">{a.audit_title ?? a.title}</p>
+                      <p className="font-medium text-sm leading-5">{a.audit_type}</p>
                       {statusBadge(a.status)}
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs">
                       <span className="text-muted-foreground">{a.department}</span>
                       <span className="text-muted-foreground">•</span>
-                      <span className="text-muted-foreground">{formatDate(a.scheduled_date)}</span>
+                      <span className="text-muted-foreground">{a.month_due ? `Month ${a.month_due}/${a.year}` : "—"}</span>
                     </div>
                     <div>{severityBadge(a.risk_level ?? "low")}</div>
                     <div className="flex flex-wrap justify-end gap-2 pt-1">
@@ -685,7 +685,7 @@ function AuditsTab() {
                       {a.status === "in_progress" && (
                         <Button
                           size="sm"
-                          onClick={() => { setCompleteDialog(a); setCompleteForm({ findings: "", recommendations: "", score: "" }); }}
+                          onClick={() => { setCompleteDialog(a); setCompleteForm({ findings: "", recommendations: "" }); }}
                         >
                           <CheckCircle className="mr-1.5 h-3.5 w-3.5" /> Complete
                         </Button>
@@ -707,9 +707,9 @@ function AuditsTab() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 z-10 min-w-[220px] bg-muted/90">Audit Title</TableHead>
+                    <TableHead className="sticky left-0 z-10 min-w-[220px] bg-muted/90">Audit Type</TableHead>
                     <TableHead className="min-w-[120px]">Department</TableHead>
-                    <TableHead className="min-w-[120px]">Scheduled Date</TableHead>
+                    <TableHead className="min-w-[120px]">Month Due</TableHead>
                     <TableHead className="min-w-[100px]">Risk Level</TableHead>
                     <TableHead className="min-w-[100px]">Status</TableHead>
                     <TableHead className="text-right min-w-[220px]">Actions</TableHead>
@@ -725,9 +725,9 @@ function AuditsTab() {
                   ) : (
                     audits.map((a: any) => (
                       <TableRow key={a.id}>
-                        <TableCell className="sticky left-0 z-10 bg-background font-medium">{a.audit_title ?? a.title}</TableCell>
+                        <TableCell className="sticky left-0 z-10 bg-background font-medium">{a.audit_type}</TableCell>
                         <TableCell>{a.department}</TableCell>
-                        <TableCell>{formatDate(a.scheduled_date)}</TableCell>
+                        <TableCell>{a.month_due ? `${a.month_due}/${a.year}` : "—"}</TableCell>
                         <TableCell>{severityBadge(a.risk_level ?? "low")}</TableCell>
                         <TableCell>{statusBadge(a.status)}</TableCell>
                         <TableCell className="text-right">
@@ -755,7 +755,7 @@ function AuditsTab() {
                             {a.status === "in_progress" && (
                               <Button
                                 size="sm"
-                                onClick={() => { setCompleteDialog(a); setCompleteForm({ findings: "", recommendations: "", score: "" }); }}
+                                onClick={() => { setCompleteDialog(a); setCompleteForm({ findings: "", recommendations: "" }); }}
                               >
                                 <CheckCircle className="mr-1.5 h-3.5 w-3.5" /> Complete
                               </Button>
@@ -784,14 +784,14 @@ function AuditsTab() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Complete Audit</DialogTitle>
-            <DialogDescription>{completeDialog?.audit_title ?? completeDialog?.title}</DialogDescription>
+            <DialogDescription>{completeDialog?.audit_type}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Findings</Label>
               <Textarea
                 rows={3}
-                placeholder="Key findings during this audit..."
+                placeholder="Key findings during this audit, one per line..."
                 value={completeForm.findings}
                 onChange={(e) => setCompleteForm((f) => ({ ...f, findings: e.target.value }))}
               />
@@ -800,20 +800,9 @@ function AuditsTab() {
               <Label>Recommendations</Label>
               <Textarea
                 rows={3}
-                placeholder="Recommendations for improvement..."
+                placeholder="Recommendations for improvement, one per line..."
                 value={completeForm.recommendations}
                 onChange={(e) => setCompleteForm((f) => ({ ...f, recommendations: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Compliance Score (0–100)</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                placeholder="85"
-                value={completeForm.score}
-                onChange={(e) => setCompleteForm((f) => ({ ...f, score: e.target.value }))}
               />
             </div>
           </div>
@@ -825,9 +814,8 @@ function AuditsTab() {
                 completeMutation.mutate({
                   id: completeDialog.id,
                   payload: {
-                    findings: completeForm.findings,
-                    recommendations: completeForm.recommendations,
-                    score: completeForm.score ? Number(completeForm.score) : undefined,
+                    findings: completeForm.findings.split("\n").map((s) => s.trim()).filter(Boolean),
+                    recommendations: completeForm.recommendations.split("\n").map((s) => s.trim()).filter(Boolean),
                   },
                 })
               }
@@ -839,19 +827,38 @@ function AuditsTab() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Generate Audit Report dialog ── */}
-      <Dialog open={!!generateDialog} onOpenChange={(o) => !o && setGenerateDialog(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-emerald-400" /> Generate Audit Report
-            </DialogTitle>
-            <DialogDescription>
-              {generateDialog?.audit_type} — {generateDialog?.department}
-              {generateDialog?.month_due ? ` · Month ${generateDialog.month_due}/${generateDialog?.year}` : ""}
-            </DialogDescription>
-          </DialogHeader>
-
+      {/* ── Generate Audit Report sheet ── */}
+      <DetailSheet
+        open={!!generateDialog}
+        onOpenChange={(o) => !o && setGenerateDialog(null)}
+        title="Generate Audit Report"
+        description={`${generateDialog?.audit_type ?? ""} — ${generateDialog?.department ?? ""}${generateDialog?.month_due ? ` · Month ${generateDialog.month_due}/${generateDialog?.year}` : ""}`}
+        icon={FileText}
+        footer={
+          <Button
+            className="w-full"
+            disabled={generateMutation.isPending}
+            onClick={() => {
+              const payload: any = {};
+              if (generateForm.auditor_name) payload.auditor_name = generateForm.auditor_name;
+              if (generateForm.summary)      payload.summary      = generateForm.summary;
+              const findings = generateForm.findings.filter(Boolean);
+              if (findings.length)           payload.findings     = findings;
+              const obs = generateForm.observations.filter(Boolean);
+              if (obs.length)                payload.observations = obs;
+              const recs = generateForm.recommendations.filter(Boolean);
+              if (recs.length)               payload.recommendations = recs;
+              if (generateForm.score)        payload.score        = Number(generateForm.score);
+              generateMutation.mutate({ id: generateDialog.id, payload });
+            }}
+          >
+            {generateMutation.isPending
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <FileText className="mr-2 h-4 w-4" />}
+            Generate Report
+          </Button>
+        }
+      >
           {/* Pre-filled read-only info strip */}
           <div className="grid grid-cols-3 gap-3 rounded-lg border border-sidebar-border/50 bg-muted/20 p-3 text-sm">
             <div><span className="text-muted-foreground text-xs">Risk Level</span><br /><span className="font-medium capitalize">{generateDialog?.risk_level ?? "—"}</span></div>
@@ -981,277 +988,85 @@ function AuditsTab() {
               />
             </div>
           </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setGenerateDialog(null)}>Cancel</Button>
-            <Button
-              disabled={generateMutation.isPending}
-              onClick={() => {
-                const payload: any = {};
-                if (generateForm.auditor_name) payload.auditor_name = generateForm.auditor_name;
-                if (generateForm.summary)      payload.summary      = generateForm.summary;
-                const findings = generateForm.findings.filter(Boolean);
-                if (findings.length)           payload.findings     = findings;
-                const obs = generateForm.observations.filter(Boolean);
-                if (obs.length)                payload.observations = obs;
-                const recs = generateForm.recommendations.filter(Boolean);
-                if (recs.length)               payload.recommendations = recs;
-                if (generateForm.score)        payload.score        = Number(generateForm.score);
-                generateMutation.mutate({ id: generateDialog.id, payload });
-              }}
-            >
-              {generateMutation.isPending
-                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                : <FileText className="mr-2 h-4 w-4" />}
-              Generate Report
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </DetailSheet>
     </motion.div>
   );
 }
 
-// ─── Deviations Tab ───────────────────────────────────────────────────────────
-
-const DEVIATION_CATEGORIES = ["Storage", "Distribution", "Equipment", "Documentation", "Personnel", "QC Testing", "Cold Chain", "Other"];
+// ─── Deviations Tab — consolidated onto QualityControl.tsx's CapaTab ─────────
+// DeviationsTab and CapaTab were two independent, parallel UIs over the same
+// deviation_reports table via two different routers (/compliance/deviations
+// vs /qc/deviations). CapaTab's field names correctly match the DB schema
+// and its role check isn't broken; DeviationsTab was 100% non-functional in
+// every direction (couldn't list — a response-shape bug; couldn't create —
+// its form's field names don't exist anywhere on the real model). Resolved
+// the same way as the AR Aging consolidation: this tab is now a KpiStrip +
+// link-through to the real page. The one thing this tab had that CapaTab
+// didn't — PDF "Generate Report" export — was ported into CapaTab's Detail
+// Workspace as a new action instead of being dropped. See
+// ACE-Workspace-Standard.md §9.12.
 const SEVERITY_OPTIONS = ["critical", "major", "minor", "low"];
 
 function DeviationsTab() {
-  const isMobile = useIsMobile();
-  const { toast } = useToast();
-  const qc = useQueryClient();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({
-    title: "",
-    severity: "minor",
-    category: "Storage",
-    description: "",
-    detected_by: "",
-    product_batch: "",
-    sop_reference: "",
+  const navigate = useNavigate();
+  const { data, isLoading } = useQuery({
+    queryKey: ["qc-deviations-summary"],
+    queryFn: () => api.qc.listDeviations(),
   });
+  const deviations: any[] = data?.deviations ?? (Array.isArray(data) ? data : []);
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["compliance-deviations"],
-    queryFn: () => api.compliance.deviations(),
-    staleTime: 60_000,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (payload: typeof form) => api.compliance.createDeviation(payload),
-    onSuccess: () => {
-      toast({ title: "Deviation reported successfully" });
-      setDialogOpen(false);
-      setForm({ title: "", severity: "minor", category: "Storage", description: "", detected_by: "", product_batch: "", sop_reference: "" });
-      void qc.invalidateQueries({ queryKey: ["compliance-deviations"] });
-      void qc.invalidateQueries({ queryKey: ["compliance-status"] });
-    },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const reportMutation = useMutation({
-    mutationFn: (id: string) => api.compliance.generateDeviationReport(id),
-    onSuccess: () => {
-      toast({ title: "Report queued", description: "PDF generation in progress." });
-      // Background: enrich deviation intelligence via ReportGenerationAgent
-      void api.reports.generate({ report_type: "deviation", intent_text: "generate deviation report" }).catch(() => {});
-    },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const deviations: any[] = data?.data ?? (Array.isArray(data) ? data : []);
+  const kpis = {
+    total: deviations.length,
+    open: deviations.filter((d) => d.status === "open").length,
+    escalated: deviations.filter((d) => d.status === "escalated").length,
+    closed: deviations.filter((d) => d.status === "closed").length,
+  };
 
   return (
     <motion.div className="space-y-4" {...motionTransitions}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Deviations &amp; CAPA</h3>
-          <p className="text-sm text-muted-foreground">{deviations.length} deviation reports</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
-          </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="mr-1.5 h-3.5 w-3.5" /> Report Deviation
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Report Deviation</DialogTitle>
-                <DialogDescription>Log a new deviation / non-conformance event.</DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-2 gap-4 py-2">
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Title *</Label>
-                  <Input placeholder="Brief deviation title..." value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Severity *</Label>
-                  <Select value={form.severity} onValueChange={(v) => setForm((f) => ({ ...f, severity: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {SEVERITY_OPTIONS.map((s) => (
-                        <SelectItem key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Category *</Label>
-                  <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {DEVIATION_CATEGORIES.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Description *</Label>
-                  <Textarea rows={3} placeholder="Detailed description of the deviation..." value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Detected By *</Label>
-                  <Input placeholder="Name / department" value={form.detected_by} onChange={(e) => setForm((f) => ({ ...f, detected_by: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Product Batch # (optional)</Label>
-                  <Input placeholder="e.g. BATCH-2026-001" value={form.product_batch} onChange={(e) => setForm((f) => ({ ...f, product_batch: e.target.value }))} />
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>SOP Reference (optional)</Label>
-                  <Input placeholder="e.g. SOP-STR-001" value={form.sop_reference} onChange={(e) => setForm((f) => ({ ...f, sop_reference: e.target.value }))} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button
-                  disabled={createMutation.isPending || !form.title || !form.description || !form.detected_by}
-                  onClick={() => createMutation.mutate(form)}
-                >
-                  {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                  Submit Deviation
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="flex h-40 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <Card className="border-sidebar-border/60">
-          {isMobile ? (
-            <div className="space-y-3 p-3">
-              {deviations.length === 0 ? (
-                <p className="py-10 text-center text-muted-foreground">No deviations reported</p>
-              ) : (
-                deviations.map((d: any) => (
-                  <div key={d.id} className="rounded-lg border bg-card p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium leading-tight">{d.title}</p>
-                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{d.deviation_id}</p>
-                      </div>
-                      {statusBadge(d.status)}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {severityBadge(d.severity)}
-                      <Badge variant="outline" className="text-xs">{d.category}</Badge>
-                    </div>
-                    <p className="mt-2 text-xs text-muted-foreground">Detected: {formatDate(d.detected_date ?? d.created_at)}</p>
-                    <div className="mt-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        title="Generate Deviation & CAPA report PDF"
-                        disabled={reportMutation.isPending}
-                        onClick={() => reportMutation.mutate(d.id)}
-                      >
-                        {reportMutation.isPending
-                          ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                          : <FileText className="mr-1.5 h-3.5 w-3.5" />}
-                        Report
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
+      <Card className="border-sidebar-border/60">
+        <CardHeader>
+          <CardTitle className="text-base">Deviations &amp; CAPA</CardTitle>
+          <CardDescription>
+            Deviation reporting and CAPA tracking live on the Quality Control page — this is a summary.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="flex h-24 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 z-10 min-w-[120px] bg-muted/90">ID</TableHead>
-                    <TableHead className="min-w-[220px]">Title</TableHead>
-                    <TableHead className="min-w-[110px]">Severity</TableHead>
-                    <TableHead className="min-w-[130px]">Category</TableHead>
-                    <TableHead className="min-w-[120px]">Detected</TableHead>
-                    <TableHead className="min-w-[100px]">Status</TableHead>
-                    <TableHead className="min-w-[120px] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deviations.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                        No deviations reported
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    deviations.map((d: any) => (
-                      <TableRow key={d.id}>
-                        <TableCell className="sticky left-0 z-10 bg-background font-mono text-xs">{d.deviation_id}</TableCell>
-                        <TableCell className="max-w-[200px] truncate font-medium">{d.title}</TableCell>
-                        <TableCell>{severityBadge(d.severity)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{d.category}</TableCell>
-                        <TableCell className="text-sm">{formatDate(d.detected_date ?? d.created_at)}</TableCell>
-                        <TableCell>{statusBadge(d.status)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            title="Generate Deviation & CAPA report PDF"
-                            disabled={reportMutation.isPending}
-                            onClick={() => reportMutation.mutate(d.id)}
-                          >
-                            {reportMutation.isPending
-                              ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                              : <FileText className="mr-1.5 h-3.5 w-3.5" />}
-                            Report
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+            <KpiStrip
+              items={[
+                { label: "Total Deviations", value: kpis.total },
+                { label: "Open", value: kpis.open, tone: kpis.open > 0 ? "warning" : "default" },
+                { label: "Escalated", value: kpis.escalated, tone: kpis.escalated > 0 ? "danger" : "default" },
+                { label: "Closed", value: kpis.closed, tone: "success" },
+              ]}
+            />
           )}
-        </Card>
-      )}
+          <Button onClick={() => navigate("/quality-control")} className="gap-2">
+            View Full CAPA &amp; Deviations <FileText className="w-4 h-4" />
+          </Button>
+        </CardContent>
+      </Card>
     </motion.div>
   );
 }
 
 // ─── Maintenance Tab ──────────────────────────────────────────────────────────
 
+const MAINTENANCE_STATUSES = ["scheduled", "completed", "overdue", "cancelled"];
+
 function MaintenanceTab() {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [filter, setFilter] = useState<"all" | "overdue" | "upcoming">("all");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
   const [completeDialog, setCompleteDialog] = useState<any>(null);
-  const [completeForm, setCompleteForm] = useState({ completed_by: "", notes: "", next_due_date: "" });
+  const [completeForm, setCompleteForm] = useState({ performed_by: "", completion_notes: "", next_maintenance_date: "" });
   const [certDialog, setCertDialog] = useState<any>(null);
   const [certForm, setCertForm] = useState({
     performed_by: "",
@@ -1261,8 +1076,8 @@ function MaintenanceTab() {
   });
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["compliance-maintenance", filter],
-    queryFn: () => api.compliance.maintenance(filter === "all" ? undefined : filter),
+    queryKey: ["compliance-maintenance", status],
+    queryFn: () => api.compliance.maintenance(status || undefined),
     staleTime: 60_000,
   });
 
@@ -1290,30 +1105,49 @@ function MaintenanceTab() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const maintenance: any[] = data?.data ?? (Array.isArray(data) ? data : []);
+  const allMaintenance: any[] = data?.maintenance ?? [];
+  const maintenance = search.trim()
+    ? allMaintenance.filter((m) => {
+        const q = search.trim().toLowerCase();
+        const name = m.equipment_registry?.equipment_name ?? "";
+        return name.toLowerCase().includes(q) || (m.maintenance_type ?? "").toLowerCase().includes(q);
+      })
+    : allMaintenance;
+
+  const kpis = {
+    total: allMaintenance.length,
+    overdue: allMaintenance.filter((m) => m.status === "overdue").length,
+    scheduled: allMaintenance.filter((m) => m.status === "scheduled").length,
+    completed: allMaintenance.filter((m) => m.status === "completed").length,
+  };
 
   return (
     <motion.div className="space-y-4" {...motionTransitions}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-semibold">Equipment Maintenance</h3>
-          <p className="text-sm text-muted-foreground">{maintenance.length} tasks</p>
-        </div>
-        <div className="flex gap-2">
-          {(["all", "overdue", "upcoming"] as const).map((f) => (
-            <Button
-              key={f}
-              size="sm"
-              variant={filter === f ? "default" : "outline"}
-              onClick={() => setFilter(f)}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </Button>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
-          </Button>
-        </div>
+      <KpiStrip
+        items={[
+          { label: "Total Tasks", value: kpis.total },
+          { label: "Overdue", value: kpis.overdue, tone: kpis.overdue > 0 ? "danger" : "default" },
+          { label: "Scheduled", value: kpis.scheduled, tone: "warning" },
+          { label: "Completed", value: kpis.completed, tone: "success" },
+        ]}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: "Search equipment or type..." }}
+          selects={[
+            {
+              label: "Status",
+              value: status,
+              onChange: setStatus,
+              placeholder: "All Statuses",
+              options: MAINTENANCE_STATUSES.map((s) => ({ value: s, label: s })),
+            },
+          ]}
+        />
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="shrink-0">
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
+        </Button>
       </div>
 
       {isLoading ? (
@@ -1331,22 +1165,22 @@ function MaintenanceTab() {
                   <div key={m.id} className="rounded-lg border bg-card p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium leading-tight">{m.equipment_name ?? m.equipment_id}</p>
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{m.task_description}</p>
+                        <p className="font-medium leading-tight">{m.equipment_registry?.equipment_name ?? m.equipment_id}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{m.equipment_registry?.location ?? "—"}</p>
                       </div>
                       {statusBadge(m.status)}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Badge variant="outline" className="text-xs">{m.maintenance_type}</Badge>
-                      <span className="text-xs text-muted-foreground">Due: {formatDate(m.due_date ?? m.scheduled_date)}</span>
+                      <span className="text-xs text-muted-foreground">Due: {formatDate(m.next_maintenance_date)}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {(m.status === "pending" || m.status === "overdue") && (
+                      {(m.status === "scheduled" || m.status === "overdue") && (
                         <Button
                           size="sm"
                           onClick={() => {
                             setCompleteDialog(m);
-                            setCompleteForm({ completed_by: "", notes: "", next_due_date: "" });
+                            setCompleteForm({ performed_by: "", completion_notes: "", next_maintenance_date: "" });
                           }}
                         >
                           <CheckCircle className="mr-1.5 h-3.5 w-3.5" /> Complete
@@ -1373,7 +1207,7 @@ function MaintenanceTab() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="sticky left-0 z-10 min-w-[200px] bg-muted/90">Equipment</TableHead>
-                    <TableHead className="min-w-[220px]">Task</TableHead>
+                    <TableHead className="min-w-[160px]">Location</TableHead>
                     <TableHead className="min-w-[110px]">Type</TableHead>
                     <TableHead className="min-w-[120px]">Due Date</TableHead>
                     <TableHead className="min-w-[100px]">Status</TableHead>
@@ -1390,21 +1224,21 @@ function MaintenanceTab() {
                   ) : (
                     maintenance.map((m: any) => (
                       <TableRow key={m.id}>
-                        <TableCell className="sticky left-0 z-10 bg-background font-medium">{m.equipment_name ?? m.equipment_id}</TableCell>
-                        <TableCell className="max-w-[180px] truncate text-sm">{m.task_description}</TableCell>
+                        <TableCell className="sticky left-0 z-10 bg-background font-medium">{m.equipment_registry?.equipment_name ?? m.equipment_id}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{m.equipment_registry?.location ?? "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs">{m.maintenance_type}</Badge>
                         </TableCell>
-                        <TableCell className="text-sm">{formatDate(m.due_date ?? m.scheduled_date)}</TableCell>
+                        <TableCell className="text-sm">{formatDate(m.next_maintenance_date)}</TableCell>
                         <TableCell>{statusBadge(m.status)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            {(m.status === "pending" || m.status === "overdue") && (
+                            {(m.status === "scheduled" || m.status === "overdue") && (
                               <Button
                                 size="sm"
                                 onClick={() => {
                                   setCompleteDialog(m);
-                                  setCompleteForm({ completed_by: "", notes: "", next_due_date: "" });
+                                  setCompleteForm({ performed_by: "", completion_notes: "", next_maintenance_date: "" });
                                 }}
                               >
                                 <CheckCircle className="mr-1.5 h-3.5 w-3.5" /> Complete
@@ -1437,16 +1271,16 @@ function MaintenanceTab() {
           <DialogHeader>
             <DialogTitle>Record Maintenance Completion</DialogTitle>
             <DialogDescription>
-              {completeDialog?.equipment_name} — {completeDialog?.task_description}
+              {completeDialog?.equipment_registry?.equipment_name ?? completeDialog?.equipment_id}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Completed By *</Label>
+              <Label>Performed By *</Label>
               <Input
                 placeholder="Technician name"
-                value={completeForm.completed_by}
-                onChange={(e) => setCompleteForm((f) => ({ ...f, completed_by: e.target.value }))}
+                value={completeForm.performed_by}
+                onChange={(e) => setCompleteForm((f) => ({ ...f, performed_by: e.target.value }))}
               />
             </div>
             <div className="space-y-1.5">
@@ -1454,30 +1288,30 @@ function MaintenanceTab() {
               <Textarea
                 rows={3}
                 placeholder="Work performed, observations..."
-                value={completeForm.notes}
-                onChange={(e) => setCompleteForm((f) => ({ ...f, notes: e.target.value }))}
+                value={completeForm.completion_notes}
+                onChange={(e) => setCompleteForm((f) => ({ ...f, completion_notes: e.target.value }))}
               />
             </div>
             <div className="space-y-1.5">
               <Label>Next Due Date (optional)</Label>
               <Input
                 type="date"
-                value={completeForm.next_due_date}
-                onChange={(e) => setCompleteForm((f) => ({ ...f, next_due_date: e.target.value }))}
+                value={completeForm.next_maintenance_date}
+                onChange={(e) => setCompleteForm((f) => ({ ...f, next_maintenance_date: e.target.value }))}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCompleteDialog(null)}>Cancel</Button>
             <Button
-              disabled={completeMutation.isPending || !completeForm.completed_by}
+              disabled={completeMutation.isPending || !completeForm.performed_by}
               onClick={() =>
                 completeMutation.mutate({
                   id: completeDialog.id,
                   payload: {
-                    completed_by: completeForm.completed_by,
-                    notes: completeForm.notes || undefined,
-                    next_due_date: completeForm.next_due_date || undefined,
+                    performed_by: completeForm.performed_by,
+                    completion_notes: completeForm.completion_notes || undefined,
+                    next_maintenance_date: completeForm.next_maintenance_date || undefined,
                   },
                 })
               }
@@ -1489,84 +1323,78 @@ function MaintenanceTab() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Generate Maintenance Certificate dialog ── */}
-      <Dialog open={!!certDialog} onOpenChange={(o) => !o && setCertDialog(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-emerald-400" /> Generate Maintenance Certificate
-            </DialogTitle>
-            <DialogDescription>
-              {certDialog?.equipment_name ?? certDialog?.equipment_id} — {certDialog?.task_description}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Performed By *</Label>
-              <Input
-                placeholder="Technician / engineer name"
-                value={certForm.performed_by}
-                onChange={(e) => setCertForm((f) => ({ ...f, performed_by: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Maintenance Type</Label>
-              <Select
-                value={certForm.maintenance_type}
-                onValueChange={(v) => setCertForm((f) => ({ ...f, maintenance_type: v }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["preventive", "corrective", "calibration", "emergency"].map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Works Performed / Notes</Label>
-              <Textarea
-                rows={3}
-                placeholder="Describe the maintenance work carried out…"
-                value={certForm.completion_notes}
-                onChange={(e) => setCertForm((f) => ({ ...f, completion_notes: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Next Maintenance Date (optional)</Label>
-              <Input
-                type="date"
-                value={certForm.next_maintenance_date}
-                onChange={(e) => setCertForm((f) => ({ ...f, next_maintenance_date: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCertDialog(null)}>Cancel</Button>
-            <Button
-              disabled={certMutation.isPending || !certForm.performed_by}
-              onClick={() =>
-                certMutation.mutate({
-                  id: certDialog.id,
-                  payload: {
-                    performed_by: certForm.performed_by,
-                    maintenance_type: certForm.maintenance_type,
-                    completion_notes: certForm.completion_notes || undefined,
-                    next_maintenance_date: certForm.next_maintenance_date || undefined,
-                  },
-                })
-              }
-            >
-              {certMutation.isPending
-                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                : <FileText className="mr-2 h-4 w-4" />}
-              Generate Certificate
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Generate Maintenance Certificate sheet ── */}
+      <DetailSheet
+        open={!!certDialog}
+        onOpenChange={(o) => !o && setCertDialog(null)}
+        title="Generate Maintenance Certificate"
+        description={certDialog?.equipment_registry?.equipment_name ?? certDialog?.equipment_id}
+        icon={FileText}
+        footer={
+          <Button
+            className="w-full"
+            disabled={certMutation.isPending || !certForm.performed_by}
+            onClick={() =>
+              certMutation.mutate({
+                id: certDialog.id,
+                payload: {
+                  performed_by: certForm.performed_by,
+                  maintenance_type: certForm.maintenance_type,
+                  completion_notes: certForm.completion_notes || undefined,
+                  next_maintenance_date: certForm.next_maintenance_date || undefined,
+                },
+              })
+            }
+          >
+            {certMutation.isPending
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <FileText className="mr-2 h-4 w-4" />}
+            Generate Certificate
+          </Button>
+        }
+      >
+        <div className="space-y-1.5">
+          <Label>Performed By *</Label>
+          <Input
+            placeholder="Technician / engineer name"
+            value={certForm.performed_by}
+            onChange={(e) => setCertForm((f) => ({ ...f, performed_by: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Maintenance Type</Label>
+          <Select
+            value={certForm.maintenance_type}
+            onValueChange={(v) => setCertForm((f) => ({ ...f, maintenance_type: v }))}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {["preventive", "calibration", "repair", "inspection"].map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Works Performed / Notes</Label>
+          <Textarea
+            rows={3}
+            placeholder="Describe the maintenance work carried out…"
+            value={certForm.completion_notes}
+            onChange={(e) => setCertForm((f) => ({ ...f, completion_notes: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Next Maintenance Date (optional)</Label>
+          <Input
+            type="date"
+            value={certForm.next_maintenance_date}
+            onChange={(e) => setCertForm((f) => ({ ...f, next_maintenance_date: e.target.value }))}
+          />
+        </div>
+      </DetailSheet>
     </motion.div>
   );
 }
@@ -1614,35 +1442,52 @@ function RecallsTab() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const recalls: any[] = data?.data ?? (Array.isArray(data) ? data : []);
+  const recalls: any[] = data?.recalls ?? [];
+  const kpis = {
+    total: recalls.length,
+    active: recalls.filter((r) => r.status !== "closed").length,
+    critical: recalls.filter((r) => r.severity === "critical").length,
+    nafdacNotified: recalls.filter((r) => r.nafdac_notified).length,
+  };
 
   return (
     <motion.div className="space-y-4" {...motionTransitions}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Product Recalls</h3>
-          <p className="text-sm text-muted-foreground">{recalls.length} recall records</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
+      <KpiStrip
+        items={[
+          { label: "Total Recalls", value: kpis.total },
+          { label: "Active", value: kpis.active, tone: kpis.active > 0 ? "warning" : "default" },
+          { label: "Critical Severity", value: kpis.critical, tone: kpis.critical > 0 ? "danger" : "default" },
+          { label: "NAFDAC Notified", value: kpis.nafdacNotified },
+        ]}
+      />
+
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
+        </Button>
+        <Button size="sm" variant="destructive" onClick={() => setDialogOpen(true)}>
+          <PackageX className="mr-1.5 h-3.5 w-3.5" /> Initiate Recall
+        </Button>
+      </div>
+
+      <DetailSheet
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title="Initiate Product Recall"
+        description="This action creates a formal recall record and notifies relevant teams."
+        icon={AlertTriangle}
+        footer={
+          <Button
+            variant="destructive"
+            className="w-full"
+            disabled={createMutation.isPending || !form.product_name || !form.batch_number || !form.recall_reason}
+            onClick={() => createMutation.mutate(form)}
+          >
+            {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PackageX className="mr-2 h-4 w-4" />}
+            Initiate Recall
           </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="destructive">
-                <PackageX className="mr-1.5 h-3.5 w-3.5" /> Initiate Recall
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-red-400">
-                  <AlertTriangle className="h-5 w-5" /> Initiate Product Recall
-                </DialogTitle>
-                <DialogDescription>
-                  This action creates a formal recall record and notifies relevant teams.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
+        }
+      >
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>Product Name *</Label>
@@ -1683,22 +1528,7 @@ function RecallsTab() {
                   />
                   <Label htmlFor="nafdac" className="cursor-pointer">NAFDAC has been notified</Label>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button
-                  variant="destructive"
-                  disabled={createMutation.isPending || !form.product_name || !form.batch_number || !form.recall_reason}
-                  onClick={() => createMutation.mutate(form)}
-                >
-                  {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PackageX className="mr-2 h-4 w-4" />}
-                  Initiate Recall
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+      </DetailSheet>
 
       {isLoading ? (
         <div className="flex h-40 items-center justify-center">
@@ -1723,7 +1553,7 @@ function RecallsTab() {
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                       {severityBadge(r.severity)}
                       <span className="text-muted-foreground">Batch: {r.batch_number}</span>
-                      <span className="text-muted-foreground">Initiated: {formatDate(r.initiated_date ?? r.created_at)}</span>
+                      <span className="text-muted-foreground">Initiated: {formatDate(r.initiation_date ?? r.created_at)}</span>
                     </div>
                     <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                       NAFDAC: {r.nafdac_notified ? <CheckCircle className="h-4 w-4 text-green-400" /> : <XCircle className="h-4 w-4 text-muted-foreground" />}
@@ -1775,7 +1605,7 @@ function RecallsTab() {
                         <TableCell className="font-medium">{r.product_name}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{r.batch_number}</TableCell>
                         <TableCell>{severityBadge(r.severity)}</TableCell>
-                        <TableCell className="text-sm">{formatDate(r.initiated_date ?? r.created_at)}</TableCell>
+                        <TableCell className="text-sm">{formatDate(r.initiation_date ?? r.created_at)}</TableCell>
                         <TableCell>
                           {r.nafdac_notified ? (
                             <CheckCircle className="h-4 w-4 text-green-400" />
@@ -1815,21 +1645,46 @@ function RecallsTab() {
 
 const SOP_CATEGORIES = ["storage", "qc", "distribution", "warehouse", "equipment", "deviation", "recall", "hr"];
 
+// sop_registry has no sop_code/next_review_date columns -- the real id
+// column is sop_id, and "next review" has to be derived from
+// last_reviewed_at (or effective_from, if never reviewed) + review_interval_days.
+function sopNextReview(s: any): string | null {
+  const anchor = s.last_reviewed_at || s.effective_from;
+  if (!anchor || !s.review_interval_days) return null;
+  const d = new Date(anchor);
+  d.setDate(d.getDate() + Number(s.review_interval_days));
+  return d.toISOString();
+}
+
 function SopTab() {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [category, setCategory] = useState<string>("__all__");
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string>("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["compliance-sop", category],
-    queryFn: () => api.compliance.sopList(category === "__all__" ? undefined : category),
+    queryFn: () => api.compliance.sopList(category || undefined),
     staleTime: 120_000,
   });
 
-  const sops: any[] = data?.data ?? (Array.isArray(data) ? data : []);
+  const allSops: any[] = data?.data ?? (Array.isArray(data) ? data : []);
+  const sops = search.trim()
+    ? allSops.filter((s) => (s.title ?? "").toLowerCase().includes(search.trim().toLowerCase()))
+    : allSops;
+
+  const now = Date.now();
+  const kpis = {
+    total: allSops.length,
+    categories: new Set(allSops.map((s) => s.category).filter(Boolean)).size,
+    dueForReview: allSops.filter((s) => {
+      const next = sopNextReview(s);
+      return next ? new Date(next).getTime() <= now : false;
+    }).length,
+  };
 
   const handleUpload = useCallback(async () => {
     if (!uploadFile) return;
@@ -1850,28 +1705,30 @@ function SopTab() {
 
   return (
     <motion.div className="space-y-4" {...motionTransitions}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-semibold">SOP Index</h3>
-          <p className="text-sm text-muted-foreground">{sops.length} SOPs registered</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {/* Category filter */}
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All categories</SelectItem>
-              {SOP_CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
-          </Button>
-        </div>
+      <KpiStrip
+        items={[
+          { label: "Total SOPs", value: kpis.total },
+          { label: "Categories", value: kpis.categories },
+          { label: "Due for Review", value: kpis.dueForReview, tone: kpis.dueForReview > 0 ? "warning" : "default" },
+        ]}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: "Search SOP title..." }}
+          selects={[
+            {
+              label: "Category",
+              value: category,
+              onChange: setCategory,
+              placeholder: "All Categories",
+              options: SOP_CATEGORIES.map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) })),
+            },
+          ]}
+        />
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="shrink-0">
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
+        </Button>
       </div>
 
       {/* DOCX upload */}
@@ -1918,14 +1775,14 @@ function SopTab() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium leading-tight">{s.title}</p>
-                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{s.sop_code}</p>
+                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{s.sop_id}</p>
                       </div>
                       {statusBadge(s.status ?? "active")}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <Badge variant="outline" className="text-xs capitalize">{s.category}</Badge>
                       <span className="text-xs text-muted-foreground">{s.version ?? "v1.0"}</span>
-                      <span className="text-xs text-muted-foreground">Next: {formatDate(s.next_review_date)}</span>
+                      <span className="text-xs text-muted-foreground">Next: {formatDate(sopNextReview(s))}</span>
                     </div>
                   </div>
                 ))
@@ -1954,13 +1811,13 @@ function SopTab() {
                   ) : (
                     sops.map((s: any) => (
                       <TableRow key={s.id}>
-                        <TableCell className="sticky left-0 z-10 bg-background font-mono text-xs">{s.sop_code}</TableCell>
+                        <TableCell className="sticky left-0 z-10 bg-background font-mono text-xs">{s.sop_id}</TableCell>
                         <TableCell className="font-medium">{s.title}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs capitalize">{s.category}</Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{s.version ?? "v1.0"}</TableCell>
-                        <TableCell className="text-sm">{formatDate(s.next_review_date)}</TableCell>
+                        <TableCell className="text-sm">{formatDate(sopNextReview(s))}</TableCell>
                         <TableCell>{statusBadge(s.status ?? "active")}</TableCell>
                       </TableRow>
                     ))
@@ -1980,18 +1837,11 @@ function SopTab() {
 export default function Compliance() {
   return (
     <div className="space-y-6 p-6">
-      {/* Page header */}
-      <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/20">
-          <ShieldCheck className="h-6 w-6 text-emerald-400" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Compliance &amp; QMS</h1>
-          <p className="text-sm text-muted-foreground">
-            Quality Management System — Audits, Deviations, Maintenance, Recalls &amp; SOP Index
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={ShieldCheck}
+        title="Compliance & QMS"
+        subtitle="Quality Management System — Audits, Deviations, Maintenance, Recalls & SOP Index"
+      />
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">

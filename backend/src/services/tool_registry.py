@@ -383,7 +383,13 @@ def build_default_tool_registry() -> ToolRegistry:
     registry.register(
         ToolMetadata(
             name="getLatestInventorySnapshot",
-            description="Get latest inventory snapshot rows from imported Sage data.",
+            description=(
+                "Get latest inventory snapshot rows from imported Sage data: sku, name, "
+                "quantity, unit_cost, valuation, category, reorder_level, expiry_date, "
+                "batch_number. expiry_date/batch_number are the earliest-expiring batch "
+                "on record for that SKU where the pharmaceutical catalog has it — null "
+                "means no expiry data has been imported for that item, not that it doesn't expire."
+            ),
             department="inventory",
             source="services.sage_adapter.service.latest_inventory_snapshot",
             required_roles=set(),
@@ -395,7 +401,11 @@ def build_default_tool_registry() -> ToolRegistry:
     registry.register(
         ToolMetadata(
             name="getInventoryBySkus",
-            description="Get current inventory snapshot rows for selected SKUs.",
+            description=(
+                "Get current inventory snapshot rows for selected SKUs, including "
+                "quantity, unit_cost, valuation, category, reorder_level, expiry_date, "
+                "and batch_number where available."
+            ),
             department="inventory",
             source="services.sage_adapter.service.inventory_by_skus",
             required_roles=set(),

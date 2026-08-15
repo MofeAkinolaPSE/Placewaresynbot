@@ -41,6 +41,10 @@ class TableQuery:
         self._action = "update"
         return self
 
+    def delete(self):
+        self._action = "delete"
+        return self
+
     def upsert(self, payload: dict, on_conflict: str | None = None):
         self._payload = payload
         self._action = "upsert"
@@ -135,6 +139,7 @@ class TableQuery:
                 "required_components",
                 "integration_points",
                 "signal_ids",
+                "deliveries",
             }
 
             def _is_numeric_list(lst):
@@ -255,6 +260,52 @@ class TableQuery:
                                 params.append(val)
                     where_clause = ' WHERE ' + ' AND '.join(conditions)
                 sql = f"UPDATE public.{self.table} SET {set_clause}{where_clause} RETURNING *"
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+                conn.commit()
+                return Result(rows)
+
+            if getattr(self, '_action', None) == 'delete':
+                # Guard against an accidental full-table wipe if a caller
+                # forgets a .eq(...)/.in_(...) filter — unlike UPDATE (which
+                # only corrupts rows), a WHERE-less DELETE destroys them.
+                if not self._where:
+                    raise ValueError(
+                        f"Refusing DELETE on {self.table!r} with no WHERE conditions "
+                        "(add .eq()/.in_() etc. before .delete())"
+                    )
+                params = []
+                conditions = []
+                for col, op, val in self._where:
+                    if op == "IS":
+                        if val is None:
+                            conditions.append(f"{col} IS NULL")
+                        else:
+                            conditions.append(f"{col} IS NOT NULL")
+                    elif op == "IN":
+                        if not val:
+                            conditions.append("FALSE")
+                        else:
+                            placeholders = ', '.join(['%s'] * len(val))
+                            conditions.append(f"{col} IN ({placeholders})")
+                            params.extend(val)
+                    elif op == "NOT_IN":
+                        if not val:
+                            conditions.append("TRUE")
+                        else:
+                            placeholders = ', '.join(['%s'] * len(val))
+                            conditions.append(f"{col} NOT IN ({placeholders})")
+                            params.extend(val)
+                    else:
+                        if isinstance(val, dict):
+                            import json as _json
+                            conditions.append(f"{col} = %s::jsonb")
+                            params.append(_json.dumps(val))
+                        else:
+                            conditions.append(f"{col} {op} %s")
+                            params.append(val)
+                where_clause = ' WHERE ' + ' AND '.join(conditions)
+                sql = f"DELETE FROM public.{self.table}{where_clause} RETURNING *"
                 cur.execute(sql, params)
                 rows = cur.fetchall()
                 conn.commit()
@@ -383,7 +434,7 @@ class TableQuery:
             except Exception:
                 pass
             # Mutations must not silently fail — re-raise so callers know data was not saved
-            if getattr(self, '_action', None) in ('insert', 'update', 'upsert'):
+            if getattr(self, '_action', None) in ('insert', 'update', 'upsert', 'delete'):
                 raise
             return Result([])
         finally:

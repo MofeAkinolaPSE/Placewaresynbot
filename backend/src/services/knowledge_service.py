@@ -3,11 +3,17 @@
 Pipeline (in order):
   1. Memory check     — fast path: if a matching synbot_memory entry exists,
                         return it immediately without hitting the vector DB.
-  2. Query rewrite    — DeepSeek expands the user's query with domain synonyms
-                        to improve recall.
+  2. Query rewrite    — deep=True only: DeepSeek expands the user's query with
+                        domain synonyms to improve recall. Skipped by default
+                        (uses the raw query) to avoid an extra LLM round trip
+                        on every search call.
   3. Broad retrieval  — cosine-similarity search in knowledge_chunks (top_k=20).
-  4. LLM re-rank      — DeepSeek scores and re-orders the retrieved chunks by
-                        relevance to the *original* query.
+  4. Re-rank          — deep=True only: DeepSeek scores and re-orders the
+                        retrieved chunks by relevance to the *original* query.
+                        Skipped by default in favor of the cosine-similarity
+                        ordering Stage 3 already computed — same fallback
+                        every deep=True call already uses if the LLM call
+                        itself fails.
   5. Context compress — keep only the top N chunks (default 5).
   6. Gap detection    — if best similarity < GAP_THRESHOLD, log to knowledge_gaps.
 
@@ -313,8 +319,9 @@ class KnowledgeService:
         document_type: str | None = None,
         agent: str | None = None,
         top_k: int = FINAL_TOP_K,
+        deep: bool = False,
     ) -> SearchResult:
-        """Run the full multi-stage retrieval pipeline.
+        """Run the multi-stage retrieval pipeline.
 
         Args:
             query:         Natural language query.
@@ -322,6 +329,14 @@ class KnowledgeService:
             document_type: Optional filter (e.g. 'audit_report').
             agent:         Name of the calling agent (for gap logging).
             top_k:         Number of final chunks to return.
+            deep:          When True, run the two LLM-backed quality stages
+                            (query rewrite, relevance re-rank). When False
+                            (default), skip straight to the raw query and
+                            similarity-sorted ordering each stage already
+                            falls back to on error — two fewer sequential
+                            external LLM calls for the common case where a
+                            quick, good-enough answer matters more than the
+                            last bit of retrieval recall/precision.
 
         Returns:
             SearchResult with .chunks, .context, .gap_logged, .memory_hit
@@ -336,8 +351,8 @@ class KnowledgeService:
             result.context    = memory_summary
             return result
 
-        # ── Stage 2: Query rewrite ─────────────────────────────────────────
-        rewritten = _rewrite_query(query, self._llm)
+        # ── Stage 2: Query rewrite (LLM, deep mode only) ───────────────────
+        rewritten = _rewrite_query(query, self._llm) if deep else query
         result.query_used = rewritten
 
         # ── Stage 3: Embed rewritten query ────────────────────────────────
@@ -362,8 +377,12 @@ class KnowledgeService:
 
         best_sim = max(c.similarity for c in chunks)
 
-        # ── Stage 4: LLM re-rank ──────────────────────────────────────────
-        top_chunks = _rerank(query, chunks, self._llm, final_top_k=top_k)
+        # ── Stage 4: LLM re-rank (deep mode only; else similarity order) ───
+        top_chunks = (
+            _rerank(query, chunks, self._llm, final_top_k=top_k)
+            if deep
+            else sorted(chunks, key=lambda c: c.similarity, reverse=True)[:top_k]
+        )
         result.chunks = top_chunks
 
         # ── Stage 5: Assemble context ─────────────────────────────────────

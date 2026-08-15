@@ -13,7 +13,7 @@ import { motion } from "framer-motion";
 import { motionVariants } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -34,6 +34,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +83,11 @@ export default function FinanceBudget() {
     budgeted_amount: "",
     note: "",
   });
+  // Delete previously fired immediately with zero confirmation — a
+  // one-click data-loss risk found during the Finance retrofit research.
+  // Fixed with a short confirmation Dialog, matching this app's existing
+  // reject-with-note / void-with-reason Dialog convention (Ch.5).
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
   // --- queries ---
   const varianceQ = useQuery({
@@ -116,6 +124,7 @@ export default function FinanceBudget() {
     mutationFn: (id: string) => api.finance.deleteBudgetTarget(id),
     onSuccess: () => {
       toast({ title: "Budget target deleted" });
+      setDeleteTarget(null);
       void qc.invalidateQueries({ queryKey: ["finance-budget-variance"] });
       void qc.invalidateQueries({ queryKey: ["finance-budget-targets"] });
     },
@@ -145,32 +154,31 @@ export default function FinanceBudget() {
 
   return (
     <motion.div {...motionVariants.cardEnter} className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Budget vs. Actual</h1>
-          <p className="text-sm text-muted-foreground">
-            Compare departmental spending against approved budgets. Detect overspend early.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            className="w-36"
-            placeholder="YYYY-MM"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-          />
-          <Button size="sm" onClick={() => void varianceQ.refetch()} disabled={varianceQ.isFetching}>
-            {varianceQ.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh"}
-          </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <PlusCircle className="w-4 h-4 mr-2" />
-            Set Budget
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        icon={Target}
+        title="Budget vs. Actual"
+        subtitle="Compare departmental spending against approved budgets. Detect overspend early."
+        actions={
+          <>
+            <Input
+              className="w-36"
+              placeholder="YYYY-MM"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+            />
+            <Button size="sm" onClick={() => void varianceQ.refetch()} disabled={varianceQ.isFetching}>
+              {varianceQ.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh"}
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <PlusCircle className="w-4 h-4 mr-2" />
+              Set Budget
+            </Button>
+          </>
+        }
+      />
 
-      {/* Alert if over budget */}
+      {/* Alert if over budget — prose content, kept as its own banner rather
+          than forced into a KpiStrip tile. */}
       {overBudgetCount > 0 && (
         <Card className="border-red-500/40 bg-red-500/5">
           <CardContent className="py-3 flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
@@ -183,58 +191,21 @@ export default function FinanceBudget() {
         </Card>
       )}
 
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
-              <Target className="w-3 h-3" /> Total Budget
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg font-bold">{fmt(summary.total_budgeted ?? 0)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground">Total Actual Spend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg font-bold">{fmt(summary.total_actual ?? 0)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground">Overall Variance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p
-              className={`text-lg font-bold ${
-                (summary.total_variance ?? 0) > 0
-                  ? "text-red-500"
-                  : (summary.total_variance ?? 0) < 0
-                  ? "text-green-500"
-                  : ""
-              }`}
-            >
-              {(summary.total_variance ?? 0) > 0 ? "+" : ""}
-              {fmt(summary.total_variance ?? 0)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="w-3 h-3 text-red-500" /> Over Budget Depts
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={`text-2xl font-bold ${overBudgetCount > 0 ? "text-red-500" : ""}`}>
-              {summary.over_budget_departments ?? 0}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Page-level KpiStrip — spans both tabs below, mirrors NafdacTab's
+          per-sub-section KpiStrip pattern but scoped to the whole page here
+          since this data isn't specific to either tab. */}
+      <KpiStrip
+        items={[
+          { label: "Total Budget", value: fmt(summary.total_budgeted ?? 0) },
+          { label: "Total Actual Spend", value: fmt(summary.total_actual ?? 0) },
+          {
+            label: "Overall Variance",
+            value: `${(summary.total_variance ?? 0) > 0 ? "+" : ""}${fmt(summary.total_variance ?? 0)}`,
+            tone: (summary.total_variance ?? 0) > 0 ? "danger" : (summary.total_variance ?? 0) < 0 ? "success" : "default",
+          },
+          { label: "Over Budget Depts", value: summary.over_budget_departments ?? 0, tone: overBudgetCount > 0 ? "danger" : "default" },
+        ]}
+      />
 
       <Tabs defaultValue="variance">
         <TabsList className="mb-4">
@@ -383,8 +354,7 @@ export default function FinanceBudget() {
                           size="sm"
                           variant="ghost"
                           className="h-7 text-xs text-red-600"
-                          onClick={() => deleteMut.mutate(t.id)}
-                          disabled={deleteMut.isPending}
+                          onClick={() => setDeleteTarget(t)}
                         >
                           <Trash2 className="w-3 h-3" />
                         </Button>
@@ -398,68 +368,96 @@ export default function FinanceBudget() {
         </TabsContent>
       </Tabs>
 
-      {/* ================================================================== */}
-      {/* DIALOG: Set Budget Target                                           */}
-      {/* ================================================================== */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      {/* Set Department Budget — ephemeral create task, DetailSheet per
+          Ch.5.2 (same move as CAPA/Temperature/NAFDAC/FinanceAR's Alert
+          Rules/Vendor Payments' create form). */}
+      <DetailSheet
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="Set Department Budget"
+        description={`Set a budget target for a department for period ${period}. Existing entries will be updated.`}
+        icon={Target}
+        footer={
+          <Button className="w-full" onClick={handleUpsert} disabled={upsertMut.isPending}>
+            {upsertMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Save Target
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Department *
+            </label>
+            <Input
+              placeholder="e.g. Finance, Operations, Sales"
+              value={form.department}
+              onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Category
+            </label>
+            <Input
+              placeholder="e.g. general, payroll, opex, marketing"
+              value={form.category}
+              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Budgeted Amount (₦) *
+            </label>
+            <Input
+              type="number"
+              placeholder="e.g. 5000000"
+              value={form.budgeted_amount}
+              onChange={(e) => setForm((f) => ({ ...f, budgeted_amount: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Note (optional)
+            </label>
+            <Input
+              placeholder="e.g. Approved by CEO Apr 2026"
+              value={form.note}
+              onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+            />
+          </div>
+        </div>
+      </DetailSheet>
+
+      {/* Delete confirmation — new, replaces the previous zero-confirmation
+          immediate-fire delete button (a real data-loss risk found during
+          the Finance retrofit research). Short single-target confirmation,
+          same Dialog convention as reject-with-note/void-with-reason (Ch.5). */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set Department Budget</DialogTitle>
+            <DialogTitle>Delete Budget Target</DialogTitle>
             <DialogDescription>
-              Set a budget target for a department for period <strong>{period}</strong>.
-              Existing entries will be updated.
+              {deleteTarget && (
+                <>
+                  Delete the <strong>{deleteTarget.department}</strong> budget target for{" "}
+                  <strong>{deleteTarget.period}</strong> ({fmt(parseFloat(deleteTarget.budgeted_amount))})? This
+                  cannot be undone.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Department *
-              </label>
-              <Input
-                placeholder="e.g. Finance, Operations, Sales"
-                value={form.department}
-                onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Category
-              </label>
-              <Input
-                placeholder="e.g. general, payroll, opex, marketing"
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Budgeted Amount (₦) *
-              </label>
-              <Input
-                type="number"
-                placeholder="e.g. 5000000"
-                value={form.budgeted_amount}
-                onChange={(e) => setForm((f) => ({ ...f, budgeted_amount: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Note (optional)
-              </label>
-              <Input
-                placeholder="e.g. Approved by CEO Apr 2026"
-                value={form.note}
-                onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
-              />
-            </div>
-          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button onClick={handleUpsert} disabled={upsertMut.isPending}>
-              {upsertMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Save Target
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+              disabled={deleteMut.isPending}
+            >
+              {deleteMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

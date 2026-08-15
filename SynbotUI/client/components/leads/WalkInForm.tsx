@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import InventoryAutoComplete from "./InventoryAutoComplete";
+import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,8 +7,9 @@ import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 
 type Item = { sku?: string; name: string; qty: number };
+type Product = { id?: number; sku?: string; name: string };
 
-export default function WalkInForm() {
+export default function WalkInForm({ onSuccess }: { onSuccess?: () => void }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -18,7 +19,7 @@ export default function WalkInForm() {
   const [items, setItems] = useState<Item[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  function addProduct(p: { sku?: string; name: string }) {
+  function addProduct(p: Product) {
     setItems((s) => [...s, { sku: p.sku, name: p.name, qty: 1 }]);
   }
 
@@ -61,6 +62,7 @@ export default function WalkInForm() {
       setLocation("");
       setNotes("");
       setItems([]);
+      onSuccess?.();
     } catch (err: any) {
       console.error(err);
       toast.error(err?.message || "Failed to submit walk-in");
@@ -81,7 +83,17 @@ export default function WalkInForm() {
 
       <div>
         <label className="block mb-2 text-sm font-medium">Add product</label>
-        <InventoryAutoComplete onSelect={addProduct} />
+        {/* Swapped from the hand-rolled InventoryAutoComplete — this is
+            literally the pattern EntityAutocomplete was built to generalize
+            (ACE-Workspace-Standard.md Ch.4). */}
+        <EntityAutocomplete<Product>
+          placeholder="Search inventory..."
+          fetchFn={(q) => api.inventory.search(q).then((r) => (Array.isArray(r) ? r : []))}
+          getKey={(p) => p.id ?? p.sku ?? p.name}
+          getLabel={(p) => p.name}
+          getSubtitle={(p) => p.sku}
+          onSelect={addProduct}
+        />
       </div>
 
       {items.length > 0 && (

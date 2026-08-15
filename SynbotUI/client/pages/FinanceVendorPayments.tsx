@@ -2,10 +2,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
-  Clock,
   Loader2,
   PlusCircle,
-  Receipt,
   Wallet,
   X,
   XCircle,
@@ -14,7 +12,6 @@ import { motion } from "framer-motion";
 import { motionVariants } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -35,6 +32,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -195,61 +195,26 @@ export default function FinanceVendorPayments() {
 
   return (
     <motion.div {...motionVariants.cardEnter} className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vendor Payments</h1>
-          <p className="text-sm text-muted-foreground">
-            Raise, approve, and track vendor payment requests — MD approval workflow
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} size="sm">
-          <PlusCircle className="w-4 h-4 mr-2" />
-          New Request
-        </Button>
-      </div>
+      <PageHeader
+        icon={Wallet}
+        title="Vendor Payments"
+        subtitle="Raise, approve, and track vendor payment requests — MD approval workflow"
+        actions={
+          <Button onClick={() => setCreateOpen(true)} size="sm">
+            <PlusCircle className="w-4 h-4 mr-2" />
+            New Request
+          </Button>
+        }
+      />
 
-      {/* Summary KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock className="w-3 h-3 text-yellow-500" /> Pending Approval
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-yellow-500">{pendingCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
-              <Receipt className="w-3 h-3 text-blue-500" /> Approved (Outstanding)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg font-bold text-blue-600">{fmt(totalApproved)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
-              <Wallet className="w-3 h-3 text-green-500" /> Total Paid
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg font-bold text-green-600">{fmt(totalPaid)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground">Total Requests</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{allPayments.length}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <KpiStrip
+        items={[
+          { label: "Pending Approval", value: pendingCount, tone: "warning" },
+          { label: "Approved (Outstanding)", value: fmt(totalApproved) },
+          { label: "Total Paid", value: fmt(totalPaid), tone: "success" },
+          { label: "Total Requests", value: allPayments.length },
+        ]}
+      />
 
       {/* Status filter tabs + table */}
       <Tabs value={statusFilter} onValueChange={setStatusFilter}>
@@ -382,95 +347,93 @@ export default function FinanceVendorPayments() {
         ))}
       </Tabs>
 
-      {/* ====================================================================
-          DIALOG: Create Payment Request
-          ==================================================================== */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>New Vendor Payment Request</DialogTitle>
-            <DialogDescription>
-              Submit a request for MD/Finance approval before payment is processed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Vendor ID *
-                </label>
-                <Input
-                  placeholder="e.g. VND-001"
-                  value={form.vendor_id}
-                  onChange={(e) => setForm((f) => ({ ...f, vendor_id: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Vendor Name
-                </label>
-                <Input
-                  placeholder="e.g. Acme Pharma Ltd"
-                  value={form.vendor_name}
-                  onChange={(e) => setForm((f) => ({ ...f, vendor_name: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Amount (₦) *
-                </label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 500000"
-                  value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Payment Date
-                </label>
-                <Input
-                  type="date"
-                  value={form.payment_date}
-                  onChange={(e) => setForm((f) => ({ ...f, payment_date: e.target.value }))}
-                />
-              </div>
-            </div>
+      {/* New Vendor Payment Request — ephemeral create task, DetailSheet per
+          Ch.5.2. Was already a Dialog, not an inline-toggle Card, but the
+          standard's reasoning is about task shape (multi-field ephemeral
+          create with no natural inline home), not what container it
+          happened to already use — same move as CAPA/Temperature/NAFDAC/
+          FinanceAR's Alert Rules. */}
+      <DetailSheet
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="New Vendor Payment Request"
+        description="Submit a request for MD/Finance approval before payment is processed."
+        icon={PlusCircle}
+        footer={
+          <Button className="w-full" onClick={handleCreate} disabled={createMut.isPending}>
+            {createMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Submit Request
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Reference / Invoice Number
+                Vendor ID *
               </label>
               <Input
-                placeholder="e.g. INV-2026-0042"
-                value={form.reference}
-                onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))}
+                placeholder="e.g. VND-001"
+                value={form.vendor_id}
+                onChange={(e) => setForm((f) => ({ ...f, vendor_id: e.target.value }))}
               />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Description
+                Vendor Name
               </label>
               <Input
-                placeholder="e.g. April drug supply payment"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="e.g. Acme Pharma Ltd"
+                value={form.vendor_name}
+                onChange={(e) => setForm((f) => ({ ...f, vendor_name: e.target.value }))}
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={createMut.isPending}>
-              {createMut.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Submit Request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Amount (₦) *
+              </label>
+              <Input
+                type="number"
+                placeholder="e.g. 500000"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Payment Date
+              </label>
+              <Input
+                type="date"
+                value={form.payment_date}
+                onChange={(e) => setForm((f) => ({ ...f, payment_date: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Reference / Invoice Number
+            </label>
+            <Input
+              placeholder="e.g. INV-2026-0042"
+              value={form.reference}
+              onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Description
+            </label>
+            <Input
+              placeholder="e.g. April drug supply payment"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            />
+          </div>
+        </div>
+      </DetailSheet>
 
       {/* ====================================================================
           DIALOG: Approve with note

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Send, Plus, Trash2, AlertCircle, ExternalLink, Copy, Check, FileDown } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Send, Plus, Trash2, AlertCircle, ExternalLink, Copy, Check, FileDown, Loader2, Sparkles, TrendingUp, Package, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +7,52 @@ import { apiUrl } from "@/lib/api-base";
 import { authClient } from "@/lib/auth-client";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+
+interface ChatAttachment {
+  type: string;
+  report_id: string;
+  filename: string;
+  download_url: string;
+}
+
+/** Download a chat-attached .docx report directly -- same exact report the
+ *  agent already generated, no re-running the report agent from scratch. */
+function AttachmentDownloadButton({ attachment }: { attachment: ChatAttachment }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      let token = authClient.getAccessToken();
+      if (!token) {
+        const refreshed = await authClient.refresh();
+        if (refreshed) token = authClient.getAccessToken();
+      }
+      const res = await fetch(apiUrl(attachment.download_url), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = attachment.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      // Silent -- non-fatal for a chat bubble
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Button size="sm" variant="outline" className="mt-2 h-7 gap-1.5 text-xs" onClick={handleDownload} disabled={downloading}>
+      {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+      Download Report (.docx)
+    </Button>
+  );
+}
 
 /** Returns true if the content looks like a structured LLM-generated report. */
 function isReportContent(text: string): boolean {
@@ -117,9 +163,69 @@ const AskSynbot = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  const handleSendMessage = async () => {
-    const trimmed = message.trim();
+  // Hydrate from real backend history on mount -- this page is a routed
+  // component (unmounted/remounted on navigation, unlike the FloatingChat
+  // widget which lives in the persistent Layout wrapper), so without this
+  // the visible conversation was silently wiped every time you navigated
+  // away and back. GET /chat/history already exists and already backs the
+  // floating widget's continuity story server-side; this just reads it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let token = authClient.getAccessToken();
+        if (!token) {
+          const refreshed = await authClient.refresh();
+          if (refreshed) token = authClient.getAccessToken();
+        }
+        if (!token) return;
+        const res = await fetch(apiUrl("/chat/history?limit=50"), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const rows: any[] = Array.isArray(data?.history) ? data.history : [];
+        // Rows come back newest-first; render oldest-first like a real thread.
+        const hydrated = rows
+          .slice()
+          .reverse()
+          .flatMap((row) => {
+            const ts = row.created_at
+              ? new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "";
+            const sources = (row.sources || []).map((s: any) => ({
+              label: s.question || "Q&A snippet",
+              url: "#",
+            }));
+            return [
+              { id: `${row.id}-user`, type: "user" as const, content: row.question, timestamp: ts },
+              { id: `${row.id}-bot`, type: "bot" as const, content: row.answer, timestamp: ts, sources },
+            ];
+          });
+        if (!cancelled && hydrated.length > 0) setMessages(hydrated);
+      } catch {
+        // Non-fatal -- page still works as a fresh conversation if history
+        // can't be loaded (e.g. offline, first-ever session).
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const suggestedPrompts = [
+    { icon: Package, text: "How's inventory looking today?" },
+    { icon: TrendingUp, text: "Any overdue AR I should know about?" },
+    { icon: ShieldCheck, text: "What compliance issues need attention?" },
+    { icon: Sparkles, text: "Give me a quick business status update" },
+  ];
+
+  const handleSendMessage = async (overrideText?: string) => {
+    const trimmed = (overrideText ?? message).trim();
     if (!trimmed || isSending) return;
 
     const userMsg = {
@@ -189,6 +295,8 @@ const AskSynbot = () => {
         url: "#",
       }));
 
+      const attachments: ChatAttachment[] = Array.isArray(data.attachments) ? data.attachments : [];
+
       const botMsg = {
         id: userMsg.id + 1,
         type: "bot" as const,
@@ -198,6 +306,7 @@ const AskSynbot = () => {
           minute: "2-digit",
         }),
         sources,
+        attachments,
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (e: any) {
@@ -318,6 +427,38 @@ const AskSynbot = () => {
 
         {/* Messages */}
         <ScrollArea className="flex-1 p-6">
+          {historyLoading ? (
+            <div className="flex h-full min-h-[300px] items-center justify-center text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex h-full min-h-[400px] max-w-2xl flex-col items-center justify-center text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-primary shadow-lg shadow-primary/20">
+                <Sparkles className="h-7 w-7 text-primary-foreground" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Welcome to ACE</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Your team's executive assistant for inventory, finance, compliance, and operations.
+                Ask a question in plain language and I'll pull real numbers from across the business.
+              </p>
+              <div className="mt-6 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {suggestedPrompts.map((p) => {
+                  const Icon = p.icon;
+                  return (
+                    <button
+                      key={p.text}
+                      onClick={() => handleSendMessage(p.text)}
+                      disabled={isSending}
+                      className="pw-surface-interactive flex items-center gap-2.5 rounded-xl border border-border/50 px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-primary" />
+                      <span>{p.text}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
           <div className="space-y-6 max-w-4xl">
             {messages.map((msg) => (
               <div
@@ -351,6 +492,9 @@ const AskSynbot = () => {
                         {msg.content}
                       </p>
                     )}
+                    {msg.type === "bot" && msg.attachments?.map((att: ChatAttachment) => (
+                      <AttachmentDownloadButton key={att.report_id} attachment={att} />
+                    ))}
                   </div>
 
                   {msg.type === "bot" && msg.sources && (
@@ -384,6 +528,7 @@ const AskSynbot = () => {
               </div>
             ))}
           </div>
+          )}
         </ScrollArea>
 
         {/* Disclaimer */}
@@ -413,7 +558,7 @@ const AskSynbot = () => {
               placeholder="Ask ACE a question about your business..."
               className="flex-1"
             />
-            <Button onClick={handleSendMessage} size="icon" disabled={isSending}>
+            <Button onClick={() => handleSendMessage()} size="icon" disabled={isSending}>
               <Send className="w-4 h-4" />
             </Button>
           </div>

@@ -3,17 +3,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkforceDashboard } from "@/components/dashboards/WorkforceDashboard";
 import { StaffDirectory } from "@/components/dashboards/StaffDirectory";
 import { Button } from "@/components/ui/button";
-import { UserPlus, Loader2 } from "lucide-react";
+import { UserPlus, Loader2, Users } from "lucide-react";
 import { TimesheetsTable } from "@/components/dashboards/TimesheetsTable";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,6 +18,8 @@ import { api } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 const HR = () => {
   const queryClient = useQueryClient();
@@ -83,84 +76,78 @@ const HR = () => {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Human Resources</h1>
-          <p className="text-sm text-muted-foreground">Workforce analytics and staff directory.</p>
+      <PageHeader
+        icon={Users}
+        title="Human Resources"
+        subtitle="Workforce analytics and staff directory."
+        actions={
+          <Button size="sm" onClick={() => setDialogOpen(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add Staff
+          </Button>
+        }
+      />
+
+      <DetailSheet
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title="Add New Staff Member"
+        description="Enter the details for the new staff member."
+        icon={UserPlus}
+        footer={
+          <Button onClick={handleCreate} disabled={creating} className="w-full">
+            {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Add Staff
+          </Button>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="full_name">Full Name</Label>
+          <Input
+            id="full_name"
+            value={formData.full_name}
+            onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+            placeholder="John Doe"
+          />
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add Staff
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Staff Member</DialogTitle>
-              <DialogDescription>Enter the details for the new staff member.</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="full_name" className="text-right">Full Name</Label>
-                <Input
-                  id="full_name"
-                  className="col-span-3"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  placeholder="John Doe"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="email" className="text-right">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  className="col-span-3"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="john.doe@company.com"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="department" className="text-right">Department</Label>
-                <Select
-                  value={formData.department}
-                  onValueChange={(val) => setFormData({ ...formData, department: val })}
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Finance">Finance</SelectItem>
-                    <SelectItem value="Sales">Sales</SelectItem>
-                    <SelectItem value="Operations">Operations</SelectItem>
-                    <SelectItem value="HR">HR</SelectItem>
-                    <SelectItem value="Management">Management</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="role" className="text-right">Role</Label>
-                <Input
-                  id="role"
-                  className="col-span-3"
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  placeholder="Optional job title"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreate} disabled={creating}>
-                {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Add Staff
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="john.doe@company.com"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="department">Department</Label>
+          <Select
+            value={formData.department}
+            onValueChange={(val) => setFormData({ ...formData, department: val })}
+          >
+            <SelectTrigger id="department">
+              <SelectValue placeholder="Select department" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Finance">Finance</SelectItem>
+              <SelectItem value="Sales">Sales</SelectItem>
+              <SelectItem value="Operations">Operations</SelectItem>
+              <SelectItem value="HR">HR</SelectItem>
+              <SelectItem value="Management">Management</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="role">Role</Label>
+          <Input
+            id="role"
+            value={formData.role}
+            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            placeholder="Optional job title"
+          />
+        </div>
+      </DetailSheet>
 
       <Tabs defaultValue="overview">
         <TabsList className="mb-4">

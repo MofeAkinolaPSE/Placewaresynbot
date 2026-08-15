@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from src.middleware import verify_jwt, require_role
 from pydantic import BaseModel
@@ -33,6 +33,57 @@ async def create_customer(request: Request, payload: CustomerIn, _u=Depends(requ
         return data[0] if data else {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# NOTE: this route must stay registered before GET /customers/{customer_id}
+# below -- Starlette matches by path shape, so a request to /customers/search
+# would otherwise be swallowed by the {customer_id}:int pattern and 422
+# trying to coerce "search" to int.
+@router.get("/customers/search")
+async def search_customers(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(default=10, le=50),
+    _u=Depends(verify_jwt),
+):
+    """Customer search for the Centralized Customer Workspace's
+    EntityAutocomplete. Returns {id, name, customer_code, phone} -- id is
+    customers.id (numeric PK), matching what GET /crm/customers/{id}/360
+    expects. NOT the same key space as /finance/ar/receipts/customers/search
+    (that endpoint's customer_id is the Sage TEXT code from v_customers).
+
+    TableQuery (src/local_db.py) has no .or_() -- two ILIKE queries
+    (name, customer_code), merged and de-duplicated by id.
+    """
+    try:
+        pattern = f"%{q.strip()}%"
+        by_name = (
+            db.table("customers").select("id,name,customer_code,contact_details")
+            .ilike("name", pattern).limit(limit).execute().data or []
+        )
+        by_code = (
+            db.table("customers").select("id,name,customer_code,contact_details")
+            .ilike("customer_code", pattern).limit(limit).execute().data or []
+        )
+    except Exception as e:
+        logger.error("customer search error: %s", e)
+        raise HTTPException(status_code=500, detail="Customer search failed")
+
+    merged: dict[int, dict] = {}
+    for r in by_name + by_code:
+        merged.setdefault(r["id"], r)
+    ranked = sorted(merged.values(), key=lambda r: (r.get("name") or "").lower())[:limit]
+
+    return {
+        "data": [
+            {
+                "id": r["id"],
+                "name": r.get("name"),
+                "customer_code": r.get("customer_code"),
+                "phone": (r.get("contact_details") or {}).get("phone"),
+            }
+            for r in ranked
+        ]
+    }
 
 
 @router.get("/customers/{customer_id}")

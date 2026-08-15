@@ -15,16 +15,17 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { PlusCircle, Loader2, TruckIcon, RefreshCcw, ShieldCheck, AlertTriangle, Star, PackageCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
 
 interface Supplier {
   id?: string;
@@ -155,199 +156,120 @@ export default function Suppliers() {
 
   return (
     <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Supplier Management</h2>
-          <p className="text-muted-foreground">Track suppliers, deliveries, and performance metrics.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchSuppliers} disabled={loading}>
-            <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+      <PageHeader
+        icon={TruckIcon}
+        title="Supplier Management"
+        subtitle="Track suppliers, deliveries, and performance metrics."
+        actions={
+          <>
+            <Button variant="outline" onClick={fetchSuppliers} disabled={loading}>
+              <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button onClick={() => setDialogOpen(true)}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Supplier
+            </Button>
+          </>
+        }
+      />
+
+      <DetailSheet
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title="Add New Supplier"
+        description="Enter supplier details."
+        icon={TruckIcon}
+        footer={
+          <Button onClick={handleCreate} disabled={creating} className="w-full">
+            {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Create
           </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Add Supplier
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Supplier</DialogTitle>
-                <DialogDescription>Enter supplier details.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Name</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Supplier name"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Contact</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.contact_name}
-                    onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-                    placeholder="Contact person name"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Email</Label>
-                  <Input
-                    type="email"
-                    className="col-span-3"
-                    value={formData.contact_email}
-                    onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Phone</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Address</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Payment Terms</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.payment_terms}
-                    onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-                    placeholder="e.g. Net 30"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Tax ID</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.tax_id}
-                    onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Bank Details</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.bank_details}
-                    onChange={(e) => setFormData({ ...formData, bank_details: e.target.value })}
-                    placeholder="Bank — Account number"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Balance (₦)</Label>
-                  <Input
-                    type="number"
-                    className="col-span-3"
-                    value={formData.current_balance}
-                    onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleCreate} disabled={creating}>
-                  {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+        }
+      >
+        <div className="space-y-2">
+          <Label>Name</Label>
+          <Input
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="Supplier name"
+          />
         </div>
-      </div>
+        <div className="space-y-2">
+          <Label>Contact</Label>
+          <Input
+            value={formData.contact_name}
+            onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+            placeholder="Contact person name"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Email</Label>
+          <Input
+            type="email"
+            value={formData.contact_email}
+            onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Phone</Label>
+          <Input
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Address</Label>
+          <Input
+            value={formData.address}
+            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Payment Terms</Label>
+          <Input
+            value={formData.payment_terms}
+            onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
+            placeholder="e.g. Net 30"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Tax ID</Label>
+          <Input
+            value={formData.tax_id}
+            onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Bank Details</Label>
+          <Input
+            value={formData.bank_details}
+            onChange={(e) => setFormData({ ...formData, bank_details: e.target.value })}
+            placeholder="Bank — Account number"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Balance (₦)</Label>
+          <Input
+            type="number"
+            value={formData.current_balance}
+            onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
+            placeholder="0.00"
+          />
+        </div>
+      </DetailSheet>
 
-      {/* ── KPI Summary Cards ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium">Total Suppliers</CardTitle>
-            <TruckIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalSuppliers}</div>
-            <p className="text-xs text-muted-foreground">{activeSuppliers} active</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium">Avg Reliability</CardTitle>
-            <Star className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {avgReliability != null ? `${avgReliability.toFixed(1)}%` : "—"}
-            </div>
-            <p className="text-xs text-muted-foreground">across rated suppliers</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium">Avg Delay</CardTitle>
-            <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {avgDelayDays != null ? `${avgDelayDays.toFixed(1)} d` : "—"}
-            </div>
-            <p className="text-xs text-muted-foreground">avg delivery delay</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium">Total Shipments</CardTitle>
-            <PackageCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {suppliers.reduce((s, r) => s + (r.total_shipments ?? 0), 0).toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">across all suppliers</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium">Outstanding (₦)</CardTitle>
-            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalBalance.toLocaleString("en-NG", { maximumFractionDigits: 0 })}
-            </div>
-            <p className="text-xs text-muted-foreground">total owed</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium">Compliance Issues</CardTitle>
-            <AlertTriangle className={`h-4 w-4 ${complianceIssues > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${complianceIssues > 0 ? "text-destructive" : ""}`}>
-              {complianceIssues}
-            </div>
-            <p className="text-xs text-muted-foreground">open issues</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* ── KPI Summary ──────────────────────────────────────────── */}
+      <KpiStrip
+        items={[
+          { label: "Total Suppliers", value: totalSuppliers, icon: TruckIcon },
+          { label: "Avg Reliability", value: avgReliability != null ? `${avgReliability.toFixed(1)}%` : "—", icon: Star },
+          { label: "Avg Delay", value: avgDelayDays != null ? `${avgDelayDays.toFixed(1)} d` : "—", icon: RefreshCcw },
+          { label: "Total Shipments", value: suppliers.reduce((s, r) => s + (r.total_shipments ?? 0), 0).toLocaleString(), icon: PackageCheck },
+          { label: "Outstanding (₦)", value: totalBalance.toLocaleString("en-NG", { maximumFractionDigits: 0 }), icon: ShieldCheck },
+          { label: "Compliance Issues", value: complianceIssues, icon: AlertTriangle, tone: complianceIssues > 0 ? "danger" : "default" },
+        ]}
+      />
 
       <Card>
         <CardHeader>

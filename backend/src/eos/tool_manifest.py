@@ -128,6 +128,23 @@ ACTION_INTENTS: Dict[str, Dict] = {
             "pull a report",
             "download report",
             "generate the report",
+            # More natural phrasings that don't match the exact-substring
+            # patterns above -- e.g. "create the export so i access the
+            # entire report" matched none of them and silently fell through
+            # to the general chat path instead of actually generating
+            # anything. Deliberately not adding a bare "export" or "the
+            # report" -- too broad, would false-positive on unrelated
+            # conversational mentions.
+            "export the report",
+            "export this report",
+            "the full report",
+            "give me the report",
+            "access the report",
+            "share the report",
+            "get me the report",
+            "word document",
+            "word doc",
+            "docx",
             # Domain-specific trigger phrases
             "sales report",
             "weekly sales",

@@ -52,8 +52,18 @@ class Badge(BaseModel):
     description: Optional[str]
 
 
+class StaffIdentity(BaseModel):
+    email: str
+    display_name: str
+    staff_id: Optional[str]
+    department: Optional[str]
+    linked: bool
+    hours_this_week: float
+
+
 class StaffDashboard(BaseModel):
     user_id: str
+    identity: StaffIdentity
     activities: List[ActivityItem] = []
     pending_approvals: List[PendingApproval] = []
     tasks: List[TaskItem] = []

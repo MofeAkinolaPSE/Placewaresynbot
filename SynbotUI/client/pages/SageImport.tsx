@@ -106,18 +106,9 @@ const DATASETS: {
     description: "Supplier PO history",
     icon: ShoppingCart,
   },
-  {
-    id: "sales_invoices",
-    label: "Sales Invoices",
-    description: "AR invoice register",
-    icon: FileText,
-  },
-  {
-    id: "sales_invoice_lines",
-    label: "Invoice Line Items",
-    description: "Per-line revenue & margin detail",
-    icon: BarChart3,
-  },
+  // sales_invoices / sales_invoice_lines moved to the dedicated "Daily
+  // Invoice Refresh" panel above this grid — still valid SageFileType/
+  // _REGISTRY entries, just no longer duplicated as generic cards here.
   {
     id: "inventory_transactions",
     label: "Inventory Transactions",
@@ -168,14 +159,28 @@ const SageImport = () => {
 
   const jobs = historyData?.data ?? [];
 
+  const { data: freshnessData, refetch: refetchFreshness } = useQuery({
+    queryKey: ["sage-import-freshness"],
+    queryFn: () => api.sage.freshness(),
+    refetchInterval: 60_000,
+  });
+
+  const arLastImported = freshnessData?.last_imported?.sales_invoices ?? null;
+  const arDaysAgo = arLastImported
+    ? Math.floor((Date.now() - new Date(arLastImported).getTime()) / 86_400_000)
+    : null;
+  // Daily-refresh cadence with one day of slack before flagging as stale.
+  const arIsStale = arDaysAgo !== null && arDaysAgo > 2;
+
   // ── File selection ────────────────────────────────────────────────────────
 
   const handleFileChange = useCallback(
     (fileType: SageFileType, e: React.ChangeEvent<HTMLInputElement>) => {
       const f = e.target.files?.[0];
       if (!f) return;
-      if (!f.name.toLowerCase().endsWith(".csv")) {
-        toast.error("Only .csv files are accepted");
+      const name = f.name.toLowerCase();
+      if (!name.endsWith(".csv") && !name.endsWith(".xlsx")) {
+        toast.error("Only .csv or .xlsx files are accepted");
         return;
       }
       setFileMap((prev) => ({ ...prev, [fileType]: f }));
@@ -219,6 +224,9 @@ const SageImport = () => {
             ? ` (${result.validation_error_count} validation warning${result.validation_error_count > 1 ? "s" : ""})`
             : "";
         toast.success(`${result.rows_inserted} rows imported — ${fileType}${note}`);
+        if (fileType === "sales_invoices" || fileType === "sales_invoice_lines") {
+          refetchFreshness();
+        }
         return true;
       } catch (e: any) {
         const message =
@@ -231,7 +239,7 @@ const SageImport = () => {
         return false;
       }
     },
-    [fileMap],
+    [fileMap, refetchFreshness],
   );
 
   // ── HR file selection ──────────────────────────────────────────────────────
@@ -350,6 +358,122 @@ const SageImport = () => {
         </p>
       </div>
 
+      {/* Daily Invoice Refresh — the primary recurring workflow */}
+      <div
+        className={`pw-surface-interactive rounded-xl p-6 space-y-4 border ${
+          arIsStale ? "border-warning/50" : "border-info/30"
+        }`}
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Daily Invoice Refresh</h2>
+            <p className="text-sm text-muted-foreground">
+              Export these from Sage 50 and upload here to keep AR aging, credit risk, and
+              customer profitability current. Recommended cadence: daily.
+            </p>
+          </div>
+          <div
+            className={`text-xs font-medium rounded-lg px-3 py-1.5 whitespace-nowrap ${
+              arLastImported === null
+                ? "bg-muted text-muted-foreground"
+                : arIsStale
+                ? "bg-warning/15 text-warning"
+                : "bg-success/15 text-success"
+            }`}
+          >
+            {arLastImported === null
+              ? "No invoice data uploaded yet"
+              : arDaysAgo === 0
+              ? "AR data updated today"
+              : `AR data last updated ${arDaysAgo} day${arDaysAgo === 1 ? "" : "s"} ago`}
+            {arIsStale && " — overdue for refresh"}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(
+            [
+              {
+                id: "sales_invoices" as SageFileType,
+                label: "Customer Management Details",
+                description: "Required — invoice #, due date, outstanding balance per customer",
+                icon: FileText,
+                required: true,
+              },
+              {
+                id: "sales_invoice_lines" as SageFileType,
+                label: "Items Sold to Customers",
+                description: "Optional — keeps product-level sales & margin data fresh (CRM 360)",
+                icon: BarChart3,
+                required: false,
+              },
+            ] as const
+          ).map((slot) => {
+            const file = fileMap[slot.id];
+            const status = cardStatus[slot.id] ?? "idle";
+            const result = cardResult[slot.id];
+            const Icon = slot.icon;
+            return (
+              <div key={slot.id} className="rounded-lg border border-border/60 p-4 flex flex-col gap-2">
+                <input
+                  type="file"
+                  id={`file-daily-${slot.id}`}
+                  className="hidden"
+                  accept=".csv,.xlsx"
+                  onChange={(e) => handleFileChange(slot.id, e)}
+                />
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-foreground">{slot.label}</span>
+                    {!slot.required && (
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">optional</span>
+                    )}
+                  </div>
+                  {getCardStatusIcon(status)}
+                </div>
+                <p className="text-xs text-muted-foreground">{slot.description}</p>
+                {file && (
+                  <p className="text-xs text-muted-foreground truncate" title={file.name}>
+                    📎 {file.name}
+                  </p>
+                )}
+                {result && (
+                  <p className="text-xs text-success font-medium">
+                    {result.rows_inserted.toLocaleString()} rows inserted
+                  </p>
+                )}
+                <div className="flex gap-2 mt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    onClick={() => document.getElementById(`file-daily-${slot.id}`)?.click()}
+                    disabled={status === "uploading"}
+                  >
+                    <File className="w-3 h-3 mr-1" />
+                    {file ? "Change" : "Choose File"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={status === "success" ? "secondary" : "default"}
+                    className="flex-1 text-xs"
+                    onClick={() => uploadCard(slot.id)}
+                    disabled={!file || status === "uploading"}
+                  >
+                    {status === "uploading" ? (
+                      <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                    ) : (
+                      "Upload"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Batch upload bar */}
       {readyCount > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-info/30 bg-info/15 p-4">
@@ -401,7 +525,7 @@ const SageImport = () => {
                   type="file"
                   id={`file-${dataset.id}`}
                   className="hidden"
-                  accept=".csv"
+                  accept=".csv,.xlsx"
                   onChange={(e) => handleFileChange(dataset.id, e)}
                 />
 
@@ -459,7 +583,7 @@ const SageImport = () => {
                     disabled={status === "uploading"}
                   >
                     <File className="w-3 h-3 mr-1" />
-                    {file ? "Change" : "Choose CSV"}
+                    {file ? "Change" : "Choose File"}
                   </Button>
                   <Button
                     size="sm"

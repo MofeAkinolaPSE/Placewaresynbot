@@ -231,6 +231,7 @@ class ReportGenerationAgent(BaseAgent):
                 "past_reports_used": analysis.get("past_count", 0),
                 "section_title":     analysis["section_title"],
                 "full_report":       full_report,
+                "summary":           structured.get("summary") or full_report[:400],
                 "section_results":   section_results,
                 "template_version":  TEMPLATE_VERSION,
                 "report_memory_id":  report_memory_id,
@@ -325,7 +326,7 @@ class ReportGenerationAgent(BaseAgent):
                 tbl   = tbl_cfg.get("table")
                 sel   = tbl_cfg.get("select", "*")
                 lim   = tbl_cfg.get("limit", 50)
-                order = tbl_cfg.get("order")
+                order = tbl_cfg.get("order") or "imported_at"
                 try:
                     q = db.table(tbl).select(sel).limit(lim)
                     if order:
@@ -452,6 +453,7 @@ class ReportGenerationAgent(BaseAgent):
         except Exception:
             live_str = str(live_data)[:3000]
         live_block = f"\n--- Live Database Data ---\n{live_str}\n" if live_str else ""
+        ground_truth_block = self._compute_ground_truth(live_data)
 
         memory_block = ""
         if memories:
@@ -469,9 +471,7 @@ class ReportGenerationAgent(BaseAgent):
             if past_reports else ""
         )
 
-        results: List[Dict[str, Any]] = []
-
-        for sec in sections:
+        def _generate_one(sec: Dict) -> Dict[str, Any]:
             sec_id    = sec["id"]
             sec_title = sec["title"]
             hint      = sec.get("prompt_hint", "")
@@ -493,6 +493,7 @@ class ReportGenerationAgent(BaseAgent):
                         rag_block=rag_block,
                         past_block=past_block,
                         live_block=live_block,
+                        ground_truth_block=ground_truth_block,
                         memory_block=memory_block,
                         scope_block=scope_block,
                         improvement_note=improvement_note,
@@ -508,16 +509,67 @@ class ReportGenerationAgent(BaseAgent):
                 except Exception as exc:
                     logger.warning("ReportAgent: section %r generation error: %s", sec_id, exc)
 
-            results.append({
+            return {
                 "section_id":       sec_id,
                 "title":            sec_title,
                 "content":          content,
                 "confidence_score": round(confidence, 2),
                 "status":           status,
                 "order":            sec["order"],
-            })
+            }
 
+        # Each section is an independent DeepSeek call sharing only the
+        # already-built context blocks above (no ordering dependency between
+        # sections) -- run them concurrently on a thread pool instead of one
+        # at a time. This class's lifecycle (BaseAgent.run() and everything
+        # that calls it) is fully synchronous, so a thread pool -- not
+        # asyncio -- matches the surrounding code; the bottleneck is I/O
+        # (waiting on the HTTP response), so threads parallelize it fine
+        # despite the GIL. Results are re-sorted by "order" below regardless
+        # of completion order, and _assemble_report() re-sorts again anyway.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(len(sections), 8) or 1) as pool:
+            results = list(pool.map(_generate_one, sections))
+
+        results.sort(key=lambda r: r["order"])
         return results
+
+    def _compute_ground_truth(self, live_data: Any) -> str:
+        """
+        Deterministically compute a small set of aggregate figures from
+        live_data so every independently-generated section anchors on the
+        same real totals, instead of each LLM call guessing its own number
+        when the underlying data is sparse or empty.
+        """
+        if not isinstance(live_data, list):
+            return ""
+        if not live_data:
+            return (
+                "\n--- Ground Truth Figures (LOCKED) ---\n"
+                "No live records were returned for this scope. State clearly that "
+                "0 records were found for this period/filter — do NOT invent SKUs, "
+                "counts, or totals to fill the section.\n"
+            )
+
+        numeric_totals: Dict[str, float] = {}
+        for row in live_data:
+            if not isinstance(row, dict):
+                continue
+            for key, val in row.items():
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    numeric_totals[key] = numeric_totals.get(key, 0.0) + val
+
+        lines = [f"Total records: {len(live_data)}"]
+        for key, total in numeric_totals.items():
+            lines.append(f"Sum of {key}: {round(total, 2)}")
+
+        return (
+            "\n--- Ground Truth Figures (LOCKED — you MUST use these exact numbers "
+            "for any total/count; do not invent or recompute a different figure, and "
+            "keep this consistent with any other section of the same report) ---\n"
+            + "\n".join(lines) + "\n"
+        )
 
     def _generate_section_content(
         self,
@@ -530,6 +582,7 @@ class ReportGenerationAgent(BaseAgent):
         rag_block: str,
         past_block: str,
         live_block: str,
+        ground_truth_block: str,
         memory_block: str,
         scope_block: str,
         improvement_note: str,
@@ -547,6 +600,7 @@ You are generating ONE SECTION of a {section_title}.
 {rag_block}
 {past_block}
 {live_block}
+{ground_truth_block}
 {memory_block}
 
 SECTION TO GENERATE NOW: "{sec_title}"
@@ -558,10 +612,13 @@ Original request: {intent_text}
 Instructions:
 - Write ONLY the content for the "{sec_title}" section. Do NOT repeat other sections.
 - Use specific numbers, dates, and records from the live data above.
+- If a "Ground Truth Figures" block is present, treat those numbers as locked facts —
+  use them exactly as given rather than recomputing or estimating your own totals.
 - Never fabricate data not present in the provided context.
 - Be precise, business-grade, and actionable.
 - Format with sub-headings (###), numbered lists, and **bold** key figures where appropriate.
-- Minimum 3 meaningful, data-backed sentences.
+- Minimum 3, maximum 6 meaningful, data-backed sentences. Do not pad the section with
+  generic industry commentary to fill space — if there is little to report, say so briefly.
 
 Begin the section content now (do NOT include the section heading itself):
 """
@@ -573,8 +630,9 @@ Begin the section content now (do NOT include the section heading itself):
             instruction=(
                 f"You are {bot_name}, a senior business analyst. "
                 "Generate ONLY the requested report section. "
-                "Use real data. Be specific. Minimum 3 sentences."
+                "Use real data. Be specific. 3-6 sentences, no padding."
             ),
+            max_tokens=450,
         ).strip()
 
         # Heuristic confidence: longer + more numbers = higher confidence

@@ -9,7 +9,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // Gradient (blue -> green) instead of solid blue, so the brand pair
+        // shows on every default button app-wide, not just hand-picked CTAs.
+        default: "bg-gradient-primary text-primary-foreground hover:opacity-90",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:
