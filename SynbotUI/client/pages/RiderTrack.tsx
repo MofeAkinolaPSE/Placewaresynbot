@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
+import { apiUrl } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +39,11 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+// NOTE: this page previously read `VITE_API_URL`, a name defined nowhere in the
+// project (every other module uses VITE_API_BASE_URL via the apiUrl() helper).
+// It therefore resolved to "" and every call below went to the SPA origin, which
+// has no /logistics proxy -- so they returned the index.html shell with HTTP 200.
+// That made res.ok true, silently faking success for pings and delivery confirms.
 const PING_INTERVAL_MS = 5_000;
 const OFFLINE_QUEUE_KEY = "ridertrack_offline_pings";
 
@@ -109,6 +114,8 @@ export default function RiderTrack() {
   const [lastSpeed, setLastSpeed] = useState<number | undefined>();
   const [pingCount, setPingCount] = useState(0);
   const [autoDelivered, setAutoDelivered] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
 
   const watchIdRef = useRef<number | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -162,7 +169,7 @@ export default function RiderTrack() {
 
   async function fetchDelivery() {
     try {
-      const res = await fetch(`${API_BASE}/logistics/track/${encodeURIComponent(token!)}`, {
+      const res = await fetch(apiUrl(`/logistics/track/${encodeURIComponent(token!)}`), {
         headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) {
@@ -174,9 +181,21 @@ export default function RiderTrack() {
       setDelivery(data.delivery);
       if (data.delivery.status === "delivered") {
         setState("delivered");
+        return;
+      }
+      // A delivery already in_transit means this rider had started tracking on a
+      // previous visit and the browser was closed/backgrounded mid-run. Resume
+      // automatically rather than dropping back to "ready" and silently sending
+      // nothing until they happen to notice and re-tap "Start Tracking".
+      if (data.delivery.status === "in_transit") {
+        void startTracking();
       } else {
         setState("ready");
       }
+      // Pings buffered during an offline stretch survive in localStorage, but the
+      // "online" listener only fires on a transition -- reopening the tab already
+      // online never flushed them. Drain explicitly on mount.
+      void drainOfflineQueue();
     } catch (err) {
       if (!isMountedRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load delivery.");
@@ -209,7 +228,7 @@ export default function RiderTrack() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/logistics/location-ping`, {
+        const res = await fetch(apiUrl("/logistics/location-ping"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ping),
@@ -244,7 +263,7 @@ export default function RiderTrack() {
     saveOfflineQueue([]);
     for (const ping of queue) {
       try {
-        await fetch(`${API_BASE}/logistics/location-ping`, {
+        await fetch(apiUrl("/logistics/location-ping"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ping),
@@ -316,10 +335,12 @@ export default function RiderTrack() {
   }
 
   async function handleManualDelivery() {
-    if (!delivery) return;
+    if (!delivery || confirming) return;
+    setConfirming(true);
+    setConfirmError("");
     try {
       const res = await fetch(
-        `${API_BASE}/logistics/deliveries/${encodeURIComponent(delivery.id)}/status`,
+        apiUrl(`/logistics/deliveries/${encodeURIComponent(delivery.id)}/status`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -330,12 +351,18 @@ export default function RiderTrack() {
         }
       );
       if (res.ok) {
+        setConfirmError("");
         stopTracking();
         setDelivery((d) => d ? { ...d, status: "delivered" } : d);
         setState("delivered");
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { detail?: string };
+        setConfirmError(data.detail ?? `Couldn't confirm delivery (HTTP ${res.status}). Tap to retry.`);
       }
     } catch {
-      // Non-critical — rider will try again
+      setConfirmError("No connection — delivery not confirmed. Check your signal and tap again.");
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -542,11 +569,23 @@ export default function RiderTrack() {
           <Button
             variant="outline"
             className="w-full"
+            disabled={confirming}
             onClick={() => void handleManualDelivery()}
           >
-            <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-            Confirm Delivery Manually
+            {confirming ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+            )}
+            {confirming ? "Confirming…" : "Confirm Delivery Manually"}
           </Button>
+
+          {confirmError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{confirmError}</AlertDescription>
+            </Alert>
+          )}
 
           <Button
             variant="ghost"

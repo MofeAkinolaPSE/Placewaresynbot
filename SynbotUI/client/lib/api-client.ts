@@ -1512,8 +1512,15 @@ export const api = {
     assignRoutes: () => sendJson<any>("/logistics/assign", "POST", {}),
 
     /** Manually assign one specific rider to one specific delivery. */
-    assignDelivery: (deliveryId: string, riderId: string) =>
-      sendJson<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/assign`, "POST", { rider_id: riderId }),
+    assignDelivery: (
+      deliveryId: string,
+      riderId: string,
+      dest?: { dest_lat: number; dest_lng: number },
+    ) =>
+      sendJson<any>(`/logistics/deliveries/${encodeURIComponent(deliveryId)}/assign`, "POST", {
+        rider_id: riderId,
+        ...(dest ?? {}),
+      }),
 
     getRiderRoute: (riderId: string) =>
       fetchRaw<any>(`/logistics/riders/${encodeURIComponent(riderId)}/route`),
