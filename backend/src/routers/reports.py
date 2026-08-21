@@ -330,6 +330,7 @@ def _render_sections(
 ) -> None:
     """Render a list of SectionResult dicts into the Word document."""
     from docx.shared import Pt, RGBColor
+    from src.agents.report_generation_agent import _strip_echoed_heading
 
     for sec in sorted(section_results, key=lambda s: s.get("order", 0)):
         title   = sec.get("title", "")
@@ -346,6 +347,11 @@ def _render_sections(
             r.italic = True
             r.font.color.rgb = grey
         elif content:
+            # Defensive second layer: strip an echoed title heading here too, so
+            # sections generated before the report_generation_agent fix (already
+            # stored in placeware_report_memory) also render without a duplicate
+            # heading on re-download.
+            content = _strip_echoed_heading(content, title)
             _render_markdown_body(doc, content, green, navy, grey, top_level=False)
 
         # Confidence line

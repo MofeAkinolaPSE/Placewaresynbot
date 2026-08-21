@@ -42,6 +42,7 @@ services:
   # ── FastAPI Backend (runs migrations automatically on start) ─────────────
   backend:
     container_name: chat-backend.v1
+    image: placeware-backend:latest
     build: .
     ports:
       - "8000:8000"
@@ -93,6 +94,7 @@ services:
   # ── React Frontend served by nginx ───────────────────────────────────────
   frontend:
     container_name: placeware-frontend.v1
+    image: placeware-frontend:latest
     build:
       context: ../SynbotUI
       dockerfile: Dockerfile

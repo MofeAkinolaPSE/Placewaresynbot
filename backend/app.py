@@ -356,6 +356,13 @@ _Instrumentator().instrument(app).expose(app, include_in_schema=False)
 _PENDING_EMAIL_DRAFTS: dict = {}
 _EMAIL_DRAFT_TTL_SECONDS = 600  # 10 minutes
 
+# Bulk SMS/email broadcast drafts -- kept in a separate dict from
+# _PENDING_EMAIL_DRAFTS (not reused/overloaded) so confirming one never
+# accidentally fires the other. Same 10-minute TTL/key scheme.
+# Structure: { user_key → {channel, message_text, subject, recipient_filter, recipient_count, expires_at} }
+_PENDING_BULK_DRAFTS: dict = {}
+_BULK_DRAFT_TTL_SECONDS = 600  # 10 minutes
+
 
 def _draft_key(auth_payload: dict, request: "Request") -> str:  # type: ignore[name-defined]
     uid = (auth_payload or {}).get("sub") or (auth_payload or {}).get("id")
@@ -4192,6 +4199,75 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                     trace_id=trace_id, tool_outputs=[], tool_errors=[],
                 ).model_dump()
 
+        # ── Phase 2b: user confirming/rejecting a pending bulk SMS/email draft ─
+        # Separate dict from email drafts (see _PENDING_BULK_DRAFTS above) --
+        # checked independently so it doesn't interfere with the email flow.
+        _pending_bulk = _PENDING_BULK_DRAFTS.get(_dkey)
+        if _pending_bulk:
+            _bulk_expired = _pending_bulk.get("expires_at", 0) < _time_mod.time()
+            if _bulk_expired:
+                del _PENDING_BULK_DRAFTS[_dkey]
+            elif _is_email_confirmation(question):
+                try:
+                    from src.db import db as _bulk_db
+                    from src.services.messaging import dispatch_job as _dispatch_bulk_job
+                    _job_row = {
+                        "channel":          _pending_bulk["channel"],
+                        "message_text":     _pending_bulk["message_text"],
+                        "subject":          _pending_bulk.get("subject"),
+                        "recipient_filter": _pending_bulk.get("recipient_filter") or {},
+                        "status":           "queued",
+                    }
+                    _job_resp = _bulk_db.table("crm_bulk_message_jobs").insert(_job_row).execute()
+                    _job = _job_resp.data[0] if _job_resp.data else _job_row
+                    _dispatch_result = _dispatch_bulk_job(_job)
+                    if _job.get("id"):
+                        _bulk_db.table("crm_bulk_message_jobs").update({
+                            "status":          _dispatch_result.get("status", "sent"),
+                            "sent_count":      _dispatch_result.get("sent", 0),
+                            "failed_count":    _dispatch_result.get("failed", 0),
+                            "recipient_count": _dispatch_result.get("total", 0),
+                            "processed_at":    dt.datetime.utcnow().isoformat() + "Z",
+                        }).eq("id", _job["id"]).execute()
+                    del _PENDING_BULK_DRAFTS[_dkey]
+                    _bulk_answer = (
+                        f"Bulk {_pending_bulk['channel'].upper()} sent - "
+                        f"{_dispatch_result.get('sent', 0)} delivered, "
+                        f"{_dispatch_result.get('failed', 0)} failed, "
+                        f"out of {_dispatch_result.get('total', 0)} recipients."
+                    )
+                    try:
+                        save_chat_history(user_id=actor_id, question=question_for_storage, answer=_bulk_answer, sources=[])
+                    except Exception:
+                        pass
+                    return _normalize_chat_contract(
+                        answer=_bulk_answer, bot=BOT_NAME, sources=[], mode=mode,
+                        trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                    ).model_dump()
+                except Exception as _be:
+                    logging.error(f"Bulk message confirm-send failed: {_be}")
+                    del _PENDING_BULK_DRAFTS[_dkey]
+                    _bulk_err_answer = f"Something went wrong sending the bulk message: {_be}"
+                    try:
+                        save_chat_history(user_id=actor_id, question=question_for_storage, answer=_bulk_err_answer, sources=[])
+                    except Exception:
+                        pass
+                    return _normalize_chat_contract(
+                        answer=_bulk_err_answer, bot=BOT_NAME, sources=[], mode=mode,
+                        trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                    ).model_dump()
+            elif _is_email_rejection(question):
+                del _PENDING_BULK_DRAFTS[_dkey]
+                _bulk_cancel_answer = "Bulk message cancelled. Let me know if you'd like to send a different one."
+                try:
+                    save_chat_history(user_id=actor_id, question=question_for_storage, answer=_bulk_cancel_answer, sources=[])
+                except Exception:
+                    pass
+                return _normalize_chat_contract(
+                    answer=_bulk_cancel_answer, bot=BOT_NAME, sources=[], mode=mode,
+                    trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                ).model_dump()
+
         # ── Phase 1: detect action intent and dispatch ────────────────────────
         _action_type = _detect_action_intent(question)
         if _action_type:
@@ -4204,6 +4280,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                     _handle_task_creation,
                     _handle_generate_report_action,
                     _handle_trigger_replenishment_action,
+                    _handle_send_bulk_message_action,
                 )
                 _parser = _IntentParser()
                 _intent = _parser._fallback_parse(question)
@@ -4252,6 +4329,64 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                     except Exception as _pe:
                         logging.error(f"Email preview compose failed: {_pe}")
                         # Fall through to immediate send if preview fails
+
+                # Bulk SMS/email: always preview + require explicit
+                # confirmation, never sends on this turn -- see
+                # _handle_send_bulk_message_action's docstring for why this
+                # can't be treated like the other immediate-execute actions.
+                if _action_type == "send_bulk_message":
+                    if not ({"crm", "admin"} & roles):
+                        _perm_answer = "Sending bulk messages requires the CRM or Admin role - I can't do that for this account."
+                        try:
+                            save_chat_history(user_id=actor_id, question=question_for_storage, answer=_perm_answer, sources=[])
+                        except Exception:
+                            pass
+                        return _normalize_chat_contract(
+                            answer=_perm_answer, bot=BOT_NAME, sources=[], mode=mode,
+                            trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                        ).model_dump()
+                    try:
+                        _bulk_resolved = await _handle_send_bulk_message_action(_intent, question, False)
+                        if _bulk_resolved.get("status") == "needs_input":
+                            _needs_input_answer = _bulk_resolved.get("message") or "I need more details to queue that bulk message."
+                            try:
+                                save_chat_history(user_id=actor_id, question=question_for_storage, answer=_needs_input_answer, sources=[])
+                            except Exception:
+                                pass
+                            return _normalize_chat_contract(
+                                answer=_needs_input_answer, bot=BOT_NAME, sources=[], mode=mode,
+                                trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                            ).model_dump()
+                        if _bulk_resolved.get("status") == "ready":
+                            _b_channel = _bulk_resolved["channel"]
+                            _b_text    = _bulk_resolved["message_text"]
+                            _b_count   = _bulk_resolved["recipient_count"]
+                            _PENDING_BULK_DRAFTS[_dkey] = {
+                                "channel":          _b_channel,
+                                "message_text":     _b_text,
+                                "subject":          _bulk_resolved.get("subject"),
+                                "recipient_filter": _bulk_resolved.get("recipient_filter"),
+                                "expires_at":       _time_mod.time() + _BULK_DRAFT_TTL_SECONDS,
+                            }
+                            _bulk_preview_answer = (
+                                f"I'm about to send this **{_b_channel.upper()}** to **{_b_count}** customers:\n\n"
+                                f"\"{_b_text}\"\n\n"
+                                f"---\n"
+                                f"Reply **\"send it\"** to confirm, or tell me what to change."
+                            )
+                            try:
+                                save_chat_history(user_id=actor_id, question=question_for_storage, answer=_bulk_preview_answer, sources=[])
+                            except Exception:
+                                pass
+                            return _normalize_chat_contract(
+                                answer=_bulk_preview_answer, bot=BOT_NAME, sources=[], mode=mode,
+                                trace_id=trace_id, tool_outputs=[], tool_errors=[],
+                            ).model_dump()
+                    except Exception as _bpe:
+                        logging.error(f"Bulk message preview failed: {_bpe}")
+                        # No safe fallback for bulk send (unlike email) --
+                        # fall through to the normal conversational answer
+                        # rather than ever risking an unconfirmed bulk send.
 
                 # All other actions execute immediately
                 _ACTION_DISPATCH = {

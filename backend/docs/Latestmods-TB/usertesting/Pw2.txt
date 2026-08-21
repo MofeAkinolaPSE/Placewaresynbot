@@ -1,0 +1,78 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Does this allow us to do such when we return products and receiving news where we want to do meetings, have meetings on how much customers are paying us, how much is due for payment. So that's my, those are the questions I have for now. Thank you.
+
+So, yes, thank you. So, I will definitely automate the customers information being pre filled so we don't have to do that again so I'll definitely work on that. And then for finance we have a lot of finance options right here.
+
+Right. So we have a lot of information that shows what you're looking for basically your AR, your car receivables, your buckets. I didn't, I didn't show you the inventory. 
+
+So you have your inventory as well. Right. In the AR, then your AR and alerts.
+
+Okay. And then the customer receives an account. Right. 
+
+So if you want to approve your receipts, that as well will happen. So once there's a new receipt, we can just trace the invoice and then approve the receipts. You have your vendor payments.
+
+So I didn't go through each of those pages because I didn't want to take too much of our time this morning. But like I said, gradually, you'll be able to interact with your entire system. So your drugs, your total vaccines, number of customers that usually buy that particular vaccine.
+
+All this will be created and cleaned up so that it looks just the way you want to look. So definitely all this will be removed because this is past information. But you can see your top customer vaccine is already visible right here.
+
+All right. So let me just do a brief walkthrough of all the pages then. So we see everything. 
+
+So we have the operations where you have your inventory, your logistics, procurement and imports. All this will come to life when there's actual data. So right now, this system is already ahead of what you currently have in the sense that it was designed for the future.
+
+Right. So all the likely features that you would most likely need have already been prepared for. So by the time it comes through. 
+
+So like this, for example, these are personal internal projects or projects that the company is currently working on. Personal inbound deliveries, for example, like if there's a reorder that's coming internationally, we can keep a track of that entire order to show that it's ready for delivery. So this is your project controls. 
+
+You can track those current deliveries that are either coming in or going out. And then also monitor your stock orders. There's even a page for purchase orders where you can also see your purchase orders.
+
+So there's a page for suppliers where you can monitor all your suppliers in the company. So all the suppliers that you currently have, if you want to interact with them, you could. You can also see your purchase orders. 
+
+So all your purchase orders. And then we go to the CRM where you can interact with your customers. See what your pipeline looks like, what your win and loss ratios, where are the active opportunities that you're monitoring, your customers accounts.
+
+So here you can interact with those customers, their details, the information, what they've done. You can really interact with the customers. You have your sales pipeline where you can monitor all the sales.
+
+But all these, like I said, has been made ahead just because we planned that in case you would need this type of things, let's be prepared for it. But it's always open to modify. So this is your leads finder where you can prospect new leads.
+
+By the time I'm done with this feature, you should be able to find a new lead. And you can scan the map and it will find you the most recent leads in the area. So naturally, once we start to flow.
+
+So here we go. So we have 20 new leads found. This is a new lead. 
+
+This is where we found Fama, Fama plus Kano, this is in Kano State. So we need to work on fine tuning the location and proximity. But that is what the leads finder is.
+
+And then you have the front desk, which we already talked about. We have compliance and QRQMS where you can track your compliance score, your audits or the open deviations, maintain this overdue, active recalls, missed activities. So you create new audit reports, right? You can monitor any deviations, schedule your maintenance, monitor any recalls.
+
+And you can update your SOP documents. So the system is always up to date about whatever changes has been made on the regulator, on your regulator side of things. Or if there's a different way you want to write your documents, update that as well.
+
+We have the quality control where we can monitor, also monitor what invoices, the expiring dates, the open deviations, temperature. So we can monitor the temperature of your cold room once that's fully implemented. Any NAVDAC tests, sampling pending, any open recalls.
+
+So you have your expiring alerts, what vaccines are currently close to expiring, when should they be in quarantine. So you can monitor your entire stock, the current temperature in your cold room, any of your CAPA activities and any NAVDAC or recalls. So this is for the QC in particular. 
+
+So this is QC's dashboard. And so we have the ask symbol. This is where I should have done interactions.
+
+We can also generate reports. You have the calendar where you can monitor your appointments. So if there's a schedule, there's a regional dispatcher, there's the incoming international, inbound, out of inventory.
+
+Once the event is added, it will pop up on the calendar and all team members are informed. So it can be scheduled. And naturally, so all these will come with drop-down boxes and will be automated.
+
+So you won't have to type this. So definitely keep track of that. So we schedule that. 
+
+You can see it pop up here. So every team member is up to date about what's going on. And so we can generate reports. 
+
+So there are different reports that we can generate. You can generate the deviation reports, equipment maintenance, collaboration reports, regulation compliance reports, inventory status reports, finance performance reports, audit intelligence, executive business health, sales and pipeline, payroll, front desk and daily operations report, account receivable agent report, profit and loss report. And then you can also create a client's invoice.
+
+So naturally, once you click through it, there's a walkthrough. And then you just fill in the information. So usually in the context notes, you put the actual information that you want to put for that report.
+
+Right. The rest will be automated based on what context you give it. So you have your report generated naturally.
+
+We can either make this longer or make it shorter. And naturally, you can export this report. So it's been downloaded.
+
+We'll fix that. So, yeah, so that's it. So with that said, this is Ace.
+
+And this is WhereBot, your AI assistant. So are there any more questions? And I hope I've been able to answer your questions. I know I just went on, but it felt like I should just introduce the entire system.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+
+
+balance sheet report, Fixed assets. Current assets. Okay. I'll I'll set some depreciation. And only the current aspect. We have the total. We have equity discount. Closing stock on our current assets. Closing stock. Cash at hand. Advanced. Alright. Let's try to cover everything on the balance sheet reports. Let's do some research. Hey. I'm hearing you so so that's on the balance sheets. Also, yes. Long time line. Long time line ability. Short time liability on capital. So all these should be in that report. So so all all these things should be in the reports. Okay. So we'll have different sections talking about these different things, cash at hand, short time liability, long time liability, and all those things, depreciation, fixed access, closing stock or current assets, cash at hand, debtors. advance payment or prepayment. Okay. Okay. So any other things on? General Echo. Normal example comply... comprised of the details of the summary. journal ledger will contain a summary of all details about the business. Right? So, sorry, can you come again on general ledger? Okay. Continue all the information about the account for the particular opening balance. Yeah. So is the summary of the accounts for the year? to get all the information about the activity you appear under the general HR page and report. So we need to to click that. Yeah. I'm listening. I'm listening soon
+Trial balnce report.

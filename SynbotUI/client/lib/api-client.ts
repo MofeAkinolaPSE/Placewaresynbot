@@ -415,6 +415,11 @@ export const api = {
       const q = bucket ? `?bucket=${encodeURIComponent(bucket)}` : "";
       return fetchRaw<any>(`/finance/ar/aging${q}`);
     },
+    /** AR aging as audit-stamped PDF download URL (caller fetches with auth header) */
+    agingPdfUrl: (bucket?: string) => {
+      const q = bucket ? `?bucket=${encodeURIComponent(bucket)}` : "";
+      return `/finance/ar/aging/pdf${q}`;
+    },
 
     /** List active alert rules + unacknowledged events */
     listArAlerts: () => fetchRaw<any>("/finance/ar/alerts"),

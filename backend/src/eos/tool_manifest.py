@@ -205,6 +205,42 @@ ACTION_INTENTS: Dict[str, Dict] = {
         "handler": "_handle_find_leads_action",
         "description": "Discover pharma/healthcare prospects near a location using location intelligence",
     },
+    "send_bulk_message": {
+        "keywords": [
+            "send bulk sms",
+            "send a bulk sms",
+            "bulk sms",
+            "send bulk message",
+            "send a bulk message",
+            "bulk message",
+            "bulk text",
+            "send bulk email",
+            "send a bulk email",
+            "bulk email",
+            "broadcast message",
+            "broadcast to customers",
+            "broadcast to clients",
+            "text all customers",
+            "sms all customers",
+            "email all customers",
+            "message all customers",
+            "text our customers",
+            "sms our customers",
+            "email our customers",
+            "message our customers",
+            "send a message to all",
+            "send a text to all",
+        ],
+        # Unlike the other action intents, this one always requires an
+        # explicit confirmation before anything is actually sent -- real
+        # SMS/email cost and reach real customers, at a much larger blast
+        # radius than any other action here. app.py special-cases this
+        # intent (mirroring send_email's own two-phase draft flow) rather
+        # than wiring it into the immediate-execute dispatch table; this
+        # handler only resolves/previews, never sends.
+        "handler": "_handle_send_bulk_message_action",
+        "description": "Preview a bulk SMS or email broadcast to customers (always requires confirmation before sending)",
+    },
 }
 
 # Convenience: flat keyword → intent_type lookup built from ACTION_INTENTS

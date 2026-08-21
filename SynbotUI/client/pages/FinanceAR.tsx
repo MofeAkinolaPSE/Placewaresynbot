@@ -354,6 +354,7 @@ export default function FinanceAR() {
   const [matchLoading, setMatchLoading] = useState(false);
   const [plPeriod, setPlPeriod] = useState("");
   const [plPdfLoading, setPlPdfLoading] = useState(false);
+  const [agingPdfLoading, setAgingPdfLoading] = useState(false);
 
   // Tier-2: cash flow
   const [cfWeeks, setCfWeeks] = useState(12);
@@ -442,6 +443,32 @@ export default function FinanceAR() {
       toast({ title: "PDF export failed", description: err.message, variant: "destructive" });
     } finally {
       setPlPdfLoading(false);
+    }
+  }
+
+  async function handleAgingPdf() {
+    setAgingPdfLoading(true);
+    try {
+      const { authClient } = await import("@/lib/auth-client");
+      let token = authClient.getAccessToken();
+      if (!token) {
+        const refreshed = await authClient.refresh();
+        if (refreshed) token = authClient.getAccessToken();
+      }
+      const url = apiUrl(api.finance.agingPdfUrl());
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `ar_aging_all_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err: any) {
+      toast({ title: "PDF export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setAgingPdfLoading(false);
     }
   }
 
@@ -615,6 +642,10 @@ export default function FinanceAR() {
               />
             </div>
             {agingQ.isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+            <Button variant="outline" size="sm" onClick={handleAgingPdf} disabled={agingPdfLoading} className="ml-auto">
+              {agingPdfLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileDown className="w-4 h-4 mr-2" />}
+              Export PDF
+            </Button>
           </div>
 
           {agingQ.isError && (

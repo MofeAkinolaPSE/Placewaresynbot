@@ -4,9 +4,10 @@ import { Outlet } from "react-router-dom";
 import { getSynbotConfig } from "@/lib/wp-config";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { Menu, Circle } from "lucide-react";
+import { Menu, Circle, ArrowLeft, ArrowRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { useBackForward } from "@/hooks/use-back-forward";
 
 const Layout = () => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -14,6 +15,13 @@ const Layout = () => {
   const { role, apiBaseUrl, wpUserId } = getSynbotConfig();
   const hasRole = typeof role === "string" && role.trim().length > 0;
   const hasApiBase = typeof apiBaseUrl === "string" && apiBaseUrl.trim().length > 0;
+
+  // In-app Back/Forward -- on every page via this shared Layout, so it
+  // works the same regardless of whether you got here via the sidebar, a
+  // quick-action button, or another Back click. Going back always returns
+  // you to exactly where you were, including scroll/selection state React
+  // Router preserves on its own.
+  const { goBack, goForward, canGoBack, canGoForward } = useBackForward();
 
   // Global "who's online" -- shown on every page via this persistent top
   // bar, not just the HR dashboard, per the "always aware of who's online"
@@ -43,6 +51,28 @@ const Layout = () => {
               <Menu className="mr-2 h-4 w-4" />
               Menu
             </Button>
+            <div className="flex items-center gap-1 mr-1">
+              <button
+                type="button"
+                onClick={goBack}
+                disabled={!canGoBack}
+                aria-label="Go back"
+                title="Go back"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={goForward}
+                disabled={!canGoForward}
+                aria-label="Go forward"
+                title="Go forward"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <span className="font-semibold text-foreground">ACE</span>
             <span className="opacity-40">·</span>
             <span>Role: {hasRole ? role : <span className="text-destructive">unavailable</span>}</span>
