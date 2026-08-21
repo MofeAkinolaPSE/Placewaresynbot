@@ -11,6 +11,23 @@ import json
 import math
 import secrets
 from src.services.routing_adapter import compute_route
+from src.services.realtime import realtime_hub
+
+
+async def _broadcast_logistics(event: str, delivery_id: str, status: str | None) -> None:
+    """Best-effort realtime push for delivery lifecycle changes. Nothing in
+    this router broadcast before, so a Logistics Monitor or dashboard
+    Operations Queue open on another screen only ever showed a delivery's
+    state as of its last manual load -- an assignment or confirmation made by
+    someone else never appeared. Never allowed to fail the request."""
+    try:
+        await realtime_hub.broadcast('logistics_updates', {
+            'event': event,
+            'delivery_id': delivery_id,
+            'status': status,
+        })
+    except Exception:
+        pass
 
 router = APIRouter()
 
@@ -200,8 +217,32 @@ async def assign_delivery(request: Request, delivery_id: str, payload: dict):
         raise HTTPException(status_code=404, detail='Delivery not found')
     if delivery.get('status') in ('delivered', 'failed'):
         raise HTTPException(status_code=409, detail=f"Cannot reassign a {delivery.get('status')} delivery")
+    # Destination coordinates, optionally set at assign time. Frontdesk walk-ins
+    # carry no street address at all (frontdesk_walk_ins has no address column),
+    # so /frontdesk/invoices/{id}/send-for-delivery creates the delivery with
+    # dest_lat/dest_lng NULL. The geofence auto-detect in /logistics/location-ping
+    # is gated on both being non-NULL, which meant auto-delivery-on-arrival could
+    # never fire for any invoice-originated delivery -- only the manual button
+    # worked. Letting dispatch drop a pin when they assign the rider is the
+    # smallest fix that makes the documented geofence behaviour reachable.
+    update: dict = {'assigned_rider': rider_id, 'status': 'assigned'}
+    dest_lat = payload.get('dest_lat')
+    dest_lng = payload.get('dest_lng')
+    if dest_lat is not None and dest_lng is not None:
+        try:
+            dest_lat = float(dest_lat)
+            dest_lng = float(dest_lng)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail='dest_lat/dest_lng must be numeric')
+        if not (-90 <= dest_lat <= 90) or not (-180 <= dest_lng <= 180):
+            raise HTTPException(status_code=400, detail='dest_lat/dest_lng out of range')
+        update['dest_lat'] = dest_lat
+        update['dest_lng'] = dest_lng
+    elif (dest_lat is None) != (dest_lng is None):
+        raise HTTPException(status_code=400, detail='Provide both dest_lat and dest_lng, or neither')
+
     try:
-        resp = db.table('deliveries').update({'assigned_rider': rider_id, 'status': 'assigned'}).eq('id', delivery_id).execute()
+        resp = db.table('deliveries').update(update).eq('id', delivery_id).execute()
         updated = resp.data[0] if resp.data else None
     except Exception:
         raise HTTPException(status_code=500, detail='Failed to assign delivery')
@@ -226,6 +267,7 @@ async def assign_delivery(request: Request, delivery_id: str, payload: dict):
         audit_event('assign_delivery', {'delivery_id': delivery_id, 'rider_id': rider_id}, actor_id=(actor.get('sub') if actor else None), event_class='logistics', action='assign', subject_type='delivery', subject_id=delivery_id)
     except Exception:
         pass
+    await _broadcast_logistics('delivery_assigned', delivery_id, updated.get('status'))
     return {'status': 'assigned', 'delivery': updated}
 
 
@@ -311,7 +353,7 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
     actor_id = None
     if token:
         try:
-            tok_resp = db.table('deliveries').select('id,tracking_token').eq('id', delivery_id).execute()
+            tok_resp = db.table('deliveries').select('id,tracking_token,status').eq('id', delivery_id).execute()
             tok_row = tok_resp.data[0] if tok_resp.data else None
         except Exception:
             tok_row = None
@@ -320,6 +362,21 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
     else:
         jwt_payload = verify_jwt(request, required_role='ops')
         actor_id = jwt_payload.get('sub')
+        try:
+            tok_resp = db.table('deliveries').select('id,status').eq('id', delivery_id).execute()
+            tok_row = tok_resp.data[0] if tok_resp.data else None
+        except Exception:
+            tok_row = None
+
+    # Idempotency guard. The geofence auto-detect in /logistics/location-ping and
+    # the rider's manual "Confirm Delivery" button race each other by design --
+    # a rider arriving within 150 m is auto-delivered mid-ping while their thumb
+    # is already on the button. Without this, the second writer overwrote
+    # delivered_at and ran _complete_linked_invoice() a second time, emitting a
+    # duplicate frontdesk_invoice_completed row into the invoice's audit
+    # timeline. Re-confirming is now a no-op that reports the settled state.
+    if tok_row and tok_row.get('status') == 'delivered' and payload.get('status') == 'delivered':
+        return {'status': 'already_delivered', 'delivery_id': delivery_id}
 
     try:
         new_status = payload.get('status')
@@ -344,6 +401,7 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
         pass
     if updated.get('status') == 'delivered':
         _complete_linked_invoice(updated, actor_id=actor_id)
+    await _broadcast_logistics('delivery_status_changed', delivery_id, updated.get('status'))
     return {'status': 'updated', 'delivery_id': delivery_id}
 
 
@@ -394,6 +452,7 @@ async def start_delivery(request: Request, delivery_id: str):
                     event_class='logistics', action='start', subject_type='delivery', subject_id=delivery_id)
     except Exception:
         pass
+    await _broadcast_logistics('delivery_started', delivery_id, 'in_transit')
     base_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
     return {
         'status': 'in_transit',
@@ -571,6 +630,8 @@ async def location_ping(request: Request):
                 _complete_linked_invoice(delivery)
         except Exception:
             pass
+    if auto_delivered:
+        await _broadcast_logistics('delivery_status_changed', delivery_id, 'delivered')
 
     return {
         'received': True,

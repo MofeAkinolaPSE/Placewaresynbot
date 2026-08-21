@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Truck,
@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import {
   Dialog,
   DialogContent,
@@ -249,6 +250,11 @@ export default function LogisticsMonitor() {
 
   // Manual rider assignment (unassigned deliveries) — resets on selection change.
   const [assignRiderId, setAssignRiderId] = useState<string>("");
+  // Destination pin, captured at assign time. Frontdesk-originated deliveries
+  // arrive with no coordinates, so without this the geofence auto-delivery
+  // detection can never trigger for them.
+  const [assignDestLat, setAssignDestLat] = useState<string>("");
+  const [assignDestLng, setAssignDestLng] = useState<string>("");
   useEffect(() => { setAssignRiderId(""); }, [selectedDeliveryId]);
 
   // Route viewer
@@ -335,8 +341,12 @@ export default function LogisticsMonitor() {
   });
 
   const assignDelivery = useMutation({
-    mutationFn: ({ id, riderId }: { id: string; riderId: string }) =>
-      api.logistics.assignDelivery(id, riderId),
+    mutationFn: ({ id, riderId, destLat, destLng }: { id: string; riderId: string; destLat?: string; destLng?: string }) =>
+      api.logistics.assignDelivery(
+        id,
+        riderId,
+        destLat && destLng ? { dest_lat: Number(destLat), dest_lng: Number(destLng) } : undefined,
+      ),
     onSuccess: () => {
       toast({ title: "Rider assigned" });
       setAssignRiderId("");
@@ -366,6 +376,19 @@ export default function LogisticsMonitor() {
       setLiveRiders(livePositionsData.riders as LiveRider[]);
     }
   }, [livePositionsData, sseStatus]);
+
+  // The deliveries/riders lists previously refreshed only when THIS operator
+  // performed a mutation, so a delivery dispatched from Frontdesk by Finance --
+  // or a delivery a rider just confirmed -- never appeared on an already-open
+  // Logistics Monitor without a manual page refresh. The live-feed SSE above
+  // only carries rider GPS positions, not delivery state, so it did not cover
+  // this. Subscribe to both lifecycle channels instead.
+  const invalidateDeliveries = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["logistics-deliveries"] });
+  }, [queryClient]);
+
+  useRealtimeChannel("frontdesk_updates", invalidateDeliveries);
+  useRealtimeChannel("logistics_updates", invalidateDeliveries);
 
   // SSE connection — started when "Live Map" tab is first activated
   function connectSSE() {
@@ -590,25 +613,54 @@ export default function LogisticsMonitor() {
                     <Separator />
 
                     {selectedDelivery.status === "unassigned" && (
-                      <div className="flex items-center gap-2">
-                        <Select value={assignRiderId} onValueChange={setAssignRiderId}>
-                          <SelectTrigger className="h-8 text-xs flex-1">
-                            <SelectValue placeholder={riders.filter((r) => r.active).length === 0 ? "No active riders" : "Select rider…"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {riders.filter((r) => r.active).map((r) => (
-                              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          size="sm" className="gap-1 flex-shrink-0"
-                          disabled={!assignRiderId || assignDelivery.isPending}
-                          onClick={() => assignDelivery.mutate({ id: selectedDelivery.id, riderId: assignRiderId })}
-                        >
-                          {assignDelivery.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <User className="h-3.5 w-3.5" />}
-                          Assign
-                        </Button>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Select value={assignRiderId} onValueChange={setAssignRiderId}>
+                            <SelectTrigger className="h-8 text-xs flex-1">
+                              <SelectValue placeholder={riders.filter((r) => r.active).length === 0 ? "No active riders" : "Select rider…"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {riders.filter((r) => r.active).map((r) => (
+                                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm" className="gap-1 flex-shrink-0"
+                            disabled={!assignRiderId || assignDelivery.isPending || (!!assignDestLat !== !!assignDestLng)}
+                            onClick={() => assignDelivery.mutate({
+                              id: selectedDelivery.id,
+                              riderId: assignRiderId,
+                              destLat: assignDestLat.trim(),
+                              destLng: assignDestLng.trim(),
+                            })}
+                          >
+                            {assignDelivery.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <User className="h-3.5 w-3.5" />}
+                            Assign
+                          </Button>
+                        </div>
+                        {/* Optional destination pin. Walk-in invoices carry no address,
+                            so this is the only place a destination can be set — and
+                            without it the arrival geofence never fires. */}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={assignDestLat}
+                            onChange={(e) => setAssignDestLat(e.target.value)}
+                            placeholder="Dest. latitude (optional)"
+                            inputMode="decimal"
+                            className="h-8 text-xs"
+                          />
+                          <Input
+                            value={assignDestLng}
+                            onChange={(e) => setAssignDestLng(e.target.value)}
+                            placeholder="Dest. longitude (optional)"
+                            inputMode="decimal"
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Set a destination to enable automatic delivery confirmation when the rider arrives within 150 m.
+                        </p>
                       </div>
                     )}
 
