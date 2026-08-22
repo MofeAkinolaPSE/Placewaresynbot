@@ -494,7 +494,7 @@ export default function LogisticsCalendar() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 text-red-600 hover:text-red-700 hover:bg-red-100 text-xs px-2"
+                className="h-7 text-red-600 hover:text-red-700 hover:bg-red-100 text-xs px-2 dark:text-red-300"
                 onClick={() => setPreviewOpen(true)}
               >
                 View
@@ -515,7 +515,7 @@ export default function LogisticsCalendar() {
       {/* ------------------------------------------------------------------ */}
       {/* Page header                                                         */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 flex-shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5 sm:py-4 flex-shrink-0">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Logistics Calendar</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -564,11 +564,11 @@ export default function LogisticsCalendar() {
       {/* ------------------------------------------------------------------ */}
       {/* Body: calendar grid + optional side panel                           */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden md:flex-row">
         {/* Calendar column */}
-        <div className="flex-1 flex flex-col overflow-auto p-4 min-h-0">
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3 sm:p-4">
           {/* Month navigation */}
-          <div className="flex items-center gap-3 mb-4">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
               size="icon"
@@ -601,7 +601,7 @@ export default function LogisticsCalendar() {
             {DAY_LABELS.map((d) => (
               <div
                 key={d}
-                className="text-center text-xs font-semibold text-muted-foreground py-2 uppercase tracking-wide"
+                className="truncate py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs"
               >
                 {d}
               </div>
@@ -614,7 +614,7 @@ export default function LogisticsCalendar() {
               <div
                 key={idx}
                 className={cn(
-                  "min-h-[110px] border-r border-b border-border/30 p-1.5 cursor-pointer transition-colors relative group",
+                  "min-h-[64px] sm:min-h-[110px] border-r border-b border-border/30 p-1 sm:p-1.5 cursor-pointer transition-colors relative group",
                   !day.isCurrentMonth && "bg-muted/20",
                   day.isToday && "bg-primary/5",
                   selectedDay?.dateStr === day.dateStr &&
@@ -626,7 +626,7 @@ export default function LogisticsCalendar() {
                 {/* Date number */}
                 <div
                   className={cn(
-                    "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1 select-none",
+                    "text-[11px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full mb-0.5 sm:mb-1 select-none",
                     day.isToday
                       ? "bg-primary text-primary-foreground"
                       : day.isCurrentMonth
@@ -638,7 +638,7 @@ export default function LogisticsCalendar() {
                 </div>
 
                 {/* Event pills — max 3 visible + overflow count */}
-                <div>
+                <div className="hidden sm:block">
                   {day.events.slice(0, 3).map((ev) => (
                     <EventPill
                       key={ev.id}
@@ -652,6 +652,14 @@ export default function LogisticsCalendar() {
                     </p>
                   )}
                 </div>
+
+                {/* Phones get a count instead of pills -- a 50px-wide cell
+                    cannot show a readable label. */}
+                {day.events.length > 0 && (
+                  <span className="mt-0.5 block text-[10px] font-medium leading-none text-primary sm:hidden">
+                    {day.events.length}
+                  </span>
+                )}
 
                 {/* Cold-chain / NAFDAC cell indicators (bottom-right corner) */}
                 {(day.hasColdChain || day.hasNafdac) && (
@@ -679,7 +687,7 @@ export default function LogisticsCalendar() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.18 }}
-              className="w-72 flex-shrink-0 border-l border-border/50 bg-card/60 flex flex-col overflow-y-auto"
+              className="flex max-h-[45vh] w-full flex-shrink-0 flex-col overflow-y-auto border-t border-border/50 bg-card/60 md:max-h-none md:w-72 md:border-l md:border-t-0"
             >
               {/* Panel header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 flex-shrink-0">
@@ -849,7 +857,7 @@ export default function LogisticsCalendar() {
                           </div>
                           <Badge
                             variant="outline"
-                            className="text-[10px] py-0 text-amber-600 border-amber-300 flex-shrink-0"
+                            className="text-[10px] py-0 text-amber-600 border-amber-300 flex-shrink-0 dark:text-amber-300 dark:border-amber-500/30"
                           >
                             {a.days_until_expiry}d
                           </Badge>
@@ -1191,12 +1199,12 @@ function EventDetailBody({
           </Badge>
           {statusCfg && <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>}
           {meta.is_cold_chain && (
-            <Badge variant="outline" className="gap-1 text-blue-600 border-blue-300">
+            <Badge variant="outline" className="gap-1 text-blue-600 border-blue-300 dark:text-blue-300 dark:border-blue-500/30">
               <Snowflake className="h-3 w-3" /> Cold Chain
             </Badge>
           )}
           {meta.is_nafdac_regulated && (
-            <Badge variant="outline" className="gap-1 text-green-600 border-green-300">
+            <Badge variant="outline" className="gap-1 text-green-600 border-green-300 dark:text-green-300 dark:border-green-500/30">
               <ShieldCheck className="h-3 w-3" /> NAFDAC
             </Badge>
           )}
@@ -1251,7 +1259,7 @@ function EventDetailBody({
             {meta.batch_expiry && (
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Expires</span>
-                <span className="font-medium text-right text-amber-600">
+                <span className="font-medium text-right text-amber-600 dark:text-amber-300">
                   {meta.batch_expiry}
                 </span>
               </div>

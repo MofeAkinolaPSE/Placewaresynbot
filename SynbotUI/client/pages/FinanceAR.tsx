@@ -978,7 +978,7 @@ export default function FinanceAR() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-lg font-bold text-green-600">{fmt(cfTotals.total_inflow ?? 0)}</p>
+                    <p className="text-lg font-bold text-green-600 dark:text-green-300">{fmt(cfTotals.total_inflow ?? 0)}</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -988,7 +988,7 @@ export default function FinanceAR() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-lg font-bold text-red-600">{fmt(cfTotals.total_outflow ?? 0)}</p>
+                    <p className="text-lg font-bold text-red-600 dark:text-red-300">{fmt(cfTotals.total_outflow ?? 0)}</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -996,7 +996,7 @@ export default function FinanceAR() {
                     <CardTitle className="text-xs text-muted-foreground">Closing Balance</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className={`text-lg font-bold ${(cfTotals.closing_balance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    <p className={`text-lg font-bold ${(cfTotals.closing_balance ?? 0) >= 0 ? "text-green-600 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
                       {fmt(cfTotals.closing_balance ?? 0)}
                     </p>
                   </CardContent>
@@ -1012,8 +1012,8 @@ export default function FinanceAR() {
                         <TableHead>Week</TableHead>
                         <TableHead>Start Date</TableHead>
                         <TableHead>End Date</TableHead>
-                        <TableHead className="text-right text-green-600">Inflows</TableHead>
-                        <TableHead className="text-right text-red-600">Outflows</TableHead>
+                        <TableHead className="text-right text-green-600 dark:text-green-300">Inflows</TableHead>
+                        <TableHead className="text-right text-red-600 dark:text-red-300">Outflows</TableHead>
                         <TableHead className="text-right">Net</TableHead>
                         <TableHead className="text-right">Running Balance</TableHead>
                       </TableRow>
@@ -1024,8 +1024,8 @@ export default function FinanceAR() {
                           <TableCell className="font-medium">W{row.week}</TableCell>
                           <TableCell className="text-muted-foreground text-xs">{row.start}</TableCell>
                           <TableCell className="text-muted-foreground text-xs">{row.end}</TableCell>
-                          <TableCell className="text-right font-mono text-green-600">{fmt(row.inflow)}</TableCell>
-                          <TableCell className="text-right font-mono text-red-600">{fmt(row.outflow)}</TableCell>
+                          <TableCell className="text-right font-mono text-green-600 dark:text-green-300">{fmt(row.inflow)}</TableCell>
+                          <TableCell className="text-right font-mono text-red-600 dark:text-red-300">{fmt(row.outflow)}</TableCell>
                           <TableCell className={`text-right font-mono font-semibold ${row.net >= 0 ? "text-green-500" : "text-red-500"}`}>
                             {row.net >= 0 ? "+" : ""}{fmt(row.net)}
                           </TableCell>
@@ -1117,7 +1117,7 @@ export default function FinanceAR() {
                     <CardTitle className="text-xs text-muted-foreground">Total Net Pay</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-lg font-bold text-green-600">{fmt(payrollTotals.total_net ?? 0)}</p>
+                    <p className="text-lg font-bold text-green-600 dark:text-green-300">{fmt(payrollTotals.total_net ?? 0)}</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -1165,7 +1165,7 @@ export default function FinanceAR() {
                             <TableCell className="font-medium">{d.department}</TableCell>
                             <TableCell className="text-right">{d.headcount}</TableCell>
                             <TableCell className="text-right font-mono">{fmt(d.total_gross)}</TableCell>
-                            <TableCell className="text-right font-mono text-green-600">{fmt(d.total_net)}</TableCell>
+                            <TableCell className="text-right font-mono text-green-600 dark:text-green-300">{fmt(d.total_net)}</TableCell>
                             <TableCell className="text-right font-mono text-orange-500">{fmt(d.total_overtime_cost)}</TableCell>
                           </TableRow>
                         ))}
@@ -1200,7 +1200,7 @@ export default function FinanceAR() {
                             <TableCell className="text-muted-foreground text-xs">{emp.period || "—"}</TableCell>
                             <TableCell className="text-right font-mono">{fmt(emp.gross_pay)}</TableCell>
                             <TableCell className="text-right font-mono text-red-500">{fmt(emp.deductions)}</TableCell>
-                            <TableCell className="text-right font-mono text-green-600">{fmt(emp.net_pay)}</TableCell>
+                            <TableCell className="text-right font-mono text-green-600 dark:text-green-300">{fmt(emp.net_pay)}</TableCell>
                             <TableCell className="text-right">{emp.overtime_hours}</TableCell>
                           </TableRow>
                         ))}
@@ -1258,10 +1258,10 @@ export default function FinanceAR() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {(["Critical", "High", "Medium", "Low"] as const).map((tier) => {
                   const colors: Record<string, string> = {
-                    Critical: "text-red-600",
+                    Critical: "text-red-600 dark:text-red-300",
                     High: "text-orange-500",
-                    Medium: "text-yellow-600",
-                    Low: "text-green-600",
+                    Medium: "text-yellow-600 dark:text-yellow-300",
+                    Low: "text-green-600 dark:text-green-300",
                   };
                   return (
                     <Card key={tier}>
@@ -1316,7 +1316,7 @@ export default function FinanceAR() {
                                     : c.max_days_overdue > 60
                                     ? "text-orange-500"
                                     : c.max_days_overdue > 30
-                                    ? "text-yellow-600"
+                                    ? "text-yellow-600 dark:text-yellow-300"
                                     : ""
                                 }
                               >

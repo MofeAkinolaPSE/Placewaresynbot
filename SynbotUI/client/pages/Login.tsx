@@ -32,13 +32,13 @@ const Login = () => {
 
   return (
     <div
-      className="relative flex min-h-screen overflow-hidden"
+      className="relative flex min-h-dvh overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       style={{
         background: "#06101e",
         backgroundImage: [
           "radial-gradient(ellipse 80% 55% at 15% 40%, rgba(0,180,180,0.09) 0%, transparent 65%)",
           "radial-gradient(ellipse 65% 75% at 85% 65%, rgba(0,90,200,0.07) 0%, transparent 65%)",
-          "radial-gradient(ellipse 40% 40% at 50% 10%, rgba(47,162,74,0.05) 0%, transparent 60%)",
+          "radial-gradient(ellipse 40% 40% at 50% 10%, rgba(98,199,106,0.05) 0%, transparent 60%)",
           "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.018) 1px, transparent 1px)",
         ].join(", "),
         backgroundSize: "auto, auto, auto, 28px 28px",
@@ -71,7 +71,7 @@ const Login = () => {
         <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(135deg, transparent 30%, rgba(47,162,74,0.05) 60%, rgba(21,104,196,0.05) 100%)",
+            background: "linear-gradient(135deg, transparent 30%, rgba(98,199,106,0.05) 60%, rgba(0,58,145,0.05) 100%)",
           }}
         />
       </div>
@@ -90,32 +90,24 @@ const Login = () => {
         transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
         className="relative hidden flex-col justify-between p-12 lg:flex lg:w-[58%]"
       >
-        {/* Logo */}
-        <div
-          className="relative inline-flex overflow-hidden rounded-2xl px-5 py-3"
-          style={{
-            // Two-tone brand glow (blue #1568C4 + green #2FA24A) echoing the
-            // logo's own blue-to-green wordmark, instead of the old cyan-only chrome.
-            background: "linear-gradient(135deg, rgba(21,104,196,0.09) 0%, rgba(47,162,74,0.07) 100%)",
-            border: "1px solid rgba(47,162,74,0.20)",
-            boxShadow: "0 0 28px rgba(21,104,196,0.14), 0 0 50px rgba(47,162,74,0.09), inset 0 1px 0 rgba(255,255,255,0.08)",
-          }}
-        >
-          {/* Top specular highlight */}
+        {/* Logo — transparent mark on a soft halo. No plate or border: the
+            wordmark should read as part of the hero, not as a pasted-in
+            image sitting in its own box. */}
+        <div className="relative inline-flex px-1 py-1">
           <div
-            className="pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute -inset-6"
             aria-hidden
             style={{
-              background: "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255,255,255,0.09) 0%, transparent 70%)",
+              background:
+                "radial-gradient(ellipse 70% 80% at 35% 50%, rgba(98,199,106,0.16) 0%, transparent 70%)," +
+                "radial-gradient(ellipse 60% 70% at 80% 40%, rgba(0,58,145,0.22) 0%, transparent 72%)",
             }}
           />
           <img
-            src="/placeware-logo.jpg"
+            src="/placeware-logo-onDark.png"
             alt="Placeware Nigeria Limited"
             className="relative h-14 w-auto object-contain"
-            style={{
-              filter: "drop-shadow(0 2px 10px rgba(21,104,196,0.35)) drop-shadow(0 2px 10px rgba(47,162,74,0.25)) drop-shadow(0 0 4px rgba(255,255,255,0.12))",
-            }}
+            style={{ filter: "drop-shadow(0 2px 12px rgba(0,0,0,0.55))" }}
           />
         </div>
 
@@ -186,28 +178,20 @@ const Login = () => {
         >
           {/* Mobile-only logo */}
           <div className="mb-8 flex justify-center lg:hidden">
-            <div
-              className="relative inline-flex overflow-hidden rounded-xl px-4 py-2.5"
-              style={{
-                background: "linear-gradient(135deg, rgba(21,104,196,0.09) 0%, rgba(47,162,74,0.07) 100%)",
-                border: "1px solid rgba(47,162,74,0.20)",
-                boxShadow: "0 0 20px rgba(21,104,196,0.13), 0 0 36px rgba(47,162,74,0.08), inset 0 1px 0 rgba(255,255,255,0.07)",
-              }}
-            >
+            <div className="relative inline-flex">
               <div
-                className="pointer-events-none absolute inset-0"
+                className="pointer-events-none absolute -inset-5"
                 aria-hidden
                 style={{
-                  background: "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255,255,255,0.08) 0%, transparent 70%)",
+                  background:
+                    "radial-gradient(ellipse 70% 80% at 50% 50%, rgba(98,199,106,0.14) 0%, transparent 70%)",
                 }}
               />
               <img
-                src="/placeware-logo.jpg"
+                src="/placeware-logo-onDark.png"
                 alt="Placeware Nigeria Limited"
                 className="relative mx-auto h-11 w-auto object-contain"
-                style={{
-                  filter: "drop-shadow(0 2px 8px rgba(21,104,196,0.30)) drop-shadow(0 2px 8px rgba(47,162,74,0.22)) drop-shadow(0 0 3px rgba(255,255,255,0.1))",
-                }}
+                style={{ filter: "drop-shadow(0 2px 10px rgba(0,0,0,0.5))" }}
               />
             </div>
           </div>
@@ -224,9 +208,9 @@ const Login = () => {
             {/* Nav accent strip — green brand accent for visual variety against the blue logo chrome above */}
             <div
               className="mb-7 flex items-center gap-2 rounded-xl px-4 py-2.5"
-              style={{ background: "linear-gradient(90deg, rgba(47,162,74,0.18) 0%, rgba(21,104,196,0.10) 100%)", border: "1px solid rgba(47,162,74,0.20)" }}
+              style={{ background: "linear-gradient(90deg, rgba(98,199,106,0.18) 0%, rgba(0,58,145,0.10) 100%)", border: "1px solid rgba(98,199,106,0.20)" }}
             >
-              <div className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(47,162,74,0.8)]" />
+              <div className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(98,199,106,0.8)]" />
               <span className="text-[11px] font-semibold uppercase tracking-widest text-green-300/80">
                 Secure Access Portal
               </span>
@@ -292,7 +276,7 @@ const Login = () => {
                 disabled={isLoading}
                 className="mt-1 w-full border-0 font-semibold text-white"
                 style={{
-                  background: "linear-gradient(90deg, #1568C4 0%, #2FA24A 100%)",
+                  background: "linear-gradient(90deg, #003A91 0%, #62C76A 100%)",
                 }}
               >
                 {isLoading ? (

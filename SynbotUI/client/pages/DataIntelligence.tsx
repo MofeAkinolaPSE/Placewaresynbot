@@ -24,27 +24,27 @@ import { api } from "@/lib/api-client";
 function statusBadgeClass(status?: string): string {
   switch (status) {
     case "HEALTHY":
-      return "bg-green-100 text-green-700";
+      return "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300";
     case "REVIEW_REQUIRED":
-      return "bg-amber-100 text-amber-700";
+      return "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300";
     case "FAILED":
     case "ERROR":
-      return "bg-red-100 text-red-700";
+      return "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300";
     default:
-      return "bg-gray-100 text-gray-600";
+      return "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/70";
   }
 }
 
 function qualityBadgeClass(badge?: string): string {
   switch (badge) {
     case "green":
-      return "bg-green-100 text-green-700";
+      return "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300";
     case "amber":
-      return "bg-amber-100 text-amber-700";
+      return "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300";
     case "red":
-      return "bg-red-100 text-red-700";
+      return "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300";
     default:
-      return "bg-gray-100 text-gray-600";
+      return "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/70";
   }
 }
 
@@ -132,7 +132,7 @@ function ExplorerTab() {
                 </span>
               </div>
               {record.quality_reasons?.length > 0 && (
-                <ul className="text-xs text-amber-700 list-disc pl-4 space-y-0.5">
+                <ul className="text-xs text-amber-700 list-disc pl-4 space-y-0.5 dark:text-amber-300">
                   {record.quality_reasons.map((r: string, i: number) => (
                     <li key={i}>{r}</li>
                   ))}
@@ -184,7 +184,7 @@ function ExplorerTab() {
             </div>
           )}
           {selected && !loadingRecord && record && !record.found && (
-            <p className="text-sm text-red-700">Record not found in the Silver view.</p>
+            <p className="text-sm text-red-700 dark:text-red-300">Record not found in the Silver view.</p>
           )}
         </CardContent>
       </Card>
@@ -235,12 +235,12 @@ function CoverageTab() {
                       <Badge
                         className={
                           c.coverage_pct === null
-                            ? "bg-gray-100 text-gray-600"
+                            ? "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/70"
                             : c.coverage_pct >= 95
-                            ? "bg-green-100 text-green-700"
+                            ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300"
                             : c.coverage_pct >= 50
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-red-100 text-red-700"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                            : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"
                         }
                       >
                         {pct(c.coverage_pct)}
@@ -271,7 +271,7 @@ function CoverageTab() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600" /> Known non-extractable fields
+            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-300" /> Known non-extractable fields
           </CardTitle>
           <CardDescription>Sage 50 source files that cannot (or could only partially) be extracted — tribal knowledge written down.</CardDescription>
         </CardHeader>
@@ -436,8 +436,8 @@ function TableClassificationTab() {
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card><CardContent className="pt-4"><div className="text-2xl font-bold">{data?.total_public_tables}</div><div className="text-xs text-muted-foreground">Public tables</div></CardContent></Card>
-        <Card><CardContent className="pt-4"><div className="text-2xl font-bold text-green-700">{counts.Core || 0}</div><div className="text-xs text-muted-foreground">Core</div></CardContent></Card>
-        <Card><CardContent className="pt-4"><div className="text-2xl font-bold text-amber-700">{counts.Unused || 0}</div><div className="text-xs text-muted-foreground">Unused candidates</div></CardContent></Card>
+        <Card><CardContent className="pt-4"><div className="text-2xl font-bold text-green-700 dark:text-green-300">{counts.Core || 0}</div><div className="text-xs text-muted-foreground">Core</div></CardContent></Card>
+        <Card><CardContent className="pt-4"><div className="text-2xl font-bold text-amber-700 dark:text-amber-300">{counts.Unused || 0}</div><div className="text-xs text-muted-foreground">Unused candidates</div></CardContent></Card>
         <Card><CardContent className="pt-4"><div className="text-2xl font-bold text-muted-foreground">{data?.already_archived_count}</div><div className="text-xs text-muted-foreground">Already archived</div></CardContent></Card>
       </div>
 
@@ -445,13 +445,13 @@ function TableClassificationTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-600" /> Unused candidates — review before archiving
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-300" /> Unused candidates — review before archiving
             </CardTitle>
             <CardDescription>Report-only. Never auto-archived — a human must review and write the migration, exactly like the 11 tables migration 086 already archived.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-1.5">
             {data.unused_candidates.map((t: string) => (
-              <Badge key={t} className="bg-amber-100 text-amber-700 font-mono text-[10px]">{t}</Badge>
+              <Badge key={t} className="bg-amber-100 text-amber-700 font-mono text-[10px] dark:bg-amber-500/15 dark:text-amber-300">{t}</Badge>
             ))}
           </CardContent>
         </Card>
@@ -480,10 +480,10 @@ function TableClassificationTab() {
                     <Badge
                       className={
                         t.classification === "Core"
-                          ? "bg-green-100 text-green-700"
+                          ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300"
                           : t.classification === "Referenced"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-red-100 text-red-700"
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                          : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"
                       }
                     >
                       {t.classification}
@@ -512,8 +512,8 @@ export default function DataIntelligence() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-          <Database className="h-5 w-5 text-blue-700" />
+        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center dark:bg-blue-500/15">
+          <Database className="h-5 w-5 text-blue-700 dark:text-blue-300" />
         </div>
         <div>
           <h1 className="text-2xl font-bold">Data Intelligence</h1>

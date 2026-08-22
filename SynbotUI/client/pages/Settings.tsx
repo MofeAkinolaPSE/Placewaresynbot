@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTheme } from "next-themes";
+import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -210,21 +211,23 @@ const Settings = () => {
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-1">Appearance</h2>
           <p className="text-sm text-muted-foreground mb-5">Choose your preferred colour scheme. Takes effect immediately.</p>
-          <div className="pw-surface-base flex items-center justify-between rounded-xl p-4">
+          <div className="pw-surface-base flex flex-wrap items-center justify-between gap-4 rounded-xl p-4">
             <div className="flex items-center gap-3">
-              {isDark ? <Moon className="h-5 w-5 text-muted-foreground" /> : <Sun className="h-5 w-5 text-warning" />}
+              {isDark ? <Moon className="h-5 w-5 text-primary" /> : <Sun className="h-5 w-5 text-warning" />}
               <div>
-                <p className="font-medium text-foreground">Dark Mode</p>
+                <p className="font-medium text-foreground">Theme</p>
                 <p className="text-sm text-muted-foreground">
-                  {isDark ? "Currently using dark theme" : "Currently using light theme"}
+                  {theme === "system"
+                    ? `Following your device (currently ${isDark ? "dark" : "light"})`
+                    : isDark
+                      ? "Currently using dark theme"
+                      : "Currently using light theme"}
                 </p>
               </div>
             </div>
-            <Switch
-              checked={isDark}
-              onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
-              aria-label="Toggle dark mode"
-            />
+            {/* Three-way control here (not the header's two-way flip) so
+                "follow my device" is reachable from Settings. */}
+            <ThemeToggle variant="segmented" />
           </div>
         </div>
       </div>

@@ -1845,7 +1845,7 @@ export default function Compliance() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="w-full lg:grid lg:grid-cols-7">
           <TabsTrigger value="overview" className="gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>

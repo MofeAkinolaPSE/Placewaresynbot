@@ -395,7 +395,7 @@ export default function RiderTrack() {
 
   if (state === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-dvh flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p>Loading delivery…</p>
@@ -406,7 +406,7 @@ export default function RiderTrack() {
 
   if (state === "error") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="min-h-dvh flex items-center justify-center bg-background p-4">
         <Alert variant="destructive" className="max-w-sm">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>{error || "An unexpected error occurred."}</AlertDescription>
@@ -417,7 +417,7 @@ export default function RiderTrack() {
 
   if (state === "delivered") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-6 gap-6">
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-background p-6 gap-6">
         <CheckCircle className="h-20 w-20 text-green-500" />
         <h1 className="text-2xl font-bold text-foreground">Delivery Complete!</h1>
         {autoDelivered && (
@@ -442,7 +442,7 @@ export default function RiderTrack() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 flex flex-col gap-4 max-w-md mx-auto">
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
       {/* Header */}
       <div className="flex items-center justify-between pt-2">
         <div className="flex items-center gap-2">

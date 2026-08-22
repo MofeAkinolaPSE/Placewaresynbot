@@ -814,7 +814,7 @@ export default function SalesCRM() {
           <motion.div {...motionVariants.cardEnter} className="space-y-4 max-w-2xl">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-sm text-muted-foreground">Ranked by deals won + active pipeline activity</p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">Period:</span>
                 <Select value={String(lbDays)} onValueChange={(v) => setLbDays(Number(v))}>
                   <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
@@ -838,7 +838,7 @@ export default function SalesCRM() {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className={`text-xl font-black w-7 text-center flex-shrink-0 ${rep.rank === 1 ? "text-yellow-500" : rep.rank === 2 ? "text-slate-400" : rep.rank === 3 ? "text-amber-600" : "text-muted-foreground"}`}>
+                          <div className={`text-xl font-black w-7 text-center flex-shrink-0 ${rep.rank === 1 ? "text-yellow-500" : rep.rank === 2 ? "text-slate-400" : rep.rank === 3 ? "text-amber-600 dark:text-amber-300" : "text-muted-foreground"}`}>
                             #{rep.rank}
                           </div>
                           <div className="min-w-0">
@@ -971,30 +971,32 @@ export default function SalesCRM() {
                         No targets set for {targetPeriod}. Click "Set Target" to add one.
                       </p>
                     ) : (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-xs text-muted-foreground border-b">
-                            <th className="pb-2 pr-4">Rep</th>
-                            <th className="pb-2 pr-4">Target</th>
-                            <th className="pb-2 pr-4">Actual (Won)</th>
-                            <th className="pb-2">Attainment %</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {((tvaData as any).rows as any[]).map((row: any, i: number) => {
-                            const att = row.attainment_pct ?? null;
-                            const color = att === null ? "text-muted-foreground" : att >= 100 ? "text-green-600" : att >= 70 ? "text-yellow-600" : "text-red-500";
-                            return (
-                              <tr key={i} className="border-b border-border/40 last:border-0">
-                                <td className="py-2 pr-4 font-mono text-xs">{repLabel(row.rep_id)}</td>
-                                <td className="py-2 pr-4 font-mono">{row.target_value != null ? formatCurrency(row.target_value) : <span className="text-muted-foreground">—</span>}</td>
-                                <td className="py-2 pr-4 font-mono">{formatCurrency(row.actual_value)}</td>
-                                <td className={`py-2 font-bold ${color}`}>{att !== null ? `${att}%` : "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                      <div className="w-full overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-xs text-muted-foreground border-b">
+                              <th className="pb-2 pr-4">Rep</th>
+                              <th className="pb-2 pr-4">Target</th>
+                              <th className="pb-2 pr-4">Actual (Won)</th>
+                              <th className="pb-2">Attainment %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {((tvaData as any).rows as any[]).map((row: any, i: number) => {
+                              const att = row.attainment_pct ?? null;
+                              const color = att === null ? "text-muted-foreground" : att >= 100 ? "text-green-600 dark:text-green-300" : att >= 70 ? "text-yellow-600 dark:text-yellow-300" : "text-red-500";
+                              return (
+                                <tr key={i} className="border-b border-border/40 last:border-0">
+                                  <td className="py-2 pr-4 font-mono text-xs">{repLabel(row.rep_id)}</td>
+                                  <td className="py-2 pr-4 font-mono">{row.target_value != null ? formatCurrency(row.target_value) : <span className="text-muted-foreground">—</span>}</td>
+                                  <td className="py-2 pr-4 font-mono">{formatCurrency(row.actual_value)}</td>
+                                  <td className={`py-2 font-bold ${color}`}>{att !== null ? `${att}%` : "—"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </CardContent>
                 </Card>

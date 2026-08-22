@@ -725,8 +725,8 @@ function ProjectList({
 
 // ── Kanban column accent colours (Placeware brand) ─────────────────────────
 const STAGE_COLUMN: Record<string, { bg: string; count: string }> = {
-  port_clearing:          { bg: "#2740AE", count: "rgba(255,255,255,0.22)" },
-  anti_room_received:     { bg: "#256CAE", count: "rgba(255,255,255,0.22)" },
+  port_clearing:          { bg: "#003A91", count: "rgba(255,255,255,0.22)" },
+  anti_room_received:     { bg: "#0A5BC4", count: "rgba(255,255,255,0.22)" },
   cold_room_stacked:      { bg: "#02646F", count: "rgba(255,255,255,0.22)" },
   nafdac_sampling:        { bg: "#d97706", count: "rgba(255,255,255,0.22)" },
   released_for_issuing:   { bg: "#16a34a", count: "rgba(255,255,255,0.22)" },
@@ -735,25 +735,25 @@ const STAGE_COLUMN: Record<string, { bg: string; count: string }> = {
 };
 
 const QC_CHIP: Record<string, string> = {
-  passed:    "bg-emerald-50 text-emerald-700 border-emerald-200",
-  failed:    "bg-red-50 text-red-700 border-red-200",
-  in_review: "bg-sky-50 text-sky-700 border-sky-200",
-  waived:    "bg-amber-50 text-amber-700 border-amber-200",
-  pending:   "bg-slate-100 text-slate-500 border-slate-200",
+  passed:    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30",
+  failed:    "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30",
+  in_review: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
+  waived:    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
+  pending:   "bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/10 dark:text-white/60 dark:border-white/15",
 };
 
 const NAFDAC_CHIP: Record<string, string> = {
-  released:    "bg-emerald-50 text-emerald-700 border-emerald-200",
-  in_progress: "bg-sky-50 text-sky-700 border-sky-200",
-  pending:     "bg-slate-100 text-slate-500 border-slate-200",
+  released:    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30",
+  in_progress: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
+  pending:     "bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/10 dark:text-white/60 dark:border-white/15",
 };
 
 const ACTIVITY_CHIP: Record<string, string> = {
-  restock:        "bg-blue-50 text-blue-700 border-blue-200",
-  qc:             "bg-teal-50 text-teal-700 border-teal-200",
-  delivery:       "bg-cyan-50 text-cyan-700 border-cyan-200",
-  client_request: "bg-amber-50 text-amber-700 border-amber-200",
-  cold_chain:     "bg-indigo-50 text-indigo-700 border-indigo-200",
+  restock:        "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30",
+  qc:             "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/15 dark:text-teal-300 dark:border-teal-500/30",
+  delivery:       "bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-300 dark:border-cyan-500/30",
+  client_request: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
+  cold_chain:     "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30",
 };
 
 // ── Per-card expanded state ──────────────────────────────────────────────────
@@ -785,7 +785,7 @@ function KanbanCard({
   const moving = movingProjectId === project.id;
   const qcChip  = QC_CHIP[project.quality_check_status || "pending"]  || QC_CHIP.pending;
   const nafChip = NAFDAC_CHIP[project.nafdac_sampling_status || "pending"] || NAFDAC_CHIP.pending;
-  const actChip = ACTIVITY_CHIP[project.activity_type || ""] || "bg-slate-100 text-slate-600 border-slate-200";
+  const actChip = ACTIVITY_CHIP[project.activity_type || ""] || "bg-slate-100 text-slate-600 border-slate-200 dark:bg-white/10 dark:text-white/70 dark:border-white/15";
   const isComplete = stageKey === "delivered_to_end_users";
 
   // Left border accent based on QC
@@ -857,7 +857,7 @@ function KanbanCard({
             </button>
           )}
           {isComplete && (
-            <span className="text-[11px] font-medium text-emerald-600">✓ Delivered</span>
+            <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-300">✓ Delivered</span>
           )}
         </div>
       </div>
@@ -943,7 +943,7 @@ function StageTransitionBoard({
   const grouped = Object.keys(STAGE_LABELS).map((stageKey) => ({
     stageKey,
     stage: STAGE_LABELS[stageKey],
-    col: STAGE_COLUMN[stageKey] || { bg: "#2740AE", count: "rgba(255,255,255,0.22)" },
+    col: STAGE_COLUMN[stageKey] || { bg: "#003A91", count: "rgba(255,255,255,0.22)" },
     items: projects.filter((p) => (p.workflow_stage || "port_clearing") === stageKey),
   }));
 

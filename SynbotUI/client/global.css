@@ -12,129 +12,143 @@
    * A different format will require also updating the theme in tailwind.config.ts.
   */
   :root {
-    /* ── Placeware Light — matches the real logo: azure blue + fresh green ── */
-    --background: 210 17% 98%;           /* #F8F9FA */
-    --foreground: 156 14% 7%;            /* #101513 */
+    /* ── Placeware Light — placewarenigeria.com palette ──────────────────
+       primary  #003A91  deep brand blue
+       secondary#62C76A  fresh brand green
+       accent   #02646F  deep teal
+    */
+    --background: 0 0% 100%;             /* #FFFFFF */
+    --foreground: 216 30% 12%;           /* near-black w/ a blue cast */
 
-    --card: 0 0% 100%;                   /* #FFFFFF */
-    --card-foreground: 156 14% 7%;
+    --card: 0 0% 100%;
+    --card-foreground: 216 30% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 156 14% 7%;
+    --popover-foreground: 216 30% 12%;
 
-    --primary: 211 79% 43%;              /* #1568C4 — brand blue, matches logo's "PLACE" */
+    --primary: 216 100% 28%;             /* #003A91 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 134 55% 42%;            /* #2FA24A — brand green, matches logo's "WARE" */
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 125 47% 58%;            /* #62C76A */
+    --secondary-foreground: 216 30% 12%;
 
-    --muted: 225 47% 96%;                /* #EFEFFD — light blue panel */
-    --muted-foreground: 0 0% 46%;        /* #767676 */
+    --muted: 216 40% 96%;                /* tinted blue-grey panel */
+    --muted-foreground: 216 12% 40%;     /* ≈ #5B6472 body grey */
 
-    --accent: 200 91% 52%;               /* #14AAF5 — cyan accent (informational, distinct from brand) */
+    --accent: 186 96% 22%;               /* #02646F teal */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 6 63% 46%;            /* #C0392B */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 223 9% 85%;                /* #D6D8DD */
+    --border: 216 24% 89%;
     --input: 0 0% 100%;
-    --ring: 211 79% 43%;
+    --ring: 216 100% 28%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 156 14% 7%;
+    --warning: 42 98% 59%;               /* #FDC332 */
+    --warning-foreground: 216 30% 12%;
 
-    --success: 134 47% 55%;              /* nudged toward brand green family, still its own status token */
+    --success: 125 47% 45%;              /* brand green, darkened for text contrast */
     --success-foreground: 0 0% 100%;
 
-    --info: 200 91% 52%;                 /* #14AAF5 */
+    --info: 186 96% 26%;                 /* teal family */
     --info-foreground: 0 0% 100%;
 
-    --radius: 0.75rem;
+    --radius: 0.875rem;
 
     --background-0: 0 0% 100%;
-    --background-1: 210 17% 98%;         /* #F8F9FA */
-    --background-2: 225 47% 96%;         /* #EFEFFD */
-    --background-3: 223 9% 85%;          /* #D6D8DD */
+    --background-1: 216 40% 98%;
+    --background-2: 216 40% 96%;
+    --background-3: 216 24% 89%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(211 79% 43%) 0%, hsl(134 55% 42%) 100%);
-    --gradient-soft: linear-gradient(135deg, hsl(211 79% 43% / 0.10) 0%, hsl(134 55% 42% / 0.10) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(216 100% 28%) 0%, hsl(186 96% 22%) 55%, hsl(125 47% 58%) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(216 100% 28% / 0.10) 0%, hsl(125 47% 58% / 0.10) 100%);
 
-    --shadow-elevation-1: 0 1px 4px hsl(211 63% 10% / 0.06), 0 2px 8px hsl(211 63% 10% / 0.04);
-    --shadow-elevation-2: 0 4px 16px hsl(211 63% 10% / 0.08), 0 8px 24px hsl(211 63% 10% / 0.05);
-    --shadow-elevation-3: 0 12px 40px hsl(211 63% 10% / 0.12), 0 20px 52px hsl(211 63% 10% / 0.07);
-    --shadow-glow: 0 0 28px hsl(211 79% 43% / 0.28);
+    --shadow-elevation-1: 0 1px 2px hsl(216 60% 12% / 0.05), 0 2px 8px hsl(216 60% 12% / 0.05);
+    --shadow-elevation-2: 0 6px 18px hsl(216 60% 12% / 0.08), 0 12px 32px hsl(216 60% 12% / 0.06);
+    --shadow-elevation-3: 0 14px 44px hsl(216 60% 12% / 0.13), 0 24px 60px hsl(216 60% 12% / 0.08);
+    --shadow-glow: 0 0 28px hsl(216 100% 28% / 0.25);
 
-    --sidebar-background: 211 79% 26%;   /* #0B3D78 — deep brand blue, hue-corrected */
+    --sidebar-background: 216 100% 18%;  /* deepened #003A91 */
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 134 55% 48%;      /* brand green for active nav items -- was cyan */
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 211 79% 30%;       /* darker primary for hover */
+    --sidebar-primary: 125 47% 58%;      /* brand green marks the active item */
+    --sidebar-primary-foreground: 216 30% 12%;
+    --sidebar-accent: 216 100% 24%;
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 211 70% 35%;
-    --sidebar-ring: 134 55% 48%;
+    --sidebar-border: 216 60% 30%;
+    --sidebar-ring: 125 47% 58%;
   }
 
   .dark {
-    /* ── Placeware Dark — same blue+green brand pair, brightened for dark bg ── */
-    --background: 220 40% 10%;
-    --foreground: 210 17% 95%;
+    /* ── Placeware Dark — built on BeatStars Studio's dark spec ────────────
+       Their tokens, read off studio.beatstars.com's stylesheet:
+         page      #0A0A09   card #141414   raised #1A1A1A
+         lines     #262626 / #383838        text #FFF / #9F9F9F / #707070
+         action    #006AFF (hover #38F)     shadows are hard black @ 75%
+       Flat near-black neutrals, hairline borders, no gradient washes and no
+       translucency -- depth comes from a lighter fill, not a glow.
+       Placeware's brand blue and green replace their blue/violet accents. */
 
-    --card: 220 38% 14%;
-    --card-foreground: 210 17% 95%;
+    --background: 60 5% 4%;              /* #0A0A09 */
+    --foreground: 0 0% 100%;
 
-    --popover: 220 38% 14%;
-    --popover-foreground: 210 17% 95%;
+    --card: 0 0% 8%;                     /* #141414 */
+    --card-foreground: 0 0% 100%;
 
-    --primary: 211 82% 62%;              /* brightened #1568C4 for dark bg */
+    --popover: 0 0% 10%;                 /* #1A1A1A — raised above cards */
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 215 100% 52%;             /* brand blue at BeatStars' action weight */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 134 58% 58%;            /* brightened #2FA24A for dark bg */
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 125 47% 58%;            /* #62C76A holds up unchanged on black */
+    --secondary-foreground: 60 5% 4%;
 
-    --muted: 220 30% 20%;
-    --muted-foreground: 225 20% 68%;
+    --muted: 0 0% 15%;                   /* #262626 */
+    --muted-foreground: 0 0% 62%;        /* #9F9F9F */
 
-    --accent: 200 91% 60%;               /* brighter cyan on dark bg */
-    --accent-foreground: 0 0% 100%;
+    --accent: 186 60% 45%;               /* brand teal, lifted to read on black */
+    --accent-foreground: 60 5% 4%;
 
-    --destructive: 6 63% 55%;
+    --destructive: 0 85% 60%;            /* #F04242 */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 25% 25%;
-    --input: 220 35% 16%;
-    --ring: 211 82% 62%;
+    --border: 0 0% 22%;                  /* #383838 */
+    --input: 0 0% 10%;
+    --ring: 215 100% 62%;
 
-    --warning: 38 92% 52%;
-    --warning-foreground: 220 40% 10%;
+    --warning: 47 100% 60%;              /* #FFD633 */
+    --warning-foreground: 60 5% 4%;
 
-    --success: 134 47% 58%;
-    --success-foreground: 220 40% 10%;
+    --success: 125 47% 58%;
+    --success-foreground: 60 5% 4%;
 
-    --info: 200 91% 60%;
-    --info-foreground: 0 0% 100%;
+    --info: 215 100% 62%;
+    --info-foreground: 60 5% 4%;
 
-    --background-0: 220 40% 10%;
-    --background-1: 220 38% 14%;
-    --background-2: 220 32% 18%;
-    --background-3: 220 28% 24%;
+    --background-0: 60 5% 4%;            /* page */
+    --background-1: 0 0% 8%;             /* card */
+    --background-2: 0 0% 10%;            /* raised */
+    --background-3: 0 0% 15%;            /* input wells, hover fills */
 
-    --gradient-primary: linear-gradient(135deg, hsl(211 82% 62%) 0%, hsl(134 58% 58%) 100%);
-    --gradient-soft: linear-gradient(135deg, hsl(211 82% 62% / 0.16) 0%, hsl(134 58% 58% / 0.16) 100%);
+    /* Near-flat: the reference paints solid action colour, not a ramp. */
+    --gradient-primary: linear-gradient(135deg, hsl(215 100% 52%) 0%, hsl(215 100% 46%) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(215 100% 52% / 0.12) 0%, hsl(125 47% 58% / 0.10) 100%);
 
-    --shadow-elevation-1: 0 2px 8px hsl(220 60% 2% / 0.25);
-    --shadow-elevation-2: 0 16px 40px hsl(220 60% 2% / 0.38);
-    --shadow-elevation-3: 0 24px 56px hsl(220 60% 2% / 0.48);
-    --shadow-glow: 0 0 24px hsl(211 82% 62% / 0.30);
+    /* Hard black shadows, matching --bs-elevation-*. */
+    --shadow-elevation-1: 0 1px 2px hsl(0 0% 0% / 0.60);
+    --shadow-elevation-2: 0 8px 16px hsl(0 0% 0% / 0.55);
+    --shadow-elevation-3: 0 12px 48px hsl(0 0% 0% / 0.75);
+    --shadow-glow: 0 0 0 1px hsl(215 100% 52% / 0.35);
 
-    --sidebar-background: 211 45% 12%;
-    --sidebar-foreground: 210 17% 95%;
-    --sidebar-primary: 134 58% 58%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 211 35% 22%;
-    --sidebar-accent-foreground: 210 17% 95%;
-    --sidebar-border: 211 30% 22%;
-    --sidebar-ring: 134 58% 58%;
+    --sidebar-background: 0 0% 5%;       /* one step off the page, like their rail */
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 125 47% 58%;
+    --sidebar-primary-foreground: 60 5% 4%;
+    --sidebar-accent: 0 0% 13%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 215 100% 62%;
   }
 }
 
@@ -143,16 +157,82 @@
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground antialiased;
-    background-image:
-      radial-gradient(circle at 18% 18%, hsl(var(--primary) / 0.06), transparent 45%),
-      radial-gradient(circle at 82% 0%, hsl(var(--secondary) / 0.05), transparent 35%);
+  html {
+    /* viewport-fit=cover lets the page paint under the Dynamic Island and the
+       home indicator, so every fixed/sticky edge below re-adds the inset. */
+    -webkit-text-size-adjust: 100%;
   }
 
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Safari's collapsing toolbar makes 100vh taller than what you can see;
+       dvh tracks the visible height instead. */
+    min-height: 100dvh;
+    /* iOS paints a grey flash on every tap without this. */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    background-image:
+      radial-gradient(circle at 18% 12%, hsl(var(--primary) / 0.07), transparent 46%),
+      radial-gradient(circle at 84% 0%, hsl(var(--accent) / 0.05), transparent 38%),
+      radial-gradient(circle at 92% 96%, hsl(var(--secondary) / 0.05), transparent 40%);
+    background-attachment: fixed;
+  }
+
+  /* The reference dashboard is flat: solid near-black, no ambient colour.
+     Strip the light theme's radial washes rather than dimming them. */
+  .dark body {
+    background-image: none;
+  }
+
+  /* Modern display type: tighter tracking as headings grow. */
+  :where(h1, h2, h3) {
+    @apply font-semibold tracking-tight;
+  }
+  :where(h1) {
+    letter-spacing: -0.022em;
+  }
+
+  /* One consistent, visible focus ring instead of the browser default. */
+  :where(a, button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+    @apply outline-none ring-2 ring-ring/60 ring-offset-2 ring-offset-background;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+  }
+
+  /* Slim, themed scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* `overflow-wrap: anywhere` also shrinks an element's min-content width to
+     a single character, which is what let badges collapse into "Act / ive"
+     and split emails as "placeware.co / m". `break-word` still prevents a
+     long token from overflowing, but only breaks as a last resort and leaves
+     intrinsic sizing intact. */
   :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   pre,
@@ -165,6 +245,14 @@
 @layer utilities {
   .pw-page-surface {
     @apply relative isolate min-h-screen bg-gradient-to-br from-background via-muted/40 to-background;
+  }
+
+  .dark .pw-page-surface {
+    @apply bg-background bg-none;
+  }
+
+  .dark .pw-page-surface::before {
+    background: none;
   }
 
   .pw-page-surface::before {
@@ -180,6 +268,23 @@
     box-shadow: var(--shadow-elevation-1);
   }
 
+  /* Dark: opaque fills + hairline rules, no translucency or blur -- depth
+     reads from the step up in lightness, exactly as BeatStars does it. */
+  .dark .pw-surface-base {
+    @apply border-white/[0.08] bg-surface-1;
+    box-shadow: none;
+  }
+
+  .dark .pw-surface-interactive,
+  .dark .pw-surface-floating {
+    @apply border-white/[0.08] bg-surface-1 backdrop-blur-none;
+  }
+
+  .dark .pw-surface-floating {
+    @apply bg-surface-2;
+    box-shadow: var(--shadow-elevation-3);
+  }
+
   .pw-surface-interactive {
     @apply rounded-2xl border border-border/50 bg-background/70 backdrop-blur-md;
     box-shadow: var(--shadow-elevation-2);
@@ -188,5 +293,126 @@
   .pw-surface-floating {
     @apply rounded-xl border border-border/40 bg-background/80 backdrop-blur-lg;
     box-shadow: var(--shadow-elevation-3);
+  }
+}
+
+@layer utilities {
+  /* Brand text and rules ------------------------------------------------ */
+  .pw-gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .pw-brand-rule {
+    height: 3px;
+    border-radius: 999px;
+    background: var(--gradient-primary);
+  }
+
+  /* Card that lifts on hover — the default "modern panel". */
+  .pw-card-elevated {
+    @apply rounded-2xl border border-border/60 bg-card transition-all duration-200 ease-smooth;
+    box-shadow: var(--shadow-elevation-1);
+  }
+  .pw-card-elevated:hover {
+    @apply -translate-y-0.5 border-primary/25;
+    box-shadow: var(--shadow-elevation-2);
+  }
+
+  /* Frosted panel over the page gradient. */
+  .pw-glass {
+    @apply rounded-2xl border border-white/25 bg-background/65 backdrop-blur-xl;
+    box-shadow: var(--shadow-elevation-2);
+  }
+
+  /* Accent bar down the left edge of a highlighted panel. */
+  .pw-accent-edge {
+    @apply relative overflow-hidden;
+  }
+  .pw-accent-edge::before {
+    content: "";
+    @apply pointer-events-none absolute inset-y-0 left-0 w-1;
+    background: var(--gradient-primary);
+  }
+
+  /* Status pills in the brand palette. */
+  .pw-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
+  }
+  .pw-chip-primary {
+    @apply border-primary/25 bg-primary/10 text-primary;
+  }
+  .pw-chip-success {
+    @apply border-secondary/40 bg-secondary/15 text-success;
+  }
+  .pw-chip-accent {
+    @apply border-accent/25 bg-accent/10 text-accent;
+  }
+
+  /* Placeholder shimmer while data loads. */
+  .pw-skeleton {
+    @apply rounded-md bg-muted;
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--background) / 0.6) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: pw-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pw-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pw-skeleton { animation: none; }
+    .pw-card-elevated:hover { transform: none; }
+  }
+}
+
+@layer utilities {
+  /* iPhone safe areas. On a 16 Pro Max that's ~59px of Dynamic Island at the
+     top and 34px of home indicator at the bottom in portrait, plus 59px on
+     the leading/trailing edge in landscape. */
+  .pw-safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .pw-safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .pw-safe-x {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  /* For fixed elements that position against an edge rather than pad it. */
+  .pw-safe-inset-bottom {
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .pw-safe-inset-right {
+    right: calc(1rem + env(safe-area-inset-right));
+  }
+
+  /* Touch targets: Apple's HIG floor is 44x44pt. Opt-in via .pw-tap (the
+     Button primitive carries it) rather than a blanket button rule -- a
+     global min-height would push tab triggers out of their 40px strip and
+     stretch icon buttons sitting inside table rows. */
+  @media (pointer: coarse) {
+    .pw-tap {
+      min-height: 44px;
+    }
+
+    .pw-tap-icon {
+      min-width: 44px;
+      min-height: 44px;
+    }
   }
 }

@@ -23,6 +23,7 @@ import {
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 type UserRecord = {
   id: string;
@@ -57,6 +58,23 @@ function passwordStrengthError(pwd: string): string | null {
   if (![...SPECIAL_CHARS].some((c) => pwd.includes(c)))
     return `At least one special character (${SPECIAL_CHARS})`;
   return null;
+}
+
+/**
+ * Addresses are a single unbreakable token, so a narrow card breaks them
+ * mid-word ("placeware.co / m"). A <wbr> at the @ gives the browser a sane
+ * break point to prefer instead.
+ */
+function EmailText({ email, className }: { email: string; className?: string }) {
+  const at = email.indexOf("@");
+  if (at < 0) return <span className={className}>{email}</span>;
+  return (
+    <span className={className} title={email}>
+      {email.slice(0, at)}
+      <wbr />
+      {email.slice(at)}
+    </span>
+  );
 }
 
 const AdminUsers = () => {
@@ -322,16 +340,35 @@ const AdminUsers = () => {
         {isMobile ? (
           <div className="space-y-3">
             {users.map((user) => (
-              <div key={user.id} className="rounded-lg border bg-card p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="font-medium break-all leading-tight">{user.email}</p>
-                  <span className="rounded-full border px-2 py-0.5 text-xs capitalize">{user.is_active ? "active" : "inactive"}</span>
+              <div key={user.id} className="rounded-xl border border-border/60 bg-card p-3.5">
+                <div className="flex items-start justify-between gap-2">
+                  <EmailText
+                    email={user.email}
+                    className="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:break-word]"
+                  />
+                  {/* shrink-0 + nowrap: without them the pill compresses to
+                      its narrowest word and stacks "Act / ive". */}
+                  <span
+                    className={cn(
+                      "shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
+                      user.is_active
+                        ? "border-secondary/40 bg-secondary/15 text-success"
+                        : "border-border bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {user.is_active ? "active" : "inactive"}
+                  </span>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">Roles: {user.roles.join(", ")}</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Roles: <span className="text-foreground/80">{user.roles.join(", ") || "—"}</span>
+                </p>
+                {/* Buttons share the row when both fit and wrap to their own
+                    line when they don't -- "Reset Password" cannot shrink. */}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="min-w-[7.5rem] flex-1"
                     onClick={() => setSelectedUserId(user.id)}
                   >
                     {user.is_active ? "Deactivate" : "Activate"}
@@ -339,6 +376,7 @@ const AdminUsers = () => {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="min-w-[7.5rem] flex-1"
                     onClick={() => setPasswordUserId(user.id)}
                   >
                     Reset Password
@@ -361,7 +399,9 @@ const AdminUsers = () => {
               <TableBody>
                 {users.map((user) => (
                   <TableRow key={user.id}>
-                    <TableCell className="sticky left-0 z-10 bg-background font-medium">{user.email}</TableCell>
+                    <TableCell className="sticky left-0 z-10 bg-background font-medium">
+                      <EmailText email={user.email} />
+                    </TableCell>
                     <TableCell>{user.roles.join(", ")}</TableCell>
                     <TableCell>{user.is_active ? "active" : "inactive"}</TableCell>
                     <TableCell className="space-x-2">

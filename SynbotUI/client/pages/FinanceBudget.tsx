@@ -353,7 +353,7 @@ export default function FinanceBudget() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 text-xs text-red-600"
+                          className="h-7 text-xs text-red-600 dark:text-red-300"
                           onClick={() => setDeleteTarget(t)}
                         >
                           <Trash2 className="w-3 h-3" />

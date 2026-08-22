@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Menu, Circle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import ThemeToggle from "./ThemeToggle";
 
 const Layout = () => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -27,30 +28,34 @@ const Layout = () => {
   const onlineUsers = presenceData?.users ?? [];
 
   return (
-    <div className="pw-page-surface flex">
+    <div className="pw-page-surface pw-safe-top flex w-full overflow-x-hidden">
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
-      <main className="relative z-10 min-h-screen flex-1 bg-transparent lg:ml-64">
+      <main className="relative z-10 min-h-dvh w-full min-w-0 flex-1 bg-transparent lg:ml-64">
         {/* Slim diagnostic top bar */}
-        <div className="pw-surface-interactive mx-4 mt-4 flex items-center justify-between px-4 py-2.5 text-xs text-muted-foreground sm:mx-6 sm:px-6">
+        <div className="pw-surface-interactive sticky top-[env(safe-area-inset-top)] z-20 mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground sm:mx-6 sm:mt-4 sm:px-6 sm:py-2.5">
           <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="mr-1 lg:hidden"
+              className="mr-1 px-2 lg:hidden"
               onClick={() => setMobileNavOpen(true)}
+              aria-label="Open navigation"
             >
-              <Menu className="mr-2 h-4 w-4" />
-              Menu
+              <Menu className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Menu</span>
             </Button>
             <span className="font-semibold text-foreground">ACE</span>
-            <span className="opacity-40">·</span>
-            <span>Role: {hasRole ? role : <span className="text-destructive">unavailable</span>}</span>
+            <span className="hidden opacity-40 sm:inline">·</span>
+            <span className="hidden sm:inline">
+              Role: {hasRole ? role : <span className="text-destructive">unavailable</span>}
+            </span>
             {typeof wpUserId === "number" && (
-              <span className="opacity-50">(WP User: {wpUserId})</span>
+              <span className="hidden opacity-50 lg:inline">(WP User: {wpUserId})</span>
             )}
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <div className="relative">
               <button
                 type="button"
@@ -91,7 +96,7 @@ const Layout = () => {
           </div>
         </div>
         {/* Page content */}
-        <div className="relative z-10 px-3 pb-8 pt-5 sm:px-6">
+        <div className="relative z-10 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-5">
           <Outlet />
         </div>
       </main>

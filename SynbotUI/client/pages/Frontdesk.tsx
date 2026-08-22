@@ -123,7 +123,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 function StatusPill({ status }: { status: string }) {
-  const s = STATUS_LABELS[status] ?? { label: status, color: "bg-gray-100 text-gray-600" };
+  const s = STATUS_LABELS[status] ?? { label: status, color: "bg-gray-100 text-gray-600 dark:bg-gray-500/15 dark:text-gray-300" };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
       {s.label}
@@ -206,32 +206,32 @@ function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 <title>Invoice ${invoice.invoice_number}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',Arial,sans-serif;padding:40px;color:#1a1a2e;background:#fff;font-size:13px}
+  body{font-family:'Segoe UI',Arial,sans-serif;padding:40px;color:#12203A;background:#fff;font-size:13px}
   .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:24px}
   .company-block img{height:44px;display:block;margin-bottom:8px}
-  .company-block .name{font-size:16px;font-weight:800;color:#1568C4}
+  .company-block .name{font-size:16px;font-weight:800;color:#003A91}
   .company-block .line{font-size:11px;color:#666;line-height:1.5}
-  .inv-title{font-size:28px;font-weight:800;text-align:right;background:linear-gradient(90deg,#1568C4,#2FA24A);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .inv-title{font-size:28px;font-weight:800;text-align:right;background:linear-gradient(90deg,#003A91,#62C76A);-webkit-background-clip:text;background-clip:text;color:transparent}
   .inv-meta{text-align:right;font-size:12px;color:#555;margin-top:4px}
-  .inv-meta strong{color:#1a1a2e}
-  .divider{height:2px;background:linear-gradient(90deg,#1568C4,#2FA24A);margin:16px 0;border-radius:2px}
+  .inv-meta strong{color:#12203A}
+  .divider{height:2px;background:linear-gradient(90deg,#003A91,#62C76A);margin:16px 0;border-radius:2px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:16px 0}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin:16px 0}
   .section-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px}
-  .field{font-size:13px;color:#1a1a2e;margin-bottom:2px;line-height:1.5}
+  .field{font-size:13px;color:#12203A;margin-bottom:2px;line-height:1.5}
   .muted{color:#aaa}
   table{width:100%;border-collapse:collapse;margin:20px 0}
-  th{background:#1568C4;color:#fff;padding:8px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase}
+  th{background:#003A91;color:#fff;padding:8px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase}
   th:nth-child(1){text-align:center}
   th:nth-child(6),th:nth-child(7){text-align:right}
-  tbody tr:nth-child(even){background:#f8f9ff}
+  tbody tr:nth-child(even){background:#F2F6FC}
   .totals{margin-left:auto;width:280px;margin-top:8px}
   .totals-row{display:flex;justify-content:space-between;padding:5px 8px;font-size:13px}
-  .totals-row.grand{background:#2FA24A;color:#fff;font-weight:700;font-size:15px;border-radius:6px;margin-top:4px;padding:10px 8px}
-  .compliance-note{margin:20px 0;padding:12px 16px;background:#f8f9ff;border-radius:8px;border-left:4px solid #2FA24A;font-size:12px;font-weight:600;color:#1a1a2e}
+  .totals-row.grand{background:#62C76A;color:#fff;font-weight:700;font-size:15px;border-radius:6px;margin-top:4px;padding:10px 8px}
+  .compliance-note{margin:20px 0;padding:12px 16px;background:#F2F6FC;border-radius:8px;border-left:4px solid #62C76A;font-size:12px;font-weight:600;color:#12203A}
   .sig-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:24px 0 16px}
   .sig-cell{font-size:11px}
-  .sig-name{font-weight:600;color:#1a1a2e;margin-bottom:22px;min-height:14px}
+  .sig-name{font-weight:600;color:#12203A;margin-bottom:22px;min-height:14px}
   .sig-line{border-top:1px solid #999;padding-top:4px;color:#888}
   .footer{margin-top:20px;padding-top:14px;border-top:1px solid #eee;font-size:10.5px;color:#999;display:flex;justify-content:space-between;gap:24px}
   .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#d1fae5;color:#065f46}
@@ -240,7 +240,7 @@ function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 </head><body>
 <div class="header">
   <div class="company-block">
-    <img src="${window.location.origin}/placeware-logo.jpg" alt="Placeware">
+    <img src="${window.location.origin}/placeware-logo.png" alt="Placeware">
     <div class="line">${COMPANY_INFO.address}<br>${COMPANY_INFO.phones.join(" · ")}<br>${COMPANY_INFO.email} · ${COMPANY_INFO.website}</div>
   </div>
   <div>
@@ -333,7 +333,7 @@ function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 </div>
 
 <div class="no-print" style="margin-top:24px;text-align:center">
-  <button onclick="window.print()" style="background:linear-gradient(90deg,#1568C4,#2FA24A);color:#fff;padding:12px 32px;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600">🖨️ Print / Save as PDF</button>
+  <button onclick="window.print()" style="background:linear-gradient(90deg,#003A91,#62C76A);color:#fff;padding:12px 32px;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600">🖨️ Print / Save as PDF</button>
 </div>
 <script>setTimeout(()=>window.print(),400);</script>
 </body></html>`);
@@ -478,7 +478,7 @@ function ClientHistoryPanel({ walkInId, onClose }: { walkInId: string; onClose: 
           {client?.phone   && <div><span className="text-muted-foreground">Phone:</span> {client.phone}</div>}
           {client?.email   && <div><span className="text-muted-foreground">Email:</span> {client.email}</div>}
           <div><span className="text-muted-foreground">Visits:</span> <strong>{(data as any)?.visit_count}</strong></div>
-          <div><span className="text-muted-foreground">Total Spend:</span> <strong className="text-green-600">{fmt((data as any)?.total_spend ?? 0)}</strong></div>
+          <div><span className="text-muted-foreground">Total Spend:</span> <strong className="text-green-600 dark:text-green-300">{fmt((data as any)?.total_spend ?? 0)}</strong></div>
         </div>
         {invoices.length > 0 && (
           <div>
@@ -516,9 +516,9 @@ function ClientHistoryPanel({ walkInId, onClose }: { walkInId: string; onClose: 
 // ---------------------------------------------------------------------------
 
 function StockBadge({ status }: { status: StockResult["status"] }) {
-  if (status === "in_stock")     return <span className="text-xs text-green-600 font-medium">✓ In Stock</span>;
-  if (status === "low_stock")    return <span className="text-xs text-yellow-600 font-medium">⚠ Low Stock</span>;
-  if (status === "out_of_stock") return <span className="text-xs text-red-600 font-medium">✗ Out of Stock</span>;
+  if (status === "in_stock")     return <span className="text-xs text-green-600 font-medium dark:text-green-300">✓ In Stock</span>;
+  if (status === "low_stock")    return <span className="text-xs text-yellow-600 font-medium dark:text-yellow-300">⚠ Low Stock</span>;
+  if (status === "out_of_stock") return <span className="text-xs text-red-600 font-medium dark:text-red-300">✗ Out of Stock</span>;
   return null;
 }
 
@@ -600,7 +600,7 @@ function StepWalkIn({
           <input
             type="checkbox"
             id="appointment"
-            className="h-4 w-4 rounded border-gray-300"
+            className="h-4 w-4 rounded border-gray-300 dark:border-gray-500/30"
             checked={appointment}
             onChange={(e) => setAppointment(e.target.checked)}
           />
@@ -766,7 +766,7 @@ function StepInvoice({
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">Ship To</label>
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300"
+                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
                     checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
                   Same as Bill To
                 </label>
@@ -800,7 +800,7 @@ function StepInvoice({
         </div>
 
         <div className="space-y-2">
-          <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground px-1">
+          <div className="hidden grid-cols-12 gap-2 px-1 text-xs font-semibold text-muted-foreground sm:grid">
             <span className="col-span-5">Product</span>
             <span className="col-span-2 text-center">Qty</span>
             <span className="col-span-2 text-right">Unit ₦</span>
@@ -808,26 +808,26 @@ function StepInvoice({
           </div>
           {items.map((item, i) => (
             <div key={i} className="space-y-0.5">
-              <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-5">
+              <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-12">
+                <div className="col-span-2 sm:col-span-5">
                   <Input
                     placeholder="Product name"
                     value={item.product}
                     onChange={(e) => updateItem(i, "product", e.target.value)}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input type="number" placeholder="Qty" min={1} value={item.quantity}
                     onChange={(e) => updateItem(i, "quantity", e.target.value)} />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input type="number" placeholder="0.00" min={0} step="0.01" value={item.unit_price}
                     onChange={(e) => updateItem(i, "unit_price", e.target.value)} />
                 </div>
-                <div className="col-span-2 text-right text-sm font-semibold tabular-nums">
+                <div className="col-span-1 text-right text-sm font-semibold tabular-nums sm:col-span-2">
                   ₦{(item.quantity * item.unit_price).toLocaleString()}
                 </div>
-                <div className="col-span-1 flex justify-end">
+                <div className="col-span-1 flex justify-end sm:col-span-1">
                   {items.length > 1 && (
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => removeItem(i)}>
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -1065,7 +1065,7 @@ function StepComplete({ invoiceId, walkInName }: { invoiceId: string; walkInName
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-green-600">{fmt(invoice.total_amount)}</span>
+              <span className="font-bold text-green-600 dark:text-green-300">{fmt(invoice.total_amount)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Payment</span>
@@ -1211,12 +1211,12 @@ function QueueTab() {
   const walkIns: WalkIn[] = report?.walk_ins ?? [];
 
   const stats = [
-    { label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600"   },
-    { label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600" },
-    { label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600"  },
-    { label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600" },
-    { label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600" },
-    { label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600"  },
+    { label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
+    { label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
+    { label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
+    { label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600 dark:text-yellow-300" },
+    { label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600 dark:text-orange-300" },
+    { label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600 dark:text-green-300"  },
   ];
 
   return (
@@ -1594,7 +1594,7 @@ function InvoicesTab() {
                       ))}
                       <div className="flex justify-between font-bold px-3 py-2 border-t mt-1">
                         <span>Total</span>
-                        <span className="text-green-600">{fmt(inv.total_amount)}</span>
+                        <span className="text-green-600 dark:text-green-300">{fmt(inv.total_amount)}</span>
                       </div>
                     </div>
                   </div>
@@ -1688,10 +1688,10 @@ function ReportsTab() {
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { label: "Walk-ins",         value: report.walk_in_count,                         icon: Users,      color: "text-blue-600"   },
-              { label: "Invoices",         value: report.invoice_count,                         icon: FileText,   color: "text-purple-600" },
-              { label: "Revenue",          value: fmt(report.total_revenue),                    icon: TrendingUp, color: "text-green-600"  },
-              { label: "Pending Approval", value: (report.pending_qc ?? 0) + (report.pending_finance ?? 0), icon: Clock, color: "text-orange-600" },
+              { label: "Walk-ins",         value: report.walk_in_count,                         icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
+              { label: "Invoices",         value: report.invoice_count,                         icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
+              { label: "Revenue",          value: fmt(report.total_revenue),                    icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
+              { label: "Pending Approval", value: (report.pending_qc ?? 0) + (report.pending_finance ?? 0), icon: Clock, color: "text-orange-600 dark:text-orange-300" },
             ].map((s) => {
               const Icon = s.icon;
               return (
@@ -1773,7 +1773,7 @@ export default function Frontdesk() {
       </div>
 
       <Tabs defaultValue="queue">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="w-full sm:grid sm:grid-cols-4">
           <TabsTrigger value="queue"    className="gap-1.5"><Clock     className="h-3.5 w-3.5" /> Today's Queue</TabsTrigger>
           <TabsTrigger value="new"      className="gap-1.5"><UserPlus  className="h-3.5 w-3.5" /> New Walk-in</TabsTrigger>
           <TabsTrigger value="invoices" className="gap-1.5"><FileText  className="h-3.5 w-3.5" /> All Invoices</TabsTrigger>

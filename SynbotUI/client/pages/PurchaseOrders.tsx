@@ -29,10 +29,10 @@ import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_COLOR: Record<string, string> = {
-  open: "bg-blue-100 text-blue-700",
-  pending: "bg-yellow-100 text-yellow-700",
-  approved: "bg-green-100 text-green-700",
-  received: "bg-emerald-100 text-emerald-700",
+  open: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
+  approved: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  received: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
   closed: "bg-muted text-muted-foreground",
   cancelled: "bg-destructive/15 text-destructive",
 };

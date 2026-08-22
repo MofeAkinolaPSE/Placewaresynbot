@@ -54,7 +54,7 @@ function DifferenceBadge({ diff }: { diff: number | null }) {
   if (diff === null || diff === undefined) return <span className="text-muted-foreground text-xs">—</span>;
   const fmt = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
   if (Math.abs(diff) < 0.01) {
-    return <span className="text-emerald-600 font-medium text-sm">Balanced</span>;
+    return <span className="text-emerald-600 font-medium text-sm dark:text-emerald-300">Balanced</span>;
   }
   return <span className="text-destructive font-medium text-sm">{fmt.format(diff)}</span>;
 }

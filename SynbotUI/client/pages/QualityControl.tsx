@@ -141,27 +141,27 @@ interface Recall {
 // ---------------------------------------------------------------------------
 
 const CLASS_COLORS: Record<string, string> = {
-  minor:    "bg-yellow-100 text-yellow-700",
-  major:    "bg-orange-100 text-orange-700",
-  critical: "bg-red-100 text-red-700",
+  minor:    "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
+  major:    "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+  critical: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  open:               "bg-blue-100 text-blue-700",
-  under_investigation:"bg-purple-100 text-purple-700",
-  escalated:          "bg-orange-100 text-orange-700",
-  closed:             "bg-green-100 text-green-700",
-  pending:            "bg-yellow-100 text-yellow-700",
-  approved:           "bg-green-100 text-green-700",
-  rejected:           "bg-red-100 text-red-700",
-  suspended:          "bg-gray-100 text-gray-600",
-  initiated:          "bg-blue-100 text-blue-700",
-  in_progress:        "bg-purple-100 text-purple-700",
-  completed:          "bg-green-100 text-green-700",
+  open:               "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  under_investigation:"bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300",
+  escalated:          "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+  closed:             "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  pending:            "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
+  approved:           "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  rejected:           "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  suspended:          "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/70",
+  initiated:          "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  in_progress:        "bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300",
+  completed:          "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
 };
 
 function Pill({ label, colorCls }: { label: string; colorCls?: string }) {
-  const cls = colorCls ?? "bg-gray-100 text-gray-600";
+  const cls = colorCls ?? "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/70";
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {label}
@@ -250,7 +250,7 @@ function DashboardTab() {
     {
       label: "Open Recalls",
       value: kpi.open_recalls,
-      icon: <Siren className="h-5 w-5 text-rose-600" />,
+      icon: <Siren className="h-5 w-5 text-rose-600 dark:text-rose-300" />,
       alert: kpi.open_recalls > 0,
     },
   ];
@@ -274,10 +274,10 @@ function DashboardTab() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {kpiCards.map((k) => (
               <motion.div key={k.label} {...motionVariants.cardEnter} transition={motionTransitions.standard}>
-                <Card className={k.alert ? "border-orange-300" : ""}>
+                <Card className={k.alert ? "border-orange-300 dark:border-orange-500/30" : ""}>
                   <CardContent className="pt-5 pb-4 flex flex-col items-center gap-2 text-center">
                     {k.icon}
-                    <div className={`text-3xl font-bold ${k.alert ? "text-orange-600" : "text-foreground"}`}>
+                    <div className={`text-3xl font-bold ${k.alert ? "text-orange-600 dark:text-orange-300" : "text-foreground"}`}>
                       {k.value}
                     </div>
                     <p className="text-xs text-muted-foreground leading-tight">{k.label}</p>
@@ -293,7 +293,7 @@ function DashboardTab() {
             <Card className="border-orange-300/60 dark:border-orange-800/60">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <ClipboardCheck className="h-4 w-4 text-orange-600" />
+                  <ClipboardCheck className="h-4 w-4 text-orange-600 dark:text-orange-300" />
                   Pending QC — Invoice Requests
                   <Badge variant="outline" className="ml-1">{pendingQcInvoices.length}</Badge>
                 </CardTitle>
@@ -348,32 +348,34 @@ function DashboardTab() {
               {recent.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No recent deviations.</p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-muted-foreground border-b">
-                      <th className="text-left pb-2 font-medium">ID</th>
-                      <th className="text-left pb-2 font-medium">Classification</th>
-                      <th className="text-left pb-2 font-medium">Observation</th>
-                      <th className="text-left pb-2 font-medium">Status</th>
-                      <th className="text-left pb-2 font-medium">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recent.map((r) => (
-                      <tr key={r.id} className="border-b last:border-0">
-                        <td className="py-2 font-mono text-xs">{r.deviation_id ?? r.id.slice(0, 8)}</td>
-                        <td className="py-2">
-                          <Pill label={r.classification} colorCls={CLASS_COLORS[r.classification]} />
-                        </td>
-                        <td className="py-2 max-w-xs truncate text-muted-foreground">{r.observation}</td>
-                        <td className="py-2">
-                          <Pill label={r.status} colorCls={STATUS_COLORS[r.status]} />
-                        </td>
-                        <td className="py-2 text-muted-foreground whitespace-nowrap">{fmtDt(r.created_at)}</td>
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-muted-foreground border-b">
+                        <th className="text-left pb-2 font-medium">ID</th>
+                        <th className="text-left pb-2 font-medium">Classification</th>
+                        <th className="text-left pb-2 font-medium">Observation</th>
+                        <th className="text-left pb-2 font-medium">Status</th>
+                        <th className="text-left pb-2 font-medium">Date</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {recent.map((r) => (
+                        <tr key={r.id} className="border-b last:border-0">
+                          <td className="py-2 font-mono text-xs">{r.deviation_id ?? r.id.slice(0, 8)}</td>
+                          <td className="py-2">
+                            <Pill label={r.classification} colorCls={CLASS_COLORS[r.classification]} />
+                          </td>
+                          <td className="py-2 max-w-xs truncate text-muted-foreground">{r.observation}</td>
+                          <td className="py-2">
+                            <Pill label={r.status} colorCls={STATUS_COLORS[r.status]} />
+                          </td>
+                          <td className="py-2 text-muted-foreground whitespace-nowrap">{fmtDt(r.created_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -399,10 +401,10 @@ function ExpiryTab() {
   };
 
   const bucketConfig = [
-    { key: "expired" as const, label: "Expired",         color: "border-red-500    bg-red-50",     badge: "bg-red-100 text-red-700",    action: "Quarantine" },
-    { key: "critical" as const, label: "Critical (≤30d)", color: "border-orange-500 bg-orange-50",  badge: "bg-orange-100 text-orange-700", action: "Quarantine" },
-    { key: "high" as const,    label: "High (≤60d)",      color: "border-amber-500  bg-amber-50",   badge: "bg-amber-100 text-amber-700",  action: "Promote" },
-    { key: "medium" as const,  label: "Monitor (≤90d)",   color: "border-yellow-400 bg-yellow-50",  badge: "bg-yellow-100 text-yellow-700", action: "Monitor" },
+    { key: "expired" as const, label: "Expired",         color: "border-red-500    bg-red-50 dark:bg-red-500/15",     badge: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",    action: "Quarantine" },
+    { key: "critical" as const, label: "Critical (≤30d)", color: "border-orange-500 bg-orange-50 dark:bg-orange-500/15",  badge: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300", action: "Quarantine" },
+    { key: "high" as const,    label: "High (≤60d)",      color: "border-amber-500  bg-amber-50 dark:bg-amber-500/15",   badge: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",  action: "Promote" },
+    { key: "medium" as const,  label: "Monitor (≤90d)",   color: "border-yellow-400 bg-yellow-50 dark:bg-yellow-500/15",  badge: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300", action: "Monitor" },
   ];
 
   return (
@@ -447,7 +449,7 @@ function ExpiryTab() {
                             <span>Qty: <strong>{item.quantity}</strong></span>
                             <span>
                               {item.days_remaining <= 0
-                                ? <span className="text-red-600 font-semibold">Expired</span>
+                                ? <span className="text-red-600 font-semibold dark:text-red-300">Expired</span>
                                 : <span>{item.days_remaining}d left</span>
                               }
                             </span>
@@ -625,11 +627,11 @@ function TemperatureTab() {
                   logs.map((log) => (
                     <tr
                       key={log.id}
-                      className={`border-b last:border-0 ${log.is_deviation ? "bg-red-50" : ""}`}
+                      className={`border-b last:border-0 ${log.is_deviation ? "bg-red-50 dark:bg-red-500/15" : ""}`}
                     >
                       <td className="p-3 font-medium">{log.location}</td>
                       <td className="p-3 text-right font-mono font-semibold">
-                        <span className={log.is_deviation ? "text-red-600" : ""}>{log.reading_celsius}°C</span>
+                        <span className={log.is_deviation ? "text-red-600 dark:text-red-300" : ""}>{log.reading_celsius}°C</span>
                       </td>
                       <td className="p-3">{SESSION_LABELS[log.log_session] ?? log.log_session}</td>
                       <td className="p-3 text-muted-foreground">{log.logged_by}</td>
@@ -637,12 +639,12 @@ function TemperatureTab() {
                       <td className="p-3">
                         {log.is_deviation ? (
                           log.deviation_escalated ? (
-                            <Pill label="Escalated" colorCls="bg-orange-100 text-orange-700" />
+                            <Pill label="Escalated" colorCls="bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300" />
                           ) : (
-                            <Pill label="Deviation" colorCls="bg-red-100 text-red-700" />
+                            <Pill label="Deviation" colorCls="bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300" />
                           )
                         ) : (
-                          <Pill label="Normal" colorCls="bg-green-100 text-green-700" />
+                          <Pill label="Normal" colorCls="bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300" />
                         )}
                       </td>
                       <td className="p-3 text-right">
@@ -1422,11 +1424,11 @@ function NafdacTab() {
                           </td>
                           <td className="p-3">
                             {b.dispatch_blocked ? (
-                              <span className="flex items-center gap-1 text-red-600 text-xs font-medium">
+                              <span className="flex items-center gap-1 text-red-600 text-xs font-medium dark:text-red-300">
                                 <Lock className="h-3 w-3" /> Blocked
                               </span>
                             ) : (
-                              <span className="text-green-600 text-xs font-medium flex items-center gap-1">
+                              <span className="text-green-600 text-xs font-medium flex items-center gap-1 dark:text-green-300">
                                 <CheckCircle2 className="h-3 w-3" /> Clear
                               </span>
                             )}
@@ -1440,7 +1442,7 @@ function NafdacTab() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                                  className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50 dark:text-green-300 dark:border-green-500/30"
                                   onClick={() => { setApproveTarget(b); setValidFrom(b.valid_from ?? ""); setValidTo(b.valid_to ?? ""); }}
                                 >
                                   Approve
@@ -1448,7 +1450,7 @@ function NafdacTab() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                                  className="h-7 text-xs text-red-700 border-red-300 hover:bg-red-50 dark:text-red-300 dark:border-red-500/30"
                                   onClick={() => setRejectTarget(b)}
                                 >
                                   Reject
@@ -1527,7 +1529,7 @@ function NafdacTab() {
                               <span className="font-mono text-xs text-muted-foreground">{r.recall_id}</span>
                               <Pill
                                 label={r.scope}
-                                colorCls={r.scope === "mandatory" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}
+                                colorCls={r.scope === "mandatory" ? "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300"}
                               />
                               <Pill label={r.status} colorCls={STATUS_COLORS[r.status]} />
                             </div>
@@ -1781,8 +1783,8 @@ export default function QualityControl() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Page header */}
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-          <ShieldCheck className="h-5 w-5 text-green-700" />
+        <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center dark:bg-green-500/15">
+          <ShieldCheck className="h-5 w-5 text-green-700 dark:text-green-300" />
         </div>
         <div>
           <h1 className="text-2xl font-bold">Quality Control</h1>
