@@ -170,7 +170,7 @@ const FloatingChat = () => {
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
-            className="fixed bottom-6 right-6 z-50"
+            className="pw-safe-inset-bottom pw-safe-inset-right fixed z-50"
           >
             <Button
               onClick={() => setIsOpen(true)}
@@ -196,7 +196,7 @@ const FloatingChat = () => {
             }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed bottom-6 right-6 z-50 w-96 bg-card border border-border rounded-2xl shadow-2xl shadow-black/20 overflow-hidden"
+            className="pw-safe-inset-bottom pw-safe-inset-right fixed z-50 w-[calc(100vw-2rem)] max-w-96 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl shadow-black/20"
           >
             {/* Header */}
             <div className="flex items-center justify-between bg-gradient-primary px-4 py-3 text-primary-foreground">

@@ -13,6 +13,10 @@ const Card = React.forwardRef<
       // hover (stands out) -- every card gets a whisper of the second
       // brand color instead of the app reading pure blue everywhere.
       "rounded-2xl border border-secondary/15 bg-card/82 text-card-foreground shadow-elevation-2 backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:border-secondary/40 hover:shadow-elevation-3",
+      // Dark theme follows the BeatStars Studio model: an opaque #141414
+      // fill with a hairline white border, no blur, no lift -- the hover
+      // cue is the border brightening, not a shadow.
+      "dark:border-white/[0.08] dark:bg-card dark:shadow-none dark:backdrop-blur-none dark:hover:translate-y-0 dark:hover:border-white/20 dark:hover:bg-surface-2 dark:hover:shadow-none",
       className,
     )}
     {...props}

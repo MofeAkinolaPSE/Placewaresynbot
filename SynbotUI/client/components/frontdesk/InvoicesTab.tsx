@@ -93,7 +93,7 @@ export const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export function StatusPill({ status }: { status: string }) {
-  const s = STATUS_LABELS[status] ?? { label: status, color: "bg-gray-100 text-gray-600" };
+  const s = STATUS_LABELS[status] ?? { label: status, color: "bg-gray-100 text-gray-600 dark:bg-gray-500/15 dark:text-gray-300" };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
       {s.label}
@@ -176,32 +176,32 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 <title>Invoice ${invoice.invoice_number}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',Arial,sans-serif;padding:40px;color:#1a1a2e;background:#fff;font-size:13px}
+  body{font-family:'Segoe UI',Arial,sans-serif;padding:40px;color:#12203A;background:#fff;font-size:13px}
   .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:24px}
   .company-block img{height:44px;display:block;margin-bottom:8px}
-  .company-block .name{font-size:16px;font-weight:800;color:#1568C4}
+  .company-block .name{font-size:16px;font-weight:800;color:#003A91}
   .company-block .line{font-size:11px;color:#666;line-height:1.5}
-  .inv-title{font-size:28px;font-weight:800;text-align:right;background:linear-gradient(90deg,#1568C4,#2FA24A);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .inv-title{font-size:28px;font-weight:800;text-align:right;background:linear-gradient(90deg,#003A91,#62C76A);-webkit-background-clip:text;background-clip:text;color:transparent}
   .inv-meta{text-align:right;font-size:12px;color:#555;margin-top:4px}
-  .inv-meta strong{color:#1a1a2e}
-  .divider{height:2px;background:linear-gradient(90deg,#1568C4,#2FA24A);margin:16px 0;border-radius:2px}
+  .inv-meta strong{color:#12203A}
+  .divider{height:2px;background:linear-gradient(90deg,#003A91,#62C76A);margin:16px 0;border-radius:2px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:16px 0}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin:16px 0}
   .section-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px}
-  .field{font-size:13px;color:#1a1a2e;margin-bottom:2px;line-height:1.5}
+  .field{font-size:13px;color:#12203A;margin-bottom:2px;line-height:1.5}
   .muted{color:#aaa}
   table{width:100%;border-collapse:collapse;margin:20px 0}
-  th{background:#1568C4;color:#fff;padding:8px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase}
+  th{background:#003A91;color:#fff;padding:8px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase}
   th:nth-child(1){text-align:center}
   th:nth-child(6),th:nth-child(7){text-align:right}
-  tbody tr:nth-child(even){background:#f8f9ff}
+  tbody tr:nth-child(even){background:#F2F6FC}
   .totals{margin-left:auto;width:280px;margin-top:8px}
   .totals-row{display:flex;justify-content:space-between;padding:5px 8px;font-size:13px}
-  .totals-row.grand{background:#2FA24A;color:#fff;font-weight:700;font-size:15px;border-radius:6px;margin-top:4px;padding:10px 8px}
-  .compliance-note{margin:20px 0;padding:12px 16px;background:#f8f9ff;border-radius:8px;border-left:4px solid #2FA24A;font-size:12px;font-weight:600;color:#1a1a2e}
+  .totals-row.grand{background:#62C76A;color:#fff;font-weight:700;font-size:15px;border-radius:6px;margin-top:4px;padding:10px 8px}
+  .compliance-note{margin:20px 0;padding:12px 16px;background:#F2F6FC;border-radius:8px;border-left:4px solid #62C76A;font-size:12px;font-weight:600;color:#12203A}
   .sig-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:24px 0 16px}
   .sig-cell{font-size:11px}
-  .sig-name{font-weight:600;color:#1a1a2e;margin-bottom:22px;min-height:14px}
+  .sig-name{font-weight:600;color:#12203A;margin-bottom:22px;min-height:14px}
   .sig-line{border-top:1px solid #999;padding-top:4px;color:#888}
   .footer{margin-top:20px;padding-top:14px;border-top:1px solid #eee;font-size:10.5px;color:#999;display:flex;justify-content:space-between;gap:24px}
   .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#d1fae5;color:#065f46}
@@ -210,7 +210,7 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 </head><body>
 <div class="header">
   <div class="company-block">
-    <img src="${window.location.origin}/placeware-logo.jpg" alt="Placeware">
+    <img src="${window.location.origin}/placeware-logo.png" alt="Placeware">
     <div class="line">${COMPANY_INFO.address}<br>${COMPANY_INFO.phones.join(" · ")}<br>${COMPANY_INFO.email} · ${COMPANY_INFO.website}</div>
   </div>
   <div>
@@ -303,7 +303,7 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 </div>
 
 <div class="no-print" style="margin-top:24px;text-align:center">
-  <button onclick="window.print()" style="background:linear-gradient(90deg,#1568C4,#2FA24A);color:#fff;padding:12px 32px;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600">🖨️ Print / Save as PDF</button>
+  <button onclick="window.print()" style="background:linear-gradient(90deg,#003A91,#62C76A);color:#fff;padding:12px 32px;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600">🖨️ Print / Save as PDF</button>
 </div>
 <script>setTimeout(()=>window.print(),400);</script>
 </body></html>`);
@@ -517,7 +517,7 @@ export function InvoicesTab() {
                       ))}
                       <div className="flex justify-between font-bold px-3 py-2 border-t mt-1">
                         <span>Total</span>
-                        <span className="text-green-600">{fmt(inv.total_amount)}</span>
+                        <span className="text-green-600 dark:text-green-300">{fmt(inv.total_amount)}</span>
                       </div>
                     </div>
                   </div>

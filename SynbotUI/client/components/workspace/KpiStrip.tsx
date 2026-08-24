@@ -7,9 +7,9 @@ type Tone = "default" | "success" | "warning" | "danger";
 // DataIntelligence.tsx) — no new colors introduced.
 const TONE_CLASSES: Record<Tone, string> = {
   default: "text-foreground",
-  success: "text-green-700",
-  warning: "text-amber-700",
-  danger: "text-red-700",
+  success: "text-green-700 dark:text-green-300",
+  warning: "text-amber-700 dark:text-amber-300",
+  danger: "text-red-700 dark:text-red-300",
 };
 
 export type KpiItem = {

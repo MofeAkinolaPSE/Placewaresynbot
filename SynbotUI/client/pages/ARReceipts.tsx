@@ -59,7 +59,7 @@ const PAYMENT_METHODS = [
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <Badge className={status === "posted" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+    <Badge className={status === "posted" ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300" : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"}>
       {status === "posted" ? "Posted" : "Voided"}
     </Badge>
   );
@@ -267,7 +267,7 @@ export default function ARReceipts() {
       <Card className="border-amber-300/60 dark:border-amber-800/60">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ClipboardCheck className="h-4 w-4 text-amber-600" />
+            <ClipboardCheck className="h-4 w-4 text-amber-600 dark:text-amber-300" />
             Invoices
             <Badge variant="outline" className="ml-1">{pendingFinanceInvoices.length}</Badge>
           </CardTitle>
@@ -451,7 +451,7 @@ export default function ARReceipts() {
                   </Button>
                 )}
                 {detailQuery.data.status === "voided" && (
-                  <p className="text-xs text-red-700">Voided: {detailQuery.data.void_reason}</p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Voided: {detailQuery.data.void_reason}</p>
                 )}
               </div>
             )}
@@ -565,7 +565,7 @@ export default function ARReceipts() {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <h4 className="text-xs font-semibold uppercase text-muted-foreground">Allocate to open invoices</h4>
-                <span className={`text-xs ${remaining < -0.01 ? "text-red-700" : "text-muted-foreground"}`}>
+                <span className={`text-xs ${remaining < -0.01 ? "text-red-700 dark:text-red-300" : "text-muted-foreground"}`}>
                   Remaining to allocate: {fmt(remaining)}
                 </span>
               </div>

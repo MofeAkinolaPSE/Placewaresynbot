@@ -162,11 +162,11 @@ function trackingUrlFor(d: Delivery, sessionLinks: Record<string, string>): stri
 // ---------------------------------------------------------------------------
 
 const STATUS_COLORS: Record<string, string> = {
-  unassigned: "bg-slate-100 text-slate-700 border-slate-300",
-  assigned:   "bg-blue-100 text-blue-700 border-blue-300",
-  in_transit: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  delivered:  "bg-green-100 text-green-700 border-green-300",
-  failed:     "bg-red-100 text-red-700 border-red-300",
+  unassigned: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-white/10 dark:text-white/75 dark:border-white/15",
+  assigned:   "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30",
+  in_transit: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-500/15 dark:text-yellow-300 dark:border-yellow-500/30",
+  delivered:  "bg-green-100 text-green-700 border-green-300 dark:bg-green-500/15 dark:text-green-300 dark:border-green-500/30",
+  failed:     "bg-red-100 text-red-700 border-red-300 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30",
 };
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
@@ -614,7 +614,7 @@ export default function LogisticsMonitor() {
 
                     {selectedDelivery.status === "unassigned" && (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Select value={assignRiderId} onValueChange={setAssignRiderId}>
                             <SelectTrigger className="h-8 text-xs flex-1">
                               <SelectValue placeholder={riders.filter((r) => r.active).length === 0 ? "No active riders" : "Select rider…"} />
@@ -642,7 +642,7 @@ export default function LogisticsMonitor() {
                         {/* Optional destination pin. Walk-in invoices carry no address,
                             so this is the only place a destination can be set — and
                             without it the arrival geofence never fires. */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Input
                             value={assignDestLat}
                             onChange={(e) => setAssignDestLat(e.target.value)}
@@ -667,7 +667,7 @@ export default function LogisticsMonitor() {
                     <div className="flex gap-2 flex-wrap">
                       {selectedDelivery.status === "assigned" && (
                         <Button
-                          size="sm" variant="outline" className="gap-1 text-green-600"
+                          size="sm" variant="outline" className="gap-1 text-green-600 dark:text-green-300"
                           disabled={startDelivery.isPending}
                           onClick={() => startDelivery.mutate(selectedDelivery.id)}
                         >

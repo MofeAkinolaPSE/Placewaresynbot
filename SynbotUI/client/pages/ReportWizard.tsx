@@ -538,7 +538,7 @@ export default function ReportWizard() {
                   variant="outline"
                   onClick={handleApprove}
                   disabled={approving || reportResult.approved}
-                  className="text-green-700 border-green-600 hover:bg-green-50"
+                  className="text-green-700 border-green-600 hover:bg-green-50 dark:text-green-300"
                 >
                   {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
                   {reportResult.approved ? "Approved" : "Approve"}

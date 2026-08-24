@@ -117,7 +117,7 @@ export function InvoiceDetailBody({ invoice, loading }: { invoice: DetailInvoice
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground">
                   <span>Batch: <span className="font-mono">{it.batch_number || "—"}</span></span>
                   <span>Mfg: {fmtMonthYear(it.manufacture_date)}</span>
-                  <span className={it.expiry_date && new Date(it.expiry_date) < new Date() ? "text-red-600 font-medium" : undefined}>
+                  <span className={it.expiry_date && new Date(it.expiry_date) < new Date() ? "text-red-600 font-medium dark:text-red-300" : undefined}>
                     Exp: {fmtDateOnly(it.expiry_date)}
                   </span>
                 </div>

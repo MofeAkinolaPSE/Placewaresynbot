@@ -51,7 +51,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 function StatusPill({ status }: { status: string }) {
-  const s = STATUS_LABELS[status] ?? { label: status, color: "bg-gray-100 text-gray-600" };
+  const s = STATUS_LABELS[status] ?? { label: status, color: "bg-gray-100 text-gray-600 dark:bg-gray-500/15 dark:text-gray-300" };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
       {s.label}
@@ -382,7 +382,7 @@ export default function CustomerWorkspace() {
                       </div>
                       <div className="rounded-lg bg-muted/40 px-3 py-2">
                         <div className="text-xs text-muted-foreground">Overdue</div>
-                        <div className="font-bold text-red-600">{fmt(recv?.overdue_amount)}</div>
+                        <div className="font-bold text-red-600 dark:text-red-300">{fmt(recv?.overdue_amount)}</div>
                       </div>
                     </div>
                     {recv?.credit_utilization_pct != null && (
@@ -416,7 +416,7 @@ export default function CustomerWorkspace() {
                         <div className="rounded-lg bg-muted/40 px-3 py-2 space-y-1">
                           <div className="flex justify-between items-center">
                             <span className="text-xs text-muted-foreground">Predicted next order</span>
-                            <span className={`font-semibold text-sm ${overdue ? "text-red-600" : ""}`}>
+                            <span className={`font-semibold text-sm ${overdue ? "text-red-600 dark:text-red-300" : ""}`}>
                               {rp.predicted_next_order_date ? new Date(rp.predicted_next_order_date).toLocaleDateString() : "—"}
                               {overdue && ` (${rp.days_until_or_since}d overdue)`}
                             </span>
@@ -430,7 +430,7 @@ export default function CustomerWorkspace() {
                             <span>{fmt(rp.avg_order_value)}</span>
                           </div>
                           {rp.churn_risk && (
-                            <div className="text-xs font-medium text-red-600 pt-1">
+                            <div className="text-xs font-medium text-red-600 pt-1 dark:text-red-300">
                               ⚠ Overdue beyond typical cycle — possible churn risk
                             </div>
                           )}
@@ -554,7 +554,7 @@ export default function CustomerWorkspace() {
                     className="text-left rounded-lg border p-2.5 hover:bg-muted/40 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <div className="font-medium text-sm truncate">{p.customer_name}</div>
-                    <div className={`text-xs flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                    <div className={`text-xs flex items-center gap-1 ${overdue ? "text-red-600 font-medium dark:text-red-300" : "text-muted-foreground"}`}>
                       <Clock className="h-3 w-3" />
                       {overdue ? `${p.days_until_or_since}d overdue` : `due in ${Math.abs(p.days_until_or_since)}d`}
                     </div>
@@ -646,7 +646,7 @@ export default function CustomerWorkspace() {
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium">Ship To</label>
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300"
+                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
                       checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
                     Same as Bill To
                   </label>
@@ -700,12 +700,12 @@ export default function CustomerWorkspace() {
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-medium truncate">{sug.name}</span>
                           {sug.selling_price != null && (
-                            <span className="text-xs font-semibold text-green-600 flex-shrink-0">{fmt(sug.selling_price)}</span>
+                            <span className="text-xs font-semibold text-green-600 flex-shrink-0 dark:text-green-300">{fmt(sug.selling_price)}</span>
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                           {sug.sku && <span className="font-mono">{sug.sku}</span>}
-                          <span className={sug.current_stock != null && sug.current_stock <= 0 ? "text-red-600 font-medium" : undefined}>
+                          <span className={sug.current_stock != null && sug.current_stock <= 0 ? "text-red-600 font-medium dark:text-red-300" : undefined}>
                             Stock: {sug.current_stock ?? "—"}
                           </span>
                         </div>
@@ -771,7 +771,7 @@ export default function CustomerWorkspace() {
 
           <div className="flex justify-between font-bold pt-2 border-t">
             <span>Total</span>
-            <span className="text-green-600">
+            <span className="text-green-600 dark:text-green-300">
               {fmt(items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0))}
             </span>
           </div>

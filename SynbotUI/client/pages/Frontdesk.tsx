@@ -198,7 +198,7 @@ function ClientHistoryPanel({ walkInId, onClose }: { walkInId: string; onClose: 
           {client?.phone   && <div><span className="text-muted-foreground">Phone:</span> {client.phone}</div>}
           {client?.email   && <div><span className="text-muted-foreground">Email:</span> {client.email}</div>}
           <div><span className="text-muted-foreground">Visits:</span> <strong>{(data as any)?.visit_count}</strong></div>
-          <div><span className="text-muted-foreground">Total Spend:</span> <strong className="text-green-600">{fmt((data as any)?.total_spend ?? 0)}</strong></div>
+          <div><span className="text-muted-foreground">Total Spend:</span> <strong className="text-green-600 dark:text-green-300">{fmt((data as any)?.total_spend ?? 0)}</strong></div>
         </div>
         {invoices.length > 0 && (
           <div>
@@ -236,9 +236,9 @@ function ClientHistoryPanel({ walkInId, onClose }: { walkInId: string; onClose: 
 // ---------------------------------------------------------------------------
 
 function StockBadge({ status }: { status: StockResult["status"] }) {
-  if (status === "in_stock")     return <span className="text-xs text-green-600 font-medium">✓ In Stock</span>;
-  if (status === "low_stock")    return <span className="text-xs text-yellow-600 font-medium">⚠ Low Stock</span>;
-  if (status === "out_of_stock") return <span className="text-xs text-red-600 font-medium">✗ Out of Stock</span>;
+  if (status === "in_stock")     return <span className="text-xs text-green-600 font-medium dark:text-green-300">✓ In Stock</span>;
+  if (status === "low_stock")    return <span className="text-xs text-yellow-600 font-medium dark:text-yellow-300">⚠ Low Stock</span>;
+  if (status === "out_of_stock") return <span className="text-xs text-red-600 font-medium dark:text-red-300">✗ Out of Stock</span>;
   return null;
 }
 
@@ -320,7 +320,7 @@ function StepWalkIn({
           <input
             type="checkbox"
             id="appointment"
-            className="h-4 w-4 rounded border-gray-300"
+            className="h-4 w-4 rounded border-gray-300 dark:border-gray-500/30"
             checked={appointment}
             onChange={(e) => setAppointment(e.target.checked)}
           />
@@ -486,7 +486,7 @@ function StepInvoice({
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">Ship To</label>
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300"
+                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
                     checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
                   Same as Bill To
                 </label>
@@ -520,7 +520,7 @@ function StepInvoice({
         </div>
 
         <div className="space-y-2">
-          <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground px-1">
+          <div className="hidden grid-cols-12 gap-2 px-1 text-xs font-semibold text-muted-foreground sm:grid">
             <span className="col-span-5">Product</span>
             <span className="col-span-2 text-center">Qty</span>
             <span className="col-span-2 text-right">Unit ₦</span>
@@ -528,26 +528,26 @@ function StepInvoice({
           </div>
           {items.map((item, i) => (
             <div key={i} className="space-y-0.5">
-              <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-5">
+              <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-12">
+                <div className="col-span-2 sm:col-span-5">
                   <Input
                     placeholder="Product name"
                     value={item.product}
                     onChange={(e) => updateItem(i, "product", e.target.value)}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input type="number" placeholder="Qty" min={1} value={item.quantity}
                     onChange={(e) => updateItem(i, "quantity", e.target.value)} />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input type="number" placeholder="0.00" min={0} step="0.01" value={item.unit_price}
                     onChange={(e) => updateItem(i, "unit_price", e.target.value)} />
                 </div>
-                <div className="col-span-2 text-right text-sm font-semibold tabular-nums">
+                <div className="col-span-1 text-right text-sm font-semibold tabular-nums sm:col-span-2">
                   ₦{(item.quantity * item.unit_price).toLocaleString()}
                 </div>
-                <div className="col-span-1 flex justify-end">
+                <div className="col-span-1 flex justify-end sm:col-span-1">
                   {items.length > 1 && (
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => removeItem(i)}>
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -785,7 +785,7 @@ function StepComplete({ invoiceId, walkInName }: { invoiceId: string; walkInName
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-green-600">{fmt(invoice.total_amount)}</span>
+              <span className="font-bold text-green-600 dark:text-green-300">{fmt(invoice.total_amount)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Payment</span>
@@ -931,12 +931,12 @@ function QueueTab() {
   const walkIns: WalkIn[] = report?.walk_ins ?? [];
 
   const stats = [
-    { label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600"   },
-    { label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600" },
-    { label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600"  },
-    { label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600" },
-    { label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600" },
-    { label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600"  },
+    { label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
+    { label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
+    { label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
+    { label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600 dark:text-yellow-300" },
+    { label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600 dark:text-orange-300" },
+    { label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600 dark:text-green-300"  },
   ];
 
   return (
@@ -1150,10 +1150,10 @@ function ReportsTab() {
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { label: "Walk-ins",         value: report.walk_in_count,                         icon: Users,      color: "text-blue-600"   },
-              { label: "Invoices",         value: report.invoice_count,                         icon: FileText,   color: "text-purple-600" },
-              { label: "Revenue",          value: fmt(report.total_revenue),                    icon: TrendingUp, color: "text-green-600"  },
-              { label: "Pending Approval", value: (report.pending_qc ?? 0) + (report.pending_finance ?? 0), icon: Clock, color: "text-orange-600" },
+              { label: "Walk-ins",         value: report.walk_in_count,                         icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
+              { label: "Invoices",         value: report.invoice_count,                         icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
+              { label: "Revenue",          value: fmt(report.total_revenue),                    icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
+              { label: "Pending Approval", value: (report.pending_qc ?? 0) + (report.pending_finance ?? 0), icon: Clock, color: "text-orange-600 dark:text-orange-300" },
             ].map((s) => {
               const Icon = s.icon;
               return (
@@ -1235,7 +1235,7 @@ export default function Frontdesk() {
       </div>
 
       <Tabs defaultValue="queue">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="w-full sm:grid sm:grid-cols-4">
           <TabsTrigger value="queue"    className="gap-1.5"><Clock     className="h-3.5 w-3.5" /> Today's Queue</TabsTrigger>
           <TabsTrigger value="new"      className="gap-1.5"><UserPlus  className="h-3.5 w-3.5" /> New Walk-in</TabsTrigger>
           <TabsTrigger value="invoices" className="gap-1.5"><FileText  className="h-3.5 w-3.5" /> All Invoices</TabsTrigger>

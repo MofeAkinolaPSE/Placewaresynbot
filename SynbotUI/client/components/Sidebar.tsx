@@ -247,41 +247,34 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       {/* Sidebar panel */}
       <div
         className={cn(
-          "fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-sidebar-border/70 bg-sidebar/95 text-sidebar-foreground backdrop-blur-lg transition-transform duration-300",
+          "fixed left-0 top-0 z-30 flex h-dvh w-64 flex-col pl-[env(safe-area-inset-left)] border-r border-sidebar-border/70 bg-sidebar/95 text-sidebar-foreground backdrop-blur-lg transition-transform duration-300",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
         )}
       >
         {/* Logo/Header */}
-        <div className="border-b border-sidebar-border/80 px-4 py-3.5">
+        <div className="pw-safe-top relative border-b border-sidebar-border/60 px-5 pb-4">
+          {/* Soft brand halo behind the mark -- no card, no border, so the
+              transparent logo sits directly on the sidebar instead of
+              floating in a white box. */}
           <div
-            className="relative overflow-hidden rounded-xl px-3 py-2"
+            className="pointer-events-none absolute inset-0"
+            aria-hidden
             style={{
-              // Two-tone brand glow (blue #1568C4 + green #2FA24A) echoing the
-              // logo's own blue-to-green wordmark, instead of the old cyan-only chrome.
-              background: "linear-gradient(135deg, rgba(21,104,196,0.08) 0%, rgba(47,162,74,0.06) 100%)",
-              border: "1px solid rgba(47,162,74,0.18)",
-              boxShadow: "0 0 16px rgba(21,104,196,0.09), 0 0 16px rgba(47,162,74,0.07), inset 0 1px 0 rgba(255,255,255,0.06)",
+              background:
+                "radial-gradient(ellipse 78% 90% at 30% 45%, rgba(98,199,106,0.14) 0%, transparent 70%)," +
+                "radial-gradient(ellipse 60% 80% at 85% 20%, rgba(255,255,255,0.08) 0%, transparent 72%)",
             }}
-          >
-            {/* Radial highlight shimmer */}
-            <div
-              className="pointer-events-none absolute inset-0"
-              aria-hidden
-              style={{
-                background: "radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255,255,255,0.07) 0%, transparent 70%)",
-              }}
-            />
-            <img
-              src="/placeware-logo.jpg"
-              alt="Placeware Nigeria Limited"
-              className="relative w-full h-auto object-contain"
-              style={{
-                maxHeight: "48px",
-                filter: "drop-shadow(0 2px 6px rgba(21,104,196,0.22)) drop-shadow(0 2px 6px rgba(47,162,74,0.18)) drop-shadow(0 0 2px rgba(255,255,255,0.15))",
-              }}
-            />
-          </div>
+          />
+          <img
+            src="/placeware-logo-onDark.png"
+            alt="Placeware Nigeria Limited"
+            className="relative h-auto w-full max-w-[190px] object-contain"
+            style={{
+              maxHeight: "46px",
+              filter: "drop-shadow(0 1px 6px rgba(0,0,0,0.45))",
+            }}
+          />
         </div>
 
         {/* Navigation */}
@@ -330,9 +323,9 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
                             to={child.href}
                             onClick={onMobileClose}
                             className={cn(
-                              "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all duration-150",
+                              "relative flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all duration-150",
                               isActive(child.href)
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-elevation-1"
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-elevation-1 before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-primary"
                                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                             )}
                           >
@@ -352,9 +345,11 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
                   to={item.href ?? "/"}
                   onClick={onMobileClose}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-out",
+                    "relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-out",
+                    // Active item gets a brand-green rail on its left edge --
+                    // the palette's second colour doing the wayfinding.
                     itemActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-elevation-1"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-elevation-1 before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-full before:bg-sidebar-primary"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
                   )}
                 >
@@ -378,7 +373,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         </nav>
 
         {/* User Profile Footer */}
-        <div className="border-t border-sidebar-border/80 p-3">
+        <div className="pw-safe-bottom border-t border-sidebar-border/80 p-3">
           <div className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-sidebar-accent/40 transition-colors duration-150">
             {/* Avatar */}
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-primary text-xs font-bold text-primary-foreground shadow-elevation-1">

@@ -22,6 +22,75 @@ import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
 
+// ── Audit-trail formatting ────────────────────────────────────────────────
+// The API returns machine-shaped values -- snake_case event names, ISO
+// timestamps with microseconds, and an actor that is sometimes a bare id and
+// sometimes a serialized token payload. Render them as text a person reads.
+
+/** "maintenance_remediation_recorded" -> "Maintenance remediation recorded" */
+function humanizeEvent(event: string): string {
+  if (!event) return "Event";
+  const words = event.replace(/[_-]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** "2026-08-21T20:34:56.307264+01:00" -> "21 Aug 2026, 20:34" */
+function formatTimestamp(value: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * actor_id arrives as an id, or as a JSON token payload -- which is why whole
+ * JWT claims were being printed where a username belongs. Pull something
+ * human out of it, and shorten bare UUIDs.
+ */
+function normalizeActor(actor: unknown): string {
+  if (!actor) return "System";
+  let value: any = actor;
+  if (typeof value === "string" && value.trim().startsWith("{")) {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      /* leave it as the original string */
+    }
+  }
+  if (value && typeof value === "object") {
+    const claims = value as Record<string, unknown>;
+    const named = claims.email || claims.username || claims.name || claims.sub;
+    if (typeof named === "string") value = named;
+    else return "System";
+  }
+  const text = String(value);
+  if (text === "unknown") return "System";
+  // Bare UUID: show enough to correlate, not 36 characters of noise.
+  if (/^[0-9a-f-]{32,36}$/i.test(text)) return text.slice(0, 8);
+  return text;
+}
+
+/** Flattens a details object into at most `limit` label/value pairs. */
+function summarizeDetails(
+  details: Record<string, unknown>,
+  limit = 4,
+): { key: string; label: string; value: string }[] {
+  return Object.entries(details)
+    .filter(([, v]) => v !== null && v !== "" && typeof v !== "object")
+    .slice(0, limit)
+    .map(([k, v]) => ({
+      key: k,
+      label: k.replace(/[_-]+/g, " "),
+      value: String(v),
+    }));
+}
+
 const Workflow = () => {
   const [selectedIntent, setSelectedIntent] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
@@ -132,9 +201,11 @@ const Workflow = () => {
   const auditTrail = rawAuditLogs.map((log: any) => ({
     id: log.id,
     date: log.created_at,
-    user: log.actor_id || "unknown",
+    user: normalizeActor(log.actor_id),
     action: log.event_type,
-    details: JSON.stringify(log.details || {}),
+    // Kept as the object it is. Stringifying here is what produced the wall
+    // of unreadable JSON in the card.
+    details: log.details && typeof log.details === "object" ? log.details : {},
     signatureHashRef: log.signature_hash_ref || "",
     status: log.event_type && log.event_type.endsWith("approved") ? "approved" : "submitted",
   }));
@@ -220,7 +291,7 @@ const Workflow = () => {
     >
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Workflow</h1>
+        <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Workflow</h1>
         <p className="text-muted-foreground mt-2">
           Approval workflows and governance for business decisions
         </p>
@@ -339,13 +410,15 @@ const Workflow = () => {
                 <div className="rounded-xl border border-info/30 bg-info/15 p-4">
                   <div className="flex gap-3">
                     <AlertCircle className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold text-info text-sm">
                         Recommendation
                       </p>
-                      <p className="text-sm text-info mt-1">
+                      {/* Serialized object -- let it scroll rather than
+                          stretch the card past the viewport. */}
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-sm text-info">
                         {activeIntent.recommendation}
-                      </p>
+                      </pre>
                     </div>
                   </div>
                 </div>
@@ -422,8 +495,8 @@ const Workflow = () => {
 
         {/* Audit Trail Tab */}
         <TabsContent value="audit" className="space-y-4">
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="font-semibold text-foreground mb-4">Audit Trail</h2>
+          <div className="rounded-xl border border-border bg-card p-3 sm:p-6">
+            <h2 className="mb-4 font-semibold text-foreground">Audit Trail</h2>
 
             {auditIsError && (
               <p className="text-sm text-destructive mb-4">
@@ -437,41 +510,72 @@ const Workflow = () => {
                   No audit entries yet. Approvals and rejections will appear here.
                 </p>
               )}
-              {auditTrail.map((entry) => (
-                <div key={entry.id} className="pw-surface-base rounded-xl p-4">
-                  <div className="flex items-start gap-4">
-                    <div className="mt-1">{getStatusIcon(entry.status)}</div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-foreground">
-                          {entry.action}
-                        </p>
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(
-                            entry.status
-                          )}`}
-                        >
-                          {entry.status.charAt(0).toUpperCase() +
-                            entry.status.slice(1)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {entry.details}
-                      </p>
-                      {entry.signatureHashRef && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Signature Hash: {entry.signatureHashRef}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                        <span>{entry.user}</span>
-                        <span>•</span>
-                        <span>{entry.date}</span>
+              {auditTrail.map((entry) => {
+                const fields = summarizeDetails(entry.details);
+                const hasRaw = Object.keys(entry.details).length > 0;
+                return (
+                  <div key={entry.id} className="pw-surface-base rounded-xl p-3 sm:p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 shrink-0">{getStatusIcon(entry.status)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                          <p className="min-w-0 font-medium leading-snug text-foreground">
+                            {humanizeEvent(entry.action)}
+                          </p>
+                          <span
+                            className={`shrink-0 whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${getStatusColor(
+                              entry.status,
+                            )}`}
+                          >
+                            {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
+                          </span>
+                        </div>
+
+                        {/* Labelled fields instead of a JSON dump. Values
+                            truncate to one line -- the full payload is one
+                            tap away below. */}
+                        {fields.length > 0 && (
+                          <dl className="mt-2 space-y-1">
+                            {fields.map((f) => (
+                              <div key={f.key} className="flex gap-2 text-xs">
+                                <dt className="shrink-0 capitalize text-muted-foreground">
+                                  {f.label}
+                                </dt>
+                                <dd className="min-w-0 flex-1 truncate text-foreground" title={f.value}>
+                                  {f.value}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+
+                        {entry.signatureHashRef && (
+                          <p className="mt-1.5 truncate font-mono text-[11px] text-muted-foreground" title={entry.signatureHashRef}>
+                            Sig: {entry.signatureHashRef}
+                          </p>
+                        )}
+
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                          <span className="truncate">{entry.user}</span>
+                          <span aria-hidden>·</span>
+                          <span>{formatTimestamp(entry.date)}</span>
+                        </div>
+
+                        {hasRaw && (
+                          <details className="group mt-2">
+                            <summary className="inline-flex cursor-pointer list-none items-center text-xs font-medium text-primary hover:underline">
+                              Raw payload
+                            </summary>
+                            <pre className="mt-1.5 max-h-56 overflow-auto rounded-lg bg-muted/60 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
+{JSON.stringify(entry.details, null, 2)}
+                            </pre>
+                          </details>
+                        )}
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <p className="text-xs text-muted-foreground mt-4">

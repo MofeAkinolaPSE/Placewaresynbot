@@ -284,7 +284,7 @@ export default function FinanceVendorPayments() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs text-blue-600 border-blue-300"
+                                  className="h-7 text-xs text-blue-600 border-blue-300 dark:text-blue-300 dark:border-blue-500/30"
                                   onClick={() => { setApproveNoteId(p.id); setApproveNote(""); }}
                                 >
                                   <CheckCircle2 className="w-3 h-3 mr-1" /> Approve
@@ -292,7 +292,7 @@ export default function FinanceVendorPayments() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs text-red-600 border-red-300"
+                                  className="h-7 text-xs text-red-600 border-red-300 dark:text-red-300 dark:border-red-500/30"
                                   onClick={() => { setRejectDialogId(p.id); setRejectNote(""); }}
                                 >
                                   <XCircle className="w-3 h-3 mr-1" /> Reject
@@ -313,7 +313,7 @@ export default function FinanceVendorPayments() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs text-green-600 border-green-300"
+                                  className="h-7 text-xs text-green-600 border-green-300 dark:text-green-300 dark:border-green-500/30"
                                   onClick={() => paidMut.mutate(p.id)}
                                   disabled={paidMut.isPending}
                                 >

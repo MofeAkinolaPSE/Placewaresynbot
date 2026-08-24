@@ -356,7 +356,7 @@ const Inventory = () => {
                             </div>
                             {(m.stock_status === "critical" || m.stock_status === "warning" || m.stock_status === "out_of_stock") && (
                               pendingReq ? (
-                                <div className="flex items-center justify-between text-amber-700 bg-amber-50 rounded px-2 py-1">
+                                <div className="flex items-center justify-between text-amber-700 bg-amber-50 rounded px-2 py-1 dark:text-amber-300 dark:bg-amber-500/15">
                                   <span>Reorder pending ({pendingReq.requested_qty})</span>
                                 </div>
                               ) : (

@@ -131,7 +131,7 @@ export function ExecutiveDashboard() {
   const turnoverActuals = (opsForecast?.series ?? []).map((p) => ({ period: p.period, actual: p.turnover, forecast: null as number | null }));
   const forecastPoints = (opsForecast?.forecast ?? []).map((v, i) => ({ period: `F+${i + 1}`, actual: null as number | null, forecast: v }));
   const turnoverChartData = [...turnoverActuals, ...forecastPoints];
-  const turnoverLineColor = opsTrend?.trend === "Declining" ? "#ef4444" : "#1568C4";
+  const turnoverLineColor = opsTrend?.trend === "Declining" ? "#ef4444" : "hsl(var(--primary))";
   const absenceData = (hrSummary?.absenteeism_trend ?? []).map((p) => ({ period: p.period, hours: p.hours }));
   const arAgingData = arAgingBuckets
     ? [
@@ -145,7 +145,7 @@ export function ExecutiveDashboard() {
   const ar91Plus = arAgingBuckets?.["91_plus"] ?? 0;
   const ar91PlusPct = arAgingTotal > 0 ? ((ar91Plus / arAgingTotal) * 100).toFixed(1) : "0.0";
   const cashExposureData = [
-    { label: "AR Outstanding", value: cashOutstanding, fill: "#1568C4" },
+    { label: "AR Outstanding", value: cashOutstanding, fill: "hsl(var(--primary))" },
     { label: "AP Payable", value: cashPayable, fill: "#f97316" },
   ];
   const riskSeverityCounts = { High: 0, Medium: 0, Low: 0 };
@@ -265,15 +265,15 @@ export function ExecutiveDashboard() {
                     <AreaChart data={arSparklineData} margin={{ top: 8, right: 12, left: 8, bottom: 6 }}>
                       <defs>
                         <linearGradient id="arGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#1568C4" stopOpacity={0.25} />
-                          <stop offset="95%" stopColor="#1568C4" stopOpacity={0} />
+                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                       <XAxis dataKey="period" tick={{ fontSize: 12, fontWeight: 500 }} tickLine={false} axisLine={false} />
                       <YAxis tick={{ fontSize: 12, fontWeight: 500 }} tickLine={false} axisLine={false} tickFormatter={(v) => `₦${(v / 1_000_000).toFixed(0)}M`} width={56} />
                       <Tooltip formatter={(v: any) => [`₦${Number(v).toLocaleString()}`, "Balance"]} contentStyle={{ fontSize: "13px" }} />
-                      <Area type="monotone" dataKey="value" stroke="#1568C4" strokeWidth={2} fill="url(#arGrad)" dot={false} />
+                      <Area type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#arGrad)" dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (

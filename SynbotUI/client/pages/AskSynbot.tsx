@@ -340,10 +340,12 @@ const AskSynbot = () => {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={motionTransitions.standard}
-      className="pw-page-surface flex min-h-[calc(100vh-8rem)]"
+      className="pw-page-surface flex min-h-[calc(100vh-8rem)] w-full min-w-0"
     >
       {/* Sidebar - Conversations */}
-      <div className="z-10 flex w-64 flex-col border-r border-border/70 bg-card/80 backdrop-blur-md">
+      {/* Conversation list: a 256px rail beside the thread leaves ~100px for
+          the chat itself on a phone, so it only appears from md up. */}
+      <div className="z-10 hidden w-64 flex-col border-r border-border/70 bg-card/80 backdrop-blur-md md:flex">
         <div className="p-4 border-b border-border">
           <Button
             className="w-full"

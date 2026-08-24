@@ -1,0 +1,1 @@
+{"department": "logistics", "event_type": "DeliveryStatus", "payload": {"delivery_id": "dacc532f-b2f4-49ff-9449-044581081900", "status": "delivered"}, "created_by": null, "version_hash": "a64056db80713f4789b3d075daa8f9bd590ae5c9f3eeee813535b6cf40897baf", "timestamp": "2026-08-18T20:01:40Z"}

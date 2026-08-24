@@ -55,7 +55,7 @@ export default function RiderSignIn() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#06101e] p-6">
+    <div className="flex min-h-dvh items-center justify-center bg-[#06101e] p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <div
         className="w-full max-w-sm rounded-2xl border border-white/10 p-8 shadow-2xl"
         style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(24px)" }}
@@ -63,7 +63,7 @@ export default function RiderSignIn() {
         <div className="mb-7 text-center">
           <div
             className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl"
-            style={{ background: "linear-gradient(135deg, rgba(21,104,196,0.25) 0%, rgba(47,162,74,0.20) 100%)" }}
+            style={{ background: "linear-gradient(135deg, rgba(0,58,145,0.25) 0%, rgba(98,199,106,0.20) 100%)" }}
           >
             <span className="text-lg font-extrabold text-white">A</span>
           </div>
@@ -87,7 +87,7 @@ export default function RiderSignIn() {
             type="submit"
             disabled={loading || !code.trim()}
             className="h-12 w-full border-0 text-base font-semibold text-white"
-            style={{ background: "linear-gradient(90deg, #1568C4 0%, #2FA24A 100%)" }}
+            style={{ background: "linear-gradient(90deg, #003A91 0%, #62C76A 100%)" }}
           >
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}
           </Button>

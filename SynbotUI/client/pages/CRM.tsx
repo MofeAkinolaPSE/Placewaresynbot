@@ -403,7 +403,7 @@ const CRM = () => {
               opportunitiesData.map((opp) => (
                 <div key={opp.id} className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
-                    <p className="font-semibold text-foreground break-all">{opp.customer}</p>
+                    <p className="font-semibold text-foreground [overflow-wrap:break-word]">{opp.customer}</p>
                     <p className="font-mono font-semibold text-foreground whitespace-nowrap">₦{(opp.value / 1000000).toFixed(1)}M</p>
                   </div>
                   <div className="flex flex-wrap gap-2">

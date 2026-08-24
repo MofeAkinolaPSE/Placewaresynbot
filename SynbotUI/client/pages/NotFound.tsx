@@ -16,7 +16,7 @@ const NotFound = () => {
   }, [location.pathname]);
 
   return (
-    <div className="pw-page-surface flex min-h-screen items-center justify-center p-6">
+    <div className="pw-page-surface flex min-h-dvh items-center justify-center p-6">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
