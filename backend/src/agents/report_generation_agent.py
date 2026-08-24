@@ -73,6 +73,32 @@ _REPORT_REGISTRY["sales"]["section_title"] = "Sales & Pipeline Performance Repor
 _DEFAULT_REPORT_TYPE = "executive"
 
 
+def _strip_echoed_heading(content: str, section_title: str) -> str:
+    """Strip a leading '#'/'##'/'###' line that just echoes the section title.
+
+    The generation prompt says "do NOT include the section heading itself,"
+    but the LLM ignores that often enough that reports.py's _render_sections()
+    (which always emits the template's own title as a Heading2, then renders
+    this content through _render_markdown_body()) ends up producing two
+    adjacent headings for the same section in the exported DOCX. Only strips
+    when the leading heading actually matches the section title — legitimate
+    "###" sub-headings the LLM adds within the body (explicitly allowed by
+    the prompt) are left alone.
+    """
+    if not content:
+        return content
+    lines = content.lstrip().split("\n", 1)
+    first_line = lines[0]
+    match = re.match(r"^#{1,3}\s*(.+?)\s*:?\s*$", first_line)
+    if not match:
+        return content
+    heading_text = match.group(1).strip().lower()
+    if heading_text != section_title.strip().lower():
+        return content
+    rest = lines[1] if len(lines) > 1 else ""
+    return rest.lstrip("\n").lstrip()
+
+
 @register_agent
 class ReportGenerationAgent(BaseAgent):
     """
@@ -185,8 +211,13 @@ class ReportGenerationAgent(BaseAgent):
 
         report_memory_id: Optional[str] = None
 
-        # ── Persist to report memory if quality ≥ 7 ─────────────────────────
-        if not simulation and quality_score >= 7.0:
+        # ── Persist to report memory (always for real runs) ─────────────────
+        # Previously gated on quality_score >= 7.0, which meant a below-threshold
+        # report never got a report_memory_id — and the frontend hides the entire
+        # Download/Approve UI when report_memory_id is absent, so the user saw a
+        # generated report with silently no way to export it. quality_score is
+        # still carried in metrics below so the UI can warn instead of hide.
+        if not simulation:
             report_memory_id = self._store_report(
                 report_type=report_type,
                 intent_text=self.context.get("intent_text", ""),
@@ -634,6 +665,7 @@ Begin the section content now (do NOT include the section heading itself):
             ),
             max_tokens=450,
         ).strip()
+        content = _strip_echoed_heading(content, sec_title)
 
         # Heuristic confidence: longer + more numbers = higher confidence
         num_count = len(re.findall(r"\d+(?:\.\d+)?", content))

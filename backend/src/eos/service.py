@@ -656,6 +656,87 @@ async def _handle_find_leads_action(
     }
 
 
+async def _handle_send_bulk_message_action(
+    intent: Dict[str, Any], text: str, simulation: bool
+) -> Dict[str, Any]:
+    """
+    Resolve a bulk-message chat request into a preview -- channel, message
+    text, and a real recipient count -- WITHOUT sending anything.
+
+    Deliberately does not fit the {"report": {"summary","status"}} shape the
+    other handlers here use, and is deliberately never wired into app.py's
+    immediate-execute _ACTION_DISPATCH table: a bulk send reaches every
+    matching customer and costs real Termii/SMTP quota, a much larger blast
+    radius than any other action in this file, so app.py always requires an
+    explicit user confirmation on the next turn before actually dispatching
+    (mirroring send_email's existing two-phase draft flow, just
+    non-negotiable here rather than a preview-compose nicety).
+    """
+    import re as _re
+
+    tl = text.lower()
+
+    # Channel: scan the raw text rather than trusting which manifest keyword
+    # fired (app.py only tells us the intent_type, not which phrase matched).
+    if "email" in tl:
+        channel = "email"
+    elif any(kw in tl for kw in ("sms", "text message", "text all", "text our", "bulk text")):
+        channel = "sms"
+    else:
+        channel = None
+
+    # Message text: prefer explicitly quoted text (straight or curly quotes
+    # -- built via chr() instead of a raw literal so this source file stays
+    # pure-ASCII regardless of encoding; matches the same mojibake class
+    # fixed elsewhere in this codebase, e.g. reports.py), else text after a
+    # natural lead-in phrase. No content is invented if neither pattern
+    # matches -- see the needs_input branch below.
+    _LEFT_DQ, _RIGHT_DQ = chr(0x201C), chr(0x201D)
+    message_text = None
+    m = _re.search(r'["' + _LEFT_DQ + r']([^"' + _RIGHT_DQ + r']{3,4096})["' + _RIGHT_DQ + r']', text)
+    if m:
+        message_text = m.group(1).strip()
+    else:
+        m = _re.search(r"\b(?:saying|that says|telling them|message[: ]+)\s*(.+)$", text, _re.IGNORECASE)
+        if m:
+            message_text = m.group(1).strip().strip("\"'" + _LEFT_DQ + _RIGHT_DQ)
+
+    if not channel or not message_text:
+        missing = []
+        if not channel:
+            missing.append("whether this is SMS or email")
+        if not message_text:
+            missing.append("the exact message to send, in quotes")
+        return {
+            "intent": intent,
+            "status": "needs_input",
+            "message": (
+                "I need a bit more before I can safely queue a bulk send - "
+                + " and ".join(missing) + ". For example: "
+                "send a bulk SMS to customers saying \"We have new stock in, place your order today.\""
+            ),
+            "simulation": simulation,
+        }
+
+    from src.services.messaging import resolve_bulk_recipients
+    recipients = resolve_bulk_recipients(None)
+    if channel == "sms":
+        count = sum(1 for r in recipients if (r.get("phone") or "").strip())
+    else:
+        count = sum(1 for r in recipients if "@" in (r.get("email") or ""))
+
+    return {
+        "intent": intent,
+        "status": "ready",
+        "channel": channel,
+        "message_text": message_text,
+        "subject": "Message from Placeware" if channel == "email" else None,
+        "recipient_filter": None,
+        "recipient_count": count,
+        "simulation": simulation,
+    }
+
+
 async def _handle_send_whatsapp_action(
     intent: Dict[str, Any], text: str, simulation: bool
 ) -> Dict[str, Any]:

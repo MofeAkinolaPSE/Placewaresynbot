@@ -19,6 +19,7 @@ import {
   Truck,
   MapPin,
   CheckCircle2,
+  FileText,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -151,6 +152,9 @@ const QUICK_LINKS: { label: string; href: string; icon: typeof BarChart3; roles?
   { label: "Calendar", href: "/calendar", icon: CalendarDays },
   { label: "Compliance & QMS", href: "/compliance", icon: ShieldCheck, roles: ["admin", "quality_assurance", "qa", "operations", "ops", "management"] },
   { label: "Ask ACE", href: "/synbot", icon: MessageSquare },
+  // No `roles` — every team member can view invoices; QC/Finance/Dispatch
+  // actions inside stay gated by role regardless of how this page is reached.
+  { label: "All Invoices", href: "/frontdesk/invoices", icon: FileText },
 ];
 
 const Dashboard = () => {

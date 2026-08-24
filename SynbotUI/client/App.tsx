@@ -42,6 +42,7 @@ import CRMLeadFinder from "./pages/CRMLeadFinder";
 import Compliance from "./pages/Compliance";
 import SalesCRM from "./pages/SalesCRM";
 import Frontdesk from "./pages/Frontdesk";
+import AllInvoices from "./pages/AllInvoices";
 import QualityControl from "./pages/QualityControl";
 import LogisticsMonitor from "./pages/LogisticsMonitor";
 import FinanceAR from "./pages/FinanceAR";
@@ -110,6 +111,7 @@ const App = () => (
                 <Route path="/crm/lead-finder" element={<CRMLeadFinder />} />
                 <Route path="/crm/sales" element={<SalesCRM />} />
                 <Route path="/frontdesk" element={<Frontdesk />} />
+                <Route path="/frontdesk/invoices" element={<AllInvoices />} />
                 <Route path="/quality-control" element={<QualityControl />} />
                 <Route path="/synbot" element={<AskSynbot />} />
                 <Route path="/calendar" element={<LogisticsCalendar />} />

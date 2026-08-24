@@ -81,6 +81,31 @@ class MatchRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # AR AGING  —  GET /finance/ar/aging
 # ---------------------------------------------------------------------------
+def _compute_ar_aging_data(bucket: Optional[str] = None) -> Dict[str, Any]:
+    """Shared bucket-summary + per-customer data assembly for AR aging.
+
+    Used by both the JSON endpoint (which additionally evaluates alert
+    rules against this data) and the PDF export, so both surfaces always
+    agree on the same numbers.
+    """
+    summary = ar_aging_buckets()
+
+    buckets_to_fetch = (
+        [bucket]
+        if bucket
+        else ["0-30 days", "31-60 days", "61-90 days", "90+ days"]
+    )
+
+    all_customers: List[Dict[str, Any]] = []
+    for b in buckets_to_fetch:
+        rows = ar_aging_customers(bucket=b)
+        for r in rows:
+            r["bucket_label"] = b
+        all_customers.extend(rows)
+
+    return {"summary": summary, "customers": all_customers}
+
+
 @router.get("/ar/aging")
 async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
     """
@@ -91,20 +116,9 @@ async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
     """
     _require_finance(request)
     try:
-        summary = ar_aging_buckets()
-
-        buckets_to_fetch = (
-            [bucket]
-            if bucket
-            else ["0-30 days", "31-60 days", "61-90 days", "90+ days"]
-        )
-
-        all_customers: List[Dict[str, Any]] = []
-        for b in buckets_to_fetch:
-            rows = ar_aging_customers(bucket=b)
-            for r in rows:
-                r["bucket_label"] = b
-            all_customers.extend(rows)
+        aging_data = _compute_ar_aging_data(bucket=bucket)
+        summary = aging_data["summary"]
+        all_customers = aging_data["customers"]
 
         # Evaluate active alert rules against the customer data.
         #
@@ -167,6 +181,130 @@ async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
     except Exception as e:
         log.error("/finance/ar/aging error: %s", e)
         raise HTTPException(status_code=500, detail="Failed to compute AR aging")
+
+
+# ---------------------------------------------------------------------------
+# AR AGING PDF  —  GET /finance/ar/aging/pdf
+# ---------------------------------------------------------------------------
+@router.get("/ar/aging/pdf")
+async def get_ar_aging_pdf(request: Request, bucket: Optional[str] = Query(None)):
+    """
+    Return AR aging (buckets + per-customer) as an audit-stamped PDF, for
+    collections meetings. Mirrors get_pl_pdf()'s structure/audit pattern.
+    Writes a row to fin_audit_export_log.
+    """
+    user = _require_finance(request)
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+
+        aging_data = _compute_ar_aging_data(bucket=bucket)
+        summary = aging_data["summary"]
+        customers = aging_data["customers"]
+        generated_at = datetime.datetime.utcnow().isoformat()
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=50, bottomMargin=40)
+        styles = getSampleStyleSheet()
+        elems = []
+
+        elems.append(Paragraph("Placeware Pharma — Accounts Receivable Aging", styles["Title"]))
+        sub = f"Bucket: {bucket or 'All buckets'}  |  Generated: {generated_at[:19]} UTC"
+        elems.append(Paragraph(sub, styles["Normal"]))
+        elems.append(Spacer(1, 14))
+
+        # Bucket summary table
+        bucket_order = [("0_30", "0-30 Days"), ("31_60", "31-60 Days"), ("61_90", "61-90 Days"), ("91_plus", "90+ Days")]
+        summary_data = [["Aging Bucket", "Outstanding Balance (₦)"]]
+        for key, label in bucket_order:
+            summary_data.append([label, f"{float(summary.get(key) or 0):,.2f}"])
+        t = Table(summary_data, colWidths=[200, 200])
+        t.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a3a5c")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f4f8")]),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                ]
+            )
+        )
+        elems.append(t)
+        elems.append(Spacer(1, 20))
+
+        # Per-customer table
+        if customers:
+            elems.append(Paragraph("Outstanding by Customer", styles["Heading2"]))
+            elems.append(Spacer(1, 8))
+            cust_data = [["Customer", "Bucket", "Outstanding (₦)", "Invoices", "Max Days Overdue"]]
+            for c in sorted(customers, key=lambda r: r.get("total_balance") or 0, reverse=True):
+                cust_data.append(
+                    [
+                        c.get("customer_name") or c.get("customer_id") or "—",
+                        c.get("bucket_label") or "—",
+                        f"{float(c.get('total_balance') or 0):,.2f}",
+                        str(c.get("invoices_count") or 0),
+                        str(c.get("max_days_overdue") or 0),
+                    ]
+                )
+            ct = Table(cust_data, colWidths=[160, 80, 100, 60, 100])
+            ct.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a3a5c")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f4f8")]),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ]
+                )
+            )
+            elems.append(ct)
+
+        # Audit footer
+        elems.append(Spacer(1, 30))
+        actor_id = user.get("sub") or "system"
+        elems.append(
+            Paragraph(
+                f"AUDIT TRAIL: Exported by user {actor_id} at {generated_at[:19]} UTC. "
+                f"Data sourced from Sage AR snapshot. This report is confidential.",
+                styles["Normal"],
+            )
+        )
+
+        doc.build(elems)
+        pdf_bytes = buf.getvalue()
+
+        try:
+            db.table("fin_audit_export_log").insert(
+                {
+                    "report_type": "ar_aging",
+                    "exported_by": user.get("sub"),
+                    "row_count": len(customers),
+                    "period": bucket or "all",
+                    "file_format": "pdf",
+                    "filters": {"bucket": bucket},
+                }
+            ).execute()
+        except Exception as log_err:
+            log.warning("Failed to write audit export log: %s", log_err)
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="ar_aging_{bucket or "all"}_{datetime.date.today().isoformat()}.pdf"'
+            },
+        )
+    except ImportError:
+        raise HTTPException(status_code=500, detail="reportlab not installed")
+    except Exception as e:
+        log.error("/finance/ar/aging/pdf error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to generate AR aging PDF")
 
 
 # ---------------------------------------------------------------------------

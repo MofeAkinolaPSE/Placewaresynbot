@@ -1,0 +1,141 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+I would add, you can ask Ace, but I would definitely add a button for that, so Ace. I didn't get that, sorry. I didn't get that, sorry.
+
+Balance sheet, that is to show the financial position of the company. After trading profits and loss account, there should be balance sheets. Balance sheet should comprise the assets, both fixed and current assets.
+
+Current liabilities and long-term liabilities. Okay, sir. Okay, sir.
+
+I will add that to the list of reports. I will add that to the list of reports. Okay, sir, I have one question.
+
+Sir, can this software, can it work without internet? Because sometimes we have our internet, you know, to just go off, to go on. Do we have to, I think we need to have the software on our phones, right? Yeah, you'd be able to access it from your phone. Yeah, you'd be able to access it from your phone.
+
+Okay, then, you know, so, please, I'd like you to answer the first question. Can we use it without internet? Well, naturally, most of the functions work without the internet. But as long as your server is online and functioning like it should, you should be fine.
+
+Okay, so some parts will be able to work without internet? Yes. Yes. Okay, it can work? Yeah, it can work.
+
+So, all those that will not work without internet. So, it's not everything that will work without internet. But most of the time, most of the time.
+
+Yes, sir. Yes, sir. Most of the time, the internet might even shut down for the whole day.
+
+So, that we must, it can't happen. So, what will happen? Nothing will happen to your... It will still be functioning like it should. If someone was outside the company and wanted to connect to the server, right, you should still be able to reach the IP via the link that I'm providing.
+
+Then another question. Are you there? I'm here, I'm listening. I'm here, I'm listening.
+
+Yes, the process of being voiced up, I think it's about four stages. Okay. Why is it four stages? Because, to me, because sometimes a customer can just walk in and say that you need this thing urgently.
+
+All those process, it takes time. It's going to take time. And if like this IP is not on site, our guy is not on site, who will approve? Do you get what I'm saying? I understand you.
+
+I understand you. So, we need to consider that, too. Please.
+
+Well, the thing is, with the front desk... Can we print it out? Sorry? Without all those people? Sorry? Can we print it out without... Yeah, so, because of the way we decided. Yeah, so, because of the way we decided. Like I showed you in the walk-in.
+
+Provided that the person that is filling in that walk-in has the authority to just put their own information throughout. We can go ahead with that invoice because there's an audit on it, right? That the part of that invoice, the individual or staff member that approved the entire QC, finance, and set it up for delivery is being monitored and saved. So, there's an audit.
+
+So, if anyone wants to check who approved that invoice, that individual's name will pop up. So, it's tracked, basically. It's an audit for it.
+
+It's tracked, basically. It's an audit for it. Okay.
+
+Then, I want to ask one more question. While you were trying to raise an invoice, I see that for QC, you are re-entitling S21. If it does receive S21, is that necessary? It's because of the demo, but naturally, it would be your name.
+
+Whoever it is that is currently approving that workflow. Exactly. Yeah, your name will pop up in the drop-down box.
+
+Your full name. So, you won't be typing. So, you won't be typing.
+
+Okay. So, I wanted to ask that we gave you a space for signature. And, you know, we should have a signature already.
+
+Like, a signature. So, we gave you a space for that. So, that when, for example, you're going to approve an invoice, I don't need to tell you how to import my signature.
+
+It's already there. On my own yardstick. Mufin? Yes? It seems, maybe, at the point of user registration, there should be a column for uploading of the signature.
+
+Okay. You understand? Okay. So, once the approver puts their name, the signature should automatically appear.
+
+It won't pop up on the invoice. Alright. You understand? Alright.
+
+Yeah. Then, other things. Before the balance sheet that I told you.
+
+There's something we call general ledger. Yeah, it's tri-balance. I don't know whether you understand or not.
+
+I do, sir. But we can always dive into the financials. We could dive into financials.
+
+We could dive into financials. At another time. At another time.
+
+Okay, I have another question. Using this application, how easy will it be for us to send out bulk messages or emails to our customers? I'm sorry. I'm sorry.
+
+So, naturally, we designed the system to be able to send bulk SMS. And text messages. Yes.
+
+But, I can't. So, I'm just going to do it here. I'm just going to do it here.
+
+Could I have your number, please? Could I have your number, please? Okay. I'll just go ahead and use your number beside me. I'll just go ahead and use your number beside me.
+
+Do you have a reservation? I'm sorry. Okay. I'm sorry.
+
+I think you've not integrated any API for any purpose against the app to function. I have, I'm getting the email myself, let me see if I can get an email. Email can easily be done like that, you know email is, I think it's, I think email is free, I'm sure you understand, but SMS will not be free, you understand.
+
+It's covered for, we've covered for that in your course. We've covered for that in your course. Yeah, so you get both SMS and email.
+
+SMS and email. Yes. Yes.
+
+I'll take note of that and I'll work on that. So you have a page designated for SMS. Oh yeah, no, definitely.
+
+Wait, no, definitely. Sorry. Sorry.
+
+Okay. Okay. Alright.
+
+Alright. Thank you. God bless you.
+
+Okay, we haven't seen that. Scroll down a bit, let me see. Let me see the signature side of this.
+
+Okay, that's the test one. Customer signature. Yeah.
+
+Yeah. Yeah, I'll add that. Alright.
+
+No problem. No problem. So I have another question.
+
+Yes. Yes. Individual cost.
+
+Individual cost. Okay. Okay.
+
+So that will most likely be an HR human resources site. So that will most likely be an HR site feature. Yeah, HR site feature.
+
+Is that okay? That's okay. Okay. So it will be for HR.
+
+And you can see the departmental effort distribution. Right. You can see the staff directory.
+
+Right. And see basically the information, the recent activity. And yeah, if you want us to create the reports or track the metrics, granted.
+
+But because the metrics will be tracked on the staff dashboard naturally. So they can see their usual activities. You can create your clock in for the day and your time is tracked.
+
+Right. And then this is the staff collaboration platform. So based on the projects you're working on and based on the activity that's going on in the company, you can just interact between departments, between people.
+
+Whatever is convenient, really. As far as your design. Would that be okay? Yes.
+
+So is that okay? Okay. Which one? The HR and the staff dashboard where you can interact with the team members. Team members.
+
+Okay. Yeah. So it has to be admin side.
+
+It has to be admin side. Is there any other thing? Is there any other question? Any other question? You need to do the same. Please.
+
+It's not. Yes. We need to personalise it.
+
+When you are saying it now, it's good. Everybody understands what we need to do. It's less than one.
+
+Please. No problem. So we can plant something out and approach it.
+
+Yeah. Sit down. Any other? So thank you.
+
+Okay. Yeah. Yes, sir.
+
+Finally. Finally. The next step for us is for you to get your credentials.
+
+So I will talk to Mr. I will make the final adjustments from this meeting. Right. So everything we talked about will be implemented.
+
+And then afterwards, your user access codes will be shared out. Right. And then you can.
+
+And like I said, we'll introduce a walkthrough so that it will actually help you understand what the system is based on your service and department. So you have some UI elements to work that. But other than that, thank you so much for joining us today.
+
+Thank you. And I hope that this is. This company, this interaction, business to business interaction run smoothly for as long as possible.
+
+So thank you again. And I hope you have a wonderful day. Oh, God.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

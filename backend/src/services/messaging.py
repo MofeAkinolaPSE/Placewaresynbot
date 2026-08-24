@@ -2,16 +2,22 @@
 Messaging Service — ACE
 ==================================
 Handles outbound communication for bulk message jobs:
-  • WhatsApp via Termii API (set TERMII_API_KEY + TERMII_SENDER_ID)
+  • SMS via Termii API (set TERMII_API_KEY + TERMII_SENDER_ID)
+  • WhatsApp via Termii API (same credentials — see send_whatsapp)
   • Email via Gmail SMTP (set EMAIL_FROM + EMAIL_PASS)
 
 Environment variables required (add to .env):
+  TERMII_BASE_URL   — Termii's own docs say this is account-specific (shown
+                       on the dashboard next to the API key), so it's
+                       configurable rather than hardcoded. Defaults to the
+                       standard Nigeria endpoint.
   TERMII_API_KEY    — Termii API secret key
   TERMII_SENDER_ID  — Approved Termii sender ID (e.g. "Placeware")
   EMAIL_FROM        — Gmail address used to send (e.g. "noreply@placeware.ng")
   EMAIL_PASS        — Gmail App Password (not your Google account password)
 
-Channels supported: whatsapp | email
+Channels supported: sms | email | whatsapp (whatsapp currently unused by the
+bulk-message flow -- SMS and email are the two production channels).
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration (read at import time — fail fast if misconfigured) ──────────
 
-TERMII_BASE_URL = "https://api.ng.termii.com/api"
+TERMII_BASE_URL = os.getenv("TERMII_BASE_URL", "https://api.ng.termii.com/api")
 TERMII_API_KEY  = os.getenv("TERMII_API_KEY", "")
 TERMII_SENDER   = os.getenv("TERMII_SENDER_ID", "Placeware")
 
@@ -43,19 +49,25 @@ def _smtp_cfg() -> tuple[str, str]:
     """Return (EMAIL_FROM, EMAIL_PASS) read fresh from the environment each call."""
     return os.getenv("EMAIL_FROM", ""), os.getenv("EMAIL_PASS", "")
 
-# ── WhatsApp (Termii) ─────────────────────────────────────────────────────────
+# ── Termii (SMS / WhatsApp) ───────────────────────────────────────────────────
+# Confirmed against Termii's own API docs (developers.termii.com/messaging-api):
+# SMS and WhatsApp are the SAME endpoint (POST /api/sms/send) -- the only
+# difference is the `channel` value. This one function backs both.
 
-def send_whatsapp(to_phone: str, message: str) -> dict[str, Any]:
+def _send_termii(to_phone: str, message: str, channel: str) -> dict[str, Any]:
     """
-    Send a WhatsApp message via Termii.
+    Send a message via Termii's single-send endpoint.
     `to_phone` must include country code without '+' (e.g. "2348012345678").
-    Returns Termii API response dict.
-    Raises ValueError if TERMII_API_KEY is not configured.
+    `channel`: "generic" (cheap, promotional, blocked for DND-registered
+    numbers, MTN-restricted 8PM-8AM) | "dnd" (bypasses DND, for
+    transactional/urgent) | "whatsapp".
+    Returns Termii API response dict. Raises ValueError if TERMII_API_KEY is
+    not configured or the phone number looks malformed.
     """
     if not TERMII_API_KEY:
         raise ValueError(
             "TERMII_API_KEY is not set. "
-            "Add it to your .env file to enable WhatsApp sending."
+            "Add it to your .env file to enable Termii sending."
         )
 
     phone = to_phone.strip().lstrip("+")
@@ -68,7 +80,7 @@ def send_whatsapp(to_phone: str, message: str) -> dict[str, Any]:
         "from":     TERMII_SENDER,
         "sms":      message,
         "type":     "plain",
-        "channel":  "whatsapp",
+        "channel":  channel,
     }
 
     resp = requests.post(
@@ -78,6 +90,17 @@ def send_whatsapp(to_phone: str, message: str) -> dict[str, Any]:
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def send_sms(to_phone: str, message: str, channel: str = "generic") -> dict[str, Any]:
+    """Send a plain SMS via Termii. See _send_termii for `channel` semantics."""
+    return _send_termii(to_phone, message, channel)
+
+
+def send_whatsapp(to_phone: str, message: str) -> dict[str, Any]:
+    """Send a WhatsApp message via Termii. Not currently used by the bulk-
+    message flow (SMS + email are the two production channels for now)."""
+    return _send_termii(to_phone, message, "whatsapp")
 
 
 # ── Email (Gmail SMTP) ────────────────────────────────────────────────────────
@@ -110,40 +133,98 @@ def send_email(to_email: str, subject: str, body: str) -> None:
 
 # ── Bulk job dispatcher ───────────────────────────────────────────────────────
 
+def _normalize_ng_phone(raw: str | None) -> str | None:
+    """
+    Normalize a Nigerian phone number to Termii's required format (234 +
+    10 digits, no '+', no leading 0). Real customers.contact_details phone
+    values in this DB are stored inconsistently -- some as bare 10-digit
+    local numbers with no country code (e.g. "8029023458"), some with a
+    leading 0 -- neither of which Termii accepts as-is (confirmed live:
+    Termii rejects anything that isn't full international format). Returns
+    None if the value can't be confidently normalized, so that recipient is
+    skipped rather than sent to Termii and failed anyway.
+    """
+    if not raw:
+        return None
+    digits = "".join(ch for ch in str(raw) if ch.isdigit())
+    if not digits:
+        return None
+    if digits.startswith("234") and len(digits) == 13:
+        return digits
+    if digits.startswith("0") and len(digits) == 11:
+        return "234" + digits[1:]
+    if len(digits) == 10:
+        return "234" + digits
+    return None
+
+
+def resolve_bulk_recipients(recipient_filter: dict[str, Any] | None) -> list[dict]:
+    """
+    Resolve the customers table against a recipient_filter, the same
+    resolution dispatch_job() uses to actually send -- extracted so the ACE
+    chat bulk-message preview step (service.py's
+    _handle_send_bulk_message_action) can show a real recipient count before
+    anything is sent, without duplicating this query.
+    Supports filter keys: facility_type (the only one dispatch_job actually
+    applies today -- stage/last_ordered_days are accepted in the API shape
+    but not yet implemented as real filters).
+
+    IMPORTANT: customers has no flat phone/email columns -- both live inside
+    contact_details JSONB (confirmed live: selecting a bare "phone" column
+    throws "column does not exist", which silently resolved to zero
+    recipients for every bulk job, SMS or email, before this fix -- this
+    predates today's SMS work entirely). Each returned dict is normalized to
+    {id, name, phone, email} so dispatch_job()'s channel branches don't need
+    to know about the JSONB shape.
+    """
+    from src.db import db  # lazy import to avoid circular dependency
+
+    rec_filter = recipient_filter or {}
+
+    def _run(q):
+        resp = q.limit(500).execute()
+        rows = resp.data or []
+        out = []
+        for r in rows:
+            cd = r.get("contact_details") or {}
+            out.append({
+                "id":    r.get("id"),
+                "name":  r.get("name"),
+                "phone": _normalize_ng_phone(cd.get("phone")),
+                "email": (cd.get("email") or "").strip() or None,
+            })
+        return out
+
+    try:
+        q = db.table("customers").select("id,name,contact_details")
+        if rec_filter.get("facility_type"):
+            q = q.eq("facility_type", rec_filter["facility_type"])
+        return _run(q)
+    except Exception as exc:
+        logger.error("resolve_bulk_recipients: failed to resolve recipients: %s", exc)
+        try:
+            return _run(db.table("customers").select("id,name,contact_details"))
+        except Exception:
+            return []
+
+
 def dispatch_job(job: dict[str, Any]) -> dict[str, Any]:
     """
     Process a single crm_bulk_message_jobs row.
     Resolves recipients from the recipient_filter (or broadcasts to all active customers).
     Returns a summary dict: {status, total, sent, failed, errors}.
     """
-    from src.db import db  # lazy import to avoid circular dependency
-
     channel      = (job.get("channel") or "").lower()
     message_text = job.get("message_text") or ""
     subject      = job.get("subject") or "Message from Placeware"
     rec_filter   = job.get("recipient_filter") or {}
 
-    if channel not in {"whatsapp", "email"}:
+    if channel not in {"sms", "whatsapp", "email"}:
         raise ValueError(f"Unsupported channel: {channel!r}")
     if not message_text:
         raise ValueError("message_text is empty")
 
-    # Resolve recipient list from customers table
-    # Supports filter keys: stage (for leads), last_ordered_days, facility_type
-    try:
-        q = db.table("customers").select("id,name,phone,email")
-        if rec_filter.get("facility_type"):
-            q = q.eq("facility_type", rec_filter["facility_type"])
-        resp = q.limit(500).execute()
-        recipients: list[dict] = resp.data or []
-    except Exception as exc:
-        logger.error("dispatch_job: failed to resolve recipients: %s", exc)
-        # Graceful: try minimal columns
-        try:
-            resp = db.table("customers").select("id,name,phone,email").limit(500).execute()
-            recipients = resp.data or []
-        except Exception:
-            recipients = []
+    recipients = resolve_bulk_recipients(rec_filter)
 
     total  = len(recipients)
     sent   = 0
@@ -152,7 +233,16 @@ def dispatch_job(job: dict[str, Any]) -> dict[str, Any]:
 
     for customer in recipients:
         try:
-            if channel == "whatsapp":
+            if channel == "sms":
+                phone = (customer.get("phone") or "").strip()
+                if not phone:
+                    failed += 1
+                    errors.append(f"customer {customer.get('id')}: no phone number")
+                    continue
+                send_sms(phone, message_text)
+                sent += 1
+
+            elif channel == "whatsapp":
                 phone = (customer.get("phone") or "").strip()
                 if not phone:
                     failed += 1

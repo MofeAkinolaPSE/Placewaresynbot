@@ -410,7 +410,7 @@ export default function SalesCRM() {
 
   // Bulk message
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkChannel, setBulkChannel] = useState("whatsapp");
+  const [bulkChannel, setBulkChannel] = useState("sms");
   const [bulkSubject, setBulkSubject] = useState("");
   const [bulkText, setBulkText] = useState("");
 
@@ -1055,7 +1055,7 @@ export default function SalesCRM() {
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         title="Send Bulk Message"
-        description="Broadcast a message to your client list via WhatsApp or Email."
+        description="Broadcast a message to your client list via SMS or Email."
         icon={Send}
         footer={
           <Button className="w-full gap-2" disabled={bulkText.trim().length === 0 || sendBulk.isPending} onClick={() => sendBulk.mutate()}>
@@ -1070,11 +1070,17 @@ export default function SalesCRM() {
             <Select value={bulkChannel} onValueChange={setBulkChannel}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="whatsapp">WhatsApp (via Termii)</SelectItem>
+                <SelectItem value="sms">SMS (via Termii)</SelectItem>
                 <SelectItem value="email">Email (via Gmail SMTP)</SelectItem>
+                <SelectItem value="whatsapp">WhatsApp (via Termii)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          {bulkChannel === "sms" && (
+            <p className="text-xs text-muted-foreground">
+              Sent via the generic Termii route — cheaper, but doesn't reach DND-registered numbers and is time-restricted on some networks (8PM–8AM WAT).
+            </p>
+          )}
           {bulkChannel === "email" && (
             <div className="space-y-1">
               <label className="text-sm font-medium">Subject</label>

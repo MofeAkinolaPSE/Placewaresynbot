@@ -522,7 +522,7 @@ export default function ReportWizard() {
             </div>
           </div>
           <div className="flex gap-2">
-            {reportResult.report_memory_id && (
+            {reportResult.report_memory_id ? (
               <>
                 <Button
                   variant="outline"
@@ -544,9 +544,21 @@ export default function ReportWizard() {
                   {reportResult.approved ? "Approved" : "Approve"}
                 </Button>
               </>
+            ) : (
+              <span className="text-xs text-muted-foreground">Report could not be saved — try regenerating.</span>
             )}
           </div>
         </div>
+
+        {(reportResult.quality_score ?? 0) < 7 && (
+          <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-md border border-yellow-300 bg-yellow-50 text-yellow-800 dark:border-yellow-900/50 dark:bg-yellow-900/20 dark:text-yellow-300 text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              This report scored below the recommended quality threshold (7/10). It's still downloadable —
+              review the content carefully before distributing it, or go back and regenerate with more context.
+            </span>
+          </div>
+        )}
 
         {sections.length > 0 ? (
           <div className="space-y-4">
