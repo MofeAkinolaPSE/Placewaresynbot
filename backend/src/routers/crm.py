@@ -46,7 +46,8 @@ async def search_customers(
     _u=Depends(verify_jwt),
 ):
     """Customer search for the Centralized Customer Workspace's
-    EntityAutocomplete. Returns {id, name, customer_code, phone} -- id is
+    EntityAutocomplete and the bulk-message recipient picker.
+    Returns {id, name, customer_code, phone, email} -- id is
     customers.id (numeric PK), matching what GET /crm/customers/{id}/360
     expects. NOT the same key space as /finance/ar/receipts/customers/search
     (that endpoint's customer_id is the Sage TEXT code from v_customers).
@@ -80,6 +81,7 @@ async def search_customers(
                 "name": r.get("name"),
                 "customer_code": r.get("customer_code"),
                 "phone": (r.get("contact_details") or {}).get("phone"),
+                "email": (r.get("contact_details") or {}).get("email"),
             }
             for r in ranked
         ]

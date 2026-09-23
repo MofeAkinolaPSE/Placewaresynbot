@@ -445,6 +445,7 @@ from src.routers.eos import router as eos_router
 from src.routers.crm_360 import router as crm_360_router
 from src.routers.data_intelligence import router as data_intelligence_router
 from src.routers.data_explorer import router as data_explorer_router
+from src.routers.backup import router as backup_router
 from src.routers.calendar_tasks import router as calendar_router, tasks_router
 from src.routers.realtime_ws import router as realtime_ws_router
 from src.routers.presence import router as presence_router
@@ -492,6 +493,7 @@ app.include_router(eos_router)
 app.include_router(crm_360_router)
 app.include_router(data_intelligence_router)
 app.include_router(data_explorer_router)
+app.include_router(backup_router)
 app.include_router(calendar_router)
 app.include_router(tasks_router)
 app.include_router(realtime_ws_router)
@@ -4275,7 +4277,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                 from src.eos.service import (
                     IntentParser as _IntentParser,
                     _handle_send_email_action,
-                    _handle_send_whatsapp_action,
+                    _handle_send_sms_action,
                     _handle_schedule_meeting_action,
                     _handle_task_creation,
                     _handle_generate_report_action,
@@ -4391,7 +4393,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
                 # All other actions execute immediately
                 _ACTION_DISPATCH = {
                     "send_email":            _handle_send_email_action,
-                    "send_whatsapp":         _handle_send_whatsapp_action,
+                    "send_sms":              _handle_send_sms_action,
                     "schedule_meeting":      _handle_schedule_meeting_action,
                     "create_task":           _handle_task_creation,
                     "generate_report":       _handle_generate_report_action,

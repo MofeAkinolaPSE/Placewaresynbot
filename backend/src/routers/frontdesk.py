@@ -183,7 +183,10 @@ def _extract_line_item(item: dict) -> tuple[str, float, float, dict]:
         raise HTTPException(status_code=400, detail="Item quantity must be > 0 and unit_price >= 0")
     line_total = round(quantity * unit_price, 2)
     extra = {}
-    for key in ("batch_number", "manufacture_date", "expiry_date"):
+    # sku is what lets dispatch deduct the right item from inventory; without
+    # persisting it here the field never reaches the stored invoice and stock
+    # deduction falls back to name matching.
+    for key in ("batch_number", "manufacture_date", "expiry_date", "sku"):
         val = item.get(key)
         extra[key] = str(val).strip() or None if val else None
     return product, quantity, unit_price, {
@@ -726,6 +729,110 @@ async def notify_executive(
 #     hierarchy beyond the `admin` superrole — see middleware.py).
 # ---------------------------------------------------------------------------
 
+def _resolve_item_sku(item: dict) -> Optional[str]:
+    """Find the inventory SKU for an invoice line.
+
+    Invoice lines historically stored only a free-text `product`, so the
+    frontdesk UI now captures `sku` from the inventory autocomplete it
+    already queries. Older invoices won't have it, so fall back to an exact
+    catalogue name match rather than guessing -- a wrong SKU silently
+    decrements the wrong product, which is worse than not decrementing.
+    """
+    sku = str(item.get("sku") or "").strip()
+    if sku:
+        return sku
+
+    product = str(item.get("product") or "").strip()
+    if not product:
+        return None
+    try:
+        # v_inventory is the canonical sku+name catalogue (sage_items_snapshot
+        # names its columns item_id/item_name and has one row per import
+        # batch, so it would both fail to resolve and return duplicates).
+        # Staff often type the sku itself ("TYPHIM (P)") rather than the
+        # catalogue name ("TYPHIM"), so try sku before name.
+        exact = (
+            db.table("v_inventory").select("sku,name")
+            .ilike("sku", product).limit(2).execute()
+        ).data or []
+        for r in exact:
+            if str(r.get("sku") or "").lower() == product.lower():
+                return r.get("sku")
+
+        rows = (
+            db.table("v_inventory").select("sku,name")
+            .ilike("name", product).limit(5).execute()
+        ).data or []
+        # A unique name match only. Anything ambiguous is left for a human --
+        # a wrong sku silently decrements the wrong product.
+        skus = {r.get("sku") for r in rows if r.get("sku")}
+        if len(skus) == 1:
+            return skus.pop()
+        if len(skus) > 1:
+            logger.warning("Ambiguous product %r matches %d skus", product, len(skus))
+    except Exception as exc:
+        logger.warning("SKU lookup failed for %r: %s", product, exc)
+    return None
+
+
+def _record_dispatch_stock_events(
+    items: list, reference: str, actor_id: Optional[str]
+) -> list[str]:
+    """Write one SALE event per dispatched line item.
+
+    Never raises: a delivery that physically went out must still be recorded
+    as dispatched even if the stock write fails. Problems come back as
+    warnings so they surface instead of disappearing. Double-decrement on a
+    retry is prevented by the unique (reference, sku) index from migration
+    112, whose violation is treated as success -- the event is already there.
+    """
+    from src.services.inventory import record_inventory_event
+
+    warnings: list[str] = []
+    for item in items or []:
+        qty = float(item.get("quantity") or 0)
+        if qty <= 0:
+            continue
+        sku = _resolve_item_sku(item)
+        if not sku:
+            warnings.append(
+                f"no inventory match for '{item.get('product')}' - stock not adjusted"
+            )
+            continue
+        try:
+            # Goods have already physically left, so never block the dispatch
+            # -- but surface an oversell instead of silently driving stock
+            # negative. Expect these while the Sage baseline is stale: many
+            # SKUs read 0 despite being physically present.
+            try:
+                on_hand = (
+                    db.table("v_inventory").select("current_stock")
+                    .eq("sku", sku).limit(1).execute()
+                ).data or []
+                available = float(on_hand[0].get("current_stock") or 0) if on_hand else 0.0
+                if qty > available:
+                    warnings.append(
+                        f"{sku}: dispatched {qty:g} but only {available:g} on record"
+                    )
+            except Exception:
+                pass
+
+            record_inventory_event(
+                sku=sku,
+                change=-abs(qty),
+                event_type="SALE",
+                reference=reference,
+                user_id=actor_id or "system",
+            )
+        except Exception as exc:
+            if "uq_inventory_events_sale_ref_sku" in str(exc) or "duplicate key" in str(exc).lower():
+                logger.info("Stock already deducted for %s / %s", reference, sku)
+                continue
+            logger.error("Stock deduction failed for %s / %s: %s", reference, sku, exc)
+            warnings.append(f"stock not adjusted for {sku}")
+    return warnings
+
+
 @router.post("/invoices/{invoice_id}/send-for-delivery")
 async def send_for_delivery(
     invoice_id: str,
@@ -802,6 +909,14 @@ async def send_for_delivery(
         logger.error("Delivery creation error: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to create delivery record")
 
+    # Goods have physically left -- take them out of stock. Until this
+    # existed, a full qc -> finance -> dispatch run left current_stock
+    # completely untouched, so every inventory figure was only as fresh as
+    # the last Sage CSV import.
+    stock_warnings = _record_dispatch_stock_events(
+        items, inv.get("invoice_number") or invoice_id, actor_id
+    )
+
     now = _now()
     try:
         db.table("frontdesk_invoices").update({
@@ -833,6 +948,7 @@ async def send_for_delivery(
         "invoice_id": invoice_id,
         "delivery_id": delivery_row["id"],
         "status": "dispatched",
+        "stock_warnings": stock_warnings,
     }
 
 
@@ -1384,6 +1500,31 @@ async def cancel_walk_in(
 #    _transition_walk_in()'s arrived->invoiced dance -- see comment below).
 # ---------------------------------------------------------------------------
 
+_DEFAULT_PAYMENT_TERMS = "Due on Receipt"
+
+
+def _customer_billing_address(contact_details: dict) -> Optional[str]:
+    """Build a Bill To line from the customer's stored contact details.
+    Most records keep the city inline in the address already, so only append
+    it when it isn't there."""
+    address = str((contact_details or {}).get("address") or "").strip()
+    city = str((contact_details or {}).get("city") or "").strip()
+    if not address:
+        return city or None
+    if city and city.lower() not in address.lower():
+        return f"{address}, {city}"
+    return address
+
+
+def _customer_terms(metadata: dict, payment_terms_days) -> Optional[str]:
+    terms = str((metadata or {}).get("terms") or "").strip()
+    if terms:
+        return terms
+    if payment_terms_days is not None:
+        return f"Net {payment_terms_days} Days"
+    return None
+
+
 class QuickRequestIn(BaseModel):
     items: list[dict] = Field(
         ...,
@@ -1415,7 +1556,11 @@ async def quick_request(
     actor_id = user_payload.get("sub") if isinstance(user_payload, dict) else str(user_payload)
 
     try:
-        cust_resp = db.table("customers").select("id,name,contact_details").eq("id", customer_id).limit(1).execute()
+        cust_resp = (
+            db.table("customers")
+            .select("id,name,contact_details,metadata,payment_terms_days")
+            .eq("id", customer_id).limit(1).execute()
+        )
         cust_rows = cust_resp.data or []
     except Exception as exc:
         logger.error("Quick-request customer fetch error: %s", exc)
@@ -1425,6 +1570,18 @@ async def quick_request(
         raise HTTPException(status_code=404, detail="Customer not found")
     cust = cust_rows[0]
     cd = cust.get("contact_details") or {}
+    meta = cust.get("metadata") or {}
+
+    # Fall back to what we already know about this customer when the caller
+    # left these blank, so every client of this endpoint gets an accurate
+    # invoice -- not just the Customer Workspace form that prefills them.
+    # due_date is derived from payment_terms below, so an unset terms value
+    # silently produced a wrong due date as well.
+    billing_address = (payload.billing_address or "").strip() or _customer_billing_address(cd)
+    shipping_address = (payload.shipping_address or "").strip() or billing_address
+    payment_terms = payload.payment_terms
+    if payment_terms == _DEFAULT_PAYMENT_TERMS:
+        payment_terms = _customer_terms(meta, cust.get("payment_terms_days")) or payment_terms
 
     line_items: list[dict] = []
     total_amount = 0.0
@@ -1476,11 +1633,11 @@ async def quick_request(
         "total_amount":     round(total_amount, 2),
         "payment_method":   payload.payment_method,
         "notes":            payload.notes,
-        "billing_address":  payload.billing_address,
-        "shipping_address": payload.shipping_address,
+        "billing_address":  billing_address,
+        "shipping_address": shipping_address,
         "customer_po":      payload.customer_po,
-        "payment_terms":    payload.payment_terms,
-        "due_date":         _due_date_from_terms(payload.payment_terms, dt.datetime.utcnow()),
+        "payment_terms":    payment_terms,
+        "due_date":         _due_date_from_terms(payment_terms, dt.datetime.utcnow()),
         "shipping_method":  payload.shipping_method,
         "tax_amount":       round(payload.tax_amount, 2),
         "status":           "qc_pending",

@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, AlertCircle, Copy, Sun, Moon } from "lucide-react";
+import { CheckCircle, AlertCircle, Copy, Sun, Moon, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api-client";
 import { getSynbotConfig } from "@/lib/wp-config";
 import { authClient } from "@/lib/auth-client";
 import { motion } from "framer-motion";
@@ -56,6 +57,46 @@ const Settings = () => {
     workflow: stored.features?.workflow ?? false,
     riskScoring: stored.features?.riskScoring ?? false,
   });
+
+  // Data backup — admin-only on the server; this just surfaces it.
+  const [backupInfo, setBackupInfo] = useState<any>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api.adminBackup
+      .info()
+      .then((info) => alive && setBackupInfo(info))
+      .catch(() => alive && setBackupInfo(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const downloadBackup = async () => {
+    setDownloading(true);
+    try {
+      const { url, filename } = await api.adminBackup.download();
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Give the browser a moment to start the save before revoking.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      toast.success("Backup downloaded", { description: filename });
+    } catch (e: any) {
+      toast.error("Backup failed", {
+        description:
+          e?.status === 403
+            ? "Only administrators can download a backup."
+            : e?.message ?? "Could not generate the backup.",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const hasConfigApi = Boolean(config.apiBaseUrl && config.apiBaseUrl.trim());
   const hasSessionToken = Boolean(token && token.trim());
@@ -234,6 +275,49 @@ const Settings = () => {
 
       {/* Feature Toggles */}
       <div className="pw-surface-interactive space-y-6 rounded-xl p-6">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">
+            Data Backup
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Download a complete copy of this deployment's data. Keep the file
+            somewhere secure — it contains client and commercial records.
+          </p>
+
+          <div className="pw-surface-base flex flex-wrap items-center justify-between gap-3 rounded-xl p-4">
+            <div className="min-w-0">
+              <p className="font-medium text-foreground">Full data export</p>
+              <p className="text-sm text-muted-foreground">
+                {backupInfo
+                  ? `${backupInfo.table_count} tables · ${backupInfo.database_size}` +
+                    (backupInfo.restorable
+                      ? " · restorable SQL dump"
+                      : " · CSV bundle (data only, no schema)")
+                  : "Checking…"}
+              </p>
+            </div>
+            <Button onClick={downloadBackup} disabled={downloading} className="gap-2">
+              {downloading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Preparing…
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" /> Download backup
+                </>
+              )}
+            </Button>
+          </div>
+
+          {backupInfo && !backupInfo.restorable && (
+            <p className="text-xs text-muted-foreground mt-2">
+              This export carries data only — no schema, indexes or constraints —
+              so it is not a one-click restore. For a directly restorable dump,
+              use the scheduled server-side backup (deploy/backup.sh).
+            </p>
+          )}
+        </div>
+
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-6">
             Feature Toggles

@@ -235,6 +235,22 @@ async def workspace_top_sellers(
         raise HTTPException(500, detail="Failed to retrieve top sellers")
 
 
+@router.get("/workspace/analytics")
+async def workspace_analytics(
+    company_id: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(require_inventory_read),
+):
+    """Decision-support overview for the inventory dashboard: risk tiers,
+    expiry exposure by value, dead stock, reorder candidates and demand
+    coverage. One call so the dashboard doesn't fan out per SKU."""
+    try:
+        from src.services.inventory_analytics import get_analytics_overview
+        return {"data": get_analytics_overview(company_id=company_id)}
+    except Exception as e:
+        logging.error(f"Inventory analytics error: {e}")
+        raise HTTPException(500, detail="Failed to compute inventory analytics")
+
+
 @router.get("/workspace/pending-reorders-count")
 async def workspace_pending_reorders_count(user: Dict[str, Any] = Depends(require_inventory_read)):
     """Count of not-yet-received replenishment requests, for the workspace

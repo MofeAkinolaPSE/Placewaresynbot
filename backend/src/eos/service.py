@@ -126,7 +126,7 @@ Executive statement: {text}"""
             if keyword in text_lower:
                 params: Dict[str, Any] = {"text": text}
 
-                if intent_type == "send_email" or intent_type == "send_whatsapp":
+                if intent_type == "send_email" or intent_type == "send_sms":
                     detected_dept = "operations"
                     for dept, synonyms in DEPARTMENT_SYNONYMS.items():
                         if any(s in text_lower for s in synonyms):
@@ -737,64 +737,215 @@ async def _handle_send_bulk_message_action(
     }
 
 
-async def _handle_send_whatsapp_action(
+def _extract_sms_body(text: str) -> Optional[str]:
+    """Pull the intended message body out of a chat request. Prefers text in
+    quotes, else text after a natural lead-in ("saying", "tell them", ...).
+    Returns None rather than inventing content."""
+    import re as _re
+
+    # Curly quotes built via chr() so this file stays pure-ASCII (same
+    # mojibake class already fixed elsewhere in this codebase).
+    _LEFT_DQ, _RIGHT_DQ = chr(0x201C), chr(0x201D)
+    m = _re.search(r'["' + _LEFT_DQ + r']([^"' + _RIGHT_DQ + r']{3,900})["' + _RIGHT_DQ + r']', text)
+    if m:
+        return m.group(1).strip()
+    m = _re.search(
+        r"\b(?:saying|that says|tell(?:ing)? (?:them|him|her|the client|the customer)|message[: ]+)"
+        r"\s*(?:that\s+)?(.+)$",
+        text,
+        _re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip().strip("\"'" + _LEFT_DQ + _RIGHT_DQ).rstrip(".")
+    return None
+
+
+def _sms_needs_input(intent: Dict[str, Any], simulation: bool, message: str) -> Dict[str, Any]:
+    return {
+        "intent": intent,
+        "report": {"summary": message, "status": "needs_input"},
+        "simulation": simulation,
+    }
+
+
+# "text Royan that ...", "send an sms to Royan Hospital saying ..." -- grab the
+# name between the preposition and whatever introduces the message body.
+_RECIPIENT_NAME_RE = re.compile(
+    # "...to Royan saying" / "...for Royan Hospital:" and the verb-first form
+    # people also use: "text Royan Hospital saying ...".
+    r"\b(?:to|for|text|sms|email|message)\s+(?!this\b|that\b|the\s+number\b)"
+    r"([A-Za-z][\w'&.\-]*(?:\s+[A-Za-z][\w'&.\-]*){0,3}?)"
+    r"(?=\s+(?:saying|that|telling|to\s+say|about|re\b|:)|\s*[,:\"]|$)",
+    re.IGNORECASE,
+)
+
+# Words that are never a client name, so we don't go looking up "a text".
+_NON_NAME_TOKENS = {
+    "a", "an", "the", "text", "sms", "message", "him", "her", "them", "it",
+    "client", "customer", "number", "this", "that", "please", "quick",
+    # The verb-first alternative above can match before the preposition
+    # ("send a TEXT to Royan"), leaving it on the front of the candidate.
+    "to", "for", "send", "email",
+}
+
+
+def _extract_recipient_name(text: str) -> Optional[str]:
+    m = _RECIPIENT_NAME_RE.search(text or "")
+    if not m:
+        return None
+    candidate = " ".join(
+        w for w in m.group(1).split()
+        if w.lower() not in _NON_NAME_TOKENS
+    ).strip(" ,:\"'")
+    if candidate.replace(" ", "").isdigit():
+        return None  # a bare number is a phone number, not a client name
+    return candidate if len(candidate) >= 2 else None
+
+
+async def _handle_send_sms_action(
     intent: Dict[str, Any], text: str, simulation: bool
 ) -> Dict[str, Any]:
-    """Send a WhatsApp message to an internal department via Termii."""
-    import yaml
-    from src.services.messaging import send_whatsapp
+    """
+    Send an SMS via Termii, either to an explicit phone number given in the
+    chat request or to a department number from config.yaml's sms.recipients.
+
+    Unlike the departmental-only handler this replaces, the number is read
+    out of the user's own message -- "send a text to +234... saying ..." is
+    the normal way people phrase this, and previously the number was silently
+    ignored.
+    """
+    import re as _re
+    from src.services.messaging import (
+        send_sms, _normalize_ng_phone, find_client_contacts, sms_blackout_active,
+    )
 
     params = intent.get("parameters", {})
-    department = (params.get("department") or "operations").lower()
+    recipient_label = None
 
-    cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
-    to_phone: Optional[str] = None
-    try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-        phones = ((cfg.get("whatsapp") or {}).get("recipients")) or {}
-        to_phone = phones.get(department)
-    except Exception as exc:
-        logger.error(f"Failed to load config for WhatsApp dispatch: {exc}")
+    # 1. Explicit number in the message wins.
+    raw_phone = None
+    m = _re.search(r"\+?[0-9][0-9\-\s]{7,14}[0-9]", text or "")
+    if m:
+        raw_phone = _re.sub(r"\s+", "", m.group(0))
+    to_phone = _normalize_ng_phone(raw_phone) if raw_phone else None
+
+    # 2. No number given -- resolve a client by name against the CRM, so
+    #    "text Royan that their vaccines are on the way" works the way people
+    #    actually phrase it.
+    if not to_phone:
+        hint = _extract_recipient_name(text)
+        if hint:
+            matches = find_client_contacts(hint)
+            with_phone = [c for c in matches if c.get("phone")]
+            if len(with_phone) == 1:
+                to_phone = with_phone[0]["phone"]
+                recipient_label = with_phone[0]["name"]
+            elif len(with_phone) > 1:
+                names = ", ".join(c["name"] for c in with_phone[:5])
+                return _sms_needs_input(
+                    intent, simulation,
+                    f"More than one client matches '{hint}': {names}. "
+                    "Which one should I text?",
+                )
+            elif matches:
+                # Prefer a match that at least has *something* stored, so we
+                # report the useful failure ("that number isn't textable")
+                # rather than "no number" for a different same-name record.
+                best = next((c for c in matches if c.get("phone_raw")), matches[0])
+                if best.get("phone_raw"):
+                    detail = (
+                        f"the number on file ({best['phone_raw']}) isn't a valid "
+                        "Nigerian mobile number, so it can't receive SMS"
+                    )
+                else:
+                    detail = "there's no phone number on their record"
+                return _sms_needs_input(
+                    intent, simulation,
+                    f"I can't text {best['name']} — {detail}. "
+                    "Give me a mobile number to use, or update their record.",
+                )
+
+    # 3. Otherwise fall back to a department number from config.yaml.
+    department = (params.get("department") or "").lower()
+    if not to_phone and department:
+        import yaml
+        cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            phones = ((cfg.get("sms") or {}).get("recipients")) or {}
+            to_phone = _normalize_ng_phone(phones.get(department))
+        except Exception as exc:
+            logger.error(f"Failed to load config for SMS dispatch: {exc}")
 
     if not to_phone:
-        return {
-            "intent": intent,
-            "report": {
-                "summary": (
-                    f"No WhatsApp number configured for '{department}'. "
-                    "Add a whatsapp.recipients section to config.yaml."
-                ),
-                "status": "error",
-            },
-            "simulation": simulation,
-        }
+        return _sms_needs_input(
+            intent, simulation,
+            "I need a phone number or a client name to text. For example: "
+            "send a text to 08012345678 saying \"Your vaccines are ready\", "
+            "or: text Royan Hospital saying \"Your vaccines are on the way\".",
+        )
+
+    who = f"{recipient_label} ({to_phone})" if recipient_label else to_phone
+
+    body = _extract_sms_body(text)
+    if not body:
+        return _sms_needs_input(
+            intent, simulation,
+            f"I have the number for {who} but not the message. Put the text in "
+            "quotes, for example: \"Your vaccines are ready for collection.\"",
+        )
 
     if simulation:
         return {
             "intent": intent,
             "report": {
-                "summary": f"[SIMULATION] Would send WhatsApp to {department} ({to_phone}).",
+                "summary": f"[SIMULATION] Would send SMS to {who}: {body}",
                 "status": "simulated",
             },
             "simulation": True,
         }
 
+    # Refuse rather than report a success that never lands. Termii answers
+    # "Successfully Sent" for overnight generic-route traffic and bills for
+    # it, but the carrier rejects it -- which is exactly how a message was
+    # reported as sent and never arrived.
+    if sms_blackout_active():
+        return _sms_needs_input(
+            intent, simulation,
+            f"I haven't sent this. Nigerian carriers reject our SMS route "
+            f"between 8PM and 8AM, so a text to {who} would be charged but "
+            "never delivered. Send it after 8AM, or use email instead.",
+        )
+
     try:
-        send_whatsapp(to_phone=to_phone, message=text)
+        # "generic" is the only route provisioned on this Termii workspace --
+        # "dnd" returns 422 "Route not configured ... route=DND" until Termii
+        # support enables it. DND-registered numbers won't receive generic
+        # traffic at any hour.
+        result = send_sms(to_phone, body, channel="generic")
+        if str(result.get("code", "ok")).lower() not in ("ok", "success"):
+            return {
+                "intent": intent,
+                "report": {
+                    "summary": f"Termii rejected the SMS to {who}: {result.get('message') or result}",
+                    "status": "error",
+                },
+                "simulation": False,
+            }
         return {
             "intent": intent,
             "report": {
-                "summary": f"WhatsApp message sent to the {department} department.",
+                "summary": f"SMS sent to {who}: \"{body}\"",
                 "status": "success",
             },
             "simulation": False,
         }
     except Exception as exc:
-        logger.error(f"WhatsApp send failed: {exc}")
+        logger.error(f"SMS send failed: {exc}")
         return {
             "intent": intent,
-            "report": {"summary": f"Failed to send WhatsApp to {department}: {exc}", "status": "error"},
+            "report": {"summary": f"Failed to send SMS to {who}: {exc}", "status": "error"},
             "simulation": False,
         }
 
@@ -976,8 +1127,8 @@ async def handle_intent(request: Request, body: IntentRequest):
     if intent.get("intent_type") == "send_email":
         return await _handle_send_email_action(intent, text, simulation)
 
-    if intent.get("intent_type") == "send_whatsapp":
-        return await _handle_send_whatsapp_action(intent, text, simulation)
+    if intent.get("intent_type") == "send_sms":
+        return await _handle_send_sms_action(intent, text, simulation)
 
     if intent.get("intent_type") == "schedule_meeting":
         return await _handle_schedule_meeting_action(intent, text, simulation)

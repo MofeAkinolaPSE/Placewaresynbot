@@ -432,7 +432,12 @@ function StepInvoice({
   const createInvoice = useMutation({
     mutationFn: () =>
       api.frontdesk.createInvoice(walkInId, {
-        items: items.map((it) => ({ ...it, product: it.product.trim() })),
+        // Attach the sku the stock check already resolved for this product
+        // name, so dispatch can deduct the right item from inventory.
+        items: items.map((it) => {
+          const product = it.product.trim();
+          return { ...it, product, sku: it.sku || stockData[product]?.sku };
+        }),
         payment_method: paymentMethod,
         notes: notes.trim() || undefined,
         billing_address: billingAddress.trim() || undefined,

@@ -70,18 +70,19 @@ ACTION_INTENTS: Dict[str, Dict] = {
         "handler": "_handle_send_email_action",
         "description": "Send an email to an internal department or contact",
     },
-    "send_whatsapp": {
+    "send_sms": {
         "keywords": [
-            "send whatsapp",
-            "whatsapp the",
-            "send a whatsapp",
-            "text the",
+            "send an sms",
             "send a text to",
-            "ping the",
-            "whatsapp message",
+            "send a text message",
+            "send sms",
+            "text the",
+            "sms the",
+            "text this number",
+            "send a text",
         ],
-        "handler": "_handle_send_whatsapp_action",
-        "description": "Send a WhatsApp message to an internal department or staff member",
+        "handler": "_handle_send_sms_action",
+        "description": "Send an SMS to a phone number or an internal department",
     },
     "schedule_meeting": {
         "keywords": [
@@ -445,7 +446,7 @@ TASK_MAPPING: Dict[str, List[Dict[str, str]]] = build_task_mapping()
 
 # ---------------------------------------------------------------------------
 # 5.  DEPARTMENT CONTACT MAP
-#     Used by send_email / send_whatsapp handlers to resolve dept → address.
+#     Used by send_email / send_sms handlers to resolve dept → address.
 #     Loaded from config.yaml at runtime; this dict provides the key synonyms.
 # ---------------------------------------------------------------------------
 DEPARTMENT_SYNONYMS: Dict[str, List[str]] = {

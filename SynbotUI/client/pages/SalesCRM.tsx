@@ -49,6 +49,7 @@ import { motionVariants } from "@/lib/motion";
 import { PageHeader } from "@/components/workspace/PageHeader";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { RecipientPicker, type Recipient } from "@/components/workspace/RecipientPicker";
 
 // --- Types ---
 
@@ -410,9 +411,10 @@ export default function SalesCRM() {
 
   // Bulk message
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkChannel, setBulkChannel] = useState("sms");
+  const [bulkChannel, setBulkChannel] = useState<"sms" | "email">("sms");
   const [bulkSubject, setBulkSubject] = useState("");
   const [bulkText, setBulkText] = useState("");
+  const [bulkRecipients, setBulkRecipients] = useState<Recipient[]>([]);
 
   // Brief sheet
   const [briefLeadId, setBriefLeadId] = useState<number | null>(null);
@@ -524,21 +526,39 @@ export default function SalesCRM() {
     },
   });
 
+  // Queue then immediately dispatch: queueing alone left the job sitting in
+  // crm_bulk_message_jobs with nothing to pick it up, so "queued" looked like
+  // a send that never happened.
   const sendBulk = useMutation({
-    mutationFn: () =>
-      api.salesCrm.queueBulkMessage({
+    mutationFn: async () => {
+      const job = await api.salesCrm.queueBulkMessage({
         channel:      bulkChannel,
         message_text: bulkText,
         subject:      bulkSubject || undefined,
-      }),
-    onSuccess: () => {
-      toast({ title: "Bulk message queued", description: "It will be processed shortly." });
+        recipient_filter: {
+          customer_ids: bulkRecipients.filter((r) => r.kind === "customer").map((r) => r.id),
+          supplier_ids: bulkRecipients.filter((r) => r.kind === "supplier").map((r) => r.id),
+        },
+      });
+      const jobId = job?.id ?? job?.data?.id;
+      if (!jobId) throw new Error("Job was queued but no job id came back, so it was not dispatched.");
+      return api.salesCrm.dispatchBulkMessage(jobId);
+    },
+    onSuccess: (result: any) => {
+      const sent = result?.sent ?? 0;
+      const failed = result?.failed ?? 0;
+      toast({
+        title: failed > 0 ? `Sent to ${sent}, ${failed} failed` : `Sent to ${sent} recipient${sent === 1 ? "" : "s"}`,
+        description: failed > 0 ? (result?.errors ?? []).slice(0, 2).join("; ") : undefined,
+        variant: sent === 0 ? "destructive" : undefined,
+      });
       setBulkOpen(false);
       setBulkText("");
       setBulkSubject("");
+      setBulkRecipients([]);
     },
     onError: (e: any) => {
-      toast({ title: "Failed to queue message", description: e?.message, variant: "destructive" });
+      toast({ title: "Failed to send message", description: e?.message, variant: "destructive" });
     },
   });
 
@@ -1055,27 +1075,38 @@ export default function SalesCRM() {
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         title="Send Bulk Message"
-        description="Broadcast a message to your client list via SMS or Email."
+        description="Send a message to selected customers or suppliers via SMS or Email."
         icon={Send}
         footer={
-          <Button className="w-full gap-2" disabled={bulkText.trim().length === 0 || sendBulk.isPending} onClick={() => sendBulk.mutate()}>
+          <Button
+            className="w-full gap-2"
+            disabled={bulkText.trim().length === 0 || bulkRecipients.length === 0 || sendBulk.isPending}
+            onClick={() => sendBulk.mutate()}
+          >
             {sendBulk.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Queue Message
+            {bulkRecipients.length > 0
+              ? `Queue for ${bulkRecipients.length} recipient${bulkRecipients.length === 1 ? "" : "s"}`
+              : "Queue Message"}
           </Button>
         }
       >
         <div className="space-y-3">
           <div className="space-y-1">
             <label className="text-sm font-medium">Channel</label>
-            <Select value={bulkChannel} onValueChange={setBulkChannel}>
+            <Select value={bulkChannel} onValueChange={(v) => setBulkChannel(v as "sms" | "email")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="sms">SMS (via Termii)</SelectItem>
                 <SelectItem value="email">Email (via Gmail SMTP)</SelectItem>
-                <SelectItem value="whatsapp">WhatsApp (via Termii)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          <RecipientPicker
+            value={bulkRecipients}
+            onChange={setBulkRecipients}
+            channel={bulkChannel}
+          />
           {bulkChannel === "sms" && (
             <p className="text-xs text-muted-foreground">
               Sent via the generic Termii route — cheaper, but doesn't reach DND-registered numbers and is time-restricted on some networks (8PM–8AM WAT).

@@ -63,15 +63,35 @@ type CustomerSearchResult = { id: number; name: string; customer_code?: string; 
 type OrderRow = { id: string; invoice_number?: string; walk_in_id: string; status: string; total_amount: number; created_at: string };
 type ItemRow = {
   product: string; quantity: number; unit_price: number;
+  // Carried through to the invoice so dispatch can deduct the right stock.
+  // Without it the backend can only name-match, which silently fails to
+  // decrement anything when the typed product isn't an exact catalogue name.
+  sku?: string;
   batch_number?: string; manufacture_date?: string; expiry_date?: string;
 };
-// GET /inventory/search's real return shape (v_inventory) -- product is
-// still a free-text field on the request (quick-request has no SKU FK), so
-// this only powers autocomplete/autofill, not a hard catalog constraint.
+// GET /inventory/search's real return shape (v_inventory).
 type InventorySuggestion = {
   sku?: string; name: string; category?: string; current_stock?: number; selling_price?: number;
   batch_number?: string; expiry_date?: string;
 };
+
+// customer_360 splits the address and city, but most records keep the city
+// inline in the address string already ("...OJODU BERGER, LAGOS"), so only
+// append it when it isn't there to avoid "LAGOS, LAGOS".
+function buildBillingAddress(cust: any): string {
+  const address = String(cust?.address || "").trim();
+  const city = String(cust?.city || "").trim();
+  if (!address) return city;
+  if (!city || address.toLowerCase().includes(city.toLowerCase())) return address;
+  return `${address}, ${city}`;
+}
+
+function resolveCustomerTerms(cust: any): string | null {
+  const terms = String(cust?.terms || "").trim();
+  if (terms) return terms;
+  const days = cust?.payment_terms_days;
+  return days != null ? `Net ${days} Days` : null;
+}
 
 export default function CustomerWorkspace() {
   const { toast } = useToast();
@@ -134,7 +154,9 @@ export default function CustomerWorkspace() {
   }, []);
 
   function handleProductInputChange(idx: number, value: string) {
-    setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, product: value } : r)));
+    // Drop any previously-picked sku: it belonged to the old product, and a
+    // stale sku would make dispatch deduct stock from the wrong item.
+    setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, product: value, sku: undefined } : r)));
     if (itemSearchTimeout.current) clearTimeout(itemSearchTimeout.current);
     const q = value.trim();
     if (q.length < 2) {
@@ -154,7 +176,8 @@ export default function CustomerWorkspace() {
   function applyItemSuggestion(idx: number, sug: InventorySuggestion) {
     setItems((prev) => prev.map((r, i) =>
       i === idx ? {
-        ...r, product: sug.name, unit_price: sug.selling_price ?? r.unit_price,
+        ...r, product: sug.name, sku: sug.sku ?? r.sku,
+        unit_price: sug.selling_price ?? r.unit_price,
         batch_number: sug.batch_number ?? r.batch_number,
         expiry_date: sug.expiry_date ?? r.expiry_date,
       } : r
@@ -188,6 +211,35 @@ export default function CustomerWorkspace() {
   });
 
   const orders: OrderRow[] = (context as any)?.orders ?? [];
+
+  // Prefill Invoice Details from the customer's own record. Everything below
+  // already existed on the customer (customer_360 returns address/city/terms)
+  // and the request payload already carried these fields -- staff were simply
+  // re-typing data the system had. Keyed by customer id so switching customers
+  // re-fills, while a re-render mid-edit leaves what's being typed alone.
+  const prefilledForRef = useRef<number | null>(null);
+  useEffect(() => {
+    const cust = (context as any)?.customer;
+    if (!cust || !selectedCustomer) return;
+    if (prefilledForRef.current === selectedCustomer.id) return;
+    prefilledForRef.current = selectedCustomer.id;
+
+    // Set rather than fill-if-empty: the ref above already means this runs
+    // once per customer, so the only thing a merge would preserve is the
+    // PREVIOUS customer's address after switching -- which is exactly wrong.
+    setBillingAddress(buildBillingAddress(cust));
+    const terms = resolveCustomerTerms(cust);
+    if (terms) setPaymentTerms(terms);
+  }, [context, selectedCustomer]);
+
+  // A customer's stored terms won't always be one of the five preset options
+  // (they come from the Sage master data), and silently dropping an unknown
+  // value would persist the wrong due_date -- the server derives due_date
+  // from this string.
+  const termsOptions = useMemo(() => {
+    const base = ["Due on Receipt", "Net 7 Days", "Net 15 Days", "Net 30 Days", "Net 60 Days"];
+    return base.includes(paymentTerms) ? base : [...base, paymentTerms];
+  }, [paymentTerms]);
 
   // Ranked by reorder urgency, from real dated AR ledger history (not
   // per-SKU -- see customer_reorder.py's docstring on why per-SKU timing
@@ -228,6 +280,7 @@ export default function CustomerWorkspace() {
         .filter((it) => it.product.trim())
         .map((it) => ({
           product: it.product.trim(), quantity: it.quantity, unit_price: it.unit_price,
+          sku: it.sku || undefined,
           batch_number: it.batch_number || undefined,
           manufacture_date: it.manufacture_date || undefined,
           expiry_date: it.expiry_date || undefined,
@@ -665,7 +718,7 @@ export default function CustomerWorkspace() {
                 <Select value={paymentTerms} onValueChange={setPaymentTerms}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {["Due on Receipt", "Net 7 Days", "Net 15 Days", "Net 30 Days", "Net 60 Days"].map((t) => (
+                    {termsOptions.map((t) => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>

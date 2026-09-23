@@ -9,7 +9,7 @@ April 2026 requirements-gathering form:
   • POST  /crm/sales/followups        – Create a follow-up reminder
   • GET   /crm/sales/followups/due    – List reminders due within N hours
   • PATCH /crm/sales/followups/{id}   – Update reminder status (done / snoozed)
-  • POST  /crm/sales/bulk-message     – Queue a bulk WhatsApp/SMS/Email job
+  • POST  /crm/sales/bulk-message     – Queue a bulk SMS/Email job
   • GET   /crm/sales/bulk-message     – List bulk message jobs
   • GET   /crm/sales/weekly-report    – Generate / retrieve weekly sales report
   • POST  /crm/sales/query            – Plain-language NLQ ("Which clients haven't ordered in 60 days?")
@@ -80,11 +80,14 @@ class FollowUpUpdateIn(BaseModel):
 
 
 class BulkMessageIn(BaseModel):
-    channel:          str = Field(default="whatsapp",
-                                  description="whatsapp | email | sms")
+    channel:          str = Field(default="sms",
+                                  description="sms | email")
     message_text:     str = Field(..., min_length=1, max_length=4096)
     subject:          Optional[str] = None
-    recipient_filter: Optional[dict] = None    # e.g. {"stage": "won", "last_ordered_days": 60}
+    # Explicit selection from the recipient picker:
+    #   {"customer_ids": [...], "supplier_ids": [...]}
+    # or a segment broadcast: {"facility_type": "hospital"}
+    recipient_filter: Optional[dict] = None
 
 
 class NLQIn(BaseModel):
@@ -403,7 +406,7 @@ async def update_followup(
 # 6. Queue a bulk message job
 # ---------------------------------------------------------------------------
 
-VALID_CHANNELS = {"whatsapp", "email", "sms"}
+VALID_CHANNELS = {"email", "sms"}
 
 
 @router.post("/bulk-message", status_code=201)
@@ -411,7 +414,7 @@ async def create_bulk_message(
     payload: BulkMessageIn,
     request=Depends(require_role("crm")),   # type: ignore[assignment]
 ):
-    """Queue a bulk WhatsApp / SMS / Email broadcast to a client segment."""
+    """Queue a bulk SMS / Email send to selected recipients or a client segment."""
     channel = payload.channel.strip().lower()
     if channel not in VALID_CHANNELS:
         raise HTTPException(
@@ -826,7 +829,7 @@ async def dispatch_bulk_message(
 ):
     """
     Trigger immediate dispatch of a queued bulk message job.
-    Requires TERMII_API_KEY (WhatsApp) or EMAIL_FROM/EMAIL_PASS (email) to be set.
+    Requires TERMII_API_KEY (SMS) or EMAIL_FROM/EMAIL_PASS (email) to be set.
     """
     try:
         resp = db.table("crm_bulk_message_jobs").select("*").eq("id", job_id).limit(1).execute()
@@ -857,7 +860,7 @@ async def dispatch_bulk_message(
 
     db.table("crm_bulk_message_jobs").update(
         {
-            "status":         result.get("status", "sent"),
+            "status":         result.get("status", "completed"),
             "sent_count":     result.get("sent", 0),
             "failed_count":   result.get("failed", 0),
             "recipient_count": result.get("total", 0),

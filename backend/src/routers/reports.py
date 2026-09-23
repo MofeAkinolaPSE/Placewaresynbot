@@ -132,7 +132,12 @@ class ReportResponse(BaseModel):
     template_version: Optional[str]    = None
 
 
-# â”€â”€ DOCX builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- DOCX builders -----------------------------------------------------------
+# Both delegate to src.services.docx_engine, the single branded Word renderer
+# for the whole app (companion to document_engine.py for PDFs). These used to
+# be two independent hand-rolled python-docx builders with duplicated brand
+# constants and an ad-hoc markdown parser that leaked backticks, pipe tables
+# and '####' into the page, and numbered every list from one shared sequence.
 
 def _build_report_docx(
     full_report: str,
@@ -142,474 +147,135 @@ def _build_report_docx(
     scope_params: Optional[Dict[str, Any]] = None,
     approved: bool = False,
 ) -> bytes:
-    """
-    Build a professional, enterprise-grade branded .docx report.
+    """Branded narrative report: cover, contents, sections, sign-off."""
+    from src.services import docx_engine as E
 
-    Features:
-      - Cover page (title, scope dates, classification badge, DRAFT/FINAL watermark)
-      - Table of contents (auto-built from section titles)
-      - Section-by-section rendering when section_results is provided
-      - Findings table (No. | Finding | Source)
-      - Recommendations table (Priority | Recommendation)
-      - Signature block (Prepared By / Reviewed By / Approved By)
-      - DRAFT watermark until approved=True
-    """
-    try:
-        from docx import Document as DocxDocument
-        from docx.shared import Pt, RGBColor, Inches, Cm
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        from docx.oxml.ns import qn
-        from docx.oxml import OxmlElement
-    except ImportError:
-        raise RuntimeError("python-docx is not installed on the server")
+    scope = scope_params or {}
+    doc = E.new_document()
+    E.add_logo_header(doc)
+    E.add_footer(doc)
 
-    # â”€â”€ Brand constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    GREEN    = RGBColor(0x2D, 0x6A, 0x4F)  # Placeware pharma green
-    NAVY     = RGBColor(0x1E, 0x3A, 0x5F)  # Deep navy
-    GREY     = RGBColor(0x66, 0x66, 0x66)
-    LIGHT_GREY = RGBColor(0x99, 0x99, 0x99)
-    WATERMARK_COLOR = RGBColor(0xCC, 0x00, 0x00) if not approved else RGBColor(0x00, 0x88, 0x44)
-    watermark_text = "FINAL" if approved else "DRAFT"
-
-    doc = DocxDocument()
-
-    # â”€â”€ Page layout: A4 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    word_section = doc.sections[0]
-    word_section.page_width  = int(21.0 * 914400 / 25.4)
-    word_section.page_height = int(29.7 * 914400 / 25.4)
-    word_section.left_margin   = Inches(1.0)
-    word_section.right_margin  = Inches(1.0)
-    word_section.top_margin    = Cm(2.0)
-    word_section.bottom_margin = Cm(2.0)
-
-    # â”€â”€ Helper: add coloured paragraph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    def _add_coloured_run(para, text: str, color: RGBColor, bold: bool = False, size: int = 10):
-        run = para.add_run(text)
-        run.bold = bold
-        run.font.size = Pt(size)
-        run.font.color.rgb = color
-        return run
-
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # COVER PAGE
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    doc.add_paragraph("")
-    doc.add_paragraph("")
-
-    # Company brand header
-    brand_p = doc.add_paragraph()
-    brand_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_coloured_run(brand_p, "PLACEWARE NIGERIA LIMITED", GREEN, bold=True, size=14)
-
-    tagline_p = doc.add_paragraph()
-    tagline_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_coloured_run(tagline_p, "Enterprise AI Intelligence Report", GREY, size=10)
-
-    doc.add_paragraph("")
-
-    # Watermark badge
-    wm_p = doc.add_paragraph()
-    wm_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    wm_run = wm_p.add_run(f"[ {watermark_text} ]")
-    wm_run.bold = True
-    wm_run.font.size = Pt(16)
-    wm_run.font.color.rgb = WATERMARK_COLOR
-
-    doc.add_paragraph("")
-    doc.add_paragraph("─" * 72)
-    doc.add_paragraph("")
-
-    # Report title
-    title_p = doc.add_paragraph()
-    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_coloured_run(title_p, section_title.upper(), NAVY, bold=True, size=18)
-
-    doc.add_paragraph("")
-
-    # Report metadata block
-    now_str      = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
-    date_from    = (scope_params or {}).get("date_from", "N/A")
-    date_to      = (scope_params or {}).get("date_to", "N/A")
-    client_scope = (scope_params or {}).get("client_name") or (scope_params or {}).get("entity_filter", "Placeware Nigeria")
-
-    for label, value in [
-        ("Report Type",     report_type.replace("_", " ").title()),
-        ("Report Period",   f"{date_from} to {date_to}"),
-        ("Entity / Scope",  client_scope),
-        ("Generated",       now_str),
-        ("Prepared By",     "ACE - Placeware Nigeria AI Executive Intelligence"),
-        ("Classification",  "CONFIDENTIAL — For Authorised Recipients Only"),
-    ]:
-        meta_p = doc.add_paragraph()
-        meta_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_coloured_run(meta_p, f"{label}: ", NAVY, bold=True, size=10)
-        _add_coloured_run(meta_p, value, GREY, size=10)
-
-    doc.add_paragraph("")
-    doc.add_paragraph("─" * 72)
-
-    # Page break after cover
-    doc.add_page_break()
-
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # TABLE OF CONTENTS
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    toc_heading = doc.add_heading("Table of Contents", level=1)
-    toc_heading.runs[0].font.color.rgb = NAVY
-
-    if section_results:
-        for sec in sorted(section_results, key=lambda s: s.get("order", 0)):
-            toc_p = doc.add_paragraph(style="List Number")
-            _add_coloured_run(toc_p, sec["title"], NAVY, bold=False, size=10)
-    else:
-        # Fallback: parse ## headings from full_report
-        for line in full_report.split("\n"):
-            if line.startswith("## "):
-                toc_p = doc.add_paragraph(style="List Number")
-                _add_coloured_run(toc_p, line[3:], NAVY, size=10)
-
-    doc.add_page_break()
-
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # REPORT BODY â€” section-by-section or fallback markdown parse
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if section_results:
-        _render_sections(doc, section_results, GREEN, NAVY, GREY)
-    else:
-        _render_markdown_body(doc, full_report, GREEN, NAVY, GREY)
-
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # SIGNATURE BLOCK
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    doc.add_page_break()
-    sig_heading = doc.add_heading("Sign-Off & Approval", level=1)
-    sig_heading.runs[0].font.color.rgb = NAVY
-
-    doc.add_paragraph("")
-    sig_table = doc.add_table(rows=4, cols=3)
-    sig_table.style = "Table Grid"
-    headers = ["Role", "Name & Signature", "Date"]
-    roles   = ["Prepared By", "Reviewed By", "Approved By"]
-    hdr_row = sig_table.rows[0]
-    for i, h in enumerate(headers):
-        cell = hdr_row.cells[i]
-        cell.text = h
-        cell.paragraphs[0].runs[0].bold = True
-        cell.paragraphs[0].runs[0].font.color.rgb = NAVY
-    for i, role in enumerate(roles):
-        row = sig_table.rows[i + 1]
-        row.cells[0].text = role
-        row.cells[1].text = ""
-        row.cells[2].text = ""
-
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # FOOTER
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    doc.add_paragraph("")
-    footer_p = doc.add_paragraph()
-    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fr = footer_p.add_run(
-        "This report was generated by ACE - Placeware Nigeria AI Executive Intelligence. "
-        "CONFIDENTIAL. Not a substitute for professional regulatory or financial advice."
+    E.add_cover(
+        doc,
+        title=section_title or report_type.replace("_", " ").title(),
+        subtitle="Enterprise AI Intelligence Report",
+        badge="FINAL" if approved else "DRAFT",
+        badge_ok=approved,
+        meta=[
+            ("Report Type", report_type.replace("_", " ").title()),
+            ("Report Period", f"{scope.get('date_from', 'N/A')} to {scope.get('date_to', 'N/A')}"),
+            ("Entity / Scope", scope.get("client_name") or scope.get("entity_filter") or "Placeware Nigeria"),
+            ("Generated", datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")),
+            ("Prepared By", "ACE - Placeware Nigeria AI Executive Intelligence"),
+            ("Classification", "CONFIDENTIAL - For Authorised Recipients Only"),
+        ],
     )
-    fr.italic = True
-    fr.font.size = Pt(8)
-    fr.font.color.rgb = LIGHT_GREY
+    doc.add_page_break()
 
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
+    ordered = sorted(section_results or [], key=lambda s: s.get("order", 0))
 
+    if ordered:
+        E.add_contents(doc, [s.get("title", "") for s in ordered if s.get("title")])
+        for sec in ordered:
+            title = (sec.get("title") or "").strip()
+            if title:
+                head = doc.add_paragraph(style="ACE H1")
+                head.add_run(title)
+            E.render_markdown(doc, sec.get("content") or "")
+            score = sec.get("confidence_score")
+            if score is not None:
+                cap = doc.add_paragraph(style="ACE Caption")
+                cap.add_run(f"Section confidence: {round(float(score) * 100)}%")
+    else:
+        # No structured sections (legacy/single-pass path) -- render the
+        # assembled markdown directly rather than dropping it.
+        titles = [
+            ln.lstrip("# ").strip()
+            for ln in (full_report or "").split("\n")
+            if ln.startswith("## ")
+        ]
+        E.add_contents(doc, titles)
+        E.render_markdown(doc, full_report or "")
 
-def _render_sections(
-    doc: Any,
-    section_results: List[Dict[str, Any]],
-    green: Any,
-    navy: Any,
-    grey: Any,
-) -> None:
-    """Render a list of SectionResult dicts into the Word document."""
-    from docx.shared import Pt, RGBColor
-    from src.agents.report_generation_agent import _strip_echoed_heading
+    E.add_signoff(doc)
+    return E.serialize(doc)
 
-    for sec in sorted(section_results, key=lambda s: s.get("order", 0)):
-        title   = sec.get("title", "")
-        content = sec.get("content", "")
-        status  = sec.get("status", "complete")
-        conf    = sec.get("confidence_score", 0.0)
-
-        h = doc.add_heading(title, level=2)
-        h.runs[0].font.color.rgb = green
-
-        if status == "incomplete":
-            p = doc.add_paragraph()
-            r = p.add_run("[Section incomplete — insufficient data available for this period.]")
-            r.italic = True
-            r.font.color.rgb = grey
-        elif content:
-            # Defensive second layer: strip an echoed title heading here too, so
-            # sections generated before the report_generation_agent fix (already
-            # stored in placeware_report_memory) also render without a duplicate
-            # heading on re-download.
-            content = _strip_echoed_heading(content, title)
-            _render_markdown_body(doc, content, green, navy, grey, top_level=False)
-
-        # Confidence line
-        conf_p = doc.add_paragraph()
-        conf_run = conf_p.add_run(f"Section confidence: {conf:.0%}")
-        conf_run.italic = True
-        conf_run.font.size = Pt(8)
-        conf_run.font.color.rgb = grey
-
-        doc.add_paragraph("")
-
-
-def _render_markdown_body(
-    doc: Any,
-    text: str,
-    green: Any,
-    navy: Any,
-    grey: Any,
-    top_level: bool = True,
-) -> None:
-    """Parse markdown-ish text and render into doc paragraphs."""
-    from docx.shared import Pt, RGBColor
-
-    # Extract findings and recommendations for table rendering
-    findings: List[str] = []
-    recommendations: List[str] = []
-    current_section = ""
-
-    lines = text.split("\n")
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        if stripped.startswith("# ") and top_level:
-            h = doc.add_heading(stripped[2:], level=1)
-            h.runs[0].font.color.rgb = navy
-
-        elif stripped.startswith("## "):
-            h = doc.add_heading(stripped[3:], level=2)
-            h.runs[0].font.color.rgb = green
-            current_section = stripped[3:].lower()
-
-        elif stripped.startswith("### "):
-            h = doc.add_heading(stripped[4:], level=3)
-            if h.runs:
-                h.runs[0].font.color.rgb = navy
-
-        elif stripped.startswith("---"):
-            doc.add_paragraph("─" * 72)
-
-        elif re.match(r"^\d+\.", stripped):
-            item_text = stripped[stripped.index(".") + 1:].strip()
-            p = doc.add_paragraph(style="List Number")
-            _add_inline_formatting(p, item_text, Pt(10), grey)
-            if "finding" in current_section or "key finding" in current_section:
-                findings.append(item_text)
-            if "recommendation" in current_section:
-                recommendations.append(item_text)
-
-        elif stripped.startswith("* ") or stripped.startswith("- "):
-            p = doc.add_paragraph(style="List Bullet")
-            _add_inline_formatting(p, stripped[2:], Pt(10), grey)
-
-        elif stripped == "":
-            doc.add_paragraph("")
-
-        else:
-            p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(4)
-            _add_inline_formatting(p, stripped, Pt(10), grey)
-
-        i += 1
-
-    # Render findings table if we collected any numbered findings
-    if findings and top_level:
-        doc.add_heading("Findings Summary", level=2).runs[0].font.color.rgb = green
-        t = doc.add_table(rows=1 + len(findings), cols=2)
-        t.style = "Table Grid"
-        t.rows[0].cells[0].text = "No."
-        t.rows[0].cells[1].text = "Finding"
-        for j, f in enumerate(findings):
-            t.rows[j + 1].cells[0].text = str(j + 1)
-            t.rows[j + 1].cells[1].text = f
-        doc.add_paragraph("")
-
-    # Render recommendations table
-    if recommendations and top_level:
-        doc.add_heading("Recommendations Summary", level=2).runs[0].font.color.rgb = green
-        t = doc.add_table(rows=1 + len(recommendations), cols=2)
-        t.style = "Table Grid"
-        t.rows[0].cells[0].text = "Priority"
-        t.rows[0].cells[1].text = "Recommendation"
-        for j, r in enumerate(recommendations):
-            t.rows[j + 1].cells[0].text = str(j + 1)
-            t.rows[j + 1].cells[1].text = r
-        doc.add_paragraph("")
-
-
-def _add_inline_formatting(para: Any, text: str, font_size: Any, grey: Any) -> None:
-    """Handle **bold** and *italic* inline markdown in a paragraph."""
-    from docx.shared import RGBColor
-
-    parts = re.split(r"(\*\*.*?\*\*|\*.*?\*)", text)
-    for part in parts:
-        if part.startswith("**") and part.endswith("**"):
-            run = para.add_run(part[2:-2])
-            run.bold = True
-            run.font.size = font_size
-        elif part.startswith("*") and part.endswith("*"):
-            run = para.add_run(part[1:-1])
-            run.italic = True
-            run.font.size = font_size
-            run.font.color.rgb = grey
-        elif part:
-            run = para.add_run(part)
-            run.font.size = font_size
-
-
-# â”€â”€ Invoice DOCX builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _build_invoice_docx(scope_params: Dict[str, Any], service_description: str = "") -> bytes:
-    """
-    Build a branded tax invoice as a .docx file.
-    All monetary calculations use scope_params line_items.
-    """
-    try:
-        from docx import Document as DocxDocument
-        from docx.shared import Pt, RGBColor, Inches, Cm
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-    except ImportError:
-        raise RuntimeError("python-docx is not installed on the server")
+    """Branded tax invoice. Monetary values are computed from line_items."""
+    from src.services import docx_engine as E
 
-    GREEN = RGBColor(0x2D, 0x6A, 0x4F)
-    NAVY  = RGBColor(0x1E, 0x3A, 0x5F)
-    GREY  = RGBColor(0x66, 0x66, 0x66)
+    scope = scope_params or {}
+    currency = scope.get("currency", "NGN")
 
-    doc = DocxDocument()
-    word_section = doc.sections[0]
-    word_section.page_width  = int(21.0 * 914400 / 25.4)
-    word_section.page_height = int(29.7 * 914400 / 25.4)
-    word_section.left_margin   = Inches(1.0)
-    word_section.right_margin  = Inches(1.0)
-    word_section.top_margin    = Cm(2.0)
-    word_section.bottom_margin = Cm(2.0)
+    doc = E.new_document()
+    E.add_logo_header(doc)
+    E.add_footer(doc, "Placeware Nigeria Limited  |  Thank you for your business.")
 
-    # Header
-    hdr = doc.add_paragraph()
-    hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = hdr.add_run("PLACEWARE NIGERIA LIMITED"); r.bold = True; r.font.size = Pt(14); r.font.color.rgb = GREEN
-
-    sub = doc.add_paragraph()
-    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r2 = sub.add_run("TAX INVOICE"); r2.bold = True; r2.font.size = Pt(18); r2.font.color.rgb = NAVY
-
-    doc.add_paragraph("─" * 72)
-    doc.add_paragraph("")
-
-    # Client + invoice metadata two-column layout via table
-    meta_table = doc.add_table(rows=1, cols=2)
-    meta_table.style = "Table Grid"
-    left  = meta_table.rows[0].cells[0]
-    right = meta_table.rows[0].cells[1]
-
-    bill_to = f"Bill To:\n{scope_params.get('client_name','')}\n{scope_params.get('client_address','')}\n{scope_params.get('client_email','')}"
-    left.text = bill_to
-
-    inv_num = f"INVOICE-{datetime.utcnow().strftime('%Y%m%d%H%M')}"
-    inv_info = (
-        f"Invoice No: {inv_num}\n"
-        f"Invoice Date: {scope_params.get('invoice_date','')}\n"
-        f"Due Date: {scope_params.get('due_date','')}\n"
-        f"Currency: {scope_params.get('currency','NGN')}"
+    E.add_cover(
+        doc,
+        title="Tax Invoice",
+        subtitle="Placeware Nigeria Limited",
+        meta=[
+            ("Invoice No", scope.get("invoice_number") or f"INVOICE-{datetime.utcnow().strftime('%Y%m%d%H%M')}"),
+            ("Invoice Date", scope.get("invoice_date", "")),
+            ("Due Date", scope.get("due_date", "")),
+            ("Currency", currency),
+        ],
     )
-    right.text = inv_info
 
-    doc.add_paragraph("")
+    E.add_table(doc, [
+        ["Bill To", "Details"],
+        [scope.get("client_name", ""), scope.get("client_address", "")],
+        [scope.get("client_email", ""), scope.get("client_phone", "")],
+    ])
 
-    # Service description
     if service_description:
-        desc_h = doc.add_heading("Description of Services", level=2)
-        desc_h.runs[0].font.color.rgb = GREEN
-        doc.add_paragraph(service_description)
-        doc.add_paragraph("")
+        head = doc.add_paragraph(style="ACE H2")
+        head.add_run("Description of Services")
+        E.render_markdown(doc, service_description)
 
-    # Line items table
-    line_items: List[Dict] = scope_params.get("line_items") or []
-    items_heading = doc.add_heading("Invoice Items", level=2)
-    items_heading.runs[0].font.color.rgb = GREEN
+    line_items: List[Dict] = scope.get("line_items") or []
+    head = doc.add_paragraph(style="ACE H2")
+    head.add_run("Invoice Items")
 
-    n_rows = 1 + max(len(line_items), 1)
-    items_table = doc.add_table(rows=n_rows, cols=4)
-    items_table.style = "Table Grid"
-    col_headers = ["Description", "Qty", "Unit Price", "Total"]
-    for j, ch in enumerate(col_headers):
-        cell = items_table.rows[0].cells[j]
-        cell.text = ch
-        cell.paragraphs[0].runs[0].bold = True
-        cell.paragraphs[0].runs[0].font.color.rgb = NAVY
-
+    rows = [["Description", "Qty", "Unit Price", "Total"]]
     subtotal = 0.0
-    for j, item in enumerate(line_items):
-        qty   = float(item.get("qty", item.get("quantity", 1)))
-        price = float(item.get("unit_price", item.get("price", 0)))
+    for item in line_items:
+        qty = float(item.get("qty", item.get("quantity", 1)) or 0)
+        price = float(item.get("unit_price", item.get("price", 0)) or 0)
         total = qty * price
         subtotal += total
-        row = items_table.rows[j + 1]
-        row.cells[0].text = str(item.get("description", item.get("name", "")))
-        row.cells[1].text = str(qty)
-        row.cells[2].text = f"{price:,.2f}"
-        row.cells[3].text = f"{total:,.2f}"
+        rows.append([
+            str(item.get("description", item.get("name", ""))),
+            f"{qty:g}",
+            f"{price:,.2f}",
+            f"{total:,.2f}",
+        ])
+    if not line_items:
+        rows.append(["", "", "", ""])
+    E.add_table(doc, rows)
 
-    doc.add_paragraph("")
+    vat_rate = float(scope.get("vat_rate") or 0.0)
+    vat_amt = subtotal * vat_rate / 100
+    E.add_table(doc, [
+        ["Summary", "Amount"],
+        ["Subtotal", f"{currency} {subtotal:,.2f}"],
+        [f"VAT ({scope.get('vat_rate', 0)}%)", f"{currency} {vat_amt:,.2f}"],
+        ["TOTAL DUE", f"{currency} {subtotal + vat_amt:,.2f}"],
+    ])
 
-    # Totals
-    vat_rate = float(scope_params.get("vat_rate") or 0.0) / 100
-    vat_amt  = subtotal * vat_rate
-    grand    = subtotal + vat_amt
-    currency = scope_params.get("currency", "NGN")
+    for label, value in (
+        ("Payment Terms", scope.get("payment_terms")),
+        ("Bank Details", scope.get("bank_details")),
+        ("Additional Notes", scope.get("custom_notes")),
+    ):
+        if value:
+            h = doc.add_paragraph(style="ACE H2")
+            h.add_run(label)
+            E.render_markdown(doc, str(value))
 
-    for label, value in [
-        ("Subtotal",  f"{currency} {subtotal:,.2f}"),
-        (f"VAT ({scope_params.get('vat_rate',0)}%)", f"{currency} {vat_amt:,.2f}"),
-        ("TOTAL DUE", f"{currency} {grand:,.2f}"),
-    ]:
-        tot_p = doc.add_paragraph()
-        tot_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        r_l = tot_p.add_run(f"{label}: "); r_l.bold = True; r_l.font.color.rgb = NAVY
-        r_v = tot_p.add_run(value); r_v.bold = (label == "TOTAL DUE"); r_v.font.color.rgb = GREEN if label == "TOTAL DUE" else NAVY
-
-    doc.add_paragraph("")
-
-    # Payment terms + bank details
-    pt = scope_params.get("payment_terms")
-    if pt:
-        h = doc.add_heading("Payment Terms", level=2); h.runs[0].font.color.rgb = GREEN
-        doc.add_paragraph(pt)
-
-    bd = scope_params.get("bank_details")
-    if bd:
-        h = doc.add_heading("Bank Details", level=2); h.runs[0].font.color.rgb = GREEN
-        doc.add_paragraph(bd)
-
-    notes = scope_params.get("custom_notes")
-    if notes:
-        h = doc.add_heading("Additional Notes", level=2); h.runs[0].font.color.rgb = GREEN
-        doc.add_paragraph(notes)
-
-    doc.add_paragraph("")
-    doc.add_paragraph("─" * 72)
-    footer_p = doc.add_paragraph()
-    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fr = footer_p.add_run("Placeware Nigeria Limited | Thank you for your business.")
-    fr.italic = True; fr.font.size = Pt(9); fr.font.color.rgb = GREY
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
+    return E.serialize(doc)
 
 
 # â”€â”€ Shared agent runner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -11,6 +11,7 @@ import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { FilterBar } from "@/components/workspace/FilterBar";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
+import { InventoryAnalytics } from "@/components/workspace/InventoryAnalytics";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import {
   X,
   Users,
   ArrowRight,
+  CalendarClock,
 } from "lucide-react";
 
 type WorkspaceCard = {
@@ -42,6 +44,10 @@ type WorkspaceCard = {
   category: string | null;
   sku_count: number;
   total_stock: number;
+  sellable_stock: number;
+  expired_stock: number;
+  expired_valuation: number;
+  sellable_sku_count: number;
   valuation: number;
   nearest_expiry_date: string | null;
   status: "critical" | "warning" | "adequate";
@@ -55,6 +61,9 @@ const STATUS_BADGE: Record<string, "destructive" | "secondary" | "outline"> = {
   out_of_stock: "destructive",
   adequate: "outline",
 };
+
+// Attention-first ordering within the in-stock group.
+const STATUS_ORDER = ["critical", "warning", "adequate", "out_of_stock"];
 
 type InventorySearchResult = { sku?: string; name: string };
 
@@ -113,6 +122,75 @@ const Inventory = () => {
     queryFn: () => api.inventory.topSellers(8),
   });
 
+  const { data: analytics } = useQuery({
+    queryKey: ["inventory-analytics", companyFilter],
+    queryFn: () => api.inventory.analytics(companyFilter || undefined),
+    staleTime: 60_000,
+  });
+
+  // The reorder queue. Until this existed, a raised request had nowhere to
+  // appear and no way to be advanced.
+  const { data: reorderRequests } = useQuery({
+    queryKey: ["replenishment-requests"],
+    queryFn: () => api.replenishment.list({ limit: 200 }),
+    staleTime: 30_000,
+  });
+
+  const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+  const advanceRequest = useMutation({
+    mutationFn: async (vars: { row: any; action: "approve" | "receive" }) =>
+      vars.action === "approve"
+        ? api.replenishment.approve(vars.row.id)
+        : api.replenishment.received(vars.row.id, Number(vars.row.requested_qty) || undefined),
+    onMutate: (vars) => setBusyRequestId(vars.row.id),
+    onSettled: () => setBusyRequestId(null),
+    onSuccess: (res: any, vars) => {
+      if (vars.action === "approve") {
+        toast({ title: "Reorder approved", description: `${vars.row.sku} — awaiting delivery` });
+      } else if (res?.already_received) {
+        toast({ title: "Already received", description: "Stock was not added again." });
+      } else {
+        toast({
+          title: "Received into stock",
+          description: `${Number(res?.stock_added ?? 0).toLocaleString()} units of ${vars.row.sku} added.`,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["replenishment-requests"] });
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["inventory-analytics"] });
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Could not update reorder",
+        description:
+          err?.status === 403
+            ? "Requires ops, finance, management or admin role."
+            : err?.message,
+        variant: "destructive",
+      }),
+  });
+
+  const cancelRequest = useMutation({
+    mutationFn: (row: any) => api.replenishment.cancel(row.id),
+    onMutate: (row: any) => setBusyRequestId(row.id),
+    onSettled: () => setBusyRequestId(null),
+    onSuccess: (_res: any, row: any) => {
+      toast({ title: "Reorder cancelled", description: `${row.sku} — kept in history as cancelled` });
+      queryClient.invalidateQueries({ queryKey: ["replenishment-requests"] });
+    },
+    onError: (err: any) =>
+      toast({
+        title: "Could not cancel reorder",
+        description:
+          err?.status === 409
+            ? "This request was already received, so it can't be cancelled."
+            : err?.status === 403
+              ? "Requires ops, finance, management or admin role."
+              : err?.message,
+        variant: "destructive",
+      }),
+  });
+
   // Cross-link only — the full ranked queue with per-customer detail lives
   // in the Customer Workspace (customer-behavior data keyed by customer,
   // not stock data keyed by SKU; kept as two separate primary UIs on
@@ -127,17 +205,88 @@ const Inventory = () => {
     ? reorderQueue.filter((p: any) => (p.days_until_or_since ?? 0) > 0).length
     : 0;
 
-  const cardList: WorkspaceCard[] = Array.isArray(cards) ? cards : [];
+  // Families that actually have stock come first. The backend returns them in
+  // catalogue order, which pushed empty/expired families above vaccines that
+  // are physically on the shelf.
+  const cardList: WorkspaceCard[] = useMemo(() => {
+    const list: WorkspaceCard[] = Array.isArray(cards) ? cards : [];
+    return [...list].sort((a, b) => {
+      const aHas = (a.total_stock ?? 0) > 0 ? 0 : 1;
+      const bHas = (b.total_stock ?? 0) > 0 ? 0 : 1;
+      if (aHas !== bHas) return aHas - bHas;
+      // Within in-stock, surface what needs attention soonest.
+      const rank = (s: string) => STATUS_ORDER.indexOf(s);
+      const r = rank(a.status) - rank(b.status);
+      if (r !== 0) return r;
+      return (b.total_stock ?? 0) - (a.total_stock ?? 0);
+    });
+  }, [cards]);
   const summary = kpiData?.summary;
+
+  // Batches split: what we can actually sell vs. what's expired or empty.
+  // Previously every batch rendered in backend order, so a family like
+  // ROTARIX led with four zero-quantity batches that expired in 2020-2022
+  // and buried the stock that's actually on hand.
+  const [showDormantBatches, setShowDormantBatches] = useState(false);
+  const { activeBatches, dormantBatches } = useMemo(() => {
+    const members: any[] = (familyDetail as any)?.members ?? [];
+    const today = new Date().setHours(0, 0, 0, 0);
+    const isDormant = (m: any) =>
+      Number(m.current_stock ?? 0) <= 0 ||
+      (m.expiry_date && new Date(m.expiry_date).getTime() < today);
+    // FEFO: soonest expiry first, so the batch to sell next is at the top.
+    const byExpiry = (a: any, b: any) => {
+      const ax = a.expiry_date ? new Date(a.expiry_date).getTime() : Infinity;
+      const bx = b.expiry_date ? new Date(b.expiry_date).getTime() : Infinity;
+      return ax - bx;
+    };
+    return {
+      activeBatches: members.filter((m) => !isDormant(m)).sort(byExpiry),
+      dormantBatches: members.filter(isDormant).sort(byExpiry),
+    };
+  }, [familyDetail]);
 
   const reorderMutation = useMutation({
     mutationFn: (vars: { sku: string; qty: number }) =>
       api.replenishment.create({ sku: vars.sku, requested_qty: vars.qty }),
     onSuccess: (_data, vars) => {
-      toast({ title: "Reorder requested", description: `${vars.qty} units of ${vars.sku}` });
+      toast({
+        title: "Reorder requested",
+        description: `${vars.qty} units of ${vars.sku} — see "Reorders in flight"`,
+      });
       queryClient.invalidateQueries({ queryKey: ["inventory-family-detail"] });
+      queryClient.invalidateQueries({ queryKey: ["replenishment-requests"] });
     },
     onError: (err: any) => toast({ title: "Reorder request failed", description: err.message, variant: "destructive" }),
+  });
+
+  // Write-off from the Position & Risk panel. Recorded as an append-only
+  // EXPIRY event rather than a deletion: current_stock drops to zero so the
+  // batch leaves the live list, while the units and the reason stay on the
+  // record permanently.
+  const [busySku, setBusySku] = useState<string | null>(null);
+  const writeOffMutation = useMutation({
+    mutationFn: (row: any) =>
+      api.inventory.addStock({
+        sku: row.sku,
+        quantity_change: -Math.abs(Number(row.units ?? row.current_stock ?? 0)),
+        event_type: (row.days_to_expiry ?? 0) < 0 ? "EXPIRY" : "DAMAGE",
+        reference: `Written off from inventory dashboard${
+          (row.days_to_expiry ?? 0) < 0 ? ` (expired ${Math.abs(row.days_to_expiry)}d)` : ""
+        }`,
+      }),
+    onMutate: (row: any) => setBusySku(row.sku),
+    onSettled: () => setBusySku(null),
+    onSuccess: (_d, row: any) => {
+      toast({
+        title: "Stock written off",
+        description: `${Number(row.units ?? 0).toLocaleString()} units of ${row.sku} removed from live stock and recorded.`,
+      });
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["inventory-analytics"] });
+    },
+    onError: (err: any) =>
+      toast({ title: "Write-off failed", description: err?.message, variant: "destructive" }),
   });
 
   const handleAddStock = async () => {
@@ -191,6 +340,63 @@ const Inventory = () => {
     }
   };
 
+  const renderBatchCard = (m: any) => {
+    const pendingReq = ((familyDetail as any)?.open_replenishment_requests || []).find((r: any) => r.sku === m.sku);
+    return (
+      <div key={m.sku} className="rounded-md border p-2.5 text-xs space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="font-mono">{m.sku}</span>
+          <Badge variant={STATUS_BADGE[m.stock_status] ?? "outline"} className="text-[10px]">
+            {m.stock_status}
+          </Badge>
+        </div>
+        <div className="flex justify-between text-muted-foreground">
+          <span>Qty: {Number(m.current_stock).toLocaleString()}</span>
+          {m.expiry_date && <span>Exp: {new Date(m.expiry_date).toLocaleDateString()}</span>}
+        </div>
+        {(m.stock_status === "critical" || m.stock_status === "warning" || m.stock_status === "out_of_stock") && (
+          pendingReq ? (
+            <div className="flex items-center justify-between text-amber-700 bg-amber-50 rounded px-2 py-1 dark:text-amber-300 dark:bg-amber-500/15">
+              <span>Reorder pending ({pendingReq.requested_qty})</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                className="h-6 text-xs w-16"
+                value={reorderQty[m.sku] ?? String(m.suggested_reorder_qty || 20)}
+                onChange={(e) => setReorderQty({ ...reorderQty, [m.sku]: e.target.value })}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[11px]"
+                disabled={reorderMutation.isPending}
+                onClick={() =>
+                  reorderMutation.mutate({
+                    sku: m.sku,
+                    qty: parseFloat(reorderQty[m.sku] ?? String(m.suggested_reorder_qty || 20)) || 1,
+                  })
+                }
+              >
+                Reorder
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => setAddStockItem({ sku: m.sku, name: m.name })}
+              >
+                <PlusCircle className="h-3 w-3 mr-1" />
+                Add
+              </Button>
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -231,6 +437,21 @@ const Inventory = () => {
             icon: RotateCcw,
             tone: (pendingReorders ?? 0) > 0 ? "warning" : "default",
           },
+          {
+            // The number that actually costs money: stock already expired or
+            // expiring within 90 days, valued at cost.
+            label: "Value at Expiry Risk",
+            value: analytics
+              ? `₦${Math.round(
+                  (analytics.expiry?.buckets?.expired?.value ?? 0) +
+                    (analytics.expiry?.buckets?.within_30_days?.value ?? 0) +
+                    (analytics.expiry?.buckets?.within_90_days?.value ?? 0),
+                ).toLocaleString()}`
+              : "—",
+            icon: CalendarClock,
+            tone:
+              (analytics?.expiry?.buckets?.expired?.value ?? 0) > 0 ? "danger" : "warning",
+          },
         ]}
       />
 
@@ -248,6 +469,28 @@ const Inventory = () => {
           </CardContent>
         </Card>
       )}
+
+      <InventoryAnalytics
+        data={analytics}
+        busySku={busySku}
+        onSelect={(family, companyId) => {
+          setSelectedFamily({ family, company_id: companyId });
+          setShowDormantBatches(false);
+        }}
+        onReorder={(row) =>
+          reorderMutation.mutate({
+            sku: row.sku,
+            // Prefer the demand-derived quantity; fall back to the canonical
+            // top-up heuristic when there's no rate to project from.
+            qty: Math.max(1, Math.round(Number(row.recommended_reorder_qty ?? 0) || 20)),
+          })
+        }
+        onWriteOff={(row) => writeOffMutation.mutate(row)}
+        requests={Array.isArray(reorderRequests) ? reorderRequests : []}
+        busyRequestId={busyRequestId}
+        onAdvanceRequest={(row, action) => advanceRequest.mutate({ row, action })}
+        onCancelRequest={(row) => cancelRequest.mutate(row)}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* List Panel: card grid */}
@@ -291,14 +534,32 @@ const Inventory = () => {
                       <div>
                         <p className="font-semibold text-sm">{c.family}</p>
                         <p className="text-xs text-muted-foreground">
-                          {c.sku_count} batch{c.sku_count === 1 ? "" : "es"} · {c.category || "—"}
+                          {/* Reconciles with the detail panel's "In Stock (N)",
+                              which also excludes expired batches. */}
+                          {c.expired_stock > 0
+                            ? `${c.sellable_sku_count} of ${c.sku_count} batches sellable`
+                            : `${c.sku_count} batch${c.sku_count === 1 ? "" : "es"}`}{" "}
+                          · {c.category || "—"}
                         </p>
                       </div>
                       <Badge variant={STATUS_BADGE[c.status] ?? "outline"}>{c.status}</Badge>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                      <span className="text-muted-foreground">Total Stock</span>
-                      <span className="font-semibold tabular-nums">{c.total_stock.toLocaleString()}</span>
+                      {/* Sellable leads, because expired units sit on the shelf
+                          but cannot be sold -- showing only the raw total made
+                          the grid overstate sellable stock by ~18%. */}
+                      <span className="text-muted-foreground">Sellable Stock</span>
+                      <span className="font-semibold tabular-nums">
+                        {(c.sellable_stock ?? c.total_stock).toLocaleString()}
+                      </span>
+                      {c.expired_stock > 0 && (
+                        <>
+                          <span className="text-destructive">Expired</span>
+                          <span className="tabular-nums text-destructive font-medium">
+                            {c.expired_stock.toLocaleString()} units · ₦{c.expired_valuation.toLocaleString()}
+                          </span>
+                        </>
+                      )}
                       <span className="text-muted-foreground">Valuation</span>
                       <span className="tabular-nums">₦{c.valuation.toLocaleString()}</span>
                       {c.nearest_expiry_date && (
@@ -339,63 +600,33 @@ const Inventory = () => {
                 ) : familyDetail ? (
                   <>
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Batches</p>
-                      {familyDetail.members.map((m: any) => {
-                        const pendingReq = (familyDetail.open_replenishment_requests || []).find((r: any) => r.sku === m.sku);
-                        return (
-                          <div key={m.sku} className="rounded-md border p-2.5 text-xs space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono">{m.sku}</span>
-                              <Badge variant={STATUS_BADGE[m.stock_status] ?? "outline"} className="text-[10px]">
-                                {m.stock_status}
-                              </Badge>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        In Stock{activeBatches.length > 0 && ` (${activeBatches.length})`}
+                      </p>
+                      {activeBatches.length === 0 && (
+                        <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2.5">
+                          No batches of this vaccine are currently in stock.
+                        </p>
+                      )}
+                      {activeBatches.map(renderBatchCard)}
+
+                      {dormantBatches.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowDormantBatches((v) => !v)}
+                            className="w-full text-left text-xs text-muted-foreground hover:text-foreground rounded-md border border-dashed px-2.5 py-2 transition-colors"
+                          >
+                            {showDormantBatches ? "Hide" : "Show"} {dormantBatches.length} expired / empty batch
+                            {dormantBatches.length === 1 ? "" : "es"}
+                          </button>
+                          {showDormantBatches && (
+                            <div className="space-y-2 opacity-70">
+                              {dormantBatches.map(renderBatchCard)}
                             </div>
-                            <div className="flex justify-between text-muted-foreground">
-                              <span>Qty: {Number(m.current_stock).toLocaleString()}</span>
-                              {m.expiry_date && <span>Exp: {new Date(m.expiry_date).toLocaleDateString()}</span>}
-                            </div>
-                            {(m.stock_status === "critical" || m.stock_status === "warning" || m.stock_status === "out_of_stock") && (
-                              pendingReq ? (
-                                <div className="flex items-center justify-between text-amber-700 bg-amber-50 rounded px-2 py-1 dark:text-amber-300 dark:bg-amber-500/15">
-                                  <span>Reorder pending ({pendingReq.requested_qty})</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5">
-                                  <Input
-                                    type="number"
-                                    className="h-6 text-xs w-16"
-                                    value={reorderQty[m.sku] ?? String(m.suggested_reorder_qty || 20)}
-                                    onChange={(e) => setReorderQty({ ...reorderQty, [m.sku]: e.target.value })}
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-[11px]"
-                                    disabled={reorderMutation.isPending}
-                                    onClick={() =>
-                                      reorderMutation.mutate({
-                                        sku: m.sku,
-                                        qty: parseFloat(reorderQty[m.sku] ?? String(m.suggested_reorder_qty || 20)) || 1,
-                                      })
-                                    }
-                                  >
-                                    Reorder
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 px-2 text-[11px]"
-                                    onClick={() => setAddStockItem({ sku: m.sku, name: m.name })}
-                                  >
-                                    <PlusCircle className="h-3 w-3 mr-1" />
-                                    Add
-                                  </Button>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        );
-                      })}
+                          )}
+                        </>
+                      )}
                     </div>
 
                     {familyDetail.top_customers?.length > 0 && (

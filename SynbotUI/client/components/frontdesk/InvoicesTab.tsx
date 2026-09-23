@@ -40,6 +40,10 @@ export interface InvoiceItem {
   quantity: number;
   unit_price: number;
   line_total?: number;
+  // Resolved from the inventory catalogue when the product is picked from
+  // autocomplete. Dispatch uses it to deduct the right stock; without it the
+  // backend can only fall back to an exact name match.
+  sku?: string;
   batch_number?: string;
   manufacture_date?: string;
   expiry_date?: string;

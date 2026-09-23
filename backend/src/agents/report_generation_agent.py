@@ -663,7 +663,10 @@ Begin the section content now (do NOT include the section heading itself):
                 "Generate ONLY the requested report section. "
                 "Use real data. Be specific. 3-6 sentences, no padding."
             ),
-            max_tokens=450,
+            # 450 was cutting sections off mid-sentence ("...all 17 SKUs
+            # before") and leaving trailing headings with no body, which is
+            # what made exported reports read as broken.
+            max_tokens=900,
         ).strip()
         content = _strip_echoed_heading(content, sec_title)
 
@@ -688,7 +691,28 @@ Begin the section content now (do NOT include the section heading itself):
         if any(phrase in lower for phrase in refusal_phrases) and len(content) < 200:
             logger.warning("ReportAgent: section %r appears to be a refusal", section_id)
             return not required
+        if self._looks_truncated(content):
+            logger.warning("ReportAgent: section %r looks truncated mid-sentence", section_id)
+            return False
         return True
+
+    @staticmethod
+    def _looks_truncated(content: str) -> bool:
+        """Detect a section the model stopped emitting mid-thought, so the
+        caller's existing retry regenerates it instead of shipping a report
+        that ends on a dangling clause or an empty trailing heading."""
+        tail = (content or "").rstrip()
+        if not tail:
+            return True
+        last_line = tail.split("\n")[-1].strip()
+        # A heading as the very last thing means its body never arrived.
+        if last_line.startswith("#") or (last_line.endswith(":") and len(last_line) < 80):
+            return True
+        # Strip trailing markdown emphasis/quotes before checking punctuation.
+        # ")" is deliberately NOT stripped -- it legitimately ends a sentence
+        # ("...(see appendix)") and is already an accepted terminator below.
+        cleaned = last_line.rstrip("*_`\"'")
+        return bool(cleaned) and cleaned[-1] not in ".!?%)]}"
 
     def _assemble_report(
         self,

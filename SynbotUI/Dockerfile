@@ -59,6 +59,24 @@ RUN apk add --no-cache curl
 # and do not exist inside the image layer. Config syntax is validated on startup.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Remove the base image's IPv6 auto-config entrypoint script.
+#
+# That script wants to append a "listen [::]:80" to /etc/nginx/conf.d/default.conf
+# when it doesn't already have one -- which ours doesn't, by design. Before
+# editing it, the script checks whether the file is the stock one by running
+# `apk manifest nginx`, and THAT reaches out to the Alpine package CDN on every
+# container start. Where outbound access is blocked or filtered -- the normal
+# situation for an on-premises client server -- the call hangs, the entrypoint
+# never finishes, and nginx never starts: the container reports "up" while
+# serving nothing. Observed here taking the frontend down on every deploy until
+# the hung process was killed by hand.
+#
+# Deleting it only disables that auto-injection. Both listen directives are set
+# explicitly in nginx.conf, so behaviour is unchanged -- startup simply no
+# longer depends on an external network call. The image's other entrypoint
+# scripts (envsubst templating, worker tuning) are untouched.
+RUN rm -f /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+
 # Nginx master runs as root to bind privileged ports 80/443.
 # Worker processes automatically drop to the 'nginx' user (uid 101).
 EXPOSE 80 443

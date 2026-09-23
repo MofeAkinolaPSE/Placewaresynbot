@@ -855,6 +855,10 @@ export const api = {
       if (params?.search) q.set("search", params.search);
       return fetchRaw<{ data: any[]; total: number }>(`/inventory/workspace/cards${q.toString() ? `?${q}` : ""}`).then((r) => r.data ?? []);
     },
+    analytics: (companyId?: string) => {
+      const q = companyId ? `?company_id=${encodeURIComponent(companyId)}` : "";
+      return fetchRaw<{ data: any }>(`/inventory/workspace/analytics${q}`).then((r) => r.data);
+    },
     familyDetail: (family: string, companyId?: string) => {
       const q = new URLSearchParams({ family });
       if (companyId) q.set("company_id", companyId);
@@ -871,6 +875,39 @@ export const api = {
   replenishment: {
     create: (payload: { sku: string; product_id?: string; requested_qty: number }) =>
       sendJson<{ id: string; sku: string; requested_qty: number; status: string }>("/replenishment/create", "POST", payload),
+
+    list: (params?: { status?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set("status", params.status);
+      q.set("limit", String(params?.limit ?? 100));
+      return fetchRaw<{ data: any[]; total: number }>(`/replenishment?${q.toString()}`).then(
+        (r: any) => r?.data ?? [],
+      );
+    },
+
+    summary: () =>
+      fetchRaw<{ counts: Record<string, number>; total: number }>("/replenishment/summary"),
+
+    approve: (requestId: string) =>
+      sendJson<any>("/replenishment/approve", "POST", { request_id: requestId }),
+
+    createPo: (requestId: string, poId: string) =>
+      sendJson<any>("/replenishment/create_po", "POST", { request_id: requestId, po_id: poId }),
+
+    /** Marks delivered and adds the units back into stock. */
+    received: (requestId: string, receivedQty?: number) =>
+      sendJson<{ ok: boolean; sku: string; stock_added: number; already_received?: boolean }>(
+        "/replenishment/received",
+        "POST",
+        { request_id: requestId, received_qty: receivedQty },
+      ),
+
+    cancel: (requestId: string, reason?: string) =>
+      sendJson<{ ok: boolean; sku: string; status: string; already_cancelled?: boolean }>(
+        "/replenishment/cancel",
+        "POST",
+        { request_id: requestId, reason },
+      ),
   },
   projects: {
     readiness: () => fetchRaw<{ ready: boolean; reason?: string; checks?: Record<string, boolean> }>("/controls/readiness"),
@@ -1127,10 +1164,15 @@ export const api = {
       }),
 
     queueBulkMessage: (payload: {
-      channel: string;
+      channel: "sms" | "email";
       message_text: string;
       subject?: string;
-      recipient_filter?: Record<string, any>;
+      // Explicit picker selection, or a segment filter like {facility_type}
+      recipient_filter?: {
+        customer_ids?: (string | number)[];
+        supplier_ids?: (string | number)[];
+        facility_type?: string;
+      };
     }) => sendJson<any>("/crm/sales/bulk-message", "POST", payload),
 
     listBulkMessages: (limit: number = 20) =>
@@ -1719,6 +1761,35 @@ export const api = {
       const disposition = res.headers.get("Content-Disposition") || "";
       const match = disposition.match(/filename="([^"]+)"/);
       return { url, filename: match?.[1] ?? `report_${reportId.slice(0, 8)}.docx` };
+    },
+  },
+
+  adminBackup: {
+    info: () =>
+      fetchRaw<{
+        format: string;
+        restorable: boolean;
+        table_count: number;
+        database_size: string | null;
+        excluded_tables: string[];
+        note: string;
+      }>("/admin/backup/info"),
+
+    /** Streams the whole database, so it can take a while on a large deployment. */
+    download: async (): Promise<{ url: string; filename: string }> => {
+      const token = authClient.getAccessToken();
+      const res = await fetch(apiUrl("/admin/backup/download"), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok)
+        throw new ApiError("Backup download failed", res.status, classifyApiErrorKind(res.status));
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      return {
+        url: URL.createObjectURL(blob),
+        filename: match?.[1] ?? `placeware_backup_${new Date().toISOString().slice(0, 10)}.zip`,
+      };
     },
   },
 };

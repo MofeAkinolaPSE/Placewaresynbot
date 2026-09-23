@@ -28,6 +28,7 @@ import {
   ScrollText,
   Database,
   Package,
+  ConciergeBell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
@@ -139,15 +140,27 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
     {
       label: "CRM",
       icon: ShoppingCart,
-      roles: ["admin", "crm", "sales"],
+      // "crm" is not in the backend's ALLOWED_ROLES (app.py) and is not
+      // assignable from AdminUsers, so gating on it alone hid this whole
+      // section from every role except admin/sales.
+      roles: ["admin", "sales", "management", "finance"],
       children: [
         { label: "Overview", href: "/crm" },
         { label: "Customer Workspace", href: "/customers/workspace" },
         { label: "Sales Pipeline", href: "/crm/sales" },
         { label: "Lead Finder", href: "/crm/lead-finder" },
         { label: "Leads", href: "/admin/leads" },
-        { label: "Frontdesk", href: "/frontdesk" },
       ],
+    },
+    {
+      // Its own department, not a CRM sub-page. No `roles` gate: the backend
+      // requires only verify_jwt for walk-ins, invoice creation, listing and
+      // stock checks -- QC/Finance/dispatch keep their own role gates inside
+      // the page. There is deliberately no "frontdesk" role; ALLOWED_ROLES
+      // rejects unknown roles, so assigning one would break login.
+      label: "Frontdesk",
+      icon: ConciergeBell,
+      href: "/frontdesk",
     },
     {
       label: "Compliance & QMS",
