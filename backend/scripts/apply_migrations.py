@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 import pathlib
+import re
 import datetime
 from urllib.parse import urlsplit, urlunsplit
 import psycopg2
@@ -107,11 +108,20 @@ def record_applied(conn, filename: str):
     conn.commit()
 
 
+# A new enum value cannot be used in the transaction that adds it ("unsafe use of new value"),
+# so top-level ALTER TYPE ... ADD VALUE statements are committed on their own first.
+_ADD_ENUM_VALUE = re.compile(r"^ALTER\s+TYPE\s+\S+\s+ADD\s+VALUE\b[^;]*;", re.IGNORECASE | re.MULTILINE)
+
+
 def apply_sql_file(conn, path: pathlib.Path):
     print(f"Applying {path.name}...")
     sql = path.read_text(encoding="utf-8")
     with conn.cursor() as cur:
         try:
+            for stmt in _ADD_ENUM_VALUE.findall(sql):
+                cur.execute(stmt)
+                conn.commit()
+            sql = _ADD_ENUM_VALUE.sub("", sql)
             cur.execute(sql)
             conn.commit()
         except Exception as e:
