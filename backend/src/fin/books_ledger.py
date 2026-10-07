@@ -27,7 +27,7 @@ SOURCE_JRNL = {
     "SALES_INVOICE": "SJ", "CREDIT_NOTE": "SJ", "FRONTDESK": "SJ", "CUSTOMER_RECEIPT": "CRJ",
     "SUPPLIER_BILL": "PJ", "DEBIT_NOTE": "PJ", "SUPPLIER_PAYMENT": "CDJ", "CASH_VOUCHER": "CDJ",
     "MANUAL_JOURNAL": "GENJ", "STOCK_ADJUSTMENT": "INAJ", "STOCK_COUNT": "INAJ", "STOCK_LOAN": "INAJ",
-    "STOCK_LOAN_RETURN": "INAJ", "STOCK_LOAN_WRITEOFF": "INAJ", "BANK_TRANSFER": "GENJ",
+    "STOCK_LOAN_RETURN": "INAJ", "STOCK_LOAN_WRITEOFF": "INAJ", "BANK_TRANSFER": "GENJ", "DATA_CORRECTION": "ADJ",
 }
 PL_TYPES = ("REVENUE", "EXPENSE")
 
@@ -63,15 +63,31 @@ def _hist_balances(conn, entity_id: str, d: dt.date, codes: Optional[List[str]] 
     cf = " AND account_code = ANY(%s)" if codes else ""
     p: List[Any] = [entity_id, d] + ([codes] if codes else [])
     op = "<" if start_of_day else "<="
+    # Corrections posted from Data exceptions (jrnl 'ADJ', no load) are not in Sage's own later
+    # Beginning Balances, so they are carried past the anchor: balance-sheet accounts always,
+    # income and expense within the correction's year.
     rows = q(conn, f"""
-        WITH a AS (SELECT DISTINCT ON (account_code) account_code, period_start, beginning_balance
+        WITH s AS (SELECT DISTINCT ON (account_code) account_code, period_start, beginning_balance
                    FROM fin_sage_gl_balances WHERE legal_entity_id=%s AND period_start <= %s {cf}
-                   ORDER BY account_code, period_start DESC)
-        SELECT a.account_code, a.beginning_balance + COALESCE(m.v, 0) AS bal
+                   ORDER BY account_code, period_start DESC),
+             -- an account Sage never used that a correction posted to (e.g. Inventory Adjustments)
+             a AS (SELECT * FROM s UNION ALL
+                   SELECT DISTINCT l.account_code, DATE '1900-01-01', 0::numeric FROM fin_sage_gl_lines l
+                   WHERE l.legal_entity_id=%s AND l.jrnl='ADJ' AND l.load_id IS NULL
+                     AND NOT EXISTS (SELECT 1 FROM s WHERE s.account_code=l.account_code) {cf.replace('account_code', 'l.account_code')})
+        SELECT a.account_code, a.beginning_balance + COALESCE(m.v, 0) + COALESCE(c.v, 0) AS bal
         FROM a LEFT JOIN LATERAL (
             SELECT SUM(l.debit - l.credit) v FROM fin_sage_gl_lines l
             WHERE l.legal_entity_id=%s AND l.account_code=a.account_code AND l.txn_date >= a.period_start AND l.txn_date {op} %s
-        ) m ON TRUE""", p + [entity_id, d])
+        ) m ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT SUM(l.debit - l.credit) v FROM fin_sage_gl_lines l
+            WHERE l.legal_entity_id=%s AND l.account_code=a.account_code AND l.jrnl='ADJ' AND l.load_id IS NULL
+              AND l.txn_date < a.period_start
+              AND (date_part('year', l.txn_date) = date_part('year', a.period_start)
+                   OR NOT EXISTS (SELECT 1 FROM fin_accounts x WHERE x.legal_entity_id=l.legal_entity_id AND x.code=l.account_code
+                                  AND x.account_type IN ('REVENUE','EXPENSE')))
+        ) c ON TRUE""", p + [entity_id] + ([codes] if codes else []) + [entity_id, d, entity_id])
     return {r["account_code"]: money(r["bal"]) for r in rows}
 
 
@@ -308,4 +324,11 @@ def sage_transaction(conn, entity_id: str, date: dt.date, jrnl: Optional[str], r
                                           AND reference=%s ORDER BY seq LIMIT 2000""", (entity_id, kind, date, reference))
     if jrnl in ("SJ", "COGS") and reference:
         out["invoice_number"] = reference
+    if jrnl == "ADJ" and reference:
+        # a correction posted from Data exceptions: the decision behind it
+        out["correction"] = q1(conn, """SELECT a.action, a.note, a.created_by, a.created_at, a.payload, x.id::text AS exception_id,
+                                               x.title, x.kind, j.id::text AS journal_id, j.journal_number
+                                        FROM fin_data_exception_actions a JOIN fin_data_exceptions x ON x.id=a.exception_id
+                                        LEFT JOIN fin_journals j ON j.id=a.journal_id
+                                        WHERE a.legal_entity_id=%s AND a.reference=%s LIMIT 1""", (entity_id, reference))
     return out

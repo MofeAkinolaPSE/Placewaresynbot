@@ -14,6 +14,7 @@ export default function BooksOverview() {
   const navigate = useNavigate();
   const { data: d, isLoading, error, refetch, isFetching } = useBooks<any>(["dashboard", asOf], "/dashboard", { as_of: asOf });
   const k = d?.kpis;
+  const { data: issues } = useBooks<any>(["data-issues-open"], "/data-exceptions", { status: "OPEN" });
   const quick = [
     ["New invoice", "/finance/books/sales?new=invoice"], ["Record receipt", "/finance/books/sales?new=receipt"],
     ["Supplier bill", "/finance/books/purchases?new=bill"], ["Pay supplier", "/finance/books/purchases?new=payment"],
@@ -29,6 +30,14 @@ export default function BooksOverview() {
           {quick.map(([label, to]) => <Button key={to} asChild size="sm" variant="secondary"><Link to={to}>{label}</Link></Button>)}
         </div>
       </div>
+      {issues?.open > 0 && (
+        <Link to="/finance/books/close?tab=issues"
+              className="flex items-start gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span><strong>{issues.open} data issue{issues.open === 1 ? "" : "s"} from the Sage hand-over need a decision</strong>
+            {" "}- lots sold without their receipt, ledger differences and control accounts. Open them to see where each comes from and resolve it.</span>
+        </Link>
+      )}
       {isLoading && <Loading />}
       <ErrorNote error={error} />
       {d && k && (

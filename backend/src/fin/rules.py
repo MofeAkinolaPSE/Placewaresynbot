@@ -27,6 +27,7 @@ MAPPING_KEYS: Dict[str, str] = {
     "INVENTORY_DEFAULT": "Inventory when a product has no own inventory account",
     "COGS_DEFAULT": "Cost of sales when a product has no own COGS account",
     "INVENTORY_ADJUSTMENT": "Stock write-offs / count differences",
+    "GOODS_RECEIVED_ACCRUAL": "Goods received before the supplier's invoice is entered",
     "STOCK_ON_LOAN": "Stock lent to customers (still ours, not in the warehouse)",
     "PURCHASE_EXPENSE_DEFAULT": "Default expense for non-stock supplier bill lines",
     "WHT_SUFFERED": "Withholding tax deducted by customers from their payments",

@@ -246,7 +246,8 @@ def _replace_payables(conn, ctx, rows: List[Dict[str, Any]], as_of: dt.date) -> 
     return {"open_bills": bills, "open_debits": debits}
 
 
-def _replace_stock(conn, ctx, rows: List[Dict[str, Any]], as_of: dt.date) -> Dict[str, Any]:
+def _replace_stock(conn, ctx, rows: List[Dict[str, Any]], as_of: dt.date,
+                   negative: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     e = ctx.entity_id
     out = removed = 0
     for l in q(conn, """SELECT sku, batch_id, SUM(qty_remaining) q FROM fin_cost_layers WHERE legal_entity_id=%s AND qty_remaining > 0
@@ -257,6 +258,23 @@ def _replace_stock(conn, ctx, rows: List[Dict[str, Any]], as_of: dt.date) -> Dic
                         reason=f"Replaced by Sage's stock valuation at {as_of:%d %b %Y}", mirror=False)
         removed += 1
     skipped = []
+    # Corrections the finance team made in Data exceptions (a missing receipt, a lot mix-up, a
+    # count) are added to Sage's figures, so a new export does not undo them.
+    from src.fin import data_exceptions
+    overlays = data_exceptions.stock_overlays(conn, e)
+    merged: Dict[str, Dict[str, Any]] = {}
+    for r in list(rows) + list(negative or []):
+        sku = r.get("sku") or r.get("row")
+        if not sku or r.get("quantity") is None:
+            continue
+        m = merged.setdefault(sku, {"sku": sku, "quantity": ZERO, "value": ZERO})
+        m["quantity"] += Decimal(str(r["quantity"]))
+        m["value"] += Decimal(str(r["value"]))
+    for sku, o in overlays.items():
+        m = merged.setdefault(sku, {"sku": sku, "quantity": ZERO, "value": ZERO})
+        m["quantity"] += o["quantity"]
+        m["value"] += o["value"]
+    rows = [m for m in merged.values() if m["quantity"] > 0 and m["value"] >= 0]
     for r in rows:
         p = q1(conn, "SELECT sku, lot_expiry FROM fin_products WHERE legal_entity_id=%s AND sku=%s", (e, r["sku"]))
         if not p:
@@ -308,7 +326,7 @@ def run(conn, ctx, as_of: dt.date, folder: str, *, void_test_invoices: bool = Fa
     load = str(q1(conn, "SELECT gen_random_uuid() id")["id"])
     ar = _replace_receivables(conn, ctx, snaps["OPEN_AR"]["parsed"]["rows"], as_of, load)
     ap = _replace_payables(conn, ctx, snaps["OPEN_AP"]["parsed"]["rows"], as_of)
-    stock = _replace_stock(conn, ctx, snaps["INVENTORY"]["parsed"]["rows"], as_of)
+    stock = _replace_stock(conn, ctx, snaps["INVENTORY"]["parsed"]["rows"], as_of, snaps["INVENTORY"]["parsed"]["issues"])
     nxt = p["next_invoice_number"]
     if nxt:
         ex(conn, """INSERT INTO fin_number_sequences (legal_entity_id, doc_type, prefix, next_value, pad)
@@ -321,4 +339,8 @@ def run(conn, ctx, as_of: dt.date, folder: str, *, void_test_invoices: bool = Fa
               "trial_balance_vs_general_ledger": p["trial_balance_vs_general_ledger"],
               "receivables_check": p["receivables"], "payables_check": p["payables"], "stock_check": p["stock"]}
     audit.record(conn, ctx, "SAGE_ROLLFORWARD", "migration", e, ref=f"Sage -> ACE Books at {as_of}", metadata=result)
+    # What the export leaves unexplained goes to Data exceptions, with its lineage.
+    from src.fin import data_exceptions
+    data_exceptions.save_snapshots(conn, ctx, snaps, as_of)
+    result["data_exceptions"] = data_exceptions.refresh(conn, ctx)
     return result

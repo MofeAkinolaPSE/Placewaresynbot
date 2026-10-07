@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Lock, RefreshCw, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,20 +11,25 @@ import { FilterBar } from "@/components/workspace/FilterBar";
 import { BooksShell } from "@/components/books/BooksShell";
 import { act, CsvButton, DateRange, Empty, ErrorNote, Loading, Section, StatusBadge, useBooks } from "@/components/books/kit";
 import { books, BooksError, Dict, fmtDate, monthStart, today } from "@/lib/books-api";
+import { DataIssuesPanel } from "@/components/books/data-issues";
 
 export default function BooksClose() {
-  const [tab, setTab] = useState("periods");
+  const [sp, setSp] = useSearchParams();
+  const tab = sp.get("tab") ?? "periods";
+  const setTab = (t: string) => setSp((p) => { p.set("tab", t); return p; }, { replace: true });
   return (
     <BooksShell title="Close & Controls">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
           <TabsTrigger value="periods">Periods & year end</TabsTrigger>
+          <TabsTrigger value="issues">Data issues</TabsTrigger>
           <TabsTrigger value="controls">Integrity monitor</TabsTrigger>
           <TabsTrigger value="frontdesk">Frontdesk postings</TabsTrigger>
           <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
           <TabsTrigger value="audit">Audit trail</TabsTrigger>
         </TabsList>
         <TabsContent value="periods"><Periods /></TabsContent>
+        <TabsContent value="issues"><DataIssuesPanel /></TabsContent>
         <TabsContent value="controls"><Controls /></TabsContent>
         <TabsContent value="frontdesk"><Frontdesk /></TabsContent>
         <TabsContent value="exceptions"><Exceptions /></TabsContent>

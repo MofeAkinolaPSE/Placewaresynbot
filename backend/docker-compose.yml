@@ -52,6 +52,8 @@ services:
       # NeuroLayer licence: drop a signed system.dat in backend/.license/ on the host.
       # Picked up within ~30s, no restart. See tools/licensing/ and the licensing runbook.
       - ./.license:/backend/.license:ro
+      # Scheduled data backups (Settings > Data Backup) wait here until an admin downloads them.
+      - backups:/backend/backups
     restart: unless-stopped
     depends_on:
       db:
@@ -195,6 +197,8 @@ services:
 volumes:
   db_data:
     name: placeware_db_data
+  backups:
+    name: placeware_backups
   grafana_data:
     name: placeware_grafana_data
   ssl_certs:

@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import psycopg2
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 
-from src.fin import (accounts, assets, audit, banking, books_ledger, closing, controls, dashboard, integrations, inventory,
+from src.fin import (accounts, assets, audit, banking, books_ledger, closing, controls, dashboard, data_exceptions, integrations, inventory,
                      ledger, ledger_reports, migration, numbering, periods, posting, purchases, report_center, reports, rules,
                      sage_history, sage_ledger, sales, setup)
 from src.fin.context import build_context
@@ -583,7 +583,11 @@ def find_products(request: Request, search: str = "", limit: int = 30, customer_
         sellable = """(SELECT COALESCE(SUM(l.qty_remaining),0) FROM fin_cost_layers l LEFT JOIN fin_batches b ON b.id=l.batch_id
                        WHERE l.legal_entity_id=p.legal_entity_id AND l.sku=p.sku AND l.qty_remaining > 0
                          AND (b.id IS NULL OR (b.status='AVAILABLE' AND (b.expiry_date IS NULL OR b.expiry_date >= current_date))))"""
-        sale_filter = f" AND (p.product_type <> 'INVENTORY' OR {sellable} > 0)" if for_sale else ""
+        # A lot Sage sold below zero (its receipt never entered) stays visible, flagged, so the newest
+        # stock is never hidden from an invoice: the user records the receipt from there.
+        pending = """EXISTS (SELECT 1 FROM fin_data_exceptions x WHERE x.legal_entity_id=p.legal_entity_id
+                     AND x.kind='STOCK_SHORT_LOT' AND x.status='OPEN' AND x.key=p.sku)"""
+        sale_filter = f" AND (p.product_type <> 'INVENTORY' OR {sellable} > 0 OR {pending})" if for_sale else ""
         rows = q(conn, f"""SELECT p.id, p.sku, p.name, p.product_type, p.standard_price, p.status, p.uom, p.lot_expiry,
                                  COALESCE((SELECT SUM(qty_remaining) FROM fin_cost_layers l
                                            WHERE l.legal_entity_id=p.legal_entity_id AND l.sku=p.sku),0) AS on_hand,
@@ -625,6 +629,11 @@ def find_products(request: Request, search: str = "", limit: int = 30, customer_
             r["recent_price"] = recent["price"] if recent else None
             r["suggested_price"] = (r["customer_last_price"] or r["standard_price"] or r["recent_price"])
             r["last_cost"] = inventory.last_unit_cost(conn, ctx.entity_id, r["sku"]) or None
+        fams = data_exceptions.pending_lots(conn, ctx.entity_id, list({data_exceptions.family(r["sku"]) for r in rows}))
+        for r in rows:
+            fam = fams.get(data_exceptions.family(r["sku"]), [])
+            r["receipt_pending"] = next((x for x in fam if x["sku"] == r["sku"]), None)
+            r["family_receipts_pending"] = fam
         return rows
     return _run(request, fn, "inventory.view")
 
@@ -1165,6 +1174,27 @@ def approve_budget(budget_id: str, request: Request):
 @router.get("/controls/run")
 def run_controls(request: Request, as_of: Optional[str] = None):
     return _run(request, lambda c, x: controls.run_and_store(c, x, _date(as_of) or _today()), "controls.view")
+
+
+@router.get("/data-exceptions")
+def data_exception_list(request: Request, status: Optional[str] = None, kind: Optional[str] = None):
+    return _run(request, lambda c, x: {"items": data_exceptions.list_exceptions(c, x.entity_id, status, kind),
+                                       **data_exceptions.summary(c, x.entity_id)}, "controls.view")
+
+
+@router.post("/data-exceptions/refresh")
+def data_exception_refresh(request: Request):
+    return _run(request, lambda c, x: data_exceptions.refresh(c, x), "controls.view")
+
+
+@router.get("/data-exceptions/{exc_id}")
+def data_exception_get(request: Request, exc_id: str):
+    return _run(request, lambda c, x: data_exceptions.get(c, x.entity_id, exc_id), "controls.view")
+
+
+@router.post("/data-exceptions/{exc_id}/{action}")
+def data_exception_resolve(request: Request, exc_id: str, action: str, payload: Dict[str, Any] = Body(default={})):
+    return _run(request, lambda c, x: data_exceptions.resolve(c, x, exc_id, action, _dates(payload)))
 
 
 @router.get("/controls/history")

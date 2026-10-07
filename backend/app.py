@@ -575,6 +575,28 @@ async def _start_workflow_processor():
 
 
 @app.on_event("startup")
+async def _start_backup_schedule():
+    """Scheduled data backups (Settings > Data Backup): prepared on the server when due, then
+    downloaded by an administrator. A pg advisory lock keeps it to one run across workers."""
+    try:
+        import asyncio
+        from src.routers.backup import tick as backup_tick
+
+        async def _work():
+            await asyncio.sleep(90)
+            while True:
+                try:
+                    await asyncio.to_thread(backup_tick)
+                except Exception:
+                    logging.getLogger(__name__).exception("scheduled backup check failed")
+                await asyncio.sleep(300)
+
+        asyncio.get_event_loop().create_task(_work())
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
 async def _start_workspace_escalations():
     """Staff Workspace: fire reminders and escalation chains every 5 minutes. Each step is
     claimed with a conditional update, so running in several workers never double-notifies."""

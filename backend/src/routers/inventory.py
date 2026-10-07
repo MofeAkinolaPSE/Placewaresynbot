@@ -15,6 +15,7 @@ from src.services.inventory_workspace import (
 )
 from ..db import db
 import logging
+import datetime as dt
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 audit_logger = logging.getLogger("audit")
@@ -153,6 +154,64 @@ async def list_items(
         raise HTTPException(500, detail="Failed to retrieve inventory items")
 
 
+def _books_only_items(q: str, have: set) -> List[Dict[str, Any]]:
+    """Lots ACE Books knows that the older Sage item snapshot behind v_inventory does not (a new
+    lot code, e.g. 'Avaxim inj. Ped (R)'), with their stock and next batch from ACE Books."""
+    try:
+        from src.fin.db import q as fq, tx
+        with tx() as conn:
+            rows = fq(conn, """
+                SELECT p.sku, p.name, NULL::text AS category, p.standard_price AS selling_price, NULL::text AS company_id,
+                       COALESCE((SELECT SUM(l.qty_remaining) FROM fin_cost_layers l WHERE l.legal_entity_id=p.legal_entity_id
+                                 AND l.sku=p.sku AND l.qty_remaining > 0), 0) AS current_stock,
+                       nb.batch_number, COALESCE(nb.expiry_date, p.lot_expiry) AS expiry_date
+                FROM fin_products p
+                LEFT JOIN LATERAL (SELECT b.batch_number, b.expiry_date FROM fin_cost_layers l JOIN fin_batches b ON b.id=l.batch_id
+                                   WHERE l.legal_entity_id=p.legal_entity_id AND l.sku=p.sku AND l.qty_remaining > 0
+                                   ORDER BY b.expiry_date NULLS LAST LIMIT 1) nb ON TRUE
+                WHERE p.status='ACTIVE' AND p.product_type='INVENTORY' AND (p.name ILIKE %s OR p.sku ILIKE %s)
+                LIMIT 300""", (f"%{q}%", f"%{q}%"))
+        out = []
+        for r in rows:
+            if r["sku"] in have:
+                continue
+            r["current_stock"] = float(r["current_stock"] or 0)
+            r["selling_price"] = float(r["selling_price"]) if r["selling_price"] is not None else None
+            r["expiry_date"] = str(r["expiry_date"]) if r["expiry_date"] else None
+            out.append(r)
+        return out
+    except Exception as exc:
+        logging.warning("books item lookup for search failed: %s", exc)
+        return []
+
+
+def _rank_for_sale(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The client's Sage uses one item code per lot (HEXAXIM (A)…(Q)), so a name search returns
+    many old, empty or expired lots. Sellable stock comes first, then a lot sold in Sage without
+    its receipt (flagged - it is the newest stock, waiting for Finance to record the receipt),
+    newest lot first; empty and expired lots last, labelled."""
+    today = dt.date.today().isoformat()
+    pending: Dict[str, Any] = {}
+    try:
+        skus = [r["sku"] for r in rows if r.get("sku")]
+        if skus:
+            pending = {p["key"]: p for p in (db.table("fin_data_exceptions").select("key,quantity")
+                                               .eq("kind", "STOCK_SHORT_LOT").eq("status", "OPEN").in_("key", skus)
+                                               .execute().data or [])}
+    except Exception:
+        pending = {}
+    for r in rows:
+        stock = float(r.get("current_stock") or 0)
+        expired = bool(r.get("expiry_date")) and str(r["expiry_date"])[:10] < today
+        r["sellable"] = stock > 0 and not expired
+        r["receipt_pending"] = r.get("sku") in pending
+        r["stock_note"] = ("receipt not yet recorded in the books - ask Finance" if r["receipt_pending"] and not r["sellable"]
+                           else "expired" if expired and stock > 0 else "no stock" if stock <= 0 else None)
+    return sorted(rows, key=lambda r: (not r["sellable"], not r["receipt_pending"],
+                                       -(dt.date.fromisoformat(str(r["expiry_date"])[:10]).toordinal() if r.get("expiry_date") else 0),
+                                       [-ord(ch) for ch in str(r.get("sku") or "")]))
+
+
 @router.get("/search")
 async def search_items(
     q: str = Query(..., min_length=1),
@@ -165,29 +224,32 @@ async def search_items(
     api.inventory.search()'s previously-nonexistent GET /inventory?query=
     call, which silently 404'd on every keystroke for every caller.
     """
+    # one item code per lot: rank a wide set of matches, then return the best `limit`
+    pool = max(limit, 300)
     try:
         rows = (
             db.table("v_inventory")
             .select("sku,name,category,current_stock,company_id,selling_price,batch_number,expiry_date")
             .ilike("name", f"%{q}%")
-            .limit(limit)
+            .limit(pool)
             .execute()
             .data
             or []
         )
-        if len(rows) < limit:
+        if len(rows) < pool:
             sku_rows = (
                 db.table("v_inventory")
                 .select("sku,name,category,current_stock,company_id,selling_price,batch_number,expiry_date")
                 .ilike("sku", f"%{q}%")
-                .limit(limit - len(rows))
+                .limit(pool - len(rows))
                 .execute()
                 .data
                 or []
             )
             seen = {r["sku"] for r in rows}
             rows.extend(r for r in sku_rows if r["sku"] not in seen)
-        return {"data": rows}
+        rows.extend(_books_only_items(q, {r["sku"] for r in rows}))
+        return {"data": _rank_for_sale(rows)[:limit]}
     except Exception as e:
         logging.error(f"Inventory search error: {e}")
         raise HTTPException(500, detail="Failed to search inventory")

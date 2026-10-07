@@ -2016,6 +2016,24 @@ export const api = {
   },
 
   adminBackup: {
+    /** Scheduled backups: settings, the backups prepared on the server, and the one awaiting download. */
+    schedule: () => fetchRaw<any>("/admin/backup/schedule"),
+    saveSchedule: (body: { frequency: string; run_hour: number; weekday: number; month_day: number; keep_last: number }) =>
+      sendJson<any>("/admin/backup/schedule", "PUT", body),
+    runNow: () => sendJson<any>("/admin/backup/run", "POST", {}),
+    /** One prepared backup file, as a Blob (the caller saves it where the user chooses). */
+    downloadFile: async (id: string): Promise<{ blob: Blob; filename: string; sha256: string | null }> => {
+      let token = await getBearerToken();
+      let res = await fetch(apiUrl(`/admin/backup/files/${id}/download`), { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401 && (await authClient.refresh())) {
+        token = await getBearerToken();
+        res = await fetch(apiUrl(`/admin/backup/files/${id}/download`), { headers: { Authorization: `Bearer ${token}` } });
+      }
+      if (!res.ok) throw await toApiError(res, "Backup download failed");
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      return { blob: await res.blob(), filename: match?.[1] ?? `placeware_backup_${id}.sql.gz`, sha256: res.headers.get("X-Backup-Sha256") };
+    },
     info: () =>
       fetchRaw<{
         format: string;

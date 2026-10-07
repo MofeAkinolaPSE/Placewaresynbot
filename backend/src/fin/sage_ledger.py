@@ -196,7 +196,9 @@ def load_general_ledger(conn, ctx, rows, h: int, idx: Dict[str, int], file_name:
     last_period = max(p for _, p in anchors)
     t = max([l[1] for l in lines] + [(last_period.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)])
     load_id = _register(conn, ctx, "GENERAL_LEDGER", file_name, f, t, len(lines), {})
-    ex(conn, "DELETE FROM fin_sage_gl_lines WHERE legal_entity_id=%s AND txn_date BETWEEN %s AND %s", (ctx.entity_id, f, t))
+    # corrections posted from Data exceptions (jrnl 'ADJ', no load) are ours, not the file's: keep them
+    ex(conn, """DELETE FROM fin_sage_gl_lines WHERE legal_entity_id=%s AND txn_date BETWEEN %s AND %s
+                AND NOT (jrnl='ADJ' AND load_id IS NULL)""", (ctx.entity_id, f, t))
     ex(conn, "DELETE FROM fin_sage_gl_balances WHERE legal_entity_id=%s AND period_start BETWEEN %s AND %s", (ctx.entity_id, f, t))
     with conn.cursor() as cur:
         execute_values(cur, """INSERT INTO fin_sage_gl_lines (legal_entity_id, load_id, account_code, txn_date, reference, jrnl,

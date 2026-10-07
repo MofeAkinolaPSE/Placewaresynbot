@@ -4,6 +4,7 @@ import { Link, Outlet } from "react-router-dom";
 import { ClockPill } from "./staff/ws-kit";
 import { API_BASE_URL } from "@/lib/api-base";
 import { useAuth } from "./AuthProvider";
+import { BackupReminder } from "./admin/BackupPanel";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Menu, Circle, ArrowLeft, ArrowRight, Bell } from "lucide-react";
@@ -141,6 +142,7 @@ const Layout = () => {
         </div>
         {/* Page content */}
         <div className="relative z-10 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-5">
+          <BackupReminder />
           <Outlet />
         </div>
       </main>

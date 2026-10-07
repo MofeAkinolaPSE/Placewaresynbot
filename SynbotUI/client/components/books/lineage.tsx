@@ -22,12 +22,13 @@ import { books, Dict, fmtDate, naira, num, today, yearStart } from "@/lib/books-
 import { DrillContext, DrillTarget, sourceTarget } from "./drill-context";
 import { act, Amount, CsvButton, DateRange, DrillLink, ErrorNote, Loading, sourceLink, StatusBadge, useBooks } from "./kit";
 import { GlAccountDetail } from "./gl";
+import { DataIssueBody } from "./data-issues";
 
 const TITLES: Record<string, string> = {
   journal: "Journal", account: "Account", invoice: "Sales invoice", receipt: "Customer receipt", creditnote: "Credit note",
   bill: "Supplier bill", payment: "Supplier payment", debitnote: "Debit note", voucher: "Voucher", customer: "Customer",
   supplier: "Supplier", product: "Product", batch: "Batch", adjustment: "Stock adjustment", loan: "Stock loan", asset: "Fixed asset",
-  sageinvoice: "Invoice", sagebill: "Supplier invoice", sagereceipt: "Receipt", sagetxn: "Transaction",
+  sageinvoice: "Invoice", sagebill: "Supplier invoice", sagereceipt: "Receipt", sagetxn: "Transaction", dataissue: "Data issue",
 };
 
 export function DrillProvider({ children }: { children: ReactNode }) {
@@ -79,6 +80,7 @@ export function RecordView({ t }: { t: DrillTarget }) {
     case "sagebill": return <SageBillBody id={t.id} />;
     case "sagereceipt": return <SageReceiptBody id={t.id} />;
     case "sagetxn": return <SageTxnBody id={t.id} />;
+    case "dataissue": return <DataIssueBody id={t.id} />;
     default: return null;
   }
 }
@@ -408,6 +410,14 @@ function SageTxnBody({ id }: { id: string }) {
       <div className="space-y-3 text-sm">
         <Facts items={[["Date", fmtDate(d.date)], ["Journal", d.jrnl], ["Reference", d.reference], ["Debits", <Amount value={d.total_debit} />], ["Credits", <Amount value={d.total_credit} />]]} />
         {d.invoice_number && <DrillLink to={{ type: "sageinvoice", id: d.invoice_number, label: d.invoice_number }}>Open invoice {d.invoice_number}</DrillLink>}
+        {d.correction && (
+          <div className="rounded-lg border border-sky-300 bg-sky-50 p-2 text-xs dark:bg-sky-500/10">
+            Correction decided in Data issues by {d.correction.created_by} on {fmtDate(d.correction.created_at)}: {d.correction.title}
+            {d.correction.note ? <> - “{d.correction.note}”</> : null}.{" "}
+            <DrillLink to={{ type: "dataissue", id: d.correction.exception_id, label: d.reference }}>Open the issue</DrillLink>
+            {d.correction.journal_id && <> · <DrillLink to={{ type: "journal", id: d.correction.journal_id, label: d.correction.journal_number }}>journal {d.correction.journal_number}</DrillLink></>}
+          </div>
+        )}
         <H>{d.lines.length} line(s) posted with this reference on this day</H>
         <Table>
           <TableHeader><TableRow><TableHead>Account</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead></TableRow></TableHeader>

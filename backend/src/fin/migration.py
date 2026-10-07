@@ -233,7 +233,8 @@ def _parse_inventory(rows):
         if qn <= 0 or val < 0:
             # Sage allowed selling before receiving; negative stock is not a real
             # cost layer - it needs a stock count at cutover.
-            issues.append({"row": sku, "message": f"{sku}: quantity {qn:g} valued ₦{val:,.2f} in Sage - not loaded; count this item"})
+            issues.append({"row": sku, "sku": sku, "name": _s(r[c_desc]), "quantity": str(qn), "value": str(val),
+                           "message": f"{sku}: quantity {qn:g} valued ₦{val:,.2f} in Sage - not loaded; count this item"})
             excluded += val
             continue
         out.append({"sku": sku, "name": _s(r[c_desc]), "quantity": qn, "value": val})

@@ -12,7 +12,9 @@ export type DrillType =
   /** id "<date>|<reference>|<customer name>" */
   | "sagereceipt"
   /** id "<date>|<jrnl>|<reference>" - every line of one Sage General Ledger transaction */
-  | "sagetxn";
+  | "sagetxn"
+  /** a Data issue (Close & Controls) - also the source of every FIX- correction journal */
+  | "dataissue";
 
 /** The record behind a Sage General Ledger line: the invoice for a sale, else the whole transaction. */
 export function sageLineTarget(l: { date: string; jrnl?: string | null; reference?: string | null }): DrillTarget {
@@ -42,6 +44,7 @@ export const SOURCE_TYPES: Record<string, DrillType> = {
   STOCK_LOAN: "loan",
   FIXED_ASSET: "asset",
   FIXED_ASSET_DISPOSAL: "asset",
+  DATA_CORRECTION: "dataissue",
 };
 
 export function sourceTarget(sourceType?: string | null, sourceId?: string | null): DrillTarget | null {

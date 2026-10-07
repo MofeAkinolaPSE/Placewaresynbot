@@ -31,6 +31,8 @@ type ItemRow = {
 type InventorySuggestion = {
   sku?: string; name: string; category?: string; current_stock?: number; selling_price?: number;
   batch_number?: string; expiry_date?: string;
+  // ranked by the server: sellable first, then a lot whose receipt Finance still has to record
+  sellable?: boolean; receipt_pending?: boolean; stock_note?: string | null;
 };
 
 const fmt = (n: number | null | undefined) =>
@@ -326,7 +328,11 @@ export function NewRequestSheet({
                           <span className={sug.current_stock != null && sug.current_stock <= 0 ? "text-red-600 font-medium dark:text-red-300" : undefined}>
                             Stock: {sug.current_stock ?? "—"}
                           </span>
+                          {sug.batch_number && <span>· batch {sug.batch_number}{sug.expiry_date ? ` exp ${String(sug.expiry_date).slice(0, 10)}` : ""}</span>}
                         </div>
+                        {sug.stock_note && (
+                          <div className={`text-[11px] ${sug.receipt_pending ? "text-amber-700 dark:text-amber-300" : "text-red-600 dark:text-red-300"}`}>{sug.stock_note}</div>
+                        )}
                       </li>
                     ))}
                   </ul>

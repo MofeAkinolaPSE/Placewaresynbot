@@ -80,6 +80,8 @@ services:
       # NeuroLayer licence (signed system.dat). On the manager node the file lives at
       # /var/lib/docker/volumes/placeware_license/_data/system.dat - see the licensing runbook.
       - license:/backend/.license:ro
+      # Scheduled data backups (Settings > Data Backup) wait here until an admin downloads them.
+      - backups:/backend/backups
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
       interval: 15s
@@ -204,6 +206,8 @@ volumes:
   db_data:
   license:
     name: placeware_license
+  backups:
+    name: placeware_backups
   prometheus_data:
   grafana_data:
 

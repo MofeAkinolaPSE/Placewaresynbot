@@ -20,6 +20,7 @@ import {
   Section, StatusBadge, useBooks, useLines,
 } from "@/components/books/kit";
 import { books, BooksError, Dict, fmtDate, naira, newIdemKey, num, today, yearStart } from "@/lib/books-api";
+import { PendingReceiptNote } from "@/components/books/data-issues";
 
 export default function BooksSales() {
   const [params, setParams] = useSearchParams();
@@ -296,6 +297,9 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
                   : <Input className="h-8" placeholder={l.line_type === "CHARGE" ? "e.g. Delivery charge" : "Description"} value={l.description} onChange={(e) => L.update(i, { description: e.target.value })} />}</div>
                 <Button size="icon" variant="ghost" onClick={() => L.remove(i)}><Trash2 className="h-4 w-4" /></Button>
               </div>
+              {l.line_type === "ITEM" && l.product && (
+                <PendingReceiptNote product={l.product} onReload={(p) => L.update(i, { product: p, batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined })} />
+              )}
               {l.line_type === "ITEM" && l.product && (
                 <BatchSelect product={l.product} value={l.batch_id}
                              onChange={(bb) => L.update(i, { batch_id: bb?.id, batch_number: bb?.batch_number ?? l.product?.next_batch ?? "", expiry: bb?.expiry_date ?? l.product?.next_expiry })} />

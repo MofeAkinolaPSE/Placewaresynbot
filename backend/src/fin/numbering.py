@@ -24,6 +24,7 @@ DEFAULT_PREFIX = {
     "ASSET": "FA-",
     "DEPRECIATION": "DEP-",
     "RECONCILIATION": "REC-",
+    "DATA_CORRECTION": "FIX-",
 }
 
 
