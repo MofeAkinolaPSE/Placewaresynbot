@@ -260,6 +260,64 @@ async function sendDelete<T>(endpoint: string): Promise<T> {
   return res.json();
 }
 
+// ACE -> Sage export bridge (routers/sage_export.py)
+export type SageExportDoc = "customer" | "sales" | "receipts" | "adjust";
+export interface SageExportSettings {
+  cutover_date: string | null;
+  ar_account: string;
+  delivery_gl_account: string;
+  discount_gl_account: string;
+  writeoff_gl_account: string | null;
+  period_anchor_month: string;
+  period_anchor_number: number;
+  payment_method_map: Record<string, { method: string; cash_account: string; reference: string }>;
+  column_selection: Partial<Record<SageExportDoc, string[]>>;
+  /** Last date inside Sage's open fiscal years; later records are held back. */
+  sage_open_until: string | null;
+}
+export interface SageExportBlocked {
+  doc_type: SageExportDoc;
+  source_id: string;
+  ref: string;
+  reason: string;
+  fix: string;
+}
+export interface SageExportDocInfo {
+  records: number;
+  rows: number;
+  total?: number;
+  file_name: string;
+  headers: string[];
+  required: string[];
+  /** Columns ACE puts real data in (the rest are blank or Sage defaults). */
+  ace_fields: string[];
+  /** Fixed values Sage's template always carries, e.g. "Tax Type": "1". */
+  defaults: Record<string, string>;
+  columns: string[];
+  preview_rows: string[][];
+  blocked: number;
+  last_exported: string | null;
+  depends_on?: string;
+}
+export interface SageExportPlan {
+  period: { from: string; to: string };
+  settings: SageExportSettings;
+  docs: Record<SageExportDoc, SageExportDocInfo>;
+  blocked: SageExportBlocked[];
+  needs_reversal: { doc_type: string; ref: string; status: string; exported_at: string }[];
+  warnings: string[];
+}
+export interface SageExportBatch {
+  id: string;
+  period_from: string;
+  period_to: string;
+  counts: Partial<Record<SageExportDoc, { records: number; rows: number; total?: number }>>;
+  blocked_count: number;
+  files: string[] | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 export const api = {
   dashboard: {
     workstation: () => fetchRaw<{ data: WorkstationSummary }>("/dashboard/workstation").then((r) => r.data),
@@ -268,6 +326,8 @@ export const api = {
     crm: () => fetchJson<any>("/dashboard/crm"),
     alerts: () => fetchJson<Alert[]>("/dashboard/alerts"),
     briefing: () => fetchJson<ExecutiveBriefing>("/dashboard/executive-briefing"),
+    /** Executive overview: the company on one page (services/executive.py). */
+    executive: (refresh = false) => fetchRaw<any>(`/dashboard/executive${refresh ? "?refresh=true" : ""}`),
     finance: () => fetchJson<any>("/dashboard/finance"),
   },
   presence: {
@@ -312,6 +372,50 @@ export const api = {
         "/sage/import/freshness",
       ),
   },
+  /** ACE → Sage 50 export bridge (backend/src/routers/sage_export.py). */
+  sageExport: {
+    preview: (from: string, to: string) =>
+      fetchJson<SageExportPlan>(`/sage/export/preview?from=${from}&to=${to}`),
+    /** Produce and record one or more Sage import files; returns the batch. */
+    generate: (date_from: string, date_to: string, docs: SageExportDoc[]) =>
+      sendJson<{ id: string; files: string[]; counts: SageExportBatch["counts"]; blocked: SageExportBlocked[] }>(
+        "/sage/export/batches",
+        "POST",
+        { date_from, date_to, docs },
+      ),
+    /** One CSV from a batch, as a Blob (caller decides where it is saved). */
+    fileBlob: async (id: string, fileName: string): Promise<Blob> => {
+      const token = await getBearerToken();
+      const res = await fetch(
+        apiUrl(`/sage/export/batches/${encodeURIComponent(id)}/files/${encodeURIComponent(fileName)}`),
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw await toApiError(res, "Download failed");
+      return res.blob();
+    },
+    batches: () => fetchJson<{ batches: SageExportBatch[] }>("/sage/export/batches"),
+    deleteBatch: (id: string) =>
+      sendDelete<{ deleted: string }>(`/sage/export/batches/${encodeURIComponent(id)}`),
+    settings: () => fetchJson<SageExportSettings>("/sage/export/settings"),
+    saveSettings: (changes: Partial<SageExportSettings>) =>
+      sendJson<SageExportSettings>("/sage/export/settings", "PUT", changes),
+    /** Triggers a browser download of the batch ZIP. */
+    download: async (id: string): Promise<void> => {
+      const token = await getBearerToken();
+      const res = await fetch(apiUrl(`/sage/export/batches/${encodeURIComponent(id)}/download`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw await toApiError(res, "Download failed");
+      const blob = await res.blob();
+      const match = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = match?.[1] ?? "ace_to_sage.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+  },
   audit: {
     logs: () => fetchJson<any[]>("/audit/logs"),
   },
@@ -333,6 +437,10 @@ export const api = {
       }),
   },
   users: {
+    /** Assignable access roles (src/roles.py) and HR departments. */
+    roles: () => fetchRaw<{ roles: { key: string; label: string; department: string; about: string }[]; departments: string[] }>("/users/roles"),
+    setRoles: (userId: string, roles: string[], approval_reason: string) =>
+      sendJson<{ id: string; roles: string[]; previous: string[] }>(`/users/${encodeURIComponent(userId)}/roles`, "PUT", { roles, approval_reason }),
     list: async (limit: number = 100) => {
       const payload = await fetchRaw<{ users?: any[] }>(`/users?limit=${limit}`);
       return Array.isArray(payload?.users) ? payload.users : [];
@@ -616,7 +724,7 @@ export const api = {
       outstanding_count?: number;
       outstanding_total?: number;
       notes?: string;
-    }) => fetchRaw<any>("/finance/reconciliation/log", { method: "POST", body: JSON.stringify(payload) }),
+    }) => sendJson<any>("/finance/reconciliation/log", "POST", payload),
 
     /** Transaction-level GL entries from sage_gl_detail_snapshot */
     glDetail: (params?: { limit?: number; offset?: number; account_code?: string; journal_type?: string }) => {
@@ -820,6 +928,24 @@ export const api = {
       return fetchRaw<any[]>(`/procurement/purchase-orders${q.toString() ? `?${q}` : ""}`);
     },
     purchaseOrdersSummary: () => fetchRaw<any>("/procurement/purchase-orders/summary"),
+    // Stock orders, reorder plan, supplier invoices and directory - all from ACE Books
+    stockOrdersSummary: () => fetchRaw<any>("/procurement/stock-orders/summary"),
+    reorderPlan: () => fetchRaw<any>("/procurement/reorder-plan"),
+    stockOrders: (status?: string) =>
+      fetchRaw<{ data: any[] }>(`/procurement/stock-orders${status ? `?status=${encodeURIComponent(status)}` : ""}`).then((r) => r.data),
+    raiseStockOrder: (payload: { sku: string; qty: number; supplier_id?: string | null; unit_cost?: number | null; notes?: string }) =>
+      sendJson<any>("/procurement/stock-orders", "POST", payload),
+    stockOrderAction: (
+      id: string,
+      action: "approve" | "order" | "cancel",
+      payload: { qty?: number; supplier_id?: string; po_reference?: string; expected_date?: string; unit_cost?: number; reason?: string } = {},
+    ) => sendJson<any>(`/procurement/stock-orders/${encodeURIComponent(id)}/${action}`, "POST", payload),
+    purchases: (params: { search?: string; supplier_id?: string; limit?: number; offset?: number } = {}) => {
+      const q = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") q.set(k, String(v)); });
+      return fetchRaw<{ rows: any[]; total: number; amount: number }>(`/procurement/purchases?${q}`);
+    },
+    supplierDirectory: () => fetchRaw<any>("/procurement/suppliers"),
     updatePoStatus: (poId: string, payload: { status: "closed" | "cancelled"; reason?: string }) =>
       sendJson<{ success: boolean; po_id: string; status: string }>(
         `/procurement/purchase-orders/${encodeURIComponent(poId)}/status`,
@@ -829,6 +955,7 @@ export const api = {
   },
     ops: {
       kpis: () => fetchRaw<OpsKpis>("/ops/kpis"),
+      overview: (months: number = 12) => fetchRaw<any>(`/ops/overview?months=${months}`),
       forecastStockTurnover: (window: number = 3, horizon: number = 3) =>
         fetchRaw<OpsForecast>(`/ops/forecast/stock_turnover?window=${window}&horizon=${horizon}`),
     },
@@ -943,6 +1070,8 @@ export const api = {
     ) =>
       sendJson<any>(`/controls/projects/${encodeURIComponent(projectId)}/stage`, "POST", payload)
         .then((r) => r?.data ?? r),
+    history: (projectId: string) =>
+      fetchRaw<{ data: any[] }>(`/controls/projects/${encodeURIComponent(projectId)}/history`).then((r) => r.data),
   },
   suppliers: {
     list: () => fetchRaw<any[]>("/suppliers"),
@@ -1060,6 +1189,7 @@ export const api = {
     generateDeviationReport: (devId: string) =>
       sendJson<any>(`/compliance/deviations/${devId}/generate-report`, "POST", {}),
     equipment: () => fetchRaw<{ data: any[] }>("/compliance/equipment"),
+    registerEquipment: (payload: Record<string, any>) => sendJson<any>("/compliance/equipment", "POST", payload),
     // Real query param is `status` (list_maintenance's only filter) — the
     // previous `?filter=overdue|upcoming` param doesn't exist on this
     // endpoint at all, so selecting either pill silently did nothing.
@@ -1134,6 +1264,90 @@ export const api = {
     },
     resolveGap: (gapId: number) =>
       fetchRaw<any>(`/knowledge/gaps/${gapId}/resolve`),
+  },
+  /** CRM on real data (backend services/crm_hub.py): ACE Books customers & sales, the deal
+   *  pipeline, prospecting near the rep, reminders, weekly report, targets, leaderboard. */
+  /** Staff Workspace: the signed-in person's day, work, requests, messages, clock and progress. */
+  workspace: {
+    day: () => fetchRaw<any>("/workspace/day"),
+    operational: () => fetchRaw<any>("/workspace/operational"),
+    take: (rule: string, id: string, assign_to?: string) => sendJson<any>("/workspace/operational/take", "POST", { rule, id, assign_to }),
+    time: () => fetchRaw<any>("/workspace/time"),
+    clockIn: (payload: Record<string, any> = {}) => sendJson<any>("/workspace/time/start", "POST", payload),
+    takeBreak: () => sendJson<any>("/workspace/time/break", "POST", {}),
+    resume: () => sendJson<any>("/workspace/time/resume", "POST", {}),
+    clockOut: (payload: Record<string, any> = {}) => sendJson<any>("/workspace/time/stop", "POST", payload),
+    tasks: () => fetchRaw<any>("/workspace/tasks"),
+    createTask: (payload: Record<string, any>) => sendJson<any>("/workspace/tasks", "POST", payload),
+    task: (id: string) => fetchRaw<any>(`/workspace/tasks/${id}`),
+    updateTask: (id: string, payload: Record<string, any>) => sendJson<any>(`/workspace/tasks/${id}`, "PATCH", payload),
+    setStatus: (id: string, status: string, extra: Record<string, any> = {}) =>
+      sendJson<any>(`/workspace/tasks/${id}/status`, "POST", { status, ...extra }),
+    comment: (id: string, body: string) => sendJson<any>(`/workspace/tasks/${id}/comment`, "POST", { body }),
+    requests: () => fetchRaw<any>("/workspace/requests"),
+    createRequest: (payload: Record<string, any>) => sendJson<any>("/workspace/requests", "POST", payload),
+    request: (id: string) => fetchRaw<any>(`/workspace/requests/${id}`),
+    requestAction: (id: string, action: string, payload: Record<string, any> = {}) =>
+      sendJson<any>(`/workspace/requests/${id}/${action}`, "POST", payload),
+    inbox: (filter = "all") => fetchRaw<any>(`/workspace/inbox?filter=${filter}`),
+    markRead: (ids?: number[]) => sendJson<any>("/workspace/inbox/read", "POST", { ids }),
+    conversations: () => fetchRaw<any>("/workspace/conversations"),
+    messages: (other: string) => fetchRaw<any>(`/workspace/messages/${other}`),
+    send: (other: string, body: string) => sendJson<any>(`/workspace/messages/${other}`, "POST", { body }),
+    team: () => fetchRaw<any>("/workspace/team"),
+    progress: (range = "week") => fetchRaw<any>(`/workspace/progress?range=${range}`),
+    journal: (range = "today") => fetchRaw<any[]>(`/workspace/journal?range=${range}`),
+    parse: (text: string) => sendJson<any>("/workspace/parse", "POST", { text }),
+    quick: (text: string) => sendJson<any>("/workspace/quick", "POST", { text }),
+    escalationPolicy: () => fetchRaw<Record<string, { after_hours: number; to: string }[]>>("/workspace/escalation-policy"),
+    saveEscalationPolicy: (subject: string, priority: string, steps: { after_hours: number; to: string }[]) =>
+      sendJson<any>("/workspace/escalation-policy", "PUT", { subject, priority, steps }),
+    runEscalations: () => sendJson<any>("/workspace/escalations/run", "POST", {}),
+    prefs: () => fetchRaw<any>("/workspace/prefs"),
+    savePrefs: (payload: Record<string, any>) => sendJson<any>("/workspace/prefs", "PUT", payload),
+  },
+  /** HR on live data: overview, directory (from User Access) and timesheet review. */
+  hrHub: {
+    overview: (week?: string) => fetchRaw<any>(`/hr/overview${week ? `?week=${week}` : ""}`),
+    people: () => fetchRaw<any>("/hr/people"),
+    person: (key: string) => fetchRaw<any>(`/hr/people/${encodeURIComponent(key)}`),
+    addPerson: (payload: Record<string, any>) => sendJson<any>("/hr/people", "POST", payload),
+    updatePerson: (key: string, payload: Record<string, any>) => sendJson<any>(`/hr/people/${encodeURIComponent(key)}`, "PATCH", payload),
+    timesheets: (week?: string, person?: string, pending?: boolean) =>
+      fetchRaw<any>(`/hr/timesheets?${new URLSearchParams({ ...(week ? { week } : {}), ...(person ? { person } : {}), ...(pending ? { pending: "true" } : {}) }).toString()}`),
+    timesheetsCsvUrl: (week?: string) => apiUrl(`/hr/timesheets.csv${week ? `?week=${week}` : ""}`),
+    addEntry: (payload: Record<string, any>) => sendJson<any>("/hr/timesheets", "POST", payload),
+    review: (id: number, action: string, payload: Record<string, any> = {}) => sendJson<any>(`/hr/timesheets/${id}/${action}`, "POST", payload),
+    approveWeek: (payload: Record<string, any>) => sendJson<any>("/hr/timesheets/approve-week", "POST", payload),
+  },
+  crmHub: {
+    overview: () => fetchRaw<any>("/crm/overview"),
+    reps: () => fetchRaw<{ reps: any[] }>("/crm/reps").then((r) => r.reps),
+    pipeline: (rep?: string) => fetchRaw<any>(`/crm/pipeline${rep ? `?rep=${rep}` : ""}`),
+    createDeal: (payload: Record<string, any>) => sendJson<any>("/crm/deals", "POST", payload),
+    deal: (id: number) => fetchRaw<any>(`/crm/deals/${id}`),
+    updateDeal: (id: number, payload: Record<string, any>) => sendJson<any>(`/crm/deals/${id}`, "PATCH", payload),
+    moveDeal: (id: number, stage: string, extra: Record<string, any> = {}) => sendJson<any>(`/crm/deals/${id}/stage`, "POST", { stage, ...extra }),
+    logActivity: (payload: Record<string, any>) => sendJson<any>("/crm/activity", "POST", payload),
+    reminders: (scope: "mine" | "all" = "mine") => fetchRaw<any>(`/crm/reminders?scope=${scope}`),
+    createReminder: (payload: Record<string, any>) => sendJson<any>("/crm/reminders", "POST", payload),
+    reminderAction: (id: string, action: "done" | "snooze" | "dismiss", days = 1) =>
+      sendJson<any>(`/crm/reminders/${id}/${action}?days=${days}`, "POST", {}),
+    search: (payload: Record<string, any>) => sendJson<any>("/crm/prospects/search", "POST", payload),
+    prospects: (status?: string) => fetchRaw<{ prospects: any[] }>(`/crm/prospects${status ? `?status=${status}` : ""}`).then((r) => r.prospects),
+    saveProspect: (place: Record<string, any>, status: string, note?: string) => sendJson<any>("/crm/prospects/save", "POST", { place, status, note }),
+    prospectToPipeline: (place: Record<string, any>, extra: Record<string, any> = {}) =>
+      sendJson<any>("/crm/prospects/to-pipeline", "POST", { place, ...extra }),
+    inbound: () => fetchRaw<{ inbound: any[] }>("/crm/inbound").then((r) => r.inbound),
+    weeklyReport: (weekStart?: string) => fetchRaw<any>(`/crm/weekly-report${weekStart ? `?week_start=${weekStart}` : ""}`),
+    weeklyReportCsvUrl: (weekStart?: string) => apiUrl(`/crm/weekly-report.csv${weekStart ? `?week_start=${weekStart}` : ""}`),
+    targets: (period: string) => fetchRaw<any>(`/crm/targets?period=${period}`),
+    setTarget: (payload: Record<string, any>) => sendJson<any>("/crm/targets", "POST", payload),
+    leaderboard: (days = 30) => fetchRaw<any>(`/crm/leaderboard?days=${days}`),
+    newCustomer: (payload: Record<string, any>) => sendJson<any>("/crm/new-customer", "POST", payload),
+    directory: () => fetchRaw<any>("/crm/directory"),
+    customer: (id: number) => fetchRaw<any>(`/crm/customer/${id}`),
+    updateCustomer: (id: number, payload: Record<string, any>) => sendJson<any>(`/crm/customer/${id}`, "PATCH", payload),
   },
   salesCrm: {
     pipeline: (limit: number = 200) =>
@@ -1374,6 +1588,35 @@ export const api = {
   // -------------------------------------------------------------------------
   // Quality Control
   // -------------------------------------------------------------------------
+  /** Inventory & Quality, connected to ACE Books and the calendar (backend services/quality_hub.py). */
+  quality: {
+    overview: () => fetchRaw<any>("/quality/overview"),
+    expiry: (windowDays = 180) => fetchRaw<any>(`/quality/expiry?window_days=${windowDays}`),
+    quarantineLot: (batchId: string, reason?: string) => sendJson<any>(`/quality/lots/${batchId}/quarantine`, "POST", { reason }),
+    releaseLot: (batchId: string, reason?: string) => sendJson<any>(`/quality/lots/${batchId}/release`, "POST", { reason }),
+    writeOffLot: (batchId: string, reasonCode = "EXPIRY", notes?: string) =>
+      sendJson<any>(`/quality/lots/${batchId}/write-off`, "POST", { reason_code: reasonCode, notes }),
+    recalls: (status?: string) => fetchRaw<{ recalls: any[] }>(`/quality/recalls${status ? `?status=${status}` : ""}`).then((r) => r.recalls),
+    recall: (id: string) => fetchRaw<any>(`/quality/recalls/${id}`),
+    openRecall: (payload: Record<string, any>) => sendJson<any>("/quality/recalls", "POST", payload),
+    updateRecall: (id: string, payload: Record<string, any>) => sendJson<any>(`/quality/recalls/${id}`, "PATCH", payload),
+    // a customer returns recalled stock: credit note on the invoice they bought it on + stock back (frozen)
+    recordRecallReturn: (id: string, payload: Record<string, any>) => sendJson<any>(`/quality/recalls/${id}/returns`, "POST", payload),
+    customerInvoices: (customerId: string | number, opts: { batch_id?: string; sku?: string } = {}) =>
+      fetchRaw<{ invoices: any[] }>(`/quality/customer-invoices?customer_id=${customerId}${opts.batch_id ? `&batch_id=${opts.batch_id}` : ""}${opts.sku ? `&sku=${encodeURIComponent(opts.sku)}` : ""}`).then((r) => r.invoices),
+    batches: () => fetchRaw<any>("/quality/batches"),
+    registerBatch: (payload: Record<string, any>) => sendJson<any>("/quality/batches", "POST", payload),
+    releaseBatch: (id: string, payload: Record<string, any> = {}) => sendJson<any>(`/quality/batches/${id}/release`, "POST", payload),
+    rejectBatch: (id: string, reason: string, notes?: string) => sendJson<any>(`/quality/batches/${id}/reject`, "POST", { reason, notes }),
+    deviations: (status?: string) => fetchRaw<{ deviations: any[] }>(`/quality/deviations${status ? `?status=${status}` : ""}`).then((r) => r.deviations),
+    raiseDeviation: (payload: Record<string, any>) => sendJson<any>("/quality/deviations", "POST", payload),
+    updateDeviation: (id: string, payload: Record<string, any>) => sendJson<any>(`/quality/deviations/${id}`, "PATCH", payload),
+    scheduleAudit: (payload: Record<string, any>) => sendJson<any>("/quality/audits", "POST", payload),
+    scheduleMaintenance: (payload: Record<string, any>) => sendJson<any>("/quality/maintenance", "POST", payload),
+    calendar: (from: string, to: string) => fetchRaw<any>(`/quality/calendar?from=${from}&to=${to}`),
+    move: (kind: string, id: string, date: string) =>
+      sendJson<any>(`/quality/calendar/${kind}/${encodeURIComponent(id)}`, "PATCH", { date }),
+  },
   qc: {
     /** Unified KPI dashboard: expiring count, open deviations, temp alerts, NAFDAC pending, recalls */
     dashboard: () =>
@@ -1603,6 +1846,14 @@ export const api = {
 
   // ── Report Intelligence API ────────────────────────────────────────────────
   reports: {
+    /** Reports about a chosen record: catalogue -> pick the record -> review what was gathered -> generate. */
+    catalog: () => fetchRaw<{ types: any[]; kind_labels: Record<string, string> }>("/reports/catalog"),
+    subjects: (kind: string, search = "") => fetchRaw<{ items: any[] }>(`/reports/subjects/${kind}?search=${encodeURIComponent(search)}`),
+    dossier: (report_type: string, kind: string, id: string) =>
+      fetchRaw<any>(`/reports/dossier?${new URLSearchParams({ report_type, kind, id })}`),
+    fromRecord: (payload: { report_type: string; kind: string; id: string; notes?: string }) =>
+      sendJson<any>("/reports/from-record", "POST", payload),
+    forRecord: (kind: string, id: string) => fetchRaw<{ reports: any[] }>(`/reports/for-record?${new URLSearchParams({ kind, id })}`),
     /** Run the ReportGenerationAgent for any report type. Returns full narrative. */
     generate: (payload: { report_type?: string; intent_text?: string }) =>
       sendJson<{

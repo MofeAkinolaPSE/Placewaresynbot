@@ -1,27 +1,21 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Plus, RefreshCw, Loader2, Trash2, TrendingUp, Clock } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Users, Plus, RefreshCw, Loader2, TrendingUp, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { PageHeader } from "@/components/workspace/PageHeader";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
-import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
+import { NewRequestSheet, type CustomerSearchResult } from "@/components/workspace/NewRequestSheet";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { DrillLink } from "@/components/books/kit";
+import { DrillProvider } from "@/components/books/lineage";
+import { ActivitySheet, NewCustomerSheet, NewDealSheet, ReminderSheet, StageChip } from "@/components/crm/crm-kit";
 
 // Matches Frontdesk.tsx / ARReceipts.tsx's existing currency-formatting convention.
 const fmt = (n: number | null | undefined) =>
@@ -59,41 +53,13 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-type CustomerSearchResult = { id: number; name: string; customer_code?: string; phone?: string };
 type OrderRow = { id: string; invoice_number?: string; walk_in_id: string; status: string; total_amount: number; created_at: string };
-type ItemRow = {
-  product: string; quantity: number; unit_price: number;
-  // Carried through to the invoice so dispatch can deduct the right stock.
-  // Without it the backend can only name-match, which silently fails to
-  // decrement anything when the typed product isn't an exact catalogue name.
-  sku?: string;
-  batch_number?: string; manufacture_date?: string; expiry_date?: string;
-};
-// GET /inventory/search's real return shape (v_inventory).
-type InventorySuggestion = {
-  sku?: string; name: string; category?: string; current_stock?: number; selling_price?: number;
-  batch_number?: string; expiry_date?: string;
-};
-
-// customer_360 splits the address and city, but most records keep the city
-// inline in the address string already ("...OJODU BERGER, LAGOS"), so only
-// append it when it isn't there to avoid "LAGOS, LAGOS".
-function buildBillingAddress(cust: any): string {
-  const address = String(cust?.address || "").trim();
-  const city = String(cust?.city || "").trim();
-  if (!address) return city;
-  if (!city || address.toLowerCase().includes(city.toLowerCase())) return address;
-  return `${address}, ${city}`;
-}
-
-function resolveCustomerTerms(cust: any): string | null {
-  const terms = String(cust?.terms || "").trim();
-  if (terms) return terms;
-  const days = cust?.payment_terms_days;
-  return days != null ? `Net ${days} Days` : null;
-}
 
 export default function CustomerWorkspace() {
+  return <DrillProvider><CustomerWorkspaceInner /></DrillProvider>;
+}
+
+function CustomerWorkspaceInner() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -104,18 +70,21 @@ export default function CustomerWorkspace() {
   const [recent, setRecent] = useState<CustomerSearchResult[]>([]);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  // Lets "Make New Request" pick/change the customer inline instead of
-  // forcing staff to close the sheet and use the left-panel search first --
-  // that was the only path in before, and it's the only path the ACE
-  // Workstation's "Create Invoice" quick action can land on (no customer
-  // selected yet at all, since it opens this sheet directly via the URL).
-  const [changingCustomer, setChangingCustomer] = useState(false);
+  // CRM actions on the selected customer (deal, call log, reminder) and creating a customer.
+  const [crmAction, setCrmAction] = useState<null | "deal" | "activity" | "reminder" | "customer">(null);
 
   // Cross-link from the ACE Workstation's "Create Invoice" Quick Action
   // (/customers/workspace?action=new-request) — auto-opens this page's
   // existing request form instead of duplicating it. Consumed once, then
   // stripped from the URL so a refresh doesn't keep re-triggering it.
   useEffect(() => {
+    const preselect = Number(searchParams.get("customer"));
+    if (preselect) {
+      setSelectedCustomer({ id: preselect, name: "" });
+      setSheetOpen(true);
+      searchParams.delete("customer");
+      setSearchParams(searchParams, { replace: true });
+    }
     if (searchParams.get("action") === "new-request") {
       setSheetOpen(true);
       searchParams.delete("action");
@@ -123,67 +92,6 @@ export default function CustomerWorkspace() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const [items, setItems] = useState<ItemRow[]>([{ product: "", quantity: 1, unit_price: 0 }]);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [notes, setNotes] = useState("");
-
-  // Invoice Details — Bill To/Ship To, PO, Payment Terms, Shipping Method.
-  // Matches the real Placeware paper invoice's fields (see printInvoice()
-  // in Frontdesk.tsx, which this same data now feeds).
-  const [billingAddress, setBillingAddress] = useState("");
-  const [shippingAddress, setShippingAddress] = useState("");
-  const [sameAsBilling, setSameAsBilling] = useState(true);
-  const [customerPo, setCustomerPo] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("Due on Receipt");
-  const [shippingMethod, setShippingMethod] = useState("");
-
-  // Item-row inventory autocomplete -- previously the Product field was a
-  // plain free-text Input with zero connection to inventory, so staff had
-  // to know exact product names/prices from memory. Debounced per-row
-  // search against the same GET /inventory/search WalkInForm already uses,
-  // shown as a dropdown under whichever row is focused (only one row can
-  // be actively typed in at a time, so a single slot keyed by row index is
-  // enough -- no need for per-row state).
-  const [itemSuggestions, setItemSuggestions] = useState<{ idx: number; results: InventorySuggestion[] } | null>(null);
-  const itemSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMounted = useRef(true);
-  useEffect(() => () => {
-    isMounted.current = false;
-    if (itemSearchTimeout.current) clearTimeout(itemSearchTimeout.current);
-  }, []);
-
-  function handleProductInputChange(idx: number, value: string) {
-    // Drop any previously-picked sku: it belonged to the old product, and a
-    // stale sku would make dispatch deduct stock from the wrong item.
-    setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, product: value, sku: undefined } : r)));
-    if (itemSearchTimeout.current) clearTimeout(itemSearchTimeout.current);
-    const q = value.trim();
-    if (q.length < 2) {
-      setItemSuggestions(null);
-      return;
-    }
-    itemSearchTimeout.current = setTimeout(async () => {
-      try {
-        const results = await api.inventory.search(q);
-        if (isMounted.current) setItemSuggestions({ idx, results: (Array.isArray(results) ? results : []).slice(0, 8) });
-      } catch {
-        if (isMounted.current) setItemSuggestions(null);
-      }
-    }, 300);
-  }
-
-  function applyItemSuggestion(idx: number, sug: InventorySuggestion) {
-    setItems((prev) => prev.map((r, i) =>
-      i === idx ? {
-        ...r, product: sug.name, sku: sug.sku ?? r.sku,
-        unit_price: sug.selling_price ?? r.unit_price,
-        batch_number: sug.batch_number ?? r.batch_number,
-        expiry_date: sug.expiry_date ?? r.expiry_date,
-      } : r
-    ));
-    setItemSuggestions(null);
-  }
 
   const { data: today, refetch: refetchToday } = useQuery({
     queryKey: ["fd-daily-report-today"],
@@ -212,34 +120,14 @@ export default function CustomerWorkspace() {
 
   const orders: OrderRow[] = (context as any)?.orders ?? [];
 
-  // Prefill Invoice Details from the customer's own record. Everything below
-  // already existed on the customer (customer_360 returns address/city/terms)
-  // and the request payload already carried these fields -- staff were simply
-  // re-typing data the system had. Keyed by customer id so switching customers
-  // re-fills, while a re-render mid-edit leaves what's being typed alone.
-  const prefilledForRef = useRef<number | null>(null);
+  // A ?customer= preselect arrives with only an id -- fill in the name once
+  // customer_360 has it.
   useEffect(() => {
     const cust = (context as any)?.customer;
-    if (!cust || !selectedCustomer) return;
-    if (prefilledForRef.current === selectedCustomer.id) return;
-    prefilledForRef.current = selectedCustomer.id;
-
-    // Set rather than fill-if-empty: the ref above already means this runs
-    // once per customer, so the only thing a merge would preserve is the
-    // PREVIOUS customer's address after switching -- which is exactly wrong.
-    setBillingAddress(buildBillingAddress(cust));
-    const terms = resolveCustomerTerms(cust);
-    if (terms) setPaymentTerms(terms);
+    if (cust && selectedCustomer && !selectedCustomer.name && cust.name) {
+      setSelectedCustomer({ ...selectedCustomer, name: cust.name, customer_code: cust.customer_code });
+    }
   }, [context, selectedCustomer]);
-
-  // A customer's stored terms won't always be one of the five preset options
-  // (they come from the Sage master data), and silently dropping an unknown
-  // value would persist the wrong due_date -- the server derives due_date
-  // from this string.
-  const termsOptions = useMemo(() => {
-    const base = ["Due on Receipt", "Net 7 Days", "Net 15 Days", "Net 30 Days", "Net 60 Days"];
-    return base.includes(paymentTerms) ? base : [...base, paymentTerms];
-  }, [paymentTerms]);
 
   // Ranked by reorder urgency, from real dated AR ledger history (not
   // per-SKU -- see customer_reorder.py's docstring on why per-SKU timing
@@ -273,49 +161,6 @@ export default function CustomerWorkspace() {
     setExpandedOrderId(null);
     setRecent((prev) => [c, ...prev.filter((r) => r.id !== c.id)].slice(0, 5));
   }
-
-  const quickRequestMutation = useMutation({
-    mutationFn: () => api.frontdesk.quickRequest(selectedCustomer!.id, {
-      items: items
-        .filter((it) => it.product.trim())
-        .map((it) => ({
-          product: it.product.trim(), quantity: it.quantity, unit_price: it.unit_price,
-          sku: it.sku || undefined,
-          batch_number: it.batch_number || undefined,
-          manufacture_date: it.manufacture_date || undefined,
-          expiry_date: it.expiry_date || undefined,
-        })),
-      payment_method: paymentMethod,
-      notes: notes.trim() || undefined,
-      billing_address: billingAddress.trim() || undefined,
-      shipping_address: (sameAsBilling ? billingAddress : shippingAddress).trim() || undefined,
-      customer_po: customerPo.trim() || undefined,
-      payment_terms: paymentTerms,
-      shipping_method: shippingMethod.trim() || undefined,
-    }),
-    onSuccess: (data: any) => {
-      toast({ title: "Request created", description: "Invoice raised and queued for QC." });
-      setSheetOpen(false);
-      setItems([{ product: "", quantity: 1, unit_price: 0 }]);
-      setItemSuggestions(null);
-      setNotes("");
-      if (selectedCustomer) qc.invalidateQueries({ queryKey: ["customer-360", selectedCustomer.id] });
-      refetchToday();
-      // Auto-expand the new invoice so its QC action panel is immediately
-      // visible — closes the exact "search -> request -> QC/Finance/deliver"
-      // loop the business owner described.
-      if (data?.invoice?.id) setExpandedOrderId(data.invoice.id);
-    },
-    onError: (e: any) => toast({ title: "Request failed", description: e?.message, variant: "destructive" }),
-  });
-
-  // Requires a selected customer -- previously only checked item validity,
-  // which was safe only because the sheet could never open without one
-  // already selected (the trigger button was itself disabled otherwise).
-  // The new ?action=new-request auto-open (above) is the first path that
-  // can open this sheet before a customer is chosen, so this now guards
-  // the actual submission too.
-  const canSubmitRequest = !!selectedCustomer && items.some((it) => it.product.trim() && it.quantity > 0);
 
   return (
     <div className="space-y-4">
@@ -497,11 +342,58 @@ export default function CustomerWorkspace() {
 
                   <Separator />
 
+                  {(() => {
+                    const prof = (context as any).profitability;
+                    const invs: any[] = (context as any).invoices ?? [];
+                    return (
+                      <div>
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-muted-foreground">SALES & INVOICES (ACE BOOKS)</span>
+                          <DrillLink to={{ type: "customer", id: String(cust.id), label: cust.name }}><span className="text-xs">Full account</span></DrillLink>
+                        </div>
+                        {prof && (
+                          <div className="mb-2 grid grid-cols-2 gap-2">
+                            <div className="rounded-lg bg-muted/40 px-3 py-2"><div className="text-xs text-muted-foreground">Lifetime sales</div><div className="font-bold">{fmt(prof.sales)}</div></div>
+                            <div className="rounded-lg bg-muted/40 px-3 py-2"><div className="text-xs text-muted-foreground">Gross margin</div><div className="font-bold">{prof.gross_margin_pct != null ? `${Number(prof.gross_margin_pct).toFixed(1)}%` : "—"}</div></div>
+                          </div>
+                        )}
+                        {invs.length === 0 ? <p className="rounded-lg border py-3 text-center text-xs text-muted-foreground">No invoices yet.</p> : (
+                          <div className="space-y-1">
+                            {invs.slice(0, 8).map((iv: any) => (
+                              <div key={`${iv.source}-${iv.invoice_id}`} className="flex items-center justify-between rounded border px-2 py-1 text-xs">
+                                <span className="truncate">
+                                  {iv.ace_invoice_id ? <DrillLink to={{ type: "invoice", id: iv.ace_invoice_id, label: iv.invoice_id }}>{iv.invoice_id}</DrillLink>
+                                    : <DrillLink to={{ type: "sageinvoice", id: String(iv.invoice_id), label: iv.invoice_id }}>{iv.invoice_id}</DrillLink>}
+                                  <span className="ml-1 text-muted-foreground">{iv.date ? new Date(iv.date).toLocaleDateString("en-GB") : ""}</span>
+                                </span>
+                                <span className="shrink-0">{fmt(Number(iv.amount))}{Number(iv.balance) > 0 && <span className="ml-1 text-red-600 dark:text-red-300">· owes {fmt(Number(iv.balance))}</span>}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {(((context as any).deals ?? []).length > 0 || ((context as any).activity ?? []).length > 0) && (
+                    <div>
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">DEALS & CONTACT</div>
+                      {((context as any).deals ?? []).map((dl: any) => (
+                        <div key={dl.id} className="flex items-center justify-between border-b py-1 text-xs"><span>{dl.company_name}</span>
+                          <span className="flex items-center gap-2">{Number(dl.expected_value) > 0 && fmt(Number(dl.expected_value))}<StageChip stage={dl.stage} /></span></div>
+                      ))}
+                      {((context as any).activity ?? []).map((a: any, i: number) => (
+                        <div key={i} className="border-b py-1 text-xs"><span className="font-medium capitalize">{String(a.interaction_type).replace("_", " ")}</span> · {a.summary}
+                          <span className="ml-1 text-muted-foreground">{fmtDate(a.occurred_at)}</span></div>
+                      ))}
+                    </div>
+                  )}
+
                   <div>
                     <div className="text-xs font-semibold text-muted-foreground mb-2">RECENT ORDERS</div>
                     {orders.length === 0 && (
                       <p className="text-xs text-muted-foreground py-4 text-center border rounded-lg">
-                        No requests raised yet from this workspace.
+                        No Frontdesk requests raised for this customer yet.
                       </p>
                     )}
                     <div className="space-y-2">
@@ -575,6 +467,10 @@ export default function CustomerWorkspace() {
             >
               <Plus className="h-4 w-4" /> Make New Request
             </Button>
+            <Button variant="outline" className="w-full" disabled={!selectedCustomer} onClick={() => setCrmAction("activity")}>Log a call or visit</Button>
+            <Button variant="outline" className="w-full" disabled={!selectedCustomer} onClick={() => setCrmAction("reminder")}>Set a reminder</Button>
+            <Button variant="outline" className="w-full" disabled={!selectedCustomer} onClick={() => setCrmAction("deal")}>New deal for this customer</Button>
+            <Button variant="outline" className="w-full" onClick={() => setCrmAction("customer")}>New customer</Button>
             <Button
               variant="outline" className="w-full gap-2"
               onClick={() => { refetchToday(); if (selectedCustomer) refetchContext(); }}
@@ -620,216 +516,29 @@ export default function CustomerWorkspace() {
         </Card>
       )}
 
-      {/* "Make New Request" — an ephemeral create task, belongs in DetailSheet
-          per Ch.5.2, not inline (the Detail Workspace above is for viewing an
-          existing customer/order, not for a multi-field create form). */}
-      <DetailSheet
+      <ActivitySheet target={crmAction === "activity" && selectedCustomer ? { customer_id: selectedCustomer.id, name: selectedCustomer.name } : null}
+        onClose={() => { setCrmAction(null); if (selectedCustomer) qc.invalidateQueries({ queryKey: ["customer-360", selectedCustomer.id] }); }} />
+      <ReminderSheet target={crmAction === "reminder" && selectedCustomer ? { customer_id: selectedCustomer.id, name: selectedCustomer.name } : null} onClose={() => setCrmAction(null)} />
+      <NewDealSheet key={`deal-${selectedCustomer?.id}`} open={crmAction === "deal" && !!selectedCustomer}
+        defaults={selectedCustomer ? { company_name: selectedCustomer.name, customer_id: selectedCustomer.id, source: "existing_customer" } : {}}
+        onClose={() => { setCrmAction(null); if (selectedCustomer) qc.invalidateQueries({ queryKey: ["customer-360", selectedCustomer.id] }); }} />
+      <NewCustomerSheet open={crmAction === "customer"} onClose={() => setCrmAction(null)}
+        onCreated={(c) => selectCustomer({ id: c.id, name: c.name })} />
+
+      {/* "Make New Request" — an ephemeral create task, belongs in a sheet per
+          Ch.5.2. Shared with Frontdesk (components/workspace/NewRequestSheet). */}
+      <NewRequestSheet
         open={sheetOpen}
-        onOpenChange={(open) => {
-          setSheetOpen(open);
-          if (!open) setChangingCustomer(false);
+        onOpenChange={setSheetOpen}
+        customer={selectedCustomer}
+        onCustomerChange={selectCustomer}
+        onCreated={(data) => {
+          if (selectedCustomer) qc.invalidateQueries({ queryKey: ["customer-360", selectedCustomer.id] });
+          refetchToday();
+          // Auto-expand the new invoice so its QC action panel is immediately visible.
+          if (data?.invoice?.id) setExpandedOrderId(data.invoice.id);
         }}
-        title="Make New Request"
-        description={
-          selectedCustomer
-            ? `Raise a new invoice request for ${selectedCustomer.name}.`
-            : "Pick a customer below, then raise a new invoice request."
-        }
-        icon={Plus}
-        footer={
-          <Button
-            className="w-full"
-            disabled={!canSubmitRequest || quickRequestMutation.isPending}
-            onClick={() => quickRequestMutation.mutate()}
-          >
-            {quickRequestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Raise Request
-          </Button>
-        }
-      >
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <div className="text-xs font-semibold text-muted-foreground">CUSTOMER</div>
-            {selectedCustomer && !changingCustomer ? (
-              <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">{selectedCustomer.name}</div>
-                  {(selectedCustomer.customer_code || selectedCustomer.phone) && (
-                    <div className="text-xs text-muted-foreground">{selectedCustomer.customer_code || selectedCustomer.phone}</div>
-                  )}
-                </div>
-                <Button variant="ghost" size="sm" className="flex-shrink-0" onClick={() => setChangingCustomer(true)}>
-                  Change
-                </Button>
-              </div>
-            ) : (
-              <>
-                <EntityAutocomplete<CustomerSearchResult>
-                  placeholder="Search customer name or code…"
-                  fetchFn={(q) => api.crm.searchCustomers(q).then((r: any) => r?.data ?? [])}
-                  getKey={(c) => c.id}
-                  getLabel={(c) => c.name}
-                  getSubtitle={(c) => c.customer_code || c.phone}
-                  onSelect={(c) => {
-                    selectCustomer(c);
-                    setChangingCustomer(false);
-                  }}
-                />
-                {selectedCustomer && changingCustomer && (
-                  <Button variant="ghost" size="sm" onClick={() => setChangingCustomer(false)}>
-                    Cancel
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Invoice Details — Bill To/Ship To, PO, Payment Terms, Shipping
-              Method. Matches the real Placeware paper invoice's fields;
-              feeds printInvoice() (Frontdesk.tsx). */}
-          <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-            <div className="text-xs font-semibold text-muted-foreground">INVOICE DETAILS</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Bill To</label>
-                <Textarea rows={2} placeholder="Billing address" value={billingAddress}
-                  onChange={(e) => setBillingAddress(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Ship To</label>
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
-                      checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
-                    Same as Bill To
-                  </label>
-                </div>
-                <Textarea rows={2} placeholder="Shipping address" value={sameAsBilling ? billingAddress : shippingAddress}
-                  disabled={sameAsBilling} onChange={(e) => setShippingAddress(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Customer PO</label>
-                <Input placeholder="Optional" value={customerPo} onChange={(e) => setCustomerPo(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Payment Terms</label>
-                <Select value={paymentTerms} onValueChange={setPaymentTerms}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {termsOptions.map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Shipping Method</label>
-                <Input placeholder="e.g. Hand Delivery" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)} />
-              </div>
-            </div>
-          </div>
-
-          <div className="text-xs font-semibold text-muted-foreground">ITEMS</div>
-          {items.map((it, idx) => (
-            <div key={idx} className="space-y-1">
-            <div className="flex gap-2 items-start">
-              <div className="relative flex-1">
-                <Input
-                  placeholder="Product"
-                  value={it.product}
-                  onChange={(e) => handleProductInputChange(idx, e.target.value)}
-                  onBlur={() => setItemSuggestions((s) => (s?.idx === idx ? null : s))}
-                />
-                {itemSuggestions?.idx === idx && itemSuggestions.results.length > 0 && (
-                  <ul className="absolute z-40 mt-1 w-72 bg-card border rounded shadow max-h-56 overflow-auto">
-                    {itemSuggestions.results.map((sug) => (
-                      <li
-                        key={sug.sku ?? sug.name}
-                        className="p-2 hover:bg-accent/10 cursor-pointer"
-                        onMouseDown={(e) => { e.preventDefault(); applyItemSuggestion(idx, sug); }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium truncate">{sug.name}</span>
-                          {sug.selling_price != null && (
-                            <span className="text-xs font-semibold text-green-600 flex-shrink-0 dark:text-green-300">{fmt(sug.selling_price)}</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          {sug.sku && <span className="font-mono">{sug.sku}</span>}
-                          <span className={sug.current_stock != null && sug.current_stock <= 0 ? "text-red-600 font-medium dark:text-red-300" : undefined}>
-                            Stock: {sug.current_stock ?? "—"}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <Input
-                type="number" min={1} placeholder="Qty" className="w-20"
-                value={it.quantity}
-                onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, quantity: Number(e.target.value) || 1 } : r)))}
-              />
-              <Input
-                type="number" min={0} placeholder="Unit price" className="w-28"
-                value={it.unit_price}
-                onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, unit_price: Number(e.target.value) || 0 } : r)))}
-              />
-              <Button
-                variant="ghost" size="icon"
-                disabled={items.length === 1}
-                onClick={() => {
-                  setItems((prev) => prev.filter((_, i) => i !== idx));
-                  setItemSuggestions(null);
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            {/* Batch Number/Expiry Date autofill from the inventory
-                suggestion above; Manufacture Date always manual (no data
-                source exists anywhere for it). */}
-            <div className="grid grid-cols-3 gap-2 pl-1">
-              <Input placeholder="Batch number" className="h-8 text-xs" value={it.batch_number ?? ""}
-                onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, batch_number: e.target.value } : r)))} />
-              <Input type="month" className="h-8 text-xs" value={it.manufacture_date ?? ""}
-                onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, manufacture_date: e.target.value } : r)))} />
-              <Input type="date" className="h-8 text-xs" value={it.expiry_date ?? ""}
-                onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, expiry_date: e.target.value } : r)))} />
-            </div>
-            </div>
-          ))}
-          <Button
-            variant="outline" size="sm"
-            onClick={() => setItems((prev) => [...prev, { product: "", quantity: 1, unit_price: 0 }])}
-          >
-            <Plus className="h-4 w-4 mr-1" /> Add item
-          </Button>
-
-          <div className="pt-2">
-            <div className="text-xs font-semibold text-muted-foreground mb-1">PAYMENT METHOD</div>
-            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="transfer">Transfer</SelectItem>
-                <SelectItem value="credit">Credit</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Textarea placeholder="Notes (optional)" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-
-          <div className="flex justify-between font-bold pt-2 border-t">
-            <span>Total</span>
-            <span className="text-green-600 dark:text-green-300">
-              {fmt(items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0))}
-            </span>
-          </div>
-        </div>
-      </DetailSheet>
+      />
     </div>
   );
 }

@@ -59,6 +59,32 @@ def _require_qc(request: Request) -> dict:
     return payload
 
 
+def _hub(fn, *a, **k):
+    """Run a quality_hub action (recalls / batch release go through ACE Books there)."""
+    from src.services import quality_hub as qh
+    from src.fin.errors import FinError
+    try:
+        return fn(*a, **k)
+    except qh.QualityError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except FinError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+
+def _sku_for(product_name: str) -> Optional[str]:
+    """The ACE Books product code for a product name (the product itself, else its latest lot code)."""
+    from src.fin.db import q1, tx
+    from src.services.stock_orders import FAMILY_SQL
+    with tx() as conn:
+        r = q1(conn, f"""SELECT sku FROM fin_products
+                         WHERE lower({FAMILY_SQL.format(name='name', sku='sku')}) = lower(%s)
+                         ORDER BY (sku = {FAMILY_SQL.format(name='name', sku='sku')}) DESC, created_at DESC LIMIT 1""",
+               (product_name.strip(),))
+    return r["sku"] if r else None
+
+
 # Role shortcuts
 _require_admin   = require_role("admin")
 _require_any     = verify_jwt   # any authenticated user
@@ -548,42 +574,13 @@ async def register_nafdac_batch(
     payload: NafdacBatchIn,
     user=Depends(verify_jwt),
 ):
-    """Register a new product batch in the NAFDAC registry (status = pending)."""
-    actor = _actor(user)
-    row_id = str(uuid.uuid4())
-
-    row = {
-        "id":               row_id,
-        "batch_number":     payload.batch_number,
-        "product_name":     payload.product_name,
-        "nafdac_reg_number": payload.nafdac_reg_number,
-        "supplier":         payload.supplier,
-        "status":           "pending",
-        "dispatch_blocked": True,       # DB trigger will confirm this on insert
-        "valid_from":       payload.valid_from,
-        "valid_to":         payload.valid_to,
-        "certificate_ref":  payload.certificate_ref,
-        "registered_by":    actor,
-        "notes":            payload.notes,
-    }
-
-    try:
-        db.table("nafdac_batch_registry").insert(row).execute()
-    except Exception as exc:
-        err = str(exc)
-        if "unique" in err.lower() or "duplicate" in err.lower():
-            raise HTTPException(
-                status_code=409,
-                detail=f"Batch {payload.batch_number!r} for {payload.product_name!r} already registered",
-            )
-        logger.error("NAFDAC batch insert error: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to register batch")
-
-    await _audit(actor, "register_nafdac_batch", "nafdac_batch", row_id,
-                 {"batch_number": payload.batch_number, "product_name": payload.product_name})
-
-    return {"id": row_id, "batch_number": payload.batch_number, "status": "pending",
-            "dispatch_blocked": True}
+    """Register a batch for QC release. Bound to the ACE Books product/batch: while pending it is
+    quarantined there (cannot be sold); see services/quality_hub.register_batch."""
+    from src.services import quality_hub as qh
+    sku = _sku_for(payload.product_name)
+    if not sku:
+        raise HTTPException(status_code=409, detail=f"{payload.product_name!r} is not a product in ACE Books")
+    return _hub(qh.register_batch, user, {**payload.model_dump(), "sku": sku})
 
 
 @router.get("/nafdac/batches")
@@ -633,37 +630,9 @@ async def approve_nafdac_batch(
     payload:  NafdacApproveIn,
     user=Depends(_require_qc),
 ):
-    """Approve a batch — clears the dispatch block. Requires quality_assurance role."""
-    actor  = _actor(user)
-    batch  = _row_or_404("nafdac_batch_registry", batch_id, "NAFDAC batch")
-
-    if batch["status"] == "approved":
-        raise HTTPException(status_code=409, detail="Batch is already approved")
-
-    now = _now()
-    updates: dict = {
-        "status":           "approved",
-        "dispatch_blocked": False,   # DB trigger also enforces this
-        "approved_by":      actor,
-        "approved_at":      now,
-        "updated_at":       now,
-    }
-    if payload.valid_from:        updates["valid_from"]        = payload.valid_from
-    if payload.valid_to:          updates["valid_to"]          = payload.valid_to
-    if payload.certificate_ref:   updates["certificate_ref"]   = payload.certificate_ref
-    if payload.nafdac_reg_number: updates["nafdac_reg_number"] = payload.nafdac_reg_number
-    if payload.notes:             updates["notes"]             = payload.notes
-
-    try:
-        db.table("nafdac_batch_registry").update(updates).eq("id", batch_id).execute()
-    except Exception as exc:
-        logger.error("NAFDAC approve error: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to approve batch")
-
-    await _audit(actor, "approve_nafdac_batch", "nafdac_batch", batch_id,
-                 {"batch_number": batch["batch_number"], "product_name": batch["product_name"]})
-
-    return {"id": batch_id, "status": "approved", "dispatch_blocked": False}
+    """Release a batch: sellable again in ACE Books. Requires quality_assurance role."""
+    from src.services import quality_hub as qh
+    return _hub(qh.release_batch, user, batch_id, payload.model_dump(exclude_none=True))
 
 
 class NafdacRejectIn(BaseModel):
@@ -677,33 +646,9 @@ async def reject_nafdac_batch(
     payload:  NafdacRejectIn,
     user=Depends(_require_qc),
 ):
-    """Reject a batch — enforces the dispatch block. Requires quality_assurance role."""
-    actor = _actor(user)
-    batch = _row_or_404("nafdac_batch_registry", batch_id, "NAFDAC batch")
-
-    if batch["status"] in ("rejected",):
-        raise HTTPException(status_code=409, detail="Batch is already rejected")
-
-    now = _now()
-    updates: dict = {
-        "status":           "rejected",
-        "dispatch_blocked": True,
-        "rejection_reason": payload.rejection_reason,
-        "notes":            payload.notes,
-        "updated_at":       now,
-    }
-
-    try:
-        db.table("nafdac_batch_registry").update(updates).eq("id", batch_id).execute()
-    except Exception as exc:
-        logger.error("NAFDAC reject error: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to reject batch")
-
-    await _audit(actor, "reject_nafdac_batch", "nafdac_batch", batch_id,
-                 {"batch_number": batch["batch_number"],
-                  "rejection_reason": payload.rejection_reason})
-
-    return {"id": batch_id, "status": "rejected", "dispatch_blocked": True}
+    """Reject a batch: stays quarantined in ACE Books and a deviation is raised."""
+    from src.services import quality_hub as qh
+    return _hub(qh.reject_batch, user, batch_id, payload.rejection_reason, payload.notes)
 
 
 # ===========================================================================
@@ -747,41 +692,11 @@ async def initiate_recall(
     payload: RecallCreateIn,
     user=Depends(_require_qc),
 ):
-    """Initiate a product recall case. Requires quality_assurance role."""
-    actor = _actor(user)
-
+    """Initiate a recall: the ACE Books recall is opened with it (batch frozen, buyers traced)."""
+    from src.services import quality_hub as qh
     if payload.scope not in VALID_RECALL_SCOPE:
-        raise HTTPException(status_code=400,
-                            detail=f"scope must be one of: {sorted(VALID_RECALL_SCOPE)}")
-
-    recall_id = _next_recall_id()
-    row_id    = str(uuid.uuid4())
-
-    row = {
-        "id":                   row_id,
-        "recall_id":            recall_id,
-        "batch_number":         payload.batch_number,
-        "product_name":         payload.product_name,
-        "recall_reason":        payload.recall_reason,
-        "initiation_date":      dt.date.today().isoformat(),
-        "scope":                payload.scope,
-        "status":               "initiated",
-        "regulatory_authority": payload.regulatory_authority,
-        "distribution_data":    payload.distribution_data or [],
-        "created_by":           actor,
-    }
-
-    try:
-        db.table("recall_cases").insert(row).execute()
-    except Exception as exc:
-        logger.error("Recall insert error: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to initiate recall")
-
-    await _audit(actor, "initiate_recall", "recall_case", row_id,
-                 {"recall_id": recall_id, "product_name": payload.product_name,
-                  "batch_number": payload.batch_number, "scope": payload.scope})
-
-    return {"id": row_id, "recall_id": recall_id, "status": "initiated"}
+        raise HTTPException(status_code=400, detail=f"scope must be one of: {sorted(VALID_RECALL_SCOPE)}")
+    return _hub(qh.initiate_recall, user, payload.model_dump())
 
 
 @router.get("/recalls")
@@ -828,32 +743,8 @@ async def update_recall_status(
     payload:   RecallStatusIn,
     user=Depends(_require_qc),
 ):
-    """Progress a recall case through its lifecycle."""
-    actor  = _actor(user)
-    recall = _row_or_404("recall_cases", recall_id, "Recall case")
-
+    """Progress a recall; completing/closing it closes the ACE Books recall too."""
+    from src.services import quality_hub as qh
     if payload.status not in VALID_RECALL_STATUS:
-        raise HTTPException(status_code=400,
-                            detail=f"status must be one of: {sorted(VALID_RECALL_STATUS)}")
-
-    if recall["status"] == "closed":
-        raise HTTPException(status_code=409, detail="Recall case is already closed")
-
-    now = _now()
-    updates: dict = {"status": payload.status, "updated_at": now}
-    if payload.distribution_data is not None:
-        updates["distribution_data"] = payload.distribution_data
-    if payload.status in ("completed", "closed"):
-        updates["resolved_at"] = now
-
-    try:
-        db.table("recall_cases").update(updates).eq("id", recall_id).execute()
-    except Exception as exc:
-        logger.error("Recall status update error: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to update recall status")
-
-    await _audit(actor, "update_recall_status", "recall_case", recall_id,
-                 {"recall_id": recall.get("recall_id"), "new_status": payload.status,
-                  "product_name": recall.get("product_name")})
-
-    return {"id": recall_id, "status": payload.status}
+        raise HTTPException(status_code=400, detail=f"status must be one of: {sorted(VALID_RECALL_STATUS)}")
+    return _hub(qh.update_recall, user, recall_id, {"status": payload.status, "notes": payload.notes})

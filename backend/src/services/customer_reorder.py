@@ -38,12 +38,17 @@ _HIGH_VARIABILITY_CV = 0.75  # coefficient of variation above this -> "low" conf
 # genuinely actionable customer. Scoped to the priority queue only (not
 # get_customer_reorder_profile) -- a single customer's own 360 page should
 # still show its real historical cadence even if dormant.
-_DORMANT_CUTOFF_DAYS = 730
+_DORMANT_CUTOFF_DAYS = 365   # no order in a year = lapsed, not 'due'
 
 
 def _order_dates_for_customer(customer_code: str, client: DBClient = db) -> List[Dict[str, Any]]:
-    """Real dated invoice rows for one customer, latest AR batch only (same
-    batch-scoping convention migration 105 established for this table)."""
+    """Real dated invoice rows for one customer. Once ACE Books is live these come
+    from v_customer_invoices (every Sage invoice since 2018 + ACE Books invoices),
+    otherwise from the latest Sage AR batch."""
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return books_analytics.customer_order_history(customer_code)
     batch = _latest_batch_for_table("sage_ar_snapshot", client)
     q = (
         client.table("sage_ar_snapshot")
@@ -128,6 +133,11 @@ def get_reorder_priority_queue(limit: int = 50, client: DBClient = db) -> List[D
     """Ranked queue across every customer with enough history to predict:
     overdue first (most-overdue-relative-to-own-cycle first), then tiebroken
     by average order value, then not-yet-due customers by soonest first."""
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        rows = books_analytics.customer_order_history()
+        return _rank_queue(rows, limit, client)
     batch = _latest_batch_for_table("sage_ar_snapshot", client)
     q = (
         client.table("sage_ar_snapshot")
@@ -137,7 +147,10 @@ def get_reorder_priority_queue(limit: int = 50, client: DBClient = db) -> List[D
     if batch:
         q = q.eq("batch_id", batch)
     rows = q.limit(50000).execute().data or []
+    return _rank_queue(rows, limit, client)
 
+
+def _rank_queue(rows: List[Dict[str, Any]], limit: int, client: DBClient = db) -> List[Dict[str, Any]]:
     by_customer: Dict[str, List[Dict[str, Any]]] = {}
     for r in rows:
         code = r.get("customer_id")
@@ -176,9 +189,13 @@ def get_reorder_priority_queue(limit: int = 50, client: DBClient = db) -> List[D
                 p["customer_name"] = p["customer_code"]
                 p["customer_pk"] = None
 
-    overdue = [p for p in profiles if p["days_until_or_since"] > 0]
-    upcoming = [p for p in profiles if p["days_until_or_since"] <= 0]
-    overdue.sort(key=lambda p: (-p["days_until_or_since"], -(p["avg_order_value"] or 0)))
-    upcoming.sort(key=lambda p: p["days_until_or_since"])
-
-    return (overdue + upcoming)[:limit]
+    # Actionable first: due now (overdue by no more than their own cycle), biggest accounts first;
+    # then due within two weeks; lapsing accounts (overdue beyond their own cycle) last. Sorting
+    # purely by "most overdue" put customers who stopped buying ~2 years ago at the top.
+    for p in profiles:
+        d, gap = p["days_until_or_since"], p["avg_gap_days"] or 0
+        p["queue_status"] = "lapsing" if d > max(gap, 30) else "due" if d > 0 else "upcoming"
+    due = sorted([p for p in profiles if p["queue_status"] == "due"], key=lambda p: (-(p["avg_order_value"] or 0), -p["days_until_or_since"]))
+    upcoming = sorted([p for p in profiles if p["queue_status"] == "upcoming" and p["days_until_or_since"] >= -14], key=lambda p: -p["days_until_or_since"])
+    lapsing = sorted([p for p in profiles if p["queue_status"] == "lapsing"], key=lambda p: -(p["avg_order_value"] or 0))
+    return (due + upcoming + lapsing)[:limit]

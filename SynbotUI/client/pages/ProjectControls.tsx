@@ -27,6 +27,8 @@ import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { FilterBar } from "@/components/workspace/FilterBar";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
+import { DrillProvider } from "@/components/books/lineage";
+import { StockOrderKpis, StockOrdersList, useStockOrderData } from "@/components/operations/stock-orders";
 
 const STAGE_LABELS: Record<string, { label: string; department: string }> = {
   port_clearing: { label: "Port Clearing", department: "Logistics" },
@@ -69,6 +71,42 @@ interface Project {
   quality_notes?: string;
   quality_checked_by?: string;
   quality_checked_at?: string;
+  owner_name?: string;
+  assigned_staff_name?: string;
+  quality_checked_by_name?: string;
+}
+
+const STAGE_EVENT: Record<string, string> = {
+  controls_project_created: "Created the project",
+  controls_project_stage_updated: "Moved stage",
+};
+
+/** Who created the project and moved it through each stage (audit log). */
+function ProjectHistory({ projectId }: { projectId: string }) {
+  const { data = [], isLoading } = useQuery({ queryKey: ["project-history", projectId], queryFn: () => api.projects.history(projectId) });
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading…</p>;
+  const rows = (data as any[]).filter((r) => r.outcome !== "denied" || r.details);
+  if (rows.length === 0) return <p className="text-xs text-muted-foreground">No recorded activity.</p>;
+  return (
+    <ol className="space-y-2">
+      {rows.map((r: any, i: number) => {
+        const d = r.details ?? {};
+        const moved = d.from && d.to;
+        const denied = r.outcome && r.outcome !== "success";
+        return (
+          <li key={i} className="border-l-2 border-border pl-2 text-xs">
+            <div className="font-medium">{r.actor_name ?? "System"}</div>
+            <div className={denied ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}>
+              {denied ? "Blocked: " : ""}
+              {moved ? `${STAGE_LABELS[d.from]?.label ?? d.from} → ${STAGE_LABELS[d.to]?.label ?? d.to}` : STAGE_EVENT[r.event_type] ?? r.event_type.replace(/_/g, " ")}
+              {d.quality_check_status && moved ? ` · QC ${d.quality_check_status}` : ""}
+            </div>
+            <div className="text-[11px] text-muted-foreground">{new Date(r.created_at).toLocaleString()}</div>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 interface SupplierOption {
@@ -77,6 +115,14 @@ interface SupplierOption {
 }
 
 export default function ProjectControls() {
+  return (
+    <DrillProvider>
+      <ProjectControlsPage />
+    </DrillProvider>
+  );
+}
+
+function ProjectControlsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newProject, setNewProject] = useState({
@@ -582,6 +628,9 @@ function ProjectList({
                   <div className="mt-1 text-xs text-muted-foreground truncate">
                     {p.activity_type || "-"} · {p.supplier_name || "no supplier"}
                   </div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {p.assigned_staff_name ? `In charge: ${p.assigned_staff_name}` : `Created by ${p.owner_name ?? "—"}`}
+                  </div>
                 </button>
               ))
             )}
@@ -610,13 +659,14 @@ function ProjectList({
                   {[
                     ["Activity", selected.activity_type],
                     ["Supplier", selected.supplier_name],
-                    ["Owner", selected.assigned_staff_id || selected.owner_id],
+                    ["Created by", selected.owner_name],
+                    ["In charge", selected.assigned_staff_name],
                     ["Stage", STAGE_LABELS[currentStage]?.label || currentStage],
                     ["PO Reference", selected.po_reference],
                     ["Temp Profile", selected.temperature_profile],
                     ["NAFDAC", selected.nafdac_sampling_status],
                     ["QC Status", selected.quality_check_status],
-                    ["Reviewed By", selected.quality_checked_by],
+                    ["QC reviewed by", selected.quality_checked_by_name],
                     ["Reviewed At", selected.quality_checked_at ? new Date(selected.quality_checked_at).toLocaleString() : undefined],
                     ["Created", selected.created_at ? new Date(selected.created_at).toLocaleDateString() : undefined],
                   ].map(([label, value]) => (
@@ -709,13 +759,13 @@ function ProjectList({
           </CardContent>
         </Card>
 
-        {/* Quick Actions */}
-        <Card>
+        {/* Activity: who did what, from the audit log */}
+        <Card className="lg:max-h-[600px] flex flex-col">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Quick Actions</CardTitle>
+            <CardTitle className="text-sm">Activity</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-xs text-muted-foreground">Use "New Project" in the header to create a project.</p>
+          <CardContent className="overflow-y-auto flex-1">
+            {selected ? <ProjectHistory projectId={selected.id} /> : <p className="text-xs text-muted-foreground">Select a project.</p>}
           </CardContent>
         </Card>
       </div>
@@ -837,9 +887,10 @@ function KanbanCard({
         {/* Footer row: staff avatar + expand button */}
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-1.5">
-            {(project.assigned_staff_id || project.owner_id) && (
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary select-none ring-1 ring-primary/30">
-                {((project.assigned_staff_id || project.owner_id) as string).charAt(0).toUpperCase()}
+            {(project.assigned_staff_name || project.owner_name) && (
+              <div title={project.assigned_staff_name || project.owner_name}
+                   className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary select-none ring-1 ring-primary/30">
+                {((project.assigned_staff_name || project.owner_name) as string).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
               </div>
             )}
             {project.temperature_profile && (
@@ -1072,34 +1123,22 @@ function DeliveryList() {
   );
 }
 
-// Stock Orders tab — consolidated onto PurchaseOrders.tsx (real Sage-sourced
-// PO data, search, status filters), which this tab's hardcoded mock rows
-// (SO-8821 etc.) duplicated. Same treatment as §9.7.
+// Stock Orders tab: the stock-order pipeline from ACE Books (the same data as
+// Operations › Stock Orders & Purchases). The old tab counted Sage supplier
+// invoices as "purchase orders" (1,180 total, 49 "overdue").
 function StockOrderList() {
   const navigate = useNavigate();
-  const { data: summary } = useQuery({
-    queryKey: ["purchase-orders-summary"],
-    queryFn: () => api.procurement.purchaseOrdersSummary(),
-  });
-
+  const { summary } = useStockOrderData();
   return (
-    <Card className="pw-surface-interactive">
-      <CardHeader>
-        <CardTitle>Stock Orders</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <KpiStrip
-          items={[
-            { label: "Total POs", value: summary?.total_pos ?? "—" },
-            { label: "Open POs", value: summary?.open_pos ?? "—" },
-            { label: "Overdue POs", value: summary?.overdue_pos ?? "—", tone: (summary?.overdue_pos ?? 0) > 0 ? "danger" : "default" },
-            { label: "Overdue Value", value: summary?.overdue_value != null ? `₦${Number(summary.overdue_value).toLocaleString()}` : "—", tone: (summary?.overdue_value ?? 0) > 0 ? "danger" : "default" },
-          ]}
-        />
-        <Button onClick={() => navigate("/operations/purchase-orders")} className="gap-2">
-          View Full Purchase Orders <ArrowRight className="w-4 h-4" />
+    <div className="space-y-4">
+      <StockOrderKpis s={summary.data} onPick={(tab, f) => navigate(`/operations/purchase-orders?tab=${tab}${f ? `&filter=${f}` : ""}`)} />
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Stock orders in progress</h3>
+        <Button size="sm" onClick={() => navigate("/operations/purchase-orders")} className="gap-2">
+          Reorder plan & supplier invoices <ArrowRight className="w-4 h-4" />
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+      <StockOrdersList compact />
+    </div>
   );
 }

@@ -1,16 +1,20 @@
 """Customer 360 — live composite view of a customer across all data layers.
 
 Combines:
-  • customers            — profile, contact details, credit limit, terms
-  • sage_ar_snapshot     — outstanding receivables, overdue position
-  • sage_customer_sales_snapshot — lifetime sales / gross profit / margin
-  • sage_invoice_lines_snapshot  — top purchased items (invoice_id = SOLD_<code>)
+  • customers                 — profile, contact details, credit limit, terms
+  • ACE Books (books_analytics, once live):
+      v_ar_open               — outstanding receivables, overdue position (= ACE Books ageing)
+      v_customer_sales_summary— lifetime sales / cost / gross margin (Sage history + ACE Books)
+      v_sales_lines           — top purchased items, dated
+  • Sage snapshots            — fallback before ACE Books is live
 """
 import datetime
 import logging
 from fastapi import APIRouter, HTTPException, Request
 from src.middleware import verify_jwt
 import src.db as db
+from src.services import books_analytics
+from src.fin.readmodel import live as _books_live
 from src.services.customer_reorder import get_customer_reorder_profile, get_reorder_priority_queue
 
 log = logging.getLogger(__name__)
@@ -45,13 +49,19 @@ def customer_360(customer_id: int, request: Request):
         meta = c.get('metadata') or {}
         today = datetime.date.today()
 
+        books = _books_live()
         # ── Receivables ────────────────────────────────────────────────────
         outstanding = 0.0
         overdue_amount = 0.0
         overdue_count = 0
         invoice_count = 0
         last_invoice_date = None
-        if code:
+        if books:
+            rec = books_analytics.customer_receivables(customer_id)
+            outstanding, overdue_amount = rec['outstanding'], rec['overdue_amount']
+            overdue_count, invoice_count = rec['overdue_count'], rec['invoice_count']
+            last_invoice_date = rec['last_invoice_date']
+        elif code:
             ar_rows = (
                 db.db.table('sage_ar_snapshot')
                 .select('amount,balance,due_date,date')
@@ -83,7 +93,9 @@ def customer_360(customer_id: int, request: Request):
 
         # ── Profitability (lifetime, from Sage sales history) ─────────────
         profitability = None
-        if code:
+        if books:
+            profitability = books_analytics.customer_profitability(customer_id)
+        elif code:
             ps = (
                 db.db.table('sage_customer_sales_snapshot')
                 .select('amount,cost_of_sales,gross_profit,gross_margin')
@@ -105,7 +117,9 @@ def customer_360(customer_id: int, request: Request):
 
         # ── Top purchased items ────────────────────────────────────────────
         top_items = []
-        if code:
+        if books:
+            top_items = books_analytics.customer_top_items(customer_id)
+        elif code:
             lines = (
                 db.db.table('sage_invoice_lines_snapshot')
                 .select('item_id,quantity,line_total,gross_profit')
@@ -158,7 +172,26 @@ def customer_360(customer_id: int, request: Request):
             log.exception('customer_360 orders lookup failed for id=%s', customer_id)
             orders = []
 
+        # ── Invoices (ACE Books + Sage history), deals and CRM activity ──────
+        # "Recent orders" above is Frontdesk requests only, so most customers showed nothing.
+        invoices, deals, activity = [], [], []
+        try:
+            from src.fin.db import q as _q, tx as _tx
+            with _tx() as conn:
+                invoices = _q(conn, """SELECT source, invoice_id, date, due_date, amount, balance, status, ace_invoice_id::text AS ace_invoice_id
+                                       FROM v_customer_invoices WHERE customer_pk=%s ORDER BY date DESC LIMIT 12""", (customer_id,))
+                deals = _q(conn, """SELECT id, company_name, stage::text AS stage, expected_value, won_at, created_at FROM leads
+                                    WHERE customer_id=%s AND stage::text <> 'archived' ORDER BY updated_at DESC LIMIT 10""", (customer_id,))
+                activity = _q(conn, """SELECT i.interaction_type, i.summary, i.outcome, i.occurred_at FROM crm_interaction_log i
+                                       LEFT JOIN leads l ON l.id=i.lead_id WHERE i.customer_id=%s OR l.customer_id=%s
+                                       ORDER BY i.occurred_at DESC LIMIT 10""", (customer_id, customer_id))
+        except Exception:
+            log.exception('customer_360 invoices/deals lookup failed for id=%s', customer_id)
+
         return {
+            'invoices': invoices,
+            'deals': deals,
+            'activity': activity,
             'customer': {
                 'id': c.get('id'),
                 'name': c.get('name'),

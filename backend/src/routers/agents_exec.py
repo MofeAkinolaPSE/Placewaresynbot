@@ -148,6 +148,17 @@ def create_db_executor():
                 except Exception:
                     pass
                 try:
+                    from src.fin.readmodel import live as _live
+                    if _live():
+                        # ACE Books stock by item, with the next batch and its expiry
+                        inv = db.table("v_inventory").select("sku,name,current_stock,expiry_date,batch_number").execute().data or []
+                        for r in inv:
+                            if r.get("expiry_date") and float(r.get("current_stock") or 0) > 0:
+                                rows.append({"sku": r["sku"], "product_id": r["sku"], "name": r.get("name"),
+                                             "batch_id": r.get("batch_number"), "expiry_date": r["expiry_date"],
+                                             "best_before": r["expiry_date"], "qty_on_hand": float(r.get("current_stock") or 0),
+                                             "source": "ACE Books"})
+                        raise StopIteration
                     # NOTE: this local DB wrapper has no .not_ — filter for non-null
                     # expiry_date in Python after fetch (same workaround already used
                     # by services/inventory.py's get_expiring_inventory). A prior
@@ -206,7 +217,7 @@ def create_db_executor():
                             "best_before": r.get("expiry_date"),
                             "qty_on_hand": qty_by_sku.get(item_id, 0),
                         })
-                except Exception:
+                except (Exception, StopIteration):
                     pass
                 return rows
             
@@ -397,6 +408,11 @@ def create_db_executor():
                 result = db.table("batch_status_locks").select("*").execute()
                 return result.data if hasattr(result, 'data') else []
 
+            elif query_type == "gl_profitability" and __import__("src.fin.readmodel", fromlist=["live"]).live():
+                # Real product grain from ACE Books sales lines (Sage history + ACE invoices, last 12 months)
+                from src.services import books_analytics
+                return books_analytics.product_profitability(months=12)
+
             elif query_type == "gl_profitability":
                 # Aggregate GL snapshot into product-level revenue/cost rows expected by FinancialAnalystAgent.
                 # Classification uses account_type from sage_coa_snapshot (Nigerian Sage 50
@@ -492,6 +508,15 @@ def create_db_executor():
                     "last_seen_at", desc=True
                 ).limit(100).execute()
                 return result.data if hasattr(result, "data") else []
+
+            elif query_type == "customer_list" and __import__("src.fin.readmodel", fromlist=["live"]).live():
+                # CRM customers with their ACE Books balance
+                from src.fin.db import q as _q, tx as _tx
+                with _tx() as _c:
+                    return _q(_c, """SELECT c.customer_code AS customer_id, c.name, COALESCE(c.client_type,'active') AS status,
+                                            COALESCE(c.risk_score,0) AS risk_score, COALESCE(a.bal,0) AS outstanding_balance
+                                     FROM customers c LEFT JOIN (SELECT customer_pk, SUM(balance) bal FROM v_ar_open GROUP BY 1) a
+                                          ON a.customer_pk=c.id ORDER BY c.name LIMIT %s""", (spec.get("limit", 2000),))
 
             elif query_type == "customer_list":
                 # Primary source: Sage master data (1.5K+ real customers).

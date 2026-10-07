@@ -11,6 +11,7 @@ from ..cache import ttl_cache, invalidate_cache_tags
 from .realtime import realtime_hub
 import asyncio
 from .sage_adapter.service import kpis as finance_kpis, ar_trend_summary, ar_aging_buckets
+from src.fin.readmodel import live as _books_live
 from .inventory import get_inventory_summary, get_latest_batch_sku_count, get_recent_inventory_movements, classify_stock_status
 from .ops import kpis as ops_kpis, stock_turnover_series
 from .hr import payroll_and_absence_summary
@@ -78,7 +79,14 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
     # are dead history, not stockouts. Active = future expiry date OR traded
     # in the current fiscal period (unit-activity rows, transaction_id ACT_*).
     traded_skus: set = set()
+    from src.fin.readmodel import live as _live
+    if _live():
+        import datetime as _d
+        from src.services import books_analytics
+        traded_skus = books_analytics.traded_skus(_d.date(_d.date.today().year, 1, 1))
     try:
+        if traded_skus:
+            raise StopIteration  # ACE Books already answered
         act_res = (
             client.table("sage_inv_transactions_snapshot")
             .select("item_id,quantity_in,quantity_out")
@@ -92,7 +100,7 @@ def get_inventory_dashboard(limit: int = 50, client: DBClient = db) -> Dict[str,
             if r.get("item_id")
             and (float(r.get("quantity_in") or 0) > 0 or float(r.get("quantity_out") or 0) > 0)
         }
-    except Exception:
+    except (Exception, StopIteration):
         pass
 
     if inv_rows:
@@ -447,7 +455,7 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
     workforce = get_workforce_dashboard(client=client)
     alerts = get_active_alerts(client=client)
 
-    # 1b. Pull live counts from directly-imported Sage tables
+    # 1b. Live counts: ACE Books / CRM once live, else the directly-imported Sage tables
     # (AR/AP snapshots are empty — invoices were not entered in Sage;
     #  these tables hold the real master data from DAT file extraction)
     try:
@@ -486,6 +494,11 @@ def generate_executive_briefing(client: DBClient = db) -> Dict[str, Any]:
         prospect_count = len(prospect_res.data or [])
     except Exception:
         prospect_count = 0
+    if _books_live():
+        from src.services import books_analytics
+        _c = books_analytics.data_counts()
+        customer_count, inventory_sku_count = _c["customers"], _c["products"]
+        gl_transaction_count, ar_invoice_count = _c["gl_lines"], _c["invoices"]
 
     # 2. Synthesize Insights (Deterministic)
     critical_risks = []
@@ -645,6 +658,11 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
     # batch was first ever promoted, making the freshness check itself always stale.
     data_freshness: str | None = None
     try:
+        if _books_live():
+            from src.services import books_analytics
+            lp = books_analytics.data_counts().get("last_posting")
+            data_freshness = _dt_to_str(lp) if lp else None
+            raise StopIteration
         freshness_row = (
             db.table("sage_ar_snapshot")
             .select("imported_at")
@@ -655,7 +673,7 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
         )
         if freshness_row:
             data_freshness = _dt_to_str(freshness_row[0].get("imported_at"))
-    except Exception:
+    except (Exception, StopIteration):
         pass
 
     # Live data counts from populated Sage tables
@@ -690,6 +708,11 @@ def executive_summary(client: DBClient = db) -> Dict[str, Any]:
         prospect_count = len(prospect_res.data or [])
     except Exception:
         pass
+
+    if _books_live():
+        from src.services import books_analytics
+        _c = books_analytics.data_counts()
+        customer_count, inventory_sku_count, gl_transaction_count = _c["customers"], _c["products"], _c["gl_lines"]
 
     if customer_count > 0:
         status = "Stable" if status != "At Risk" else status

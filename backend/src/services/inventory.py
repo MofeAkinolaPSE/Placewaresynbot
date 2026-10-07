@@ -13,6 +13,22 @@ TABLE_SAGE_SNAPSHOT = "sage_inventory_snapshot"
 
 logger = logging.getLogger("inventory")
 
+class StockInBooksError(ValueError):
+    """A stock change for an item ACE Books values must be posted in ACE Books."""
+
+
+def _held_in_books(sku: str) -> bool:
+    try:
+        from src.fin.readmodel import live
+        if not live():
+            return False
+        from src.fin.db import q1, tx
+        with tx() as conn:
+            return bool(q1(conn, "SELECT 1 FROM fin_products WHERE sku=%s LIMIT 1", (sku,)))
+    except Exception:
+        return False
+
+
 def record_inventory_event(
     sku: str,
     change: float,
@@ -27,6 +43,15 @@ def record_inventory_event(
     """
     if change == 0:
         raise ValueError("Quantity change cannot be zero")
+    # Once ACE Books is live, stock for items the books hold is valued there and
+    # v_inventory reads it from there: a direct stock write here would be ignored.
+    # Frontdesk's dispatch SALE stays as an operational record (the books already
+    # took the stock at Finance approval).
+    if event_type != "SALE" and _held_in_books(sku):
+        raise StockInBooksError(
+            f"Stock for {sku} is recorded in ACE Books: receive it with a supplier bill (Inventory > Receive stock) "
+            f"or a stock adjustment (Inventory > Log adjustment)."
+        )
 
     payload = {
         "sku": sku,

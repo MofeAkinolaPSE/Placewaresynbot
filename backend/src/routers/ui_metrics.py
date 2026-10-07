@@ -13,7 +13,13 @@ def auth_stub():
 
 @router.get('/metrics/summary')
 def metrics_summary(_=Depends(auth_stub)) -> Any:
-    """Return a small set of metrics for UI cards, aggregated live from Sage snapshot tables."""
+    """Return a small set of metrics for UI cards (ACE Books once live, else Sage snapshots)."""
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        t = books_analytics.crm_totals()
+        return {"total_leads": t["customer_count"], "pipeline_value": round(t["open_value"], 2),
+                "forecast": round(t["invoiced"], 2), "pending_routes": t["open_count"]}
     try:
         ar_res = db.db.table("sage_ar_snapshot").select("amount, balance").execute()
         ar_rows = ar_res.data or []

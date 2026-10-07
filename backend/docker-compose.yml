@@ -48,6 +48,10 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    volumes:
+      # NeuroLayer licence: drop a signed system.dat in backend/.license/ on the host.
+      # Picked up within ~30s, no restart. See tools/licensing/ and the licensing runbook.
+      - ./.license:/backend/.license:ro
     restart: unless-stopped
     depends_on:
       db:
@@ -63,7 +67,7 @@ services:
 
   # ── One-shot service: generates a self-signed TLS cert into the ssl_certs
   # named volume. Runs once on first `docker compose up`; skipped if cert
-  # already exists. On production replace with Let's Encrypt (see gen-tls-cert.sh).
+  # already exists. The real certificate replaces it via deploy/issue-cert.ps1.
   certs-init:
     image: alpine:3.19
     container_name: placeware-certs-init
@@ -91,6 +95,31 @@ services:
         fi
     restart: "no"
 
+  # ── Let's Encrypt (browser-trusted certificate) ──────────────────────────
+  # First certificate: run deploy/issue-cert.ps1 once on the server that the
+  # domain points to. After that this service checks twice a day and renews
+  # when fewer than 30 days remain, copying the new files into ssl_certs.
+  # On a machine with no Let's Encrypt certificate (e.g. a dev laptop) it
+  # simply finds nothing to renew and keeps sleeping - harmless.
+  certbot:
+    image: certbot/certbot:v2.11.0
+    container_name: placeware-certbot
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ssl_certs:/etc/ssl/placeware
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --quiet --webroot -w /var/www/certbot \
+            --deploy-hook 'cp -L "$$RENEWED_LINEAGE/fullchain.pem" /etc/ssl/placeware/cert.pem && cp -L "$$RENEWED_LINEAGE/privkey.pem" /etc/ssl/placeware/key.pem && chmod 644 /etc/ssl/placeware/cert.pem && chmod 640 /etc/ssl/placeware/key.pem'
+          sleep 12h & wait $$!
+        done
+    restart: unless-stopped
+
   # ── React Frontend served by nginx ───────────────────────────────────────
   frontend:
     container_name: placeware-frontend.v1
@@ -102,10 +131,17 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      # Certs are auto-generated into this named volume by the certs-init service.
-      # To use Let's Encrypt on a production VM, stop using this volume and
-      # bind-mount /etc/letsencrypt/live/<domain> instead (see gen-tls-cert.sh).
+      # nginx always reads /etc/ssl/placeware/{cert,key}.pem from this volume.
+      # certs-init puts a self-signed pair here on first start; once a real
+      # Let's Encrypt certificate is issued (deploy/issue-cert.ps1), the certbot
+      # service copies it over the same two files - nginx config never changes.
       - ssl_certs:/etc/ssl/placeware:ro
+      # Let's Encrypt's domain check: certbot writes a token here and nginx
+      # serves it at http://<domain>/.well-known/acme-challenge/<token>.
+      - certbot_www:/var/www/certbot:ro
+    # Reload nginx every 6 hours so a renewed certificate is picked up without
+    # a restart (certbot renews ~30 days before the 90-day expiry).
+    command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec nginx -g 'daemon off;'"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost/health || curl -f http://localhost/ || exit 1"]
@@ -163,3 +199,9 @@ volumes:
     name: placeware_grafana_data
   ssl_certs:
     name: placeware_ssl_certs
+  # Let's Encrypt account, certificates and renewal settings (keep - holds the real cert)
+  letsencrypt:
+    name: placeware_letsencrypt
+  # Let's Encrypt's domain-check tokens, shared by certbot (writes) and nginx (serves)
+  certbot_www:
+    name: placeware_certbot_www

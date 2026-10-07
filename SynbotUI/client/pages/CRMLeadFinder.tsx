@@ -1,659 +1,289 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+/**
+ * CRM › Leads & Prospecting (the old Lead Finder and Leads pages, combined).
+ *   Find prospects  real businesses near the rep (GPS or a typed area), nearest first, exactly as
+ *                   many as asked - nothing is stored until the rep acts on one.
+ *   Worked          prospects the team has saved, called or turned down.
+ *   Website         enquiries from the website form.
+ * "Add to pipeline" makes a New lead on the Sales Pipeline. Existing customers are flagged, not
+ * offered as prospects. The old page listed 1,780 of our own Sage customers plus 12 mock places.
+ */
+import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Crosshair, ExternalLink, Loader2, MapPin, Phone, Plus, Search, Target, ThumbsDown } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api-client";
-import { authClient } from "@/lib/auth-client";
-import { apiUrl } from "@/lib/api-base";
-import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import L from "leaflet";
-import { motion } from "framer-motion";
-import { motionVariants } from "@/lib/motion";
-import {
-  Search,
-  MapPin,
-  Download,
-  Star,
-  Phone,
-  Globe,
-  Map as MapIcon,
-  Users,
-  ClipboardList,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  Zap,
-  RefreshCw,
-  Plus,
-} from "lucide-react";
-import { PageHeader } from "@/components/workspace/PageHeader";
-import { KpiStrip } from "@/components/workspace/KpiStrip";
+import { Textarea } from "@/components/ui/textarea";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
-import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
+import { PageHeader } from "@/components/workspace/PageHeader";
+import { api } from "@/lib/api-client";
+import { Dict, fmtDate, naira } from "@/lib/books-api";
+import { NewDealSheet, StageChip, useCrmRefresh } from "@/components/crm/crm-kit";
 
-// â”€â”€ Leaflet icon fix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
-
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-interface Prospect {
-  id: string;
-  company_name: string;
-  industry?: string;
-  region?: string;
-  formatted_address?: string;
-  contact_name?: string;
-  contact_email?: string;
-  contact_phone?: string;
-  phone_number?: string;
-  website?: string;
-  rating?: number;
-  user_ratings_total?: number;
-  places_score?: number;
-  score?: number;
-  status: string;
-  source?: string;
-  search_query?: string;
-  lat?: number;
-  lng?: number;
-  converted_lead_id?: number;
-}
-
-interface FollowUp {
-  id: string;
-  lead_id?: number;
-  assigned_to: string;
-  follow_up_type?: string;
-  due_at?: string;
-  status: string;
-  notes?: string;
-}
-
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-function scoreColor(score: number): string {
-  if (score >= 70) return "bg-green-500/20 text-green-400 border-green-500/30";
-  if (score >= 45) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
-  return "bg-red-500/20 text-red-400 border-red-500/30";
-}
-
-function renderStars(rating?: number) {
-  if (!rating) return null;
-  return (
-    <span className="flex items-center gap-0.5 text-yellow-400 text-xs">
-      <Star className="h-3 w-3 fill-yellow-400" />
-      {rating.toFixed(1)}
-    </span>
-  );
-}
-
-// â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const TYPES: [string, string][] = [["pharmacy", "Pharmacies"], ["hospital", "Hospitals"], ["clinic", "Clinics"], ["lab", "Laboratories"], ["distributor", "Medical suppliers"]];
+const AREAS: Record<string, string[]> = {
+  Lagos: ["Ikeja, Lagos", "Victoria Island, Lagos", "Lekki, Lagos", "Surulere, Lagos", "Yaba, Lagos", "Ikorodu, Lagos", "Festac, Lagos"],
+  Abuja: ["Wuse, Abuja", "Garki, Abuja", "Maitama, Abuja", "Gwarinpa, Abuja", "Kubwa, Abuja"],
+};
+const km = (m?: number) => (m == null ? "" : m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`);
+const STATUS: Record<string, [string, string]> = {
+  saved: ["Saved", "bg-sky-100 text-sky-700"], contacted: ["Contacted", "bg-violet-100 text-violet-700"],
+  not_interested: ["Not interested", "bg-muted text-muted-foreground"], converted: ["In pipeline", "bg-emerald-100 text-emerald-700"],
+};
 
 export default function CRMLeadFinder() {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  // â”€â”€ Discover tab state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [location, setLocation] = useState("Lagos, Nigeria");
-  const [businessType, setBusinessType] = useState("pharmacy");
-  const [radiusKm, setRadiusKm] = useState(5);
-  const [searchLimit, setSearchLimit] = useState(20);
-  const [showMap, setShowMap] = useState(false);
-  const [findOpen, setFindOpen] = useState(false);
-  // Holds the latest search mutation result for immediate display
-  const [searchResults, setSearchResults] = useState<Prospect[] | null>(null);
-
-  // â”€â”€ Pipeline tab state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [selectedProspectId, setSelectedProspectId] = useState<string | null>(null);
-  const [expectedValue, setExpectedValue] = useState(500000);
-  const [urgency, setUrgency] = useState<"low" | "medium" | "high">("medium");
-  const [assignLeadId, setAssignLeadId] = useState(0);
-  const [repUserId, setRepUserId] = useState("");
-  const [followUpHours, setFollowUpHours] = useState(24);
-
-  // Realtime invalidation
-  useRealtimeChannel("crm_updates", () => {
-    void queryClient.invalidateQueries({ queryKey: ["lead-finder-pipeline"] });
-  });
-
-  // â”€â”€ Pipeline query â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const pipelineQuery = useQuery({
-    queryKey: ["lead-finder-pipeline"],
-    queryFn: () => api.leadFinder.pipeline(200),
-  });
-  // Clear searchResults once the pipeline has refetched so the persistent view takes over
-  useEffect(() => {
-    if (pipelineQuery.isSuccess && searchResults !== null) {
-      setSearchResults(null);
-    }
-  }, [pipelineQuery.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pipelineProspects: Prospect[] = Array.isArray(pipelineQuery.data?.prospects)
-    ? pipelineQuery.data.prospects
-    : [];
-  // Show immediate search results while pipeline refetches; fall back to pipeline data
-  const prospects: Prospect[] = searchResults !== null ? searchResults : pipelineProspects;
-  const followups: FollowUp[] = Array.isArray(pipelineQuery.data?.followups)
-    ? pipelineQuery.data.followups
-    : [];
-
-  // Derived from the same array (not a separate snapshot) so the Detail
-  // Workspace automatically reflects the latest data after any mutation's
-  // invalidation — same pattern as QualityControl.tsx's CapaTab.
-  const selected = useMemo(
-    () => prospects.find((p) => String(p.id) === selectedProspectId) ?? null,
-    [prospects, selectedProspectId],
-  );
-
-  function selectProspect(p: Prospect) {
-    setSelectedProspectId(String(p.id));
-    if (p.converted_lead_id) setAssignLeadId(p.converted_lead_id);
-  }
-
-  // â”€â”€ Mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const searchMutation = useMutation({
-    mutationFn: () =>
-      api.leadFinder.searchByLocation({
-        location: location.trim(),
-        business_type: businessType.trim(),
-        radius_m: radiusKm * 1000,
-        limit: searchLimit,
-        industry: "pharma",
-        region: location.trim(),
-      }),
-    onSuccess: (data: any) => {
-      // Show results immediately from mutation response — don't wait for pipeline refetch
-      setSearchResults(Array.isArray(data.prospects) ? data.prospects : []);
-      setFindOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ["lead-finder-pipeline"] });
-      const newCount = data.count ?? 0;
-      const total = (data.prospects ?? []).length;
-      const skipped = data.skipped ?? 0;
-      const errors = data.errors ?? 0;
-      const title =
-        newCount > 0
-          ? `Found ${newCount} new lead${newCount === 1 ? "" : "s"}`
-          : skipped > 0
-          ? `${skipped} lead${skipped === 1 ? "" : "s"} already in CRM`
-          : errors > 0
-          ? "Search failed — check migration 085"
-          : "No leads found";
-      const description =
-        errors > 0
-          ? `${errors} insert error${errors === 1 ? "" : "s"} — migration 085 may not be applied.`
-          : newCount > 0 && skipped > 0
-          ? `${skipped} duplicate(s) already in CRM — showing all ${total}.`
-          : newCount > 0
-          ? `${total} lead${total === 1 ? "" : "s"} displayed.`
-          : skipped > 0
-          ? `Showing ${total} existing prospect${total === 1 ? "" : "s"} from a previous search.`
-          : undefined;
-      toast({ title, description, variant: errors > 0 ? "destructive" : "default" });
-    },
-    onError: (e: any) => {
-      toast({ title: "Search failed", description: e?.message, variant: "destructive" });
-    },
-  });
-
-  const scoreMutation = useMutation({
-    mutationFn: () =>
-      api.leadFinder.scoreIngestProspect(selectedProspectId as string, {
-        expected_value: expectedValue,
-        urgency,
-        fit_signals: {
-          decision_maker_identified: true,
-          product_fit: true,
-          urgent_need: urgency === "high",
-        },
-      }),
-    onSuccess: (res: any) => {
-      setAssignLeadId(Number(res?.lead?.id || 0));
-      void queryClient.invalidateQueries({ queryKey: ["lead-finder-pipeline"] });
-      toast({ title: "Lead ingested", description: `Score: ${res?.score}` });
-    },
-    onError: (e: any) => {
-      toast({ title: "Score/ingest failed", description: e?.message, variant: "destructive" });
-    },
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: () =>
-      api.leadFinder.assignLead({
-        lead_id: assignLeadId,
-        rep_user_id: repUserId,
-        follow_up_type: "call",
-        follow_up_hours: followUpHours,
-        notes: "Assigned via Lead Finder",
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["lead-finder-pipeline"] });
-      toast({ title: "Lead assigned", description: `Follow-up due in ${followUpHours}h` });
-    },
-    onError: (e: any) => {
-      toast({ title: "Assignment failed", description: e?.message, variant: "destructive" });
-    },
-  });
-
-  // â”€â”€ CSV export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const handleExport = useCallback(async () => {
-    try {
-      const token = authClient.getAccessToken();
-      const res = await fetch(apiUrl("/crm/lead-finder/export?limit=1000"), {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `prospects_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      toast({ title: "Export failed", description: e?.message, variant: "destructive" });
-    }
-  }, [toast]);
-
-  // â”€â”€ Map-ready prospects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const mappable = prospects.filter((p) => p.lat && p.lng);
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Render
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") ?? "find";
+  const [adding, setAdding] = useState<Dict | null>(null);
   return (
     <div className="space-y-5">
-      <PageHeader
-        icon={Search}
-        title="Lead Finder"
-        subtitle="Location intelligence · Prospect discovery · CRM ingest"
-        actions={
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleExport()}>
-            <Download className="h-4 w-4" /> Export CSV
-          </Button>
-        }
-      />
-
-      <KpiStrip
-        items={[
-          { label: "Prospects", value: prospects.length },
-          { label: "Converted", value: prospects.filter((p) => p.status === "converted").length, tone: "success" },
-          { label: "Follow-ups", value: followups.length },
-        ]}
-      />
-
-      {showMap && (
-        <Card>
-          <CardContent className="p-0">
-            <div className="rounded-lg overflow-hidden h-[400px]">
-              {mappable.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-sm text-muted-foreground bg-muted/30">
-                  <AlertCircle className="h-5 w-5 mr-2" />
-                  No prospects with GPS coordinates yet. Run a search first.
-                </div>
-              ) : (
-                <MapContainer
-                  center={[mappable[0].lat!, mappable[0].lng!]}
-                  zoom={12}
-                  style={{ height: "100%", width: "100%" }}
-                  scrollWheelZoom
-                >
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  />
-                  {mappable.map((p) => (
-                    <Marker key={p.id} position={[p.lat!, p.lng!]}>
-                      <Popup>
-                        <div className="text-sm space-y-1 min-w-[160px]">
-                          <p className="font-semibold">{p.company_name}</p>
-                          {p.formatted_address && (
-                            <p className="text-xs text-muted-foreground">{p.formatted_address}</p>
-                          )}
-                          {p.rating && <p className="text-xs">★ {p.rating}</p>}
-                          {(p.phone_number || p.contact_phone) && (
-                            <p className="text-xs">{p.phone_number || p.contact_phone}</p>
-                          )}
-                          <p className="text-xs font-medium">Score: {p.places_score ?? p.score ?? 0}</p>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  ))}
-                </MapContainer>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Tabs defaultValue="prospects">
+      <PageHeader icon={Target} title="Leads & Prospecting" subtitle="Find businesses near you, work them, and send the interested ones to the pipeline"
+        actions={<Button onClick={() => setAdding({})}><Plus className="mr-1.5 h-4 w-4" />Add lead</Button>} />
+      <Tabs value={tab} onValueChange={(t) => setParams({ tab: t }, { replace: true })}>
         <TabsList>
-          <TabsTrigger value="prospects" className="gap-1.5">
-            <Zap className="h-4 w-4" /> Prospects
-          </TabsTrigger>
-          <TabsTrigger value="followups" className="gap-1.5">
-            <ClipboardList className="h-4 w-4" /> Follow-ups
-          </TabsTrigger>
+          <TabsTrigger value="find"><Search className="mr-1.5 h-4 w-4" />Find prospects</TabsTrigger>
+          <TabsTrigger value="worked">Worked prospects</TabsTrigger>
+          <TabsTrigger value="inbound">Website enquiries</TabsTrigger>
         </TabsList>
-
-        {/* ── PROSPECTS TAB — full retrofit: merges the old Discover +
-            Pipeline tabs into one List/Detail/QuickActions layout. Selecting
-            a prospect used to hand off to a different tab via a raw text ID
-            field with no name/context shown — the Detail Workspace now shows
-            full prospect detail (including contact_name/contact_email/
-            industry/region, previously fetched but never displayed) plus the
-            Score+Ingest or Assign form inline, in place. See
-            ACE-Workspace-Standard.md §9.8. */}
-        <TabsContent value="prospects" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">
-            {/* List Panel */}
-            <Card className="lg:max-h-[600px] flex flex-col">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Prospects ({prospects.length})</CardTitle>
-              </CardHeader>
-              <CardContent className="overflow-y-auto space-y-2 flex-1">
-                {pipelineQuery.isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : prospects.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground text-sm">
-                    No prospects yet. Use "Find New Leads" to search.
-                  </div>
-                ) : (
-                  prospects.map((p) => {
-                    const displayScore = p.places_score ?? p.score ?? 0;
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => selectProspect(p)}
-                        className={`w-full text-left rounded-lg border px-3 py-2.5 hover:bg-muted/40 transition-colors ${
-                          selectedProspectId === String(p.id) ? "border-primary bg-muted/40" : ""
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-sm truncate">{p.company_name}</span>
-                          <Badge variant="outline" className={`text-xs shrink-0 ${scoreColor(displayScore)}`}>
-                            {displayScore}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="secondary" className="text-xs capitalize">{p.status}</Badge>
-                          {p.converted_lead_id && (
-                            <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">
-                              <CheckCircle2 className="h-3 w-3 mr-1" /> In CRM
-                            </Badge>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Detail Workspace — inline, no dismiss button (Ch.5.1). */}
-            <Card>
-              <CardContent className="pt-6">
-                {!selected && (
-                  <p className="text-sm text-muted-foreground text-center py-12">Select a prospect to view details.</p>
-                )}
-                {selected && (
-                  <div className="space-y-4 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="font-bold text-lg">{selected.company_name}</div>
-                        {selected.formatted_address && (
-                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <MapPin className="h-3 w-3" /> {selected.formatted_address}
-                          </div>
-                        )}
-                      </div>
-                      <Badge variant="outline" className={scoreColor(selected.places_score ?? selected.score ?? 0)}>
-                        {selected.places_score ?? selected.score ?? 0}
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        ["Industry", selected.industry],
-                        ["Region", selected.region],
-                        ["Contact", selected.contact_name],
-                        ["Contact Email", selected.contact_email],
-                        ["Phone", selected.phone_number || selected.contact_phone],
-                        ["Website", selected.website],
-                      ].map(([label, value]) => (
-                        <div key={String(label)} className="space-y-0.5">
-                          <div className="text-xs text-muted-foreground">{label}</div>
-                          <div className="text-xs font-medium truncate">{value || "—"}</div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {renderStars(selected.rating)}
-                      {selected.user_ratings_total && (
-                        <span className="text-xs text-muted-foreground">({selected.user_ratings_total} ratings)</span>
-                      )}
-                      {selected.source === "mock" && (
-                        <Badge variant="outline" className="text-xs text-yellow-400 border-yellow-400/30">mock data</Badge>
-                      )}
-                      {selected.source === "openstreetmap" && (
-                        <Badge variant="outline" className="text-xs text-blue-400 border-blue-400/30">OSM</Badge>
-                      )}
-                    </div>
-
-                    <Separator />
-
-                    {!selected.converted_lead_id ? (
-                      <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
-                        <div className="text-xs font-semibold text-muted-foreground">SCORE + INGEST TO CRM</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <Label className="text-xs text-muted-foreground mb-1 block">Expected Value (₦)</Label>
-                            <Input type="number" value={expectedValue} onChange={(e) => setExpectedValue(Number(e.target.value) || 0)} />
-                          </div>
-                          <div>
-                            <Label className="text-xs text-muted-foreground mb-1 block">Urgency</Label>
-                            <Select value={urgency} onValueChange={(v) => setUrgency(v as "low" | "medium" | "high")}>
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="low">Low</SelectItem>
-                                <SelectItem value="medium">Medium</SelectItem>
-                                <SelectItem value="high">High</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <Button size="sm" className="w-full gap-2" disabled={scoreMutation.isPending} onClick={() => scoreMutation.mutate()}>
-                          {scoreMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                          Score + Ingest
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
-                        <div className="text-xs font-semibold text-muted-foreground">ASSIGN TO REVENUE OFFICER</div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Revenue Officer</Label>
-                          <EntityAutocomplete<{ id: string; email: string; roles: string[] }>
-                            placeholder="Search by email…"
-                            fetchFn={(q) =>
-                              api.users.list(200).then((users: any[]) =>
-                                users.filter((u) => (u.email || "").toLowerCase().includes(q.toLowerCase())),
-                              )
-                            }
-                            getKey={(u) => u.id}
-                            getLabel={(u) => u.email}
-                            getSubtitle={(u) => u.roles?.join(", ")}
-                            onSelect={(u) => setRepUserId(u.id)}
-                          />
-                          {repUserId && <p className="text-xs text-muted-foreground mt-1">Selected: {repUserId}</p>}
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Follow-up (hours)</Label>
-                          <Input type="number" value={followUpHours} onChange={(e) => setFollowUpHours(Number(e.target.value) || 24)} />
-                        </div>
-                        <Button
-                          size="sm" className="w-full gap-2"
-                          disabled={!assignLeadId || !repUserId.trim() || assignMutation.isPending}
-                          onClick={() => assignMutation.mutate()}
-                        >
-                          {assignMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
-                          Assign Lead
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button className="w-full" size="sm" onClick={() => setFindOpen(true)}>
-                  <Plus className="h-4 w-4 mr-1" /> Find New Leads
-                </Button>
-                <Button variant="outline" className="w-full" size="sm" onClick={() => setShowMap((v) => !v)}>
-                  <MapIcon className="h-4 w-4 mr-1" /> {showMap ? "Hide Map" : "Show Map"}
-                </Button>
-                <Button variant="outline" className="w-full" size="sm" onClick={() => void handleExport()}>
-                  <Download className="h-4 w-4 mr-1" /> Export CSV
-                </Button>
-                <Button
-                  variant="outline" className="w-full" size="sm"
-                  onClick={() => pipelineQuery.refetch()} disabled={pipelineQuery.isFetching}
-                >
-                  <RefreshCw className={`h-4 w-4 mr-1 ${pipelineQuery.isFetching ? "animate-spin" : ""}`} /> Refresh
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* â”€â”€ FOLLOW-UPS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <TabsContent value="followups" className="mt-4">
-          <motion.div {...motionVariants.cardEnter}>
-            {followups.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center text-muted-foreground text-sm">
-                  <ClipboardList className="h-8 w-8 mx-auto mb-3 opacity-40" />
-                  No follow-ups yet. Assign a lead to create one automatically.
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {followups.map((f) => (
-                  <Card key={f.id} className="border-border/60">
-                    <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
-                      <div className="space-y-0.5">
-                        <p className="text-sm font-medium">Lead #{f.lead_id}</p>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>Assigned to: {f.assigned_to}</span>
-                          {f.follow_up_type && (
-                            <Badge variant="outline" className="text-xs capitalize">
-                              {f.follow_up_type}
-                            </Badge>
-                          )}
-                        </div>
-                        {f.due_at && (
-                          <p className="text-xs text-muted-foreground">
-                            Due: {new Date(f.due_at).toLocaleString()}
-                          </p>
-                        )}
-                        {f.notes && (
-                          <p className="text-xs text-muted-foreground italic">{f.notes}</p>
-                        )}
-                      </div>
-                      <Badge
-                        className={`text-xs ${
-                          f.status === "done"
-                            ? "bg-green-500/20 text-green-400"
-                            : f.status === "overdue"
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-blue-500/20 text-blue-400"
-                        }`}
-                      >
-                        {f.status}
-                      </Badge>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        </TabsContent>
+        <TabsContent value="find" className="mt-4"><Finder /></TabsContent>
+        <TabsContent value="worked" className="mt-4"><Worked /></TabsContent>
+        <TabsContent value="inbound" className="mt-4"><Inbound onAdd={setAdding} /></TabsContent>
       </Tabs>
-
-      {/* Find New Leads — ephemeral act flow that produces new list rows,
-          DetailSheet per Ch.5.2 (same reasoning as CAPA's "New Deviation"). */}
-      <DetailSheet
-        open={findOpen}
-        onOpenChange={setFindOpen}
-        title="Find New Leads"
-        description="Powered by OpenStreetMap (free) · Google Places when API key is set · mock data offline"
-        icon={Search}
-        footer={
-          <Button
-            className="w-full gap-2"
-            disabled={!location.trim() || searchMutation.isPending}
-            onClick={() => searchMutation.mutate()}
-          >
-            {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            {searchMutation.isPending ? "Searching…" : "Find Leads"}
-          </Button>
-        }
-      >
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Location</Label>
-            <Input placeholder="e.g. Lekki, Lagos" value={location} onChange={(e) => setLocation(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>Business Type</Label>
-            <Input placeholder="e.g. pharmacy" value={businessType} onChange={(e) => setBusinessType(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Radius (km)</Label>
-              <Input type="number" min={1} max={50} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value) || 5)} />
-            </div>
-            <div className="space-y-1">
-              <Label>Limit</Label>
-              <Input type="number" min={1} max={60} value={searchLimit} onChange={(e) => setSearchLimit(Number(e.target.value) || 20)} />
-            </div>
-          </div>
-        </div>
-      </DetailSheet>
+      <NewDealSheet key={JSON.stringify(adding ?? {})} open={!!adding} defaults={adding ?? {}} onClose={() => setAdding(null)} />
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
 
+function Finder() {
+  const refresh = useCrmRefresh();
+  const [mode, setMode] = useState<"gps" | "area">("area");
+  const [coords, setCoords] = useState<{ lat: number; lng: number; acc?: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [area, setArea] = useState("Ikeja, Lagos");
+  const [type, setType] = useState("pharmacy");
+  const [radius, setRadius] = useState("5");
+  const [limit, setLimit] = useState("10");
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<Dict | null>(null);
+  const [acting, setActing] = useState<{ place: Dict; kind: "call" | "pipeline" } | null>(null);
+
+  const locate = () => {
+    if (!navigator.geolocation) return toast.error("This browser cannot share its location");
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { setCoords({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) }); setMode("gps"); setLocating(false); },
+      (e) => { toast.error(e.code === 1 ? "Location permission was refused - type an area instead" : "Could not get your location"); setLocating(false); },
+      { enableHighAccuracy: true, timeout: 15000 });
+  };
+  const search = async () => {
+    setBusy(true);
+    try {
+      const r = await api.crmHub.search({ ...(mode === "gps" && coords ? { lat: coords.lat, lng: coords.lng } : { location: area }),
+                                          business_type: type, radius_km: Number(radius), limit: Number(limit) });
+      setRes(r);
+    } catch (e: any) { toast.error(e?.message ?? "Search failed"); }
+    setBusy(false);
+  };
+  const setPlace = (pid: string, patch: Dict) => setRes((r) => r && { ...r, places: r.places.map((p: Dict) => (p.place_id === pid ? { ...p, ...patch } : p)) });
+  const quick = async (place: Dict, status: string) => {
+    try { const r = await api.crmHub.saveProspect(place, status); setPlace(place.place_id, { status, prospect_id: r.prospect_id }); toast.success(STATUS[status][0]); refresh(); }
+    catch (e: any) { toast.error(e?.message); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card><CardContent className="grid gap-3 p-4 md:grid-cols-[1.4fr_1fr_0.7fr_0.7fr_auto] md:items-end">
+        <div className="space-y-1">
+          <Label className="text-xs">Where</Label>
+          <div className="flex gap-2">
+            <Button type="button" variant={mode === "gps" ? "default" : "outline"} onClick={locate} disabled={locating} title="Use your current position">
+              {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crosshair className="h-4 w-4" />}</Button>
+            {mode === "gps" && coords ? (
+              <div className="flex h-9 flex-1 items-center justify-between rounded-md border bg-muted/40 px-3 text-sm">
+                <span>My location <span className="text-xs text-muted-foreground">(±{coords.acc} m)</span></span>
+                <button className="text-xs text-primary" onClick={() => setMode("area")}>type an area</button>
+              </div>
+            ) : (
+              <>
+                <Input list="areas" value={area} onChange={(e) => { setArea(e.target.value); setMode("area"); }} placeholder="Area, e.g. Ikeja, Lagos" />
+                <datalist id="areas">{Object.values(AREAS).flat().map((a) => <option key={a} value={a} />)}</datalist>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1"><Label className="text-xs">Looking for</Label>
+          <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{TYPES.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
+        <div className="space-y-1"><Label className="text-xs">Within</Label>
+          <Select value={radius} onValueChange={setRadius}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["1", "2", "5", "10", "20"].map((r) => <SelectItem key={r} value={r}>{r} km</SelectItem>)}</SelectContent></Select></div>
+        <div className="space-y-1"><Label className="text-xs">How many</Label>
+          <Select value={limit} onValueChange={setLimit}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["5", "10", "20", "30"].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
+        <Button onClick={search} disabled={busy || (mode === "area" && !area.trim())}>{busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Search className="mr-1.5 h-4 w-4" />}Find</Button>
+      </CardContent></Card>
+
+      {!res && !busy && <p className="rounded-md border p-8 text-center text-sm text-muted-foreground">Choose where and what to look for. Results come from the live map, nearest first; nothing is added to the CRM until you act on a prospect.</p>}
+      {busy && <p className="text-center text-sm text-muted-foreground">Searching the map… this can take up to half a minute.</p>}
+      {res && !busy && (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {res.found} of {res.requested} requested · {TYPES.find(([v]) => v === res.business_type)?.[1].toLowerCase()} within {res.radius_m / 1000} km of {res.origin_label}
+            {res.found < res.requested && " - that is all the map has in this radius; widen it or try another area."}
+            {res.source === "openstreetmap" && " · Source: OpenStreetMap (phone numbers are often missing there)."}
+          </p>
+          <div className="space-y-2">
+            {res.places.map((p: Dict) => (
+              <Card key={p.place_id} className={p.customer ? "border-emerald-300 dark:border-emerald-500/30" : undefined}>
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{p.company_name}</span>
+                      <span className="text-xs text-muted-foreground">{km(p.distance_m)}</span>
+                      {p.customer && <Badge variant="outline" className="border-emerald-400 text-[10px] text-emerald-700">Already our customer</Badge>}
+                      {p.lead && <StageChip stage={p.lead.stage} />}
+                      {STATUS[p.status] && <span className={`rounded px-1.5 py-0.5 text-[10px] ${STATUS[p.status][1]}`}>{STATUS[p.status][0]}</span>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{p.formatted_address || "Address not listed"}{p.opening_hours ? ` · ${p.opening_hours}` : ""}</div>
+                    <div className="mt-0.5 flex flex-wrap gap-3 text-xs">
+                      {p.phone_number ? <a href={`tel:${p.phone_number}`} className="inline-flex items-center text-primary"><Phone className="mr-1 h-3 w-3" />{p.phone_number}</a>
+                        : <span className="text-muted-foreground">No phone listed</span>}
+                      {p.website && <a href={p.website} target="_blank" rel="noreferrer" className="inline-flex items-center text-primary"><ExternalLink className="mr-1 h-3 w-3" />Website</a>}
+                      <a href={`https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=18/${p.lat}/${p.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center text-primary">
+                        <MapPin className="mr-1 h-3 w-3" />Map</a>
+                    </div>
+                  </div>
+                  {!p.customer && p.status !== "converted" && !p.lead && (
+                    <div className="flex shrink-0 flex-wrap gap-1">
+                      {p.status === "new" && <Button size="sm" variant="ghost" onClick={() => quick(p, "saved")}>Save</Button>}
+                      <Button size="sm" variant="outline" onClick={() => setActing({ place: p, kind: "call" })}><Phone className="mr-1 h-3.5 w-3.5" />Log call</Button>
+                      <Button size="sm" onClick={() => setActing({ place: p, kind: "pipeline" })}><Plus className="mr-1 h-3.5 w-3.5" />Add to pipeline</Button>
+                    </div>
+                  )}
+                  {p.customer && <Link to="/customers/workspace" className="text-xs text-primary hover:underline">Customer workspace</Link>}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+      <ActSheet acting={acting} onClose={() => setActing(null)} onDone={(pid, patch) => setPlace(pid, patch)} />
+    </div>
+  );
+}
+
+function ActSheet({ acting, onClose, onDone }: { acting: { place: Dict; kind: "call" | "pipeline" } | null; onClose: () => void; onDone: (pid: string, patch: Dict) => void }) {
+  const refresh = useCrmRefresh();
+  const [f, setF] = useState({ note: "", contact_person: "", contact_phone: "", expected_value: "", next_action: "" });
+  const [busy, setBusy] = useState(false);
+  const p = acting?.place;
+  const toPipeline = async () => {
+    setBusy(true);
+    try {
+      const r = await api.crmHub.prospectToPipeline(p!, { contact_person: f.contact_person || undefined, contact_phone: f.contact_phone || p!.phone_number || undefined,
+        expected_value: f.expected_value ? Number(f.expected_value) : undefined, notes: f.note || undefined, next_action: f.next_action || undefined });
+      toast.success(`${p!.company_name} added to the pipeline as a New lead`);
+      onDone(p!.place_id, { status: "converted", lead: { id: r.id, stage: "new" } }); refresh(); onClose();
+    } catch (e: any) { toast.error(e?.message); }
+    setBusy(false);
+  };
+  const logCall = async (status: "contacted" | "not_interested") => {
+    setBusy(true);
+    try { const r = await api.crmHub.saveProspect(p!, status, f.note || undefined); onDone(p!.place_id, { status, prospect_id: r.prospect_id });
+      toast.success(status === "contacted" ? "Call logged" : "Marked not interested"); refresh(); onClose(); } catch (e: any) { toast.error(e?.message); }
+    setBusy(false);
+  };
+  return (
+    <DetailSheet open={!!acting} onOpenChange={(o) => !o && onClose()} title={p?.company_name ?? ""} description={p ? `${km(p.distance_m)} · ${p.formatted_address ?? ""}` : undefined}>
+      {p && (
+        <div className="space-y-3 text-sm">
+          {p.phone_number && <a href={`tel:${p.phone_number}`} className="inline-flex items-center text-primary"><Phone className="mr-1 h-4 w-4" />Call {p.phone_number}</a>}
+          {acting!.kind === "call" ? (
+            <>
+              <div className="space-y-1"><Label className="text-xs">What did they say?</Label><Textarea rows={3} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" disabled={busy} onClick={() => logCall("contacted")}>Called - follow up later</Button>
+                <Button variant="ghost" className="text-red-600" disabled={busy} onClick={() => logCall("not_interested")}><ThumbsDown className="mr-1 h-4 w-4" />Not interested</Button>
+              </div>
+              <Button className="w-full" disabled={busy} onClick={toPipeline}>Interested - add to pipeline</Button>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1"><Label className="text-xs">Contact person</Label><Input value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} /></div>
+                <div className="space-y-1"><Label className="text-xs">Phone</Label><Input value={f.contact_phone} placeholder={p.phone_number ?? ""} onChange={(e) => setF({ ...f, contact_phone: e.target.value })} /></div>
+                <div className="space-y-1"><Label className="text-xs">Expected value (₦)</Label><Input type="number" value={f.expected_value} onChange={(e) => setF({ ...f, expected_value: e.target.value })} /></div>
+                <div className="space-y-1"><Label className="text-xs">Next step</Label><Input value={f.next_action} onChange={(e) => setF({ ...f, next_action: e.target.value })} /></div>
+              </div>
+              <div className="space-y-1"><Label className="text-xs">Notes</Label><Textarea rows={2} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></div>
+              <Button className="w-full" disabled={busy} onClick={toPipeline}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add to pipeline</Button>
+            </>
+          )}
+        </div>
+      )}
+    </DetailSheet>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function Worked() {
+  const refresh = useCrmRefresh();
+  const [status, setStatus] = useState<string>("");
+  const [acting, setActing] = useState<{ place: Dict; kind: "call" | "pipeline" } | null>(null);
+  const { data = [], isLoading, refetch } = useQuery({ queryKey: ["crm-hub", "prospects", status], queryFn: () => api.crmHub.prospects(status || undefined) });
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {[["", "All"], ["saved", "Saved"], ["contacted", "Contacted"], ["converted", "In pipeline"], ["not_interested", "Not interested"]].map(([k, l]) =>
+          <Button key={k} size="sm" className="h-8" variant={status === k ? "default" : "outline"} onClick={() => setStatus(k)}>{l}</Button>)}
+      </div>
+      <Card><CardContent className="p-0">
+        {isLoading ? <Loader2 className="m-6 mx-auto h-6 w-6 animate-spin" /> : data.length === 0 ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">No prospects worked yet. Find prospects near you and save, call or add them.</p>
+        ) : (
+          <Table><TableHeader><TableRow><TableHead>Prospect</TableHead><TableHead>Status</TableHead><TableHead>Phone</TableHead><TableHead>Last note</TableHead><TableHead>Rep</TableHead><TableHead /></TableRow></TableHeader>
+            <TableBody>{data.map((p: Dict) => (
+              <TableRow key={p.id}>
+                <TableCell><div className="font-medium">{p.company_name}</div><div className="text-[11px] text-muted-foreground">{p.formatted_address || p.search_query}</div></TableCell>
+                <TableCell>{STATUS[p.status] && <span className={`rounded px-1.5 py-0.5 text-[11px] ${STATUS[p.status][1]}`}>{STATUS[p.status][0]}</span>}
+                  {p.lead_stage && <div className="mt-0.5"><StageChip stage={p.lead_stage} /></div>}</TableCell>
+                <TableCell className="text-xs">{p.phone_number || p.contact_phone ? <a className="text-primary" href={`tel:${p.phone_number || p.contact_phone}`}>{p.phone_number || p.contact_phone}</a> : "—"}</TableCell>
+                <TableCell className="max-w-[240px] truncate text-xs">{p.last_note ?? "—"}{p.contacted_at && <div className="text-[11px] text-muted-foreground">{fmtDate(p.contacted_at)}</div>}</TableCell>
+                <TableCell className="text-xs">{p.rep_name ?? "—"}</TableCell>
+                <TableCell className="whitespace-nowrap text-right">{p.status !== "converted" && (
+                  <Button size="sm" variant="outline" onClick={() => setActing({ place: { ...p, prospect_id: p.id }, kind: "pipeline" })}>Add to pipeline</Button>)}</TableCell>
+              </TableRow>))}</TableBody></Table>)}
+      </CardContent></Card>
+      <ActSheet acting={acting} onClose={() => setActing(null)} onDone={() => { refetch(); refresh(); }} />
+    </div>
+  );
+}
+
+function Inbound({ onAdd }: { onAdd: (d: Dict) => void }) {
+  const { data = [], isLoading } = useQuery({ queryKey: ["crm-hub", "inbound"], queryFn: () => api.crmHub.inbound() });
+  return (
+    <Card><CardContent className="p-0">
+      {isLoading ? <Loader2 className="m-6 mx-auto h-6 w-6 animate-spin" /> : data.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">No website enquiries.</p> : (
+        <Table><TableHeader><TableRow><TableHead>From</TableHead><TableHead>Contact</TableHead><TableHead>Message</TableHead><TableHead>Received</TableHead><TableHead /></TableRow></TableHeader>
+          <TableBody>{data.map((x: Dict) => (
+            <TableRow key={x.id}>
+              <TableCell className="font-medium">{x.name}</TableCell>
+              <TableCell className="text-xs">{x.phone && <a className="block text-primary" href={`tel:${x.phone}`}>{x.phone}</a>}{x.email}</TableCell>
+              <TableCell className="max-w-[300px] truncate text-xs">{x.message || x.service || "—"}</TableCell>
+              <TableCell className="text-xs">{fmtDate(x.created_at)}</TableCell>
+              <TableCell className="text-right">{x.lead_id ? <Badge variant="outline">In pipeline</Badge> : (
+                <Button size="sm" onClick={() => onAdd({ company_name: x.name, contact_person: x.name, contact_phone: x.phone ?? "", source: "website",
+                                                         notes: x.message ?? "", contact_email: x.email, inbound_id: String(x.id) })}>Add to pipeline</Button>)}</TableCell>
+            </TableRow>))}</TableBody></Table>)}
+    </CardContent></Card>
+  );
+}
+
+export { naira };

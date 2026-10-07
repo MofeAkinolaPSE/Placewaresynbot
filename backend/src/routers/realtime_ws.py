@@ -31,7 +31,11 @@ _ALLOWED_CHANNELS: dict[str, set[str]] = {
     # forever. Role set covers everyone who touches the invoice pipeline
     # (frontdesk/QC/finance/dispatch) plus CustomerWorkspace's own
     # audience (crm/sales), matching frontdesk.py's actual role gates.
-    "frontdesk_updates": {"admin", "management", "finance", "ops", "quality_assurance", "qa", "crm", "sales"},
+    "frontdesk_updates": {"admin", "management", "finance", "ops", "quality_assurance", "qa", "crm", "sales", "frontdesk"},
+    # Staff Workspace: every signed-in team member has one. Messages only say
+    # "refresh" (with the user ids concerned), never the content itself.
+    "workspace_updates": {"admin", "management", "manager", "finance", "ops", "operations", "procurement", "hr",
+                          "sales", "crm", "quality_assurance", "qa", "logistics", "rider", "compliance", "viewer", "staff", "frontdesk"},
 }
 
 

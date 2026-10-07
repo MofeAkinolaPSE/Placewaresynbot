@@ -138,7 +138,8 @@ async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
             if not cid:
                 continue
             agg = per_customer_totals.setdefault(
-                cid, {"customer_id": cid, "total_balance": 0.0, "max_days_overdue": 0}
+                cid, {"customer_id": cid, "total_balance": 0.0, "max_days_overdue": 0,
+                      "name": cust.get("name"), "ace_customer_id": cust.get("ace_customer_id")}
             )
             agg["total_balance"] += float(cust.get("total_balance") or 0)
             agg["max_days_overdue"] = max(agg["max_days_overdue"], int(cust.get("max_days_overdue") or 0))
@@ -165,6 +166,8 @@ async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
                                 "outstanding_balance": bal,
                                 "days_overdue": days,
                                 "rule_description": rule.get("description"),
+                                "name": agg.get("name"),
+                                "ace_customer_id": agg.get("ace_customer_id"),
                             }
                         )
         except Exception as e:
@@ -544,13 +547,17 @@ def _compute_pl(period: Optional[str] = None) -> Dict[str, Any]:
     if period:
         pl_q = pl_q.like("period", f"{period}%")
     pl_rows = pl_q.limit(1000).execute().data or []
+    from src.fin import readmodel
+    if readmodel.live():
+        # ACE Books only: the pre-go-live part of the year as migrated from Sage, then ACE Books months.
+        pl_rows = readmodel.pl_series(period)
 
     # Build monthly buckets { "YYYY-MM": { revenue, expenses } }
     monthly: Dict[str, Dict[str, float]] = {}
     totals = {"revenue": 0.0, "expenses": 0.0}
 
     for r in pl_rows:
-        pd = str(r.get("period") or "")[:7]
+        pd = str(r.get("period") or "") if " to " in str(r.get("period") or "") else str(r.get("period") or "")[:7]
         if not pd:
             continue
         rev = float(r.get("revenue") or 0)
@@ -793,6 +800,10 @@ async def cashflow_forecast(
                 }
             )
 
+        from src.fin import readmodel
+        if readmodel.live():
+            return _cashflow_from_books(week_buckets, weeks, today)
+
         # ---- Inflows: outstanding AR due in next N weeks ----
         ar_batch = _latest_batch_for_table("sage_ar_snapshot")
         ar_q = db.table("sage_ar_snapshot").select("due_date,balance,status")
@@ -889,6 +900,52 @@ async def cashflow_forecast(
     except Exception as e:
         log.error("/finance/forecast/cashflow error: %s", e)
         raise HTTPException(status_code=500, detail="Failed to compute cash flow forecast")
+
+
+def _cashflow_from_books(week_buckets: List[Dict[str, Any]], weeks: int, today: datetime.date) -> Dict[str, Any]:
+    """Forecast from ACE Books: receivables and supplier bills by due date, opening = cash & bank balance.
+    Amounts already overdue are reported separately rather than assumed to land in week 1."""
+    from src.fin import readmodel
+    overdue_in = overdue_out = 0.0
+    def place(amount: float, due: datetime.date, side: str):
+        for wb in week_buckets:
+            if datetime.date.fromisoformat(wb["start"]) <= due <= datetime.date.fromisoformat(wb["end"]):
+                wb[side] += amount
+                return
+    for r in readmodel.ar_rows(today):
+        if r["doc_type"] != "INVOICE" or r["balance"] <= 0:
+            continue
+        if r["due_date"] < today:
+            overdue_in += r["balance"]
+        else:
+            place(r["balance"], r["due_date"], "inflow")
+    for r in readmodel.ap_rows(today):
+        if r["doc_type"] != "BILL" or r["balance"] <= 0:
+            continue
+        if r["due_date"] < today:
+            overdue_out += r["balance"]
+        else:
+            place(r["balance"], r["due_date"], "outflow")
+    opening = readmodel.cash_position()
+    running = opening
+    for wb in week_buckets:
+        running += wb["inflow"] - wb["outflow"]
+        wb["running_balance"] = round(running, 2)
+        wb["net"] = round(wb["inflow"] - wb["outflow"], 2)
+        wb["inflow"] = round(wb["inflow"], 2)
+        wb["outflow"] = round(wb["outflow"], 2)
+    tin = sum(w["inflow"] for w in week_buckets)
+    tout = sum(w["outflow"] for w in week_buckets)
+    return {
+        "weeks": weeks, "opening_balance": round(opening, 2), "forecast": week_buckets,
+        "totals": {"total_inflow": round(tin, 2), "total_outflow": round(tout, 2), "net_position": round(tin - tout, 2),
+                   "closing_balance": round(opening + tin - tout, 2),
+                   "overdue_receivables": round(overdue_in, 2), "overdue_payables": round(overdue_out, 2)},
+        "as_of": today.isoformat(),
+        "source": "ACE Books",
+        "note": ("Opening balance = ACE Books cash & bank. Inflows = customer invoices by due date; outflows = supplier bills "
+                 f"by due date. Already overdue (not in the weeks): receivables ₦{overdue_in:,.2f}, payables ₦{overdue_out:,.2f}."),
+    }
 
 
 # ===========================================================================
@@ -1474,17 +1531,32 @@ async def credit_risk_scores(request: Request):
         # --- AR outstanding per customer ---
         # balance > 0 filter keeps the zero-value aged-summary rows from
         # crowding real invoices out of the row limit.
-        ar_batch = _latest_batch_for_table("sage_ar_snapshot")
-        ar_q = db.table("sage_ar_snapshot").select(
-            "customer_id,balance,due_date,date,status"
-        ).gt("balance", 0)
-        if ar_batch:
-            ar_q = ar_q.eq("batch_id", ar_batch)
-        ar_rows = ar_q.neq("status", "paid").limit(50000).execute().data or []
+        from src.fin import readmodel
+        books_live = readmodel.live()
+        if books_live:
+            # ACE Books open items: invoices less unapplied receipts/credits, aged by due date.
+            ar_rows = []
+        else:
+            ar_batch = _latest_batch_for_table("sage_ar_snapshot")
+            ar_q = db.table("sage_ar_snapshot").select(
+                "customer_id,balance,due_date,date,status"
+            ).gt("balance", 0)
+            if ar_batch:
+                ar_q = ar_q.eq("batch_id", ar_batch)
+            ar_rows = ar_q.neq("status", "paid").limit(50000).execute().data or []
 
         # Aggregate per customer: max days overdue, total outstanding
         customer_data: Dict[str, Dict[str, Any]] = {}
         total_ar = 0.0
+        if books_live:
+            for r in readmodel.ar_rows(today):
+                d = customer_data.setdefault(r["customer_id"], {"balance": 0.0, "max_days_overdue": 0, "name": r["name"],
+                                                               "ace_customer_id": r["ace_customer_id"]})
+                d["balance"] += r["balance"]
+                if r["doc_type"] == "INVOICE":
+                    d["max_days_overdue"] = max(d["max_days_overdue"], r["days_overdue"])
+            total_ar = sum(v["balance"] for v in customer_data.values())   # net, = ACE Books receivables
+            customer_data = {k: v for k, v in customer_data.items() if v["balance"] > 0.005}   # score those who owe
         for r in ar_rows:
             cid = str(r.get("customer_id") or "unknown")
             bal = float(r.get("balance") or 0)
@@ -1546,6 +1618,8 @@ async def credit_risk_scores(request: Request):
             scored.append(
                 {
                     "customer_id": cid,
+                    "name": data.get("name"),
+                    "ace_customer_id": data.get("ace_customer_id"),
                     "outstanding_balance": round(data["balance"], 2),
                     "max_days_overdue": data["max_days_overdue"],
                     "alert_events": alert_counts.get(cid, 0),

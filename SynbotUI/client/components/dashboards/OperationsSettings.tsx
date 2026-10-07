@@ -1,153 +1,67 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { AlertCircle, UploadCloud, Shield, PackageSearch } from "lucide-react";
+/**
+ * Operations › Settings: the rules the Operations screens run on, stated once
+ * and briefly. Replaces cards describing the retired Sage snapshot pipeline
+ * (ops_orders_snapshot, "Sage snapshot + inventory_events", the /ops/import CSV).
+ */
+import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowUpRight, PackageSearch, Shield, Truck } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { api } from "@/lib/api-client";
+
+function Rows({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl className="space-y-2 text-sm">
+      {rows.map(([k, v]) => (
+        <div key={k} className="flex justify-between gap-4 border-b pb-1.5 last:border-0">
+          <dt className="text-muted-foreground">{k}</dt>
+          <dd className="text-right font-medium">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 export function OperationsSettings() {
+  const { data: s } = useQuery({ queryKey: ["stock-orders-summary"], queryFn: () => api.procurement.stockOrdersSummary() });
+  const p = s?.policy ?? {};
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="pw-surface-interactive">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Ops Data Source</CardTitle>
-            <CardDescription>Orders & downtime snapshots from Sage exports.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Operations metrics (fulfillment time, downtime, stock turnover) are computed from
-              <span className="font-semibold"> ops_orders_snapshot</span>,
-              <span className="font-semibold"> ops_downtime_snapshot</span>, and the latest
-              <span className="font-semibold"> sage_inventory_snapshot</span>.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="pw-surface-interactive">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Inventory Behaviour</CardTitle>
-            <CardDescription>Baseline from Sage + operational events.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Live stock is calculated as <span className="font-mono">Sage snapshot</span> +
-              <span className="font-mono"> inventory_events</span> (RESTOCK, SALE, DAMAGE, EXPIRY, ADJUSTMENT)
-              recorded via the Operations console.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="pw-surface-interactive">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Access Control</CardTitle>
-            <CardDescription>Who can change what.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>
-              <span className="font-semibold">Inventory write</span>: roles
-              <span className="font-mono"> admin</span>,
-              <span className="font-mono"> ops</span>,
-              <span className="font-mono"> finance</span>.
-            </p>
-            <p>
-              <span className="font-semibold">Inventory read</span>: roles
-              <span className="font-mono"> admin</span>,
-              <span className="font-mono"> ops</span>,
-              <span className="font-mono"> finance</span>,
-              <span className="font-mono"> sales</span>.
-            </p>
-            <p>
-              <span className="font-semibold">Ops analytics</span> (/ops/*): roles
-              <span className="font-mono"> admin</span>,
-              <span className="font-mono"> ops</span>.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="pw-surface-interactive">
-          <CardHeader className="flex items-center justify-between">
-            <div>
-              <CardTitle>Ops Import (Orders & Downtime)</CardTitle>
-              <CardDescription>Configure how logistics data is fed into Placeware.</CardDescription>
-            </div>
-            <UploadCloud className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <div>
-              <p className="font-semibold mb-1">Endpoint</p>
-              <p className="rounded bg-muted px-2 py-1 font-mono text-xs">
-                POST /ops/import (multipart/form-data)
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold mb-1">Orders CSV (required columns)</p>
-              <p className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
-                order_id, created_at, fulfilled_at, sku, quantity
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold mb-1">Downtime CSV (required columns)</p>
-              <p className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
-                machine_id, started_at, ended_at, minutes
-              </p>
-            </div>
-            <p>
-              Successful imports create new snapshot batches and immediately refresh Logistics KPIs
-              and the stock turnover charts.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="pw-surface-interactive">
-          <CardHeader className="flex items-center justify-between">
-            <div>
-              <CardTitle>Inventory Alerts & Thresholds</CardTitle>
-              <CardDescription>How "critical" and "low" stock are derived.</CardDescription>
-            </div>
-            <PackageSearch className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              The Inventory dashboard flags <span className="font-semibold">critical items</span> where
-              <span className="font-mono"> current_stock &lt; 10</span> units. Out-of-stock is when
-              <span className="font-mono"> current_stock &lt;= 0</span>.
-            </p>
-            <p>
-              These thresholds are currently fixed in the backend for Phase 1 and applied consistently
-              across all inventory and Logistics views.
-            </p>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">Planned</Badge>
-              <span className="text-xs">
-                Future releases will allow admin-configurable thresholds per SKU or category.
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-warning/30 bg-warning/15">
-        <CardHeader className="flex items-center gap-2">
-          <AlertCircle className="h-5 w-5 text-warning" />
-          <div>
-            <CardTitle className="text-sm">Operational Safety Note</CardTitle>
-            <CardDescription>
-              Ops settings control how Placeware interprets Sage exports and live movements.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-1 text-sm text-warning">
-          <p>
-            - Always validate CSV headers before importing into /ops/import to avoid corrupting
-            historical trend lines.
-          </p>
-          <p>
-            - Use inventory events (Record Movement) only for real-world adjustments; Sage remains the
-            system of record for baseline quantities.
-          </p>
-          <p>
-            - Restrict ops/admin roles in your JWTs to trusted users only.
-          </p>
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><PackageSearch className="h-4 w-4" />Stock</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <Rows rows={[
+            ["Source of stock", "ACE Books (FIFO, by batch)"],
+            ["Stock in", "Supplier bill or approved adjustment"],
+            ["Stock out", "Invoice approved by Finance"],
+            ["Write-off / count change", "Adjustment, second approver"],
+          ]} />
+          <Link to="/inventory" className="inline-flex items-center text-xs text-primary hover:underline">Inventory workspace <ArrowUpRight className="ml-0.5 h-3 w-3" /></Link>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Truck className="h-4 w-4" />Reorder planning</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <Rows rows={[
+            ["Demand", p.demand_days ? `average of the last ${p.demand_days} days` : "—"],
+            ["Supplier lead time", p.lead_days ? `${p.lead_days} days` : "—"],
+            ["Safety stock", p.safety_days ? `${p.safety_days} days of demand` : "—"],
+            ["Order covers", p.cover_days ? `${p.cover_days} days after arrival` : "—"],
+            ["Order received when", "its supplier bill is posted"],
+          ]} />
+          <Link to="/operations/purchase-orders" className="inline-flex items-center text-xs text-primary hover:underline">Stock Orders & Purchases <ArrowUpRight className="ml-0.5 h-3 w-3" /></Link>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Shield className="h-4 w-4" />Who can do what</CardTitle></CardHeader>
+        <CardContent>
+          <Rows rows={[
+            ["Raise / approve / place stock orders", "admin, ops, procurement, finance, management"],
+            ["Log stock adjustments", "admin, ops, finance"],
+            ["Approve adjustments", "a second person: admin, ops, finance, management"],
+            ["Record supplier bills", "admin, finance"],
+            ["See supplier balances", "admin, ops, procurement, finance, management"],
+          ]} />
         </CardContent>
       </Card>
     </div>

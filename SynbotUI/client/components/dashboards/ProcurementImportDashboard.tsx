@@ -1,44 +1,31 @@
+/**
+ * Operations › Procurement: stock orders and supplier buying from ACE Books,
+ * plus the import-shipment clearance tracker when there are shipments to track.
+ * The old tab showed an always-empty "reliability scorecard" (no delivery data
+ * is recorded) and a debug "Realtime event" line.
+ */
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
+import { AlertTriangle, Clock, Package, TrendingDown } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { Package, AlertTriangle, Clock, TrendingDown } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { api } from "@/lib/api-client";
 import { apiUrl } from "@/lib/api-base";
 import { authClient } from "@/lib/auth-client";
+import { naira, num } from "@/lib/books-api";
 import { ProcurementShipment } from "@shared/dashboard-types";
-
-const chartConfig = {
-  reliability_score: {
-    label: "Reliability Score",
-    color: "hsl(var(--primary))",
-  },
-} satisfies ChartConfig;
+import { Chip, PLAN_STATUS, StockOrderKpis } from "@/components/operations/stock-orders";
 
 function wsUrl(path: string, token: string): string {
-  const endpoint = apiUrl(path);
-  const withToken = `${endpoint}?token=${encodeURIComponent(token)}`;
-
-  if (withToken.startsWith("http://")) {
-    return withToken.replace("http://", "ws://");
-  }
-  if (withToken.startsWith("https://")) {
-    return withToken.replace("https://", "wss://");
-  }
+  const withToken = `${apiUrl(path)}?token=${encodeURIComponent(token)}`;
+  if (withToken.startsWith("http://")) return withToken.replace("http://", "ws://");
+  if (withToken.startsWith("https://")) return withToken.replace("https://", "wss://");
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}${withToken}`;
 }
@@ -50,81 +37,62 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
   return "outline";
 }
 
-function statusLabel(status: string): string {
-  return status.replace(/_/g, " ");
-}
+const statusLabel = (status: string) => status.replace(/_/g, " ");
+
+const NEXT_STEP: Record<string, [string, string]> = {
+  in_transit: ["at_port", "Mark at port"],
+  at_port: ["under_clearance", "Mark under clearance"],
+  under_clearance: ["released", "Mark released"],
+  released: ["delivered_to_warehouse", "Mark delivered"],
+};
 
 export function ProcurementImportDashboard() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string>("none");
   const [busyShipmentId, setBusyShipmentId] = useState<string | null>(null);
   const [escalateTarget, setEscalateTarget] = useState<ProcurementShipment | null>(null);
+
+  const stockSummary = useQuery({ queryKey: ["stock-orders-summary"], queryFn: () => api.procurement.stockOrdersSummary() });
+  const plan = useQuery({ queryKey: ["reorder-plan"], queryFn: () => api.procurement.reorderPlan() });
+  const directory = useQuery({ queryKey: ["supplier-directory"], queryFn: () => api.procurement.supplierDirectory() });
+  const needs = (plan.data?.items ?? []).filter((i: any) => i.status === "out_of_stock" || i.status === "reorder_now").slice(0, 8);
+  const topSuppliers = (directory.data?.suppliers ?? []).filter((x: any) => x.last12 > 0).slice(0, 8);
 
   const shipmentsQuery = useQuery({
     queryKey: ["procurement-shipments"],
     queryFn: () => api.procurement.shipments({ limit: 100 }),
     refetchInterval: 60000,
   });
-
   const analysisQuery = useQuery({
     queryKey: ["procurement-analysis"],
     queryFn: () => api.procurement.analyze({}),
     refetchInterval: 90000,
   });
-
   const shipments = shipmentsQuery.data?.data ?? [];
   const analysis = analysisQuery.data?.data;
-
-  const inClearanceCount = useMemo(
-    () => shipments.filter((item) => item.status === "under_clearance").length,
-    [shipments],
-  );
-
+  const inClearanceCount = useMemo(() => shipments.filter((item) => item.status === "under_clearance").length, [shipments]);
   const delayedCount = analysis?.delayed_count ?? 0;
   const estimatedImpact = analysis?.estimated_total_impact ?? 0;
-
-  const scorecardTop = (analysis?.supplier_scorecard ?? []).slice(0, 6);
   const delayedTop = (analysis?.delayed_shipments ?? []).slice(0, 6);
 
+  // Live shipment updates (best effort; the queries also poll).
   useEffect(() => {
     let socket: WebSocket | null = null;
     let isDisposed = false;
-
     async function connectSocket() {
       let token = authClient.getAccessToken();
       if (!token) {
-        const refreshed = await authClient.refresh();
-        if (!refreshed) {
-          return;
-        }
+        if (!(await authClient.refresh())) return;
         token = authClient.getAccessToken();
       }
-
-      if (!token || isDisposed) {
-        return;
-      }
-
+      if (!token || isDisposed) return;
       socket = new WebSocket(wsUrl("/procurement/import-agent/ws", token));
-
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          const eventName = String(payload?.event || "unknown");
-          setLastRealtimeEvent(eventName);
-          queryClient.invalidateQueries({ queryKey: ["procurement-shipments"] });
-          queryClient.invalidateQueries({ queryKey: ["procurement-analysis"] });
-        } catch {
-          setLastRealtimeEvent("unknown");
-        }
-      };
-
-      socket.onerror = () => {
-        setLastRealtimeEvent("socket_error");
+      socket.onmessage = () => {
+        queryClient.invalidateQueries({ queryKey: ["procurement-shipments"] });
+        queryClient.invalidateQueries({ queryKey: ["procurement-analysis"] });
       };
     }
-
     void connectSocket();
-
     return () => {
       isDisposed = true;
       socket?.close();
@@ -134,10 +102,7 @@ export function ProcurementImportDashboard() {
   async function transitionShipment(shipment: ProcurementShipment, nextStatus: string) {
     setBusyShipmentId(shipment.id);
     try {
-      await api.procurement.transition(shipment.id, {
-        next_status: nextStatus,
-        reason: "dashboard_action",
-      });
+      await api.procurement.transition(shipment.id, { next_status: nextStatus, reason: "dashboard_action" });
       toast.success(`Shipment ${shipment.shipment_ref} moved to ${statusLabel(nextStatus)}.`);
       await queryClient.invalidateQueries({ queryKey: ["procurement-shipments"] });
       await queryClient.invalidateQueries({ queryKey: ["procurement-analysis"] });
@@ -168,155 +133,133 @@ export function ProcurementImportDashboard() {
 
   return (
     <div className="space-y-6">
-      <KpiStrip
-        items={[
-          { label: "Tracked Shipments", value: shipments.length, icon: Package },
-          { label: "Under Clearance", value: inClearanceCount, icon: Clock, tone: inClearanceCount > 0 ? "warning" : "default" },
-          { label: "Delayed Shipments", value: delayedCount, icon: AlertTriangle, tone: delayedCount > 0 ? "danger" : "default" },
-          { label: "Est. Delay Impact", value: estimatedImpact.toLocaleString(), icon: TrendingDown },
-        ]}
-      />
-      <p className="text-xs text-muted-foreground -mt-2">Realtime event: {lastRealtimeEvent}</p>
+      <StockOrderKpis s={stockSummary.data} onPick={(tab, f) => navigate(`/operations/purchase-orders?tab=${tab}${f ? `&filter=${f}` : ""}`)} />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>Supplier Reliability Scorecard</CardTitle>
-            <CardDescription>Top suppliers by reliability score for procurement/import workflow.</CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-base">Needs ordering now</CardTitle>
+              <CardDescription>Out of stock or below the reorder point (ACE Books stock and sales).</CardDescription>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => navigate("/operations/purchase-orders?tab=plan&filter=needs")}>Reorder plan</Button>
           </CardHeader>
-          <CardContent>
-            {scorecardTop.length > 0 ? (
-              <ChartContainer config={chartConfig} className="h-[260px] w-full">
-                <BarChart data={scorecardTop}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="supplier" tickLine={false} axisLine={false} />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="reliability_score" fill="var(--color-reliability_score)" radius={6} />
-                </BarChart>
-              </ChartContainer>
-            ) : (
-              <p className="text-sm text-muted-foreground">No scorecard data yet.</p>
-            )}
+          <CardContent className="space-y-1.5">
+            {plan.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {!plan.isLoading && needs.length === 0 && <p className="text-sm text-muted-foreground">Nothing needs ordering.</p>}
+            {needs.map((i: any) => (
+              <div key={i.family} className="flex items-center justify-between gap-3 border-b pb-1.5 text-sm last:border-0">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{i.name}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {num(i.on_hand)} on hand · sells {num(i.monthly_demand, 1)}/month{i.supplier_name ? ` · ${i.supplier_name}` : ""}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <Chip map={PLAN_STATUS} value={i.status} />
+                  <div className="text-[11px] text-muted-foreground">order {num(i.suggested_qty)} · {naira(i.est_cost)}</div>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
-
         <Card>
-          <CardHeader>
-            <CardTitle>Delay Risk Watchlist</CardTitle>
-            <CardDescription>Shipments above clearance threshold with estimated financial impact.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {delayedTop.length === 0 && <p className="text-sm text-muted-foreground">No delayed shipments above threshold.</p>}
-              {delayedTop.map((item) => (
-                <div key={item.shipment_id} className="rounded-md border p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">{item.shipment_ref}</p>
-                    <Badge variant="destructive">{item.delay_days} days delayed</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {item.supplier_name} · {item.status.replace(/_/g, " ")} · Impact: {item.estimated_impact.toLocaleString()} {item.currency}
-                  </p>
-                </div>
-              ))}
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-base">Top suppliers, last 12 months</CardTitle>
+              <CardDescription>Spend, what we owe and price trend (ACE Books).</CardDescription>
             </div>
+            <Button size="sm" variant="outline" onClick={() => navigate("/operations/suppliers")}>All suppliers</Button>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {directory.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {topSuppliers.map((sp: any) => (
+              <div key={sp.id} className="flex items-center justify-between gap-3 border-b pb-1.5 text-sm last:border-0">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{sp.name}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {num(sp.items)} items · buys every {sp.avg_gap_days != null ? `${num(sp.avg_gap_days)} days` : "—"}
+                    {sp.price_change_pct != null && ` · prices ${sp.price_change_pct > 0 ? "+" : ""}${Number(sp.price_change_pct).toFixed(1)}%`}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-medium">{naira(sp.last12)}</div>
+                  <div className="text-[11px] text-muted-foreground">owe {naira(sp.balance)}</div>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Shipment Lifecycle Control</CardTitle>
-          <CardDescription>Controlled workflow transitions and explicit escalation actions.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {(shipmentsQuery.isLoading || analysisQuery.isLoading) && (
-            <p className="text-sm text-muted-foreground">Loading procurement/import intelligence...</p>
+      {shipments.length > 0 && (
+        <>
+          <KpiStrip
+            items={[
+              { label: "Import shipments", value: shipments.length, icon: Package },
+              { label: "Under clearance", value: inClearanceCount, icon: Clock, tone: inClearanceCount > 0 ? "warning" : "default" },
+              { label: "Delayed", value: delayedCount, icon: AlertTriangle, tone: delayedCount > 0 ? "danger" : "default" },
+              { label: "Est. delay impact", value: naira(estimatedImpact), icon: TrendingDown },
+            ]}
+          />
+          {delayedTop.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Delayed at clearance</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {delayedTop.map((item) => (
+                  <div key={item.shipment_id} className="rounded-md border p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium">{item.shipment_ref}</p>
+                      <Badge variant="destructive">{item.delay_days} days delayed</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {item.supplier_name} · {item.status.replace(/_/g, " ")} · Impact: {item.estimated_impact.toLocaleString()} {item.currency}
+                    </p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           )}
-          {shipments.map((shipment) => (
-            <div key={shipment.id} className="rounded-md border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium">{shipment.shipment_ref}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {shipment.supplier_name} · {shipment.expected_arrival_date || "No ETA"}
-                  </p>
-                </div>
-                <Badge variant={statusVariant(shipment.status)}>{statusLabel(shipment.status)}</Badge>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {shipment.status === "in_transit" && (
-                  <Button
-                    size="sm"
-                    onClick={() => transitionShipment(shipment, "at_port")}
-                    disabled={busyShipmentId === shipment.id}
-                  >
-                    Mark At Port
-                  </Button>
-                )}
-                {shipment.status === "at_port" && (
-                  <Button
-                    size="sm"
-                    onClick={() => transitionShipment(shipment, "under_clearance")}
-                    disabled={busyShipmentId === shipment.id}
-                  >
-                    Mark Under Clearance
-                  </Button>
-                )}
-                {shipment.status === "under_clearance" && (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() => transitionShipment(shipment, "released")}
-                      disabled={busyShipmentId === shipment.id}
-                    >
-                      Mark Released
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setEscalateTarget(shipment)}
-                      disabled={busyShipmentId === shipment.id}
-                    >
-                      Escalate
-                    </Button>
-                  </>
-                )}
-                {shipment.status === "released" && (
-                  <Button
-                    size="sm"
-                    onClick={() => transitionShipment(shipment, "delivered_to_warehouse")}
-                    disabled={busyShipmentId === shipment.id}
-                  >
-                    Mark Delivered
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-base">Import shipments</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {shipments.map((shipment) => {
+                const next = NEXT_STEP[shipment.status];
+                const busy = busyShipmentId === shipment.id;
+                return (
+                  <div key={shipment.id} className="rounded-md border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{shipment.shipment_ref}</p>
+                        <p className="text-xs text-muted-foreground">{shipment.supplier_name} · {shipment.expected_arrival_date || "No ETA"}</p>
+                      </div>
+                      <Badge variant={statusVariant(shipment.status)}>{statusLabel(shipment.status)}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {next && <Button size="sm" onClick={() => transitionShipment(shipment, next[0])} disabled={busy}>{next[1]}</Button>}
+                      {shipment.status === "under_clearance" && (
+                        <Button size="sm" variant="destructive" onClick={() => setEscalateTarget(shipment)} disabled={busy}>Escalate</Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       <Dialog open={!!escalateTarget} onOpenChange={(open) => { if (!open) setEscalateTarget(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Escalate Shipment?</DialogTitle>
             <DialogDescription>
-              This notifies regulatory and the executive dashboard for{" "}
-              <span className="font-medium">{escalateTarget?.shipment_ref}</span>. This action cannot be undone.
+              This notifies regulatory and the executive dashboard for <span className="font-medium">{escalateTarget?.shipment_ref}</span>. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEscalateTarget(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => escalateTarget && escalateShipment(escalateTarget)}
-              disabled={!!busyShipmentId}
-            >
-              Escalate
-            </Button>
+            <Button variant="destructive" onClick={() => escalateTarget && escalateShipment(escalateTarget)} disabled={!!busyShipmentId}>Escalate</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

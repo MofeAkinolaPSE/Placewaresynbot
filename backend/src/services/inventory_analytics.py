@@ -276,7 +276,12 @@ def get_lifetime_sales(client: DBClient = db) -> Dict[str, float]:
 
     Undated by nature (rows are 'SOLD_<customer>' aggregates), so this is only
     safe for 'has this ever sold, and roughly how much' -- never for a rate.
+    Once ACE Books is live: dated Sage history + ACE Books invoices (v_sales_lines).
     """
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return books_analytics.lifetime_units_by_sku()
     try:
         rows = (
             client.table("sage_invoice_lines_snapshot")

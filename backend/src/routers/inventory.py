@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, validator
 from typing import Dict, Any, List, Optional
 from src.middleware import verify_jwt, require_role
 from src.services.inventory import (
+    StockInBooksError,
     record_inventory_event,
     get_realtime_stock,
     get_inventory_summary
@@ -53,10 +54,11 @@ def require_inventory_write(request: Request) -> Dict[str, Any]:
     return payload
 
 def require_inventory_read(request: Request) -> Dict[str, Any]:
-    """Roles allowed to view inventory: admin, ops, finance, sales."""
+    """Roles allowed to view inventory: the Inventory & Quality department (stock, QC, compliance),
+    finance and sales. 'operations' and 'management' were missing though the page lets them in."""
     payload = verify_jwt(request)
     roles = payload.get("roles", [])
-    allowed = {"admin", "ops", "finance", "sales"}
+    allowed = {"admin", "ops", "operations", "procurement", "finance", "sales", "quality_assurance", "qa", "management"}
     
     if not any(r in allowed for r in roles):
         raise HTTPException(403, "Insufficient privileges to view inventory")
@@ -92,7 +94,9 @@ async def post_inventory_event(
         })
         
         return {"success": True, "event": result}
-        
+
+    except StockInBooksError as e:
+        raise HTTPException(409, detail=str(e))
     except Exception as e:
         logging.error(f"Inventory event error: {e}")
         raise HTTPException(500, detail="Failed to record inventory event")

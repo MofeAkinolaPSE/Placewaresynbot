@@ -39,6 +39,23 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
         except Exception:
             return None
 
+    from src.fin.readmodel import live
+    if live():
+        # Real operational timings (Frontdesk order -> dispatch) and ACE Books stock economics,
+        # instead of the Sage "PO" dates (order_date + 30 by construction) and the doubled stock view.
+        ov = logistics_overview()
+        return {
+            "fulfillment_days_avg": round(ov["orders"]["avg_hours_to_dispatch"] / 24, 2) if ov["orders"]["avg_hours_to_dispatch"] is not None else None,
+            "downtime_minutes_total": None,
+            "stock_turnover": ov["stock"]["turnover"],
+            "explain": {
+                "fulfillment_days_avg": "Frontdesk invoice created -> dispatched",
+                "downtime_minutes_total": "not recorded",
+                "stock_turnover": "cost of sales, last 12 months / stock value at cost (ACE Books)",
+                "sources": ["frontdesk_invoices", "v_sales_lines", "fin_cost_layers"],
+            },
+        }
+
     # Fulfillment time — derived from purchase orders (order_date → expected_delivery_date)
     po_batch: str | None = None
     try:
@@ -110,6 +127,13 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
 
 def stock_turnover_series(client: DBClient = db, periods: int = 6) -> Dict[str, Any]:
     """Monthly stock turnover based on invoice lines and avg inventory quantities."""
+    from src.fin.readmodel import live
+    if live():
+        # annualised monthly cost of sales / stock value at cost (ACE Books)
+        ov = logistics_overview(months=periods)
+        value = ov["stock"]["value"] or 0.0
+        return {"series": [{"period": m["period"], "turnover": round(m["cost"] * 12 / value, 2) if value else 0.0}
+                           for m in ov["monthly"]]}
     # Sold quantity by month from invoice lines
     il_batch: str | None = None
     try:
@@ -173,3 +197,53 @@ def forecast_stock_turnover(client: DBClient = db, window: int = 3, horizon: int
     last = roll[-1]
     forecast = [last for _ in range(horizon)]
     return {"series": s, "rolling": roll, "forecast": forecast}
+
+
+def logistics_overview(months: int = 12) -> Dict[str, Any]:
+    """Operations overview from real records: Frontdesk orders -> dispatch, deliveries,
+    and stock economics from ACE Books (dated sales and FIFO stock at cost)."""
+    from src.fin.db import q, q1, tx
+    from src.services import books_analytics
+
+    with tx() as conn:
+        orders = q1(conn, """SELECT COUNT(*) AS total,
+                                    COUNT(*) FILTER (WHERE dispatched_at IS NOT NULL) AS dispatched,
+                                    COUNT(*) FILTER (WHERE dispatched_at IS NULL AND status IN ('finance_approved','qc_passed','pending_finance','pending_qc','created'))
+                                        AS awaiting_dispatch,
+                                    AVG(EXTRACT(EPOCH FROM dispatched_at - created_at) / 3600) FILTER (WHERE dispatched_at IS NOT NULL) AS avg_hours_to_dispatch,
+                                    AVG(EXTRACT(EPOCH FROM finance_decided_at - created_at) / 3600) FILTER (WHERE finance_decided_at IS NOT NULL) AS avg_hours_to_approval
+                             FROM frontdesk_invoices""")
+        deliveries = q1(conn, """SELECT COUNT(*) AS total,
+                                        COUNT(*) FILTER (WHERE status='delivered') AS delivered,
+                                        COUNT(*) FILTER (WHERE status IN ('in_transit','picked_up')) AS in_transit,
+                                        COUNT(*) FILTER (WHERE status='assigned') AS assigned,
+                                        COUNT(*) FILTER (WHERE status='unassigned') AS unassigned,
+                                        AVG(EXTRACT(EPOCH FROM delivered_at - created_at) / 3600) FILTER (WHERE delivered_at IS NOT NULL) AS avg_hours_to_deliver
+                                 FROM deliveries""")
+        as_of = q1(conn, "SELECT MAX(invoice_date) AS d FROM v_sales_lines")["d"] or _datetime_mod.date.today()
+        monthly = q(conn, """SELECT to_char(invoice_date, 'YYYY-MM') AS period, SUM(quantity) FILTER (WHERE sku IS NOT NULL) AS units,
+                                    SUM(amount) AS sales, SUM(cost) AS cost
+                             FROM v_sales_lines WHERE invoice_date >= (date_trunc('month', %s::date) - interval '1 month' * (%s - 1))::date AND invoice_date <= %s
+                             GROUP BY 1 ORDER BY 1""", (as_of, months, as_of))
+        cogs12 = float(q1(conn, "SELECT COALESCE(SUM(cost),0) AS c FROM v_sales_lines WHERE invoice_date > %s::date - 365 AND invoice_date <= %s",
+                          (as_of, as_of))["c"] or 0)
+        expiring = q1(conn, """SELECT COUNT(*) AS items, COALESCE(SUM(current_stock * cost_price), 0) AS value FROM v_inventory
+                               WHERE current_stock > 0 AND expiry_date IS NOT NULL AND expiry_date <= current_date + 90""")
+    stock = books_analytics.stock_totals()
+    value = stock["value"]
+    turnover = round(cogs12 / value, 2) if value else None
+
+    def _num(v):
+        return round(float(v), 1) if v is not None else None
+
+    return {
+        "as_of": as_of,
+        "orders": {k: (_num(v) if k.startswith("avg") else int(v or 0)) for k, v in orders.items()},
+        "deliveries": {k: (_num(v) if k.startswith("avg") else int(v or 0)) for k, v in deliveries.items()},
+        "stock": {"value": round(value, 2), "units": stock["units"], "items_in_stock": stock["skus_in_stock"],
+                  "cogs_12m": round(cogs12, 2), "turnover": turnover,
+                  "days_of_stock": round(365 / turnover) if turnover else None,
+                  "expiring_90d_items": int(expiring["items"] or 0), "expiring_90d_value": round(float(expiring["value"] or 0), 2)},
+        "monthly": [{"period": m["period"], "units": float(m["units"] or 0), "sales": float(m["sales"] or 0),
+                     "cost": float(m["cost"] or 0)} for m in monthly],
+    }

@@ -9,14 +9,20 @@ const ProtectedRoute = ({ children }: PropsWithChildren) => {
   const hasRole = (allowed: string[]) => roles.some((role) => allowed.includes(role));
 
   const accessMap: Array<{ startsWith: string; allowed: string[] }> = [
+    // ACE Books: management reviews, approves and reopens periods (backend ROLE_PERMISSIONS).
+    // Must precede the broader /finance rule - the first match wins.
+    { startsWith: "/finance/books", allowed: ["admin", "finance", "management"] },
+    { startsWith: "/finance/ar", allowed: ["admin", "finance", "management"] },
+    { startsWith: "/finance/sage-import", allowed: ["admin", "finance", "management"] },
     { startsWith: "/finance", allowed: ["admin", "finance"] },
-    { startsWith: "/hr", allowed: ["admin", "hr"] },
-    { startsWith: "/operations", allowed: ["admin", "ops", "operations"] },
-    { startsWith: "/inventory", allowed: ["admin", "ops", "operations", "finance", "sales"] },
-    { startsWith: "/crm", allowed: ["admin", "crm", "sales"] },
+    { startsWith: "/hr", allowed: ["admin", "hr", "management"] },
+    { startsWith: "/operations", allowed: ["admin", "ops", "operations", "procurement", "management"] },
+    { startsWith: "/inventory", allowed: ["admin", "ops", "operations", "procurement", "finance", "sales", "quality_assurance", "qa", "management"] },
+    { startsWith: "/frontdesk", allowed: ["admin", "frontdesk", "management", "sales", "finance", "ops", "operations", "quality_assurance", "qa"] },
+    { startsWith: "/crm", allowed: ["admin", "crm", "sales", "management", "finance"] },
     // /customers/workspace previously had no route-level gate at all (nav-
     // adjacent to the CRM group but never enforced by URL).
-    { startsWith: "/customers", allowed: ["admin", "crm", "sales"] },
+    { startsWith: "/customers", allowed: ["admin", "crm", "sales", "management", "finance"] },
     { startsWith: "/workflow", allowed: ["admin"] },
     { startsWith: "/admin/users", allowed: ["admin"] },
     { startsWith: "/admin/data-intelligence", allowed: ["admin"] },
@@ -32,6 +38,8 @@ const ProtectedRoute = ({ children }: PropsWithChildren) => {
     // "management", which the backend already allows. Sidebar.tsx's own
     // Compliance nav item is reconciled to the same set alongside this.
     { startsWith: "/compliance", allowed: ["admin", "quality_assurance", "qa", "operations", "ops", "management"] },
+    // Inventory & Quality overview (after /quality-control, which is narrower).
+    { startsWith: "/quality", allowed: ["admin", "ops", "operations", "procurement", "finance", "sales", "quality_assurance", "qa", "management"] },
   ];
 
   if (isLoading) {

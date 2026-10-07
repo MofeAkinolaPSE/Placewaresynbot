@@ -1,0 +1,224 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Under inventory, we have what you call return inward. I don't know whether I have to... Return inward? Yeah. No.
+
+There should be a way to treat any stock return. For example, they raise one invoice now. But getting to customer, ah, no, not that we wanted this or did this and that.
+
+Okay, so you have recall. Yeah. You did that.
+
+Yeah, I have recall already. That recall is there. Okay.
+
+Then, return outward. Okay. Returning what you want to your supplier.
+
+Suppliers. Return outward. Okay, so there's recall and return outward.
+
+Yes. Alright. Then, discounts. 
+
+You call these things, discount, ah, anyway, I think there should be a short of account and there should be a way of add on, as we will do now. I might see any new expenses, for example, an advertisement, but it's not in the short of account. Okay, so you want to add a new... So, add a new with gold and everything.
+
+Okay. So, you say there's room for that. Okay.
+
+So, there should be a room for, either we have a new head of expense that we need to be, you know, to be treating. So, we just gold, the new expenses or whatever that you want to, not only expenses, might be income or new stock that just in, there should be a way of... Updating it with the new information. But that's not a problem, we can definitely do that.
+
+So... Well, there's nothing else apart from, I honestly what I'll do is... Stock adjustments. Okay. Under inventory.
+
+Okay. Still under inventory. Yeah, I've done that already.
+
+Inventory is very detailed. Stock adjustments in the sense that, it used to happen that, okay, we loan... What I want to say is, all those things, they are going to reflect on the account also. Okay, the inventory movement.
+
+Once they are coming in... Inventory movement. Reflecting the account. Everything that goes in, it has to reflect on the account.
+
+It has to be going out and coming in, all those stuff. The details. So that the accounts will be balanced.
+
+So that is one of the major things. And I'm committed to... That's why I'm trying to explain each point of that information. So, for details for that.
+
+More explaining. I will do some research on what Sage provides for you. But I'll just design the core features that you need.
+
+That's all. That's all you need. I always add.
+
+It's easy. It's very straightforward. The data is complete.
+
+We have all the data ready for you. We'll bring that one out for you. So... Stock adjustment, as I was saying.
+
+Stock adjustment. Adjustment in the sense that, for example, we have competitors. Okay.
+
+We don't have sales tax. For example, we don't have a tax. Let me call you back.
+
+The Sage has opened. So... So...
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+So, in the sense that now, we have rota now, first one was here, they beg us please do you have rota? So, we give them a particular batch, are you getting me? We are right on our system, we didn't sell it to them, they are going to return it, are you getting me? Now, on our system, we have 100, out of that 100, we loan them 5, are you getting me? By the time we loan them 5, we use on our delivery note to write loan to them, not sales. Okay, so it will be different. 100 is here.
+
+They will be paid for loans. Now, by the time they return the stock, instead of a particular batch that we loan them, by the time they return, it is another batch. We maintain that another batch because we can't sell on our invoice.
+
+The batch of the product we are selling is not supposed to be reflected because of the statutory requirement. So, we adjust that stock when we are doing the stock adjustment, the stock reconciliation. So, the batch number will decide the stock that comes in on loan.
+
+The loan is the same batch that they left. It will be on a new batch. Any batch.
+
+Okay, so, So far, you have stated that this thing is a loan. Oma Ike as loan. Do you understand? Oma indicates it as loan.
+
+It will not be part of the sales. It is not going to be part of the sales. So, to remove it from the inventory and to indicate it as loan.
+
+Oma Ike is not a loan. So, if another batch comes in, once you replace that number of loan stocks and you replace the batch, Oma Ike, the new batch. You want to design in such a way that then, if the loan is left, that batch has numbers of loan, but Oma replaces the batch number.
+
+Then, it will be redone. Do you understand? So it will just join the existing batch on ground, so if it's like batch M that I currently have in stock, it will join batch M, so if batch M was 100, it would be 150. So any new batch you want, you just update like that.
+
+Okay, so you run on command, that's all. Yes, so general ledger, everything is, all the sources are connected. So I will understand how Sage does their framework, but I'll design it to cover as much as possible, but without overstating.
+
+So you will cover your PL, accounts receivable, accounts payable, you cover inventory. And that accounts receivable and payable, I think you've seen the features. Yeah, the way Sage is.
+
+0 to 30 days, so you know the range. Yeah, the range. Yeah, that's another thing.
+
+That's one of the problem here. Then I close the year, they continue. Then there is something here that I don't know if when you are designing, you could do.
+
+Something is here, I think there is wrong posting anyway. We call something internal accounting review. Let me show you.
+
+That when there is an error, or posting not the, for example, check number is 001. They now posted 001 two times. Are you getting me? There is somewhere here that tells you that possible duplication of this and that.
+
+That will happen with us, we will make sure there is no duplication. Or there is a difference. This one will return.
+
+Only one. Wait, see. They can explain the reason for the one.
+
+So you understand. There is a reason for the one. See.
+
+There is a reason for the one. Just like we set a limit for, for example, Nuru is our customer. We set a limit, we should not sell to you beyond 400,000.
+
+This one, when your account is going above 400,000, credit limit will set for you. This, there will be a message, indication that this, this customer is about to exceed the credit limit. Do you want to continue or not? Yes, credit limit for customer.
+
+I am not saying that. I am talking about, do you want to exceed or you don't want to? No problem. There will be a message to that woman.
+
+Then, I can't tell if you are going to make a mistake. Posting, error posting. Yes, you will make a mistake.
+
+Because something, imbalance sheet, I can't receive it. Are you getting me? Normally I can't receive it. Then, balance sheet like that.
+
+Most of the times, we have delivery charge on invoice. I have the delivery charge. We have customer here, brother, some delivery charge here.
+
+He is going to a new room, 10,000 error. Item is 100,000. Somebody wants it.
+
+Under that, that delivery charge has to go to other income. This one, I want you to make a mistake. Check on that, send it to other income.
+
+I want you to make a mistake. Uncle, I can't receive it. I am a person who can't receive imbalance.
+
+I can't receive imbalance sheet. You understand? There are some moneys that are not supposed to be in the main account. That delivery charge.
+
+You are receiving all the charges. You are receiving everything. You are earning.
+
+You are receiving all the charges. You are a person who can't receive. You understand? I don't understand.
+
+If we state a payment as discount and we create a record for discount, we are not receiving the discount So, I can't receive it because I'm not sure if I'm paying it correctly No, I'm sure there's a difference between this and this So you understand, if you call attention, you pay it correctly If you enter an invoice and there is a discount attached to it, the payment of the discount should go to another level So are you saying that...another income entirely Okay, not the main account So where should it go then? So you are saying if there is a discount for a particular... I am not even talking about a discount now A discount might also be part of it I am talking about something like a delivery charge I will totally cover for an invoice That means they are not part of the invoice Yes, that's what I am saying So you should have a different account to collect discounts and delivery charges In fact, you create a record that states whatever the type of money there is Okay, but how do you now input the discount and the recharge? Do you need a feature for that? Sorry, I am coming There will be a head for it inside the chat Hello, sorry, let me answer No problem Yes man, do that
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Cash flow. Cash flow statement. Okay, okay.
+
+Automatically, any cash that you use in and out, you purchase it, you use money, all money, cash in bank, everything is cash flow. Cash flow, okay. So, automatically, anytime you are posting anything relating to from bank, from cash, this and that, there is cash flow statement.
+
+Okay, okay. In and out. In and out.
+
+Which is your assets during the year, you make an increase in all those things. Yeah, it's cash flow statement. That's right.
+
+It's part of accounting. Yeah. Yeah, that's good.
+
+See, see this kind of thing that I'm talking about. See. Okay, you are welcome.
+
+Thanks. Okay. Okay.
+
+Okay. Okay. Okay.
+
+Okay. All right, welcome. Welcome.
+
+Yeah, look at this. For example. Internal accounting review.
+
+Uh-huh. If anything that the thing does not mark, you know, it has got your attention. Look at this figure.
+
+That's right. This is just telling you, accounts receivable, accounts that are out of balance with the age receivable report. Okay.
+
+So, you understand. This figure is supposed to be the same. This is, I can't, AGC, I can't balance that from balance sheet.
+
+This is the difference. This difference, if I begin to trace it, are you getting it? You will see that it's an error from them. So I have to be correcting all those things.
+
+Okay. You won't get any error like this. Yeah.
+
+Okay. It will be more direct. It will be more, I'm not worried.
+
+Once we start, because this is a new level we're about to enter now, this finance department. So once we start to build directly on it, I'll be more focused on the finance solutions. We have to start using it.
+
+Because, We have to start using it. Because, Because, Because, I think that's what I realized. I think that's what I realized.
+
+Let's just design something that suits the company directly. So You understand the Let's just go directly. One thing No, I'm not touching that at all.
+
+I understand that already. You should get it. It's new to me.
+
+I understand. Alright. Option B. Go forward.
+
+Use 4-4-3. I don't know. I can't choose.
+
+If I can go to the server. If I can go to this server. This is not an option.
+
+Option B is the only one we have. 4 ports. Which one? Through this.
+
+Boot routers. Okay. I should follow the ports.
+
+Next one. If I can follow the other ports. Okay.
+
+So we expose the different one for. Yes. Yes.
+
+That's just it. We go in the map. Backup, backup.
+
+Okay. Smart. I know.
+
+I don't like this. I don't use this. I don't use this.
+
+That's it. Does it work? I need to work through. Can I work through? Yes.
+
+Oh, my. Okey. I should work though.
+
+It's easy to work through. Actually, this is my natural. Where is it? Where is your V? Actually, I have a studio.
+
+Okay. Yeah. Okay.
+
+Okay. I would like to... T-B-I-P-E is the initial. T-B-I-P-E is the initial.
+
+I-P-E-O-C-B I-P-E-O-C-B It's passed away. It's passed away. I'm not school-aged.
+
+It's not easy. I'm not school-aged. I can't even look at it.
+
+I can't even look at it. I could hardly breathe. I could hardly breathe.
+
+The ports will be normal and new desktop ports will be new desktop ports. And the installation might take a while. You must ensure it will work.
+
+You must ensure it will work. Windows print screen for direct extension. I know. 
+
+Okay.
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+This batch of Rhetorics who bought who bought it. Okay. Okay, and What quantity did they buy and then that should come up with the name of the customer The details of that customer so that I can reach out to them and say you bought this We want to recall it. 
+
+What quantity do you have? Can you please send back to us? Okay, so it's called a recall process. Okay, we've set up the recall, but I'll add it to Event tree so you can actually now see What customers bought. So you can search by batch number. 
+
+Okay, so search by batch number You are not just going to search, you are going to search by batch number because Batch number of Rhetorics this batch because you can have different batches one two Who bought this particular one. I want you to be able to search Who says anything else? That's why I said A lot of the things will come off course and all that. Me and Co will focus on account, account, account.
+
+But the critical things are the operational things. Because there are other things and then we need to... Then there is what you call... How do they call it? Validation. What is that sir? Software validation.
+
+In the sense of auditing? Yes, that it is fit for purpose, fit for use. It will deliver on what it is supposed to deliver on. I mentioned that the audit trail is very visible.
+
+No, we... When we say validation, we are talking about that... A company like PS4... PS4, PS2... This company can write to say they've run it and... Compliance worthy. So we should confirm if the app is compliance worthy. So we can say that as well.
+
+If it meets all the iOS standards for application. Application and all that. I think basically... This will work if I look at it on my laptop because I won't work on my phone.
+
+So when I look at it on the laptop, I can have more ideas. My own general overview. Okay, well that's the plan anyways.
+
+The more you need, the more we'll add to it. It's the accounting package that is basic to all this now. It's the accounting package that is basic now.
+
+Yeah, it's the next step. It's the one that ties everything together. Yeah, it's the next step.
+
+I'll have to do extensive research so I can give you the best. And then I'll implement it once I've done the research. Alright.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

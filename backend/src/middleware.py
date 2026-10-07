@@ -99,6 +99,19 @@ def require_role(role: str):
 
 
 
+def require_any_role(*roles: str):
+    """Dependency: the user has at least one of `roles` (admin always passes)."""
+    wanted = {r.lower() for r in roles}
+
+    async def _dep(request: Request) -> dict:
+        payload = verify_jwt(request)
+        have = {str(r).lower() for r in (payload.get("roles") or payload.get("permissions") or [])}
+        if "admin" not in have and not have & wanted:
+            raise HTTPException(status_code=403, detail="Insufficient role")
+        return payload
+    return _dep
+
+
 def rate_limit(request: Request, key: str | None = None, limit: int | None = None) -> None:
     """Simple in-memory per-minute rate limiting keyed by IP or custom key.
 

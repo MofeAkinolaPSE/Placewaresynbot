@@ -1045,66 +1045,34 @@ async def _handle_generate_report_action(
 async def _handle_trigger_replenishment_action(
     intent: Dict[str, Any], text: str, simulation: bool
 ) -> Dict[str, Any]:
-    """Create a replenishment request for a SKU mentioned in the text."""
-    import re as _re
-
-    # Extract SKU and quantity from text using simple heuristics
-    sku_match = _re.search(r"\b([A-Z]{2,}-?\d{3,})\b", text)
-    qty_match = _re.search(r"\b(\d+)\s*(?:units?|packs?|pieces?|boxes?|items?)?\b", text)
-
-    sku = sku_match.group(1) if sku_match else None
-    qty = int(qty_match.group(1)) if qty_match else 50
-
-    if simulation:
-        return {
-            "intent": intent,
-            "report": {
-                "summary": f"[SIMULATION] Would create replenishment request: SKU={sku or 'unknown'}, qty={qty}",
-                "status": "simulated",
-            },
-            "simulation": True,
-        }
-
+    """Reorder requests from chat are READ-ONLY: show what the live reorder plan says needs
+    ordering and where to raise it. Stock orders are raised, approved and marked ordered in
+    Operations -> Stock Orders & Purchases, where the person confirms quantity and supplier
+    (read-before-write; ACe guide/06_ACE_Synbot_Standards_Applied.md). The old path wrote a guessed quantity to a table
+    that no longer exists."""
     try:
-        from src.services.replenishment import create_replenishment_request  # type: ignore[import]
-        result = create_replenishment_request(sku=sku, quantity=qty, notes=text)
-        return {
-            "intent": intent,
-            "report": {
-                "summary": f"Replenishment request created for SKU {sku}, quantity {qty}.",
-                "details": result,
-                "status": "success",
-            },
-            "simulation": False,
-        }
-    except ImportError:
-        # Fallback: insert directly via Supabase
-        try:
-            row = {
-                "sku": sku,
-                "requested_qty": qty,
-                "notes": text,
-                "status": "pending",
-                "created_via": "eos_chat",
-            }
-            result_db = db.db.table("placeware_replenishment_requests").insert(row).execute()
-            inserted = result_db.data[0] if hasattr(result_db, "data") and result_db.data else row
-            return {
-                "intent": intent,
-                "report": {
-                    "summary": f"Replenishment request submitted: SKU {sku or 'N/A'}, qty {qty}.",
-                    "details": inserted,
-                    "status": "success",
-                },
-                "simulation": False,
-            }
-        except Exception as exc:
-            logger.error(f"Replenishment insert failed: {exc}")
-            return {
-                "intent": intent,
-                "report": {"summary": f"Failed to create replenishment: {exc}", "status": "error"},
-                "simulation": False,
-            }
+        from src.services.ace_tools import stock_orders_status, _resolve
+        s = stock_orders_status(text)
+        need = s.get("needs_ordering") or []
+        where = "Raise the order in Operations -> Stock Orders & Purchases -> Reorder plan, then approve it and mark it ordered with the supplier."
+        named = need[0] if need and _resolve(text, [str(need[0]["product"])])[0] else None
+        if named:
+            status = str(named.get("status") or "").replace("_", " ")
+            summary = (f"{named['product']} is {status} ({named.get('on_hand') or 0:g} on hand); the reorder plan suggests "
+                       f"{named.get('suggested_qty') or '?'} units" + (f" from {named['supplier']}" if named.get("supplier") else "")
+                       + f". I don't place orders from chat. {where}")
+        elif need:
+            top = "; ".join(f"{r['product']} ({str(r['status']).replace('_', ' ')}, suggest {r.get('suggested_qty') or '?'})"
+                            for r in need[:5])
+            summary = (f"{s.get('products_to_order_total') or len(need)} products need ordering: {s.get('of_which_out_of_stock') or 0} "
+                       f"out of stock and {s.get('of_which_running_low') or 0} running low. Top of the list: {top}. {where}")
+        else:
+            summary = "Nothing needs reordering right now according to the reorder plan (Operations -> Stock Orders & Purchases)."
+        return {"intent": intent, "report": {"summary": summary, "status": "success"}, "simulation": simulation}
+    except Exception as exc:
+        logger.error(f"reorder lookup failed: {exc}")
+        return {"intent": intent, "report": {"summary": "I can't reach the reorder plan right now. "
+                "Operations -> Stock Orders & Purchases -> Reorder plan shows it.", "status": "error"}, "simulation": simulation}
 
 
 @router.post("/intent")

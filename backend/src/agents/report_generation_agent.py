@@ -134,9 +134,16 @@ class ReportGenerationAgent(BaseAgent):
             scope_params = self._load_session_scope(session_id)
 
         rag_context  = self._retrieve_rag(intent_text)
-        past_reports = self._get_past_reports(report_type, limit=3)
-        live_data    = self._fetch_live_data(report_type, scope_params)
-        memories     = self._get_memories(intent_text)
+        dossier      = self.context.get("dossier")
+        if dossier:
+            # A report about one chosen record: the gathered record is the ONLY data. Past reports
+            # and agent memories are about other records, so they are left out.
+            past_reports, memories = [], []
+            live_data = dossier
+        else:
+            past_reports = self._get_past_reports(report_type, limit=3)
+            live_data    = self._fetch_live_data(report_type, scope_params)
+            memories     = self._get_memories(intent_text)
 
         return {
             "intent_text":   intent_text,
@@ -160,8 +167,8 @@ class ReportGenerationAgent(BaseAgent):
         memories     = data["memories"]
 
         template      = get_template(report_type)
-        section_title = template.get("output_title", report_type.replace("_", " ").title())
-        sections      = sorted(template.get("sections", []), key=lambda s: s["order"])
+        section_title = self.context.get("title") or template.get("output_title", report_type.replace("_", " ").title())
+        sections      = sorted(self.context.get("sections") or template.get("sections", []), key=lambda s: s["order"])
 
         section_results = self._generate_sections(
             sections=sections,
@@ -573,6 +580,16 @@ class ReportGenerationAgent(BaseAgent):
         same real totals, instead of each LLM call guessing its own number
         when the underlying data is sparse or empty.
         """
+        if isinstance(live_data, dict) and "facts" in live_data:
+            facts = "\n".join(f"{f['label']}: {f['value']}" for f in live_data["facts"])
+            gaps = "\n".join(f"- {g}" for g in live_data.get("gaps") or [])
+            return (
+                "\n--- Ground Truth Figures (LOCKED - this report is about ONE record; use these exact facts, "
+                "never invent people, dates, figures or actions that are not here) ---\n"
+                + facts
+                + ("\n\nNOT RECORDED in the system (say so plainly where relevant; do not fill in):\n" + gaps if gaps else "")
+                + "\n"
+            )
         if not isinstance(live_data, list):
             return ""
         if not live_data:
@@ -944,7 +961,7 @@ Tables queried: [list] | RAG documents referenced: {len(rag_context)} | Previous
             payload: Dict[str, Any] = {
                 "report_type":     report_type,
                 "intent_text":     intent_text,
-                "full_report":     full_report[:10000],
+                "full_report":     full_report[:60000],
                 "summary":         summary,
                 "findings":        _json.dumps(findings),
                 "recommendations": _json.dumps(recommendations),
@@ -954,6 +971,11 @@ Tables queried: [list] | RAG documents referenced: {len(rag_context)} | Previous
             }
             if section_data is not None:
                 payload["section_data"] = _json.dumps(section_data)
+            subject = self.context.get("subject") or {}
+            if subject:
+                payload.update({"subject_kind": subject.get("kind"), "subject_id": subject.get("id"),
+                                "subject_label": subject.get("label"), "author_notes": subject.get("notes"),
+                                "created_by": subject.get("created_by"), "facts": _json.dumps(self.context.get("dossier") or {}, default=str)})
             if session_id:
                 payload["session_id"] = session_id
 

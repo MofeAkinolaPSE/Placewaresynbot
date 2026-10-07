@@ -76,6 +76,10 @@ services:
       - "30"
     env_file:
       - .env                              # Written by GitHub Actions deploy job (chmod 600)
+    volumes:
+      # NeuroLayer licence (signed system.dat). On the manager node the file lives at
+      # /var/lib/docker/volumes/placeware_license/_data/system.dat - see the licensing runbook.
+      - license:/backend/.license:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
       interval: 15s
@@ -198,6 +202,8 @@ services:
 
 volumes:
   db_data:
+  license:
+    name: placeware_license
   prometheus_data:
   grafana_data:
 

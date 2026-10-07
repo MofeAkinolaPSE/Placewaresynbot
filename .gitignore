@@ -22,3 +22,10 @@ dumps/
 
 # Large binary / accounting files — too big for GitHub (>100 MB)
 *.ptb
+
+# Client licence files and NeuroLayer signing keys - never commit
+backend/.license/
+*signing_key*.pem
+
+# Local database backups (client data)
+backups/

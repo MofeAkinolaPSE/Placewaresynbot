@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   UserPlus, ClipboardList, CheckCircle2, DollarSign, Bell,
@@ -31,6 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { motion } from "framer-motion";
+import { NewRequestSheet, type CustomerSearchResult } from "@/components/workspace/NewRequestSheet";
 import { motionVariants, motionTransitions } from "@/lib/motion";
 import {
   InvoicesTab,
@@ -951,18 +953,11 @@ function QueueTab() {
           {new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long" })}
         </h2>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => intelligenceMutation.mutate()}
-            disabled={intelligenceMutation.isPending}
-          >
-            {intelligenceMutation.isPending
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : <Sparkles className="h-3.5 w-3.5" />
-            }
-            Intelligence Report
+          {/* same report sequence as everywhere: choose the period, review what was gathered, generate */}
+          <Button size="sm" variant="outline" className="gap-1.5"
+            onClick={() => { window.location.hash = `#/reports/new?type=frontdesk&kind=period&id=${new Date().toISOString().slice(0, 7)}`; }}>
+            <Sparkles className="h-3.5 w-3.5" />
+            Activity Report
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => refetch()} disabled={isFetching}>
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} /> Refresh
@@ -1228,18 +1223,40 @@ function ReportsTab() {
 // ---------------------------------------------------------------------------
 
 export default function Frontdesk() {
+  const [tab, setTab] = useState("queue");
+  // New Invoice: the Customer Workspace's request sheet, opened right here so
+  // reception can raise an invoice for an existing customer without leaving.
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestCustomer, setRequestCustomer] = useState<CustomerSearchResult | null>(null);
+  const [lastRaised, setLastRaised] = useState<{ customerId: number; customerName: string } | null>(null);
+  const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users className="h-6 w-6 text-primary" /> Frontdesk & Client Reception
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Walk-in intake · Invoicing · QC → Finance pipeline · Client history · Reports
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Users className="h-6 w-6 text-primary" /> Frontdesk & Client Reception
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Walk-in intake · Invoicing · QC → Finance pipeline · Client history · Reports
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {lastRaised && (
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link to={`/customers/workspace?customer=${lastRaised.customerId}`}>
+                <Building2 className="h-4 w-4" /> {lastRaised.customerName || "Customer"} workspace
+              </Link>
+            </Button>
+          )}
+          <Button size="sm" className="gap-1.5" onClick={() => setRequestOpen(true)}>
+            <Plus className="h-4 w-4" /> New Invoice
+          </Button>
+        </div>
       </div>
 
-      <Tabs defaultValue="queue">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full sm:grid sm:grid-cols-4">
           <TabsTrigger value="queue"    className="gap-1.5"><Clock     className="h-3.5 w-3.5" /> Today's Queue</TabsTrigger>
           <TabsTrigger value="new"      className="gap-1.5"><UserPlus  className="h-3.5 w-3.5" /> New Walk-in</TabsTrigger>
@@ -1256,14 +1273,29 @@ export default function Frontdesk() {
         </TabsContent>
 
         <TabsContent value="invoices" className="mt-4">
-          <InvoicesTab />
+          <InvoicesTab openInvoiceId={openInvoiceId} onOpened={() => setOpenInvoiceId(null)} />
         </TabsContent>
 
         <TabsContent value="reports" className="mt-4">
           <ReportsTab />
         </TabsContent>
       </Tabs>
+
+      <NewRequestSheet
+        open={requestOpen}
+        onOpenChange={setRequestOpen}
+        customer={requestCustomer}
+        onCustomerChange={setRequestCustomer}
+        onCreated={(data) => {
+          if (requestCustomer) setLastRaised({ customerId: requestCustomer.id, customerName: requestCustomer.name });
+          // Land on the new invoice in All Invoices, where QC / Finance /
+          // dispatch actions and printing already live.
+          if (data?.invoice?.id) {
+            setTab("invoices");
+            setOpenInvoiceId(data.invoice.id);
+          }
+        }}
+      />
     </div>
   );
 }
-

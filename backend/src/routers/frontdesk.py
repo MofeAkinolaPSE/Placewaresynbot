@@ -156,6 +156,20 @@ def _now() -> str:
 _TERMS_DAYS_RE = re.compile(r"Net\s+(\d+)", re.IGNORECASE)
 
 
+def _next_invoice_number() -> Optional[str]:
+    """The next number in the client's invoice sequence (continues Sage: 53542 -> 53543). The
+    same number becomes the ACE Books invoice when Finance approves it. None -> the old default."""
+    try:
+        from src.fin.context import resolve_entity
+        from src.fin.db import tx
+        from src.fin.numbering import next_number
+        with tx() as conn:
+            return next_number(conn, resolve_entity(conn, None), "SALES_INVOICE")
+    except Exception as exc:  # never block Frontdesk on numbering
+        logger.warning("invoice numbering unavailable, using the default: %s", exc)
+        return None
+
+
 def _due_date_from_terms(terms: str, from_dt: dt.datetime) -> Optional[str]:
     """Computed once at invoice-creation time and stored (frontdesk_invoices.
     due_date), not recomputed on read -- an issued invoice's due date must
@@ -429,6 +443,9 @@ async def create_invoice(
         "created_at":     created_at,
         "updated_at":     created_at,
     }
+    number = _next_invoice_number()
+    if number:
+        inv_row["invoice_number"] = number
 
     try:
         resp = db.table("frontdesk_invoices").insert(inv_row).execute()
@@ -617,10 +634,20 @@ async def finance_approval(
         invoice_id, walk_in_id, new_status,
     )
 
+    # Operations -> accounting: an approved sale posts itself to ACE Books
+    # (AR, revenue, COGS, stock). Runs in its own transaction and never blocks
+    # this workflow; failures are queued for Finance to retry.
+    books = None
+    if payload.approved:
+        from starlette.concurrency import run_in_threadpool
+        from src.fin.integrations import post_frontdesk_invoice
+        books = await run_in_threadpool(post_frontdesk_invoice, invoice_id, actor_id or "frontdesk", True)
+
     return {
         "invoice_id":   invoice_id,
         "approved":     payload.approved,
         "walk_in_status": wi_new_status,
+        "books": books,
     }
 
 
@@ -1647,6 +1674,9 @@ async def quick_request(
         "created_at":       now,
         "updated_at":       now,
     }
+    number = _next_invoice_number()
+    if number:
+        inv_row["invoice_number"] = number
     try:
         resp = db.table("frontdesk_invoices").insert(inv_row).execute()
         created = (resp.data or [inv_row])[0]

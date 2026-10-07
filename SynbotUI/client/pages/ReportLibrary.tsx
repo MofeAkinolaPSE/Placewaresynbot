@@ -123,6 +123,7 @@ export default function ReportLibrary() {
     return (
       r.report_type?.toLowerCase().includes(term) ||
       r.summary?.toLowerCase().includes(term) ||
+      r.subject_label?.toLowerCase().includes(term) ||
       r.id?.toLowerCase().includes(term)
     );
   });
@@ -258,7 +259,13 @@ export default function ReportLibrary() {
                         </Badge>
                       </td>
                       <td className="p-3 max-w-xs">
-                        <p className="truncate text-sm" title={r.summary}>
+                        {r.subject_label && (
+                          <Link to={`/reports/new?${new URLSearchParams({ type: r.report_type, kind: r.subject_kind, id: r.subject_id })}`}
+                            className="block truncate text-sm font-medium hover:text-primary" title="Open this record's information / write another report on it">
+                            {r.subject_label}
+                          </Link>
+                        )}
+                        <p className="truncate text-sm text-muted-foreground" title={r.summary}>
                           {r.summary ?? <span className="text-muted-foreground italic">No summary</span>}
                         </p>
                       </td>

@@ -18,6 +18,10 @@ def rolling_average(values: List[float], window: int = 3) -> List[float]:
 
 
 def ar_balance_series(client: DBClient = db, max_points: int = 12) -> List[Dict[str, Any]]:
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return [{"date": r["period"], "balance": r["balance"]} for r in books_analytics.ar_by_month(max_points)]
     batch_id = get_sage_kpi_batch_id()
     q = client.table("sage_ar_snapshot").select("date,balance")
     if batch_id:

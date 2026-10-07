@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { DrillLink } from "@/components/books/kit";
 import { motionVariants } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -437,8 +438,6 @@ export default function FinanceAR() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      // Background: enrich P&L intelligence via ReportGenerationAgent
-      void api.reports.generate({ report_type: "pl", intent_text: "generate profit and loss report" }).catch(() => {});
     } catch (err: any) {
       toast({ title: "PDF export failed", description: err.message, variant: "destructive" });
     } finally {
@@ -491,8 +490,6 @@ export default function FinanceAR() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      // Background: enrich payroll intelligence via ReportGenerationAgent
-      void api.reports.generate({ report_type: "payroll", intent_text: "generate payroll report" }).catch(() => {});
     } catch (err: any) {
       toast({ title: "Payroll PDF export failed", description: err.message, variant: "destructive" });
     } finally {
@@ -551,9 +548,9 @@ export default function FinanceAR() {
       {/* Header */}
       <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">AR & Alerts</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Credit Control &amp; Alerts</h1>
           <p className="text-sm text-muted-foreground">
-            Accounts receivable aging, threshold alerts, invoice matching, P&L, cash flow &amp; payroll
+            Receivables ageing, threshold alerts, credit risk, cash-flow forecast, P&amp;L and payroll, from ACE Books
           </p>
         </div>
         {triggeredAlerts.length > 0 && (
@@ -581,7 +578,7 @@ export default function FinanceAR() {
               <div key={i} className="text-sm flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
                 <span>
-                  <strong>{a.customer_id}</strong>: outstanding{" "}
+                  <strong><DrillLink to={a.ace_customer_id ? { type: "customer", id: String(a.ace_customer_id), label: a.name ?? a.customer_id } : null}>{a.name ?? a.customer_id}</DrillLink></strong>: outstanding{" "}
                   <strong>{fmt(a.outstanding_balance)}</strong> — {a.days_overdue} days overdue
                   {a.rule_description && ` (${a.rule_description})`}
                 </span>
@@ -596,6 +593,11 @@ export default function FinanceAR() {
         </Card>
       )}
 
+      <p className="text-xs text-muted-foreground">
+        Figures come from ACE Books (open items aged by due date, credits netted) — the same numbers as ACE Books ›
+        Sales › Aged receivables. Click a customer to open their account.
+      </p>
+
       <Tabs defaultValue="aging">
         <TabsList className="mb-4">
           <TabsTrigger value="aging">AR Aging</TabsTrigger>
@@ -607,7 +609,6 @@ export default function FinanceAR() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="match">Invoice Match</TabsTrigger>
           <TabsTrigger value="pl">P&L Report</TabsTrigger>
           <TabsTrigger value="cashflow">Cash Flow</TabsTrigger>
           <TabsTrigger value="payroll">Payroll</TabsTrigger>
@@ -690,7 +691,10 @@ export default function FinanceAR() {
                               <ChevronRight className="w-4 h-4 text-muted-foreground" />
                             )}
                           </TableCell>
-                          <TableCell className="font-medium">{c.customer_id}</TableCell>
+                          <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                            <DrillLink to={c.ace_customer_id ? { type: "customer", id: String(c.ace_customer_id), label: c.name ?? c.customer_id } : null}>{c.name ?? c.customer_id}</DrillLink>
+                            {c.name && <div className="text-[11px] font-normal text-muted-foreground">{c.customer_id}</div>}
+                          </TableCell>
                           <TableCell className="text-right font-mono">
                             {fmt(c.total_balance)}
                           </TableCell>
@@ -752,120 +756,6 @@ export default function FinanceAR() {
         {/* ================================================================ */}
         {/* TAB: INVOICE MATCH                                                */}
         {/* ================================================================ */}
-        <TabsContent value="match" className="space-y-4">
-          <div className="flex items-end gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Period (YYYY-MM, optional)
-              </label>
-              <Input
-                placeholder="e.g. 2025-03"
-                value={matchPeriod}
-                onChange={(e) => setMatchPeriod(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <Button onClick={handleMatch} disabled={matchLoading}>
-              {matchLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-              Run Match
-            </Button>
-          </div>
-
-          {matchResult && (
-            <div className="space-y-4">
-              {/* Summary row */}
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "Matched", value: matchResult.summary?.matched_count, color: "text-green-500" },
-                  { label: "Unmatched", value: matchResult.summary?.unmatched_count, color: "text-yellow-500" },
-                  { label: "Discrepancies", value: matchResult.summary?.discrepancy_count, color: "text-red-500" },
-                ].map(({ label, value, color }) => (
-                  <Card key={label} className="text-center py-4">
-                    <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">{label}</p>
-                    <p className={`text-2xl font-bold ${color}`}>{value ?? 0}</p>
-                  </Card>
-                ))}
-              </div>
-
-              {/* Discrepancies detail */}
-              {(matchResult.discrepancies?.length ?? 0) > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-2 text-destructive">
-                    Discrepancies ({matchResult.discrepancies.length})
-                  </h3>
-                  <div className="rounded-xl border border-destructive/30 overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Invoice ID</TableHead>
-                          <TableHead>Customer</TableHead>
-                          <TableHead className="text-right">Invoice Amt</TableHead>
-                          <TableHead className="text-right">GL Payment</TableHead>
-                          <TableHead>Issue</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {matchResult.discrepancies.map((d: any, i: number) => (
-                          <TableRow key={i}>
-                            <TableCell className="font-mono text-xs">{d.invoice_id}</TableCell>
-                            <TableCell>{d.customer_id}</TableCell>
-                            <TableCell className="text-right font-mono">{fmt(d.invoice_amount)}</TableCell>
-                            <TableCell className="text-right font-mono">{fmt(d.gl_payment_found)}</TableCell>
-                            <TableCell>
-                              <Badge variant="destructive" className="text-xs">
-                                {d.issue?.replace(/_/g, " ")}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
-              {/* Unmatched invoices */}
-              {(matchResult.unmatched?.length ?? 0) > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-2 text-yellow-600 dark:text-yellow-400">
-                    Unmatched Invoices ({matchResult.unmatched.length})
-                  </h3>
-                  <div className="rounded-xl border border-border overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Invoice ID</TableHead>
-                          <TableHead>Customer</TableHead>
-                          <TableHead className="text-right">Amount</TableHead>
-                          <TableHead className="text-right">Balance</TableHead>
-                          <TableHead>Due Date</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {matchResult.unmatched.map((inv: any, i: number) => (
-                          <TableRow key={i}>
-                            <TableCell className="font-mono text-xs">{inv.invoice_id}</TableCell>
-                            <TableCell>{inv.customer_id}</TableCell>
-                            <TableCell className="text-right font-mono">{fmt(inv.invoice_amount)}</TableCell>
-                            <TableCell className="text-right font-mono">{fmt(inv.outstanding_balance)}</TableCell>
-                            <TableCell className="text-xs">{inv.due_date ?? "—"}</TableCell>
-                            <TableCell>
-                              <Badge variant="secondary" className="text-xs capitalize">{inv.status}</Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* ================================================================ */}
-        {/* TAB: P&L REPORT                                                   */}
         {/* ================================================================ */}
         <TabsContent value="pl" className="space-y-4">
           <div className="flex items-end gap-3 flex-wrap">
@@ -1335,7 +1225,10 @@ export default function FinanceAR() {
                         };
                         return (
                           <TableRow key={c.customer_id}>
-                            <TableCell className="font-mono text-xs">{c.customer_id}</TableCell>
+                            <TableCell className="text-xs">
+                              <DrillLink to={c.ace_customer_id ? { type: "customer", id: String(c.ace_customer_id), label: c.name ?? c.customer_id } : null}>{c.name ?? c.customer_id}</DrillLink>
+                              {c.name && <div className="font-mono text-[11px] text-muted-foreground">{c.customer_id}</div>}
+                            </TableCell>
                             <TableCell className="text-right font-mono">
                               {fmt(c.outstanding_balance)}
                             </TableCell>

@@ -33,7 +33,8 @@ class StaffCreateRequest(BaseModel):
 
     @validator('department')
     def validate_dept(cls, v):
-        allowed = {'Finance', 'Sales', 'Operations', 'HR', 'Management'}
+        from src.services.staff_workspace import DEPARTMENTS
+        allowed = set(DEPARTMENTS)
         if v not in allowed:
             raise ValueError(f"Department must be one of {allowed}")
         return v
@@ -60,13 +61,29 @@ def require_dept_read(request: Request) -> Dict[str, Any]:
     return verify_jwt(request)
 
 def require_timesheet_write(request: Request) -> Dict[str, Any]:
-    """Write access for Timesheets: Admin, HR, Ops, Management."""
-    payload = verify_jwt(request)
-    roles = payload.get("roles", [])
-    allowed = {"admin", "hr", "ops", "management"}
-    if not any(r in allowed for r in roles):
-        raise HTTPException(403, "Insufficient privileges to record timesheets")
-    return payload
+    """Anyone may record their own hours; HR / admin / management may record anyone's."""
+    return verify_jwt(request)
+
+
+def _resolve_timesheet_person(staff_or_user_id: str, user: Dict[str, Any]) -> str:
+    """The time tracker used to send the login id where a staff id was required, so every
+    clock-out failed on the foreign key. Accept either and resolve to the HR profile."""
+    from src.fin.db import q1, tx
+    from src.services.staff_workspace import ensure_profile
+    me = str(user.get("sub") or "")
+    privileged = bool({"admin", "hr", "management"} & set(user.get("roles") or []))
+    with tx() as conn:
+        s = q1(conn, "SELECT staff_id::text AS staff_id, user_id::text AS user_id FROM placeware_staff WHERE staff_id::text=%s",
+               (staff_or_user_id,))
+        if s:
+            if not privileged and s["user_id"] != me:
+                raise HTTPException(403, "You can only record your own hours")
+            return s["staff_id"]
+        if staff_or_user_id != me and not privileged:
+            raise HTTPException(403, "You can only record your own hours")
+        if not q1(conn, "SELECT 1 FROM placeware_users WHERE id::text=%s", (staff_or_user_id,)):
+            raise HTTPException(404, "Staff member not found")
+        return ensure_profile(conn, staff_or_user_id)
 
 # --- Staff Endpoints ---
 
@@ -173,9 +190,10 @@ async def submit_timesheet(
     user: Dict[str, Any] = Depends(require_timesheet_write)
 ):
     """Record a single timesheet entry."""
+    staff_id = _resolve_timesheet_person(entry.staff_id, user)
     try:
         data = record_timesheet_entry(
-            entry.staff_id, entry.date, entry.hours_worked, 
+            staff_id, entry.date, entry.hours_worked,
             entry.department, entry.activity_note, 
             recorded_by=user.get("sub", "api")
         )

@@ -205,8 +205,26 @@ def get_top_selling_items(limit: int = 10, company_id: Optional[str] = None, cli
 
     Labeled "Top Sellers -- All-Time" in the UI deliberately, not "recently
     popular" -- sage_invoice_lines_snapshot carries no date column at all,
-    so there is no real recency signal to build on.
+    so there is no real recency signal to build on. Once ACE Books is live the
+    ranking comes from dated sales lines (v_sales_lines) instead.
     """
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        top = books_analytics.top_selling_items(limit=limit * 3 if company_id else limit)
+        try:
+            inv_q = client.table("v_inventory").select("sku,name,current_stock,company_id")
+            if company_id:
+                inv_q = inv_q.eq("company_id", company_id)
+            inv_by_sku = {r["sku"]: r for r in (inv_q.in_("sku", [t["sku"] for t in top]).execute().data or [])}
+        except Exception:
+            inv_by_sku = {}
+        if company_id:
+            top = [t for t in top if t["sku"] in inv_by_sku]
+        for t in top:
+            meta = inv_by_sku.get(t["sku"], {})
+            t["name"], t["current_stock"], t["company_id"] = meta.get("name") or t["sku"], meta.get("current_stock"), meta.get("company_id")
+        return top[:limit]
     try:
         rows = (
             client.table("sage_invoice_lines_snapshot")
@@ -265,6 +283,10 @@ def get_top_customers_for_sku(member_skus: List[str], limit: int = 8, client: DB
     data_intel/soft_relationships.py's sold_items_to_customer edge."""
     if not member_skus:
         return []
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return books_analytics.top_customers_for_skus(member_skus, limit)
     try:
         rows = (
             client.table("sage_invoice_lines_snapshot")

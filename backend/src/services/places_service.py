@@ -358,15 +358,9 @@ def search_places(
     if osm_results:
         return osm_results
 
-    # ── Tier 3: Mock dataset (offline dev/demo) ───────────────────────────────
-    log.warning(
-        "Overpass returned no results — using mock lead data "
-        "(check network connectivity or try a larger radius)."
-    )
-    return [
-        {**_normalize_place(p), "places_score": _score_place(p), "source": "mock"}
-        for p in _MOCK_PLACES[:max(1, min(limit, len(_MOCK_PLACES)))]
-    ]
+    # No mock fallback: invented pharmacies were being saved as prospects. Nothing found = empty.
+    log.warning("Overpass returned no results for '%s' near '%s'", business_type, location)
+    return []
 
 
 def _search_google_places(
@@ -444,3 +438,161 @@ def _search_google_places(
         enriched.append(place)
 
     return enriched
+
+
+# ── Near a point (GPS) or a typed area — what the Lead Finder uses ─────────────
+
+def _geocode_ng(location: str) -> Optional[tuple]:
+    """Nominatim, restricted to Nigeria. Returns (lat, lng, label)."""
+    try:
+        resp = requests.get("https://nominatim.openstreetmap.org/search",
+                            params={"q": location, "format": "json", "limit": 1, "countrycodes": "ng"},
+                            headers={"User-Agent": "ACE/1.0 (contact@placeware.ng)"}, timeout=10)
+        resp.raise_for_status()
+        r = resp.json()
+        if r:
+            return float(r[0]["lat"]), float(r[0]["lon"]), r[0].get("display_name") or location
+    except Exception as exc:
+        log.warning("Nominatim geocode failed for '%s': %s", location, exc)
+    return None
+
+
+def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    import math
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = math.sin(math.radians(lat2 - lat1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lng2 - lng1) / 2) ** 2
+    return 2 * 6371000.0 * math.asin(math.sqrt(a))
+
+
+def search_places_near(lat: Optional[float] = None, lng: Optional[float] = None, location: str = "",
+                       business_type: str = "pharmacy", radius_m: int = 5000, limit: int = 10) -> dict:
+    """Real businesses of `business_type` within `radius_m` of the rep's position (GPS) or of a typed
+    area, nearest first, exactly `limit` of them at most. OpenStreetMap (free, no key). No mock data:
+    if nothing is found the list is empty and the caller says so."""
+    if lat is not None and lng is not None:
+        origin, label = (float(lat), float(lng)), "your location"
+    elif location:
+        g = _geocode_ng(location)
+        if not g:
+            raise ValueError(f"Could not find '{location}' in Nigeria. Try a town or area name, or use your location.")
+        origin, label = (g[0], g[1]), g[2]
+    else:
+        raise ValueError("Use your location or type an area")
+    tags = _OSM_TAG_MAP.get(business_type.lower().strip()) or [("amenity", business_type.lower()), ("shop", business_type.lower())]
+    olat, olng = origin
+    parts = "\n  ".join(f'node["{k}"="{v}"](around:{radius_m},{olat},{olng});\n  way["{k}"="{v}"](around:{radius_m},{olat},{olng});'
+                        for k, v in tags)
+    key = os.getenv("GOOGLE_PLACES_API_KEY", "").strip()
+    if key:
+        g = _google_nearby(olat, olng, business_type, radius_m, limit, key, label)
+        if g:
+            return {"places": g, "origin": {"lat": olat, "lng": olng}, "origin_label": label, "source": "google_places"}
+    cache_k = (round(olat, 3), round(olng, 3), business_type, radius_m)
+    hit = _NEAR_CACHE.get(cache_k)
+    if hit and time.time() - hit[0] < 900:
+        elements = hit[1]
+    else:
+        query = f"[out:json][timeout:25];\n(\n  {parts}\n);\nout center 400;"
+        elements = _overpass(query)
+        _NEAR_CACHE[cache_k] = (time.time(), elements)
+    found = []
+    for el in elements:
+        t = el.get("tags") or {}
+        name = t.get("name") or t.get("brand") or t.get("operator")
+        if not name:
+            continue
+        if el.get("type") == "node":
+            elat, elng = el.get("lat"), el.get("lon")
+        else:
+            c = el.get("center") or {}
+            elat, elng = c.get("lat"), c.get("lon")
+        if elat is None or elng is None:
+            continue
+        street = " ".join(x for x in [t.get("addr:housenumber"), t.get("addr:street")] if x)
+        area = t.get("addr:suburb") or t.get("addr:city") or t.get("addr:state") or ""
+        place = {
+            "place_id": f"osm-{el.get('type', 'node')}-{el.get('id')}",
+            "company_name": name,
+            "formatted_address": ", ".join(x for x in [street, area] if x) or None,
+            "lat": float(elat), "lng": float(elng),
+            "phone_number": t.get("phone") or t.get("contact:phone"),
+            "website": t.get("website") or t.get("contact:website"),
+            "opening_hours": t.get("opening_hours"),
+            "rating": None, "user_ratings_total": None,
+            "distance_m": round(_distance_m(olat, olng, float(elat), float(elng))),
+            "source": "openstreetmap",
+            "search_query": f"{business_type} within {radius_m / 1000:g} km of {label}",
+        }
+        place["places_score"] = _score_place(place)
+        found.append(place)
+    seen, uniq = set(), []
+    for p in sorted(found, key=lambda x: x["distance_m"]):
+        k = (p["company_name"].lower(), round(p["lat"], 4), round(p["lng"], 4))
+        if k not in seen:
+            seen.add(k)
+            uniq.append(p)
+    return {"places": uniq[:limit], "origin": {"lat": olat, "lng": olng}, "origin_label": label, "source": "openstreetmap"}
+
+
+# Public Overpass servers are often overloaded (504 / timeouts); try each in turn.
+OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
+_NEAR_CACHE: dict = {}
+
+
+class PlacesUnavailable(RuntimeError):
+    """No map service answered - the caller tells the rep to try again."""
+
+
+def _overpass(query: str) -> list:
+    last = None
+    for url in OVERPASS_MIRRORS:
+        try:
+            r = requests.post(url, data={"data": query}, headers={"User-Agent": "ACE/1.0 (contact@placeware.ng)"}, timeout=30)
+            if r.status_code == 200:
+                return r.json().get("elements", [])
+            last = f"{url} {r.status_code}"
+        except Exception as exc:
+            last = f"{url} {exc}"
+        log.warning("Overpass mirror failed: %s", last)
+    raise PlacesUnavailable("The map service (OpenStreetMap) is busy. Try again in a minute.")
+
+
+_GOOGLE_TYPES = {"pharmacy": "pharmacy", "hospital": "hospital", "clinic": "doctor", "healthcare": "health", "lab": "health", "distributor": "store"}
+
+
+def _google_nearby(lat: float, lng: float, business_type: str, radius_m: int, limit: int, key: str, label: str) -> list:
+    """Google Places Nearby Search around the rep, with phone numbers from Place Details."""
+    try:
+        params = {"location": f"{lat},{lng}", "radius": radius_m, "type": _GOOGLE_TYPES.get(business_type, "pharmacy"), "key": key}
+        r = requests.get(f"{PLACES_API_BASE}/nearbysearch/json", params=params, timeout=15)
+        r.raise_for_status()
+        results = r.json().get("results", [])
+    except Exception as exc:
+        log.warning("Google nearby search failed: %s", exc)
+        return []
+    out = []
+    for g in results:
+        loc = (g.get("geometry") or {}).get("location") or {}
+        if not loc:
+            continue
+        out.append({"place_id": g.get("place_id"), "company_name": g.get("name"), "formatted_address": g.get("vicinity"),
+                    "lat": loc.get("lat"), "lng": loc.get("lng"), "rating": g.get("rating"), "user_ratings_total": g.get("user_ratings_total"),
+                    "phone_number": None, "website": None, "opening_hours": None,
+                    "distance_m": round(_distance_m(lat, lng, loc["lat"], loc["lng"])), "source": "google_places",
+                    "search_query": f"{business_type} within {radius_m / 1000:g} km of {label}"})
+    out.sort(key=lambda x: x["distance_m"])
+    out = out[:limit]
+    for p in out:
+        try:
+            d = requests.get(f"{PLACES_API_BASE}/details/json", params={"place_id": p["place_id"], "fields": "formatted_phone_number,website", "key": key},
+                             timeout=10).json().get("result", {})
+            p["phone_number"], p["website"] = d.get("formatted_phone_number"), d.get("website")
+        except Exception:
+            pass
+        p["places_score"] = _score_place(p)
+    return out

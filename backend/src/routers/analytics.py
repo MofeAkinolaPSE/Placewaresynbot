@@ -419,6 +419,11 @@ async def get_gl_detail(
     """
     require_analytics_access(request)
     from src.db import db
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        rows = books_analytics.gl_detail(limit, offset, account_code)
+        return {"data": rows, "count": len(rows), "offset": offset, "limit": limit, "source": "ACE Books"}
     try:
         q = db.table("sage_gl_detail_snapshot").select(
             "id, account_code, account_name, txn_date, reference, journal_type, "
@@ -455,6 +460,12 @@ async def get_gl_account_summary(request: Request):
     """
     require_analytics_access(request)
     from src.db import db
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        rows = books_analytics.gl_account_summary()
+        return {"data": rows, "count": len(rows), "total_ending_balance": round(sum(float(r["ending_balance"] or 0) for r in rows), 2),
+                "source": "ACE Books"}
     try:
         resp = (
             db.table("sage_gl_account_summary_snapshot")
@@ -490,6 +501,11 @@ async def get_cash_register(
     """
     require_analytics_access(request)
     from src.db import db
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        rows = books_analytics.cash_register(limit, offset)
+        return {"data": rows, "count": len(rows), "offset": offset, "limit": limit, "source": "ACE Books"}
     try:
         resp = (
             db.table("sage_cash_register_snapshot")

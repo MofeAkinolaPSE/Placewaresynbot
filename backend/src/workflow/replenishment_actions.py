@@ -117,6 +117,13 @@ def mark_replenishment_received(
     except (TypeError, ValueError):
         qty = 0.0
 
+    from src.services.inventory import _held_in_books
+    if sku and qty > 0 and _held_in_books(sku):
+        # The delivery is recorded in ACE Books as a supplier bill (Inventory > Receive stock),
+        # which adds the stock with its cost, batch and the amount owed. Receipting the request
+        # here must not add it a second time.
+        logger.info("Replenishment %s received: stock for %s is added when its supplier bill is posted", request_id, sku)
+        qty = 0.0
     if sku and qty > 0:
         try:
             from src.services.inventory import record_inventory_event

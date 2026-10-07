@@ -1,10 +1,12 @@
 import Sidebar from "./Sidebar";
 import FloatingChat from "./FloatingChat";
-import { Outlet } from "react-router-dom";
-import { getSynbotConfig } from "@/lib/wp-config";
+import { Link, Outlet } from "react-router-dom";
+import { ClockPill } from "./staff/ws-kit";
+import { API_BASE_URL } from "@/lib/api-base";
+import { useAuth } from "./AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { Menu, Circle, ArrowLeft, ArrowRight } from "lucide-react";
+import { Menu, Circle, ArrowLeft, ArrowRight, Bell } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import ThemeToggle from "./ThemeToggle";
@@ -13,9 +15,12 @@ import { useBackForward } from "@/hooks/use-back-forward";
 const Layout = () => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [onlineListOpen, setOnlineListOpen] = useState(false);
-  const { role, apiBaseUrl, wpUserId } = getSynbotConfig();
-  const hasRole = typeof role === "string" && role.trim().length > 0;
-  const hasApiBase = typeof apiBaseUrl === "string" && apiBaseUrl.trim().length > 0;
+  // Role comes from the signed-in user's token (same source as the Sidebar),
+  // never from getSynbotConfig(): that falls back to localStorage
+  // "synbot_config", which is shared by every app ever served on this origin
+  // (https://localhost) and showed a stale "doctor" role from another build.
+  const { roles } = useAuth();
+  const roleLabel = roles.map((r) => r.replace(/_/g, " ")).join(", ");
 
   // In-app Back/Forward -- on every page via this shared Layout, so it
   // works the same regardless of whether you got here via the sidebar, a
@@ -34,6 +39,13 @@ const Layout = () => {
     refetchInterval: 30_000,
   });
   const onlineUsers = presenceData?.users ?? [];
+  // unread workspace notifications (requests, mentions, assignments) for the bell
+  const { data: inboxData } = useQuery({
+    queryKey: ["ws", "inbox", "all"],
+    queryFn: () => api.workspace.inbox("all"),
+    refetchInterval: 60_000,
+  });
+  const unread = inboxData?.counts?.unread ?? 0;
 
   return (
     <div className="pw-page-surface pw-safe-top flex w-full overflow-x-hidden">
@@ -78,13 +90,15 @@ const Layout = () => {
             <span className="font-semibold text-foreground">ACE</span>
             <span className="hidden opacity-40 sm:inline">·</span>
             <span className="hidden sm:inline">
-              Role: {hasRole ? role : <span className="text-destructive">unavailable</span>}
+              Role: {roleLabel ? <span className="capitalize">{roleLabel}</span> : <span className="text-destructive">unavailable</span>}
             </span>
-            {typeof wpUserId === "number" && (
-              <span className="hidden opacity-50 lg:inline">(WP User: {wpUserId})</span>
-            )}
           </div>
           <div className="flex items-center gap-2">
+            <ClockPill />
+            <Link to="/workspace?tab=inbox" title="Inbox" className="relative flex h-7 w-7 items-center justify-center rounded-md border border-border/40 bg-muted/30 hover:bg-muted/60">
+              <Bell className="h-3.5 w-3.5" />
+              {unread > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">{unread > 99 ? "99+" : unread}</span>}
+            </Link>
             <ThemeToggle />
             <div className="relative">
               <button
@@ -120,7 +134,7 @@ const Layout = () => {
             </div>
             <div className="hidden items-center gap-2 sm:flex">
               <div className="rounded-lg border border-border/40 bg-muted/30 px-2.5 py-1">
-                API: {hasApiBase ? apiBaseUrl : <span className="text-destructive">missing</span>}
+                API: {API_BASE_URL || "same origin"}
               </div>
             </div>
           </div>

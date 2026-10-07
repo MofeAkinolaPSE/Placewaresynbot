@@ -112,6 +112,17 @@ async def dashboard_workstation(response: Response, user: Dict[str, Any] = Depen
         logging.error(f"Workstation summary error: {e}")
         raise HTTPException(500, "Failed to load workstation summary")
 
+@router.get("/executive")
+def executive_overview(refresh: bool = False, user: Dict[str, Any] = Depends(require_executive)):
+    """The company on one page, from the modules that own each figure (services/executive.py)."""
+    from src.services.executive import overview
+    try:
+        return overview(refresh=refresh)
+    except Exception:
+        logging.getLogger(__name__).exception("executive overview failed")
+        raise HTTPException(500, "Executive overview is unavailable")
+
+
 @router.get("/executive-briefing")
 async def executive_briefing(response: Response, user: Dict[str, Any] = Depends(require_executive)):
     """

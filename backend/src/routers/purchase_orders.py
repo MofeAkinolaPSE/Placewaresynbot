@@ -17,7 +17,7 @@ except ImportError:
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
 
-_PROCUREMENT_ROLES = {"admin", "ops", "finance", "procurement"}
+_PROCUREMENT_ROLES = {"admin", "ops", "operations", "finance", "procurement", "management"}
 
 # POs stuck at "open" for this long past their expected delivery (or order
 # date, if that's missing too) are treated as stale/inactive rather than
@@ -125,7 +125,24 @@ async def list_purchase_orders(
 def compute_po_summary(client=db) -> Dict[str, Any]:
     """PO KPI summary -- extracted so the ACE Workstation aggregator
     (services/intelligence.py's get_workstation_summary()) can call it
-    directly instead of duplicating this query/status logic."""
+    directly instead of duplicating this query/status logic.
+
+    Once ACE Books is live the "purchase orders" are the stock orders
+    (services/stock_orders.py): the Sage snapshot this used to count is the
+    supplier-invoice history, not orders."""
+    from src.fin.readmodel import live
+    if live():
+        from src.services import stock_orders
+        orders = [o for o in stock_orders.list_orders(limit=2000) if o["status"] in ("recommended", "approved", "ordered")]
+        overdue = [o for o in orders if o["overdue"]]
+        return {
+            "total_pos": len(orders),
+            "open_pos": len(orders),
+            "total_value": sum(float(o["est_value"] or 0) for o in orders),
+            "open_value": sum(float(o["est_value"] or 0) for o in orders),
+            "overdue_pos": len(overdue),
+            "overdue_value": sum(float(o["est_value"] or 0) for o in overdue),
+        }
     today = _dt.date.today()
     batch = _latest_batch_for_table("sage_purchase_orders_snapshot")
     q = client.table("sage_purchase_orders_snapshot").select(
@@ -255,3 +272,102 @@ async def backfill_close_stale(user=Depends(verify_jwt)):
     except Exception:
         log.exception("Failed to backfill-close stale purchase orders")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ---------------------------------------------------------------------------
+# Stock orders, reorder plan, supplier purchases and directory (ACE Books)
+# ---------------------------------------------------------------------------
+
+from src.services import stock_orders as _so  # noqa: E402
+
+
+def _fail(exc: Exception, what: str):
+    if isinstance(exc, HTTPException):
+        raise exc
+    if isinstance(exc, LookupError):
+        raise HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, ValueError):
+        raise HTTPException(status_code=409, detail=str(exc))
+    log.exception(what)
+    raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/stock-orders/summary")
+async def stock_orders_summary(_u=Depends(_require_procurement)):
+    try:
+        return _so.summary()
+    except Exception as exc:
+        _fail(exc, "stock order summary failed")
+
+
+@router.get("/reorder-plan")
+async def reorder_plan(_u=Depends(_require_procurement)):
+    try:
+        return _so.reorder_plan()
+    except Exception as exc:
+        _fail(exc, "reorder plan failed")
+
+
+@router.get("/stock-orders")
+async def list_stock_orders(status: Optional[str] = None, limit: int = 300, _u=Depends(_require_procurement)):
+    try:
+        return {"data": _so.list_orders(status, min(max(limit, 1), 2000))}
+    except Exception as exc:
+        _fail(exc, "stock order list failed")
+
+
+class StockOrderCreate(BaseModel):
+    sku: str
+    qty: float
+    supplier_id: Optional[str] = None
+    unit_cost: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@router.post("/stock-orders")
+async def create_stock_order(payload: StockOrderCreate, user=Depends(_require_procurement)):
+    try:
+        row = _so.raise_order(payload.sku, payload.qty, user.get("sub"), payload.supplier_id, payload.unit_cost, payload.notes)
+        audit_event("stock_order_raised", {"sku": payload.sku, "qty": payload.qty, "order_id": row["id"]}, actor_id=user.get("sub"),
+                    event_class="procurement", action="raise_stock_order", subject_type="stock_order", subject_id=row["id"])
+        return row
+    except Exception as exc:
+        _fail(exc, "stock order create failed")
+
+
+class StockOrderAction(BaseModel):
+    qty: Optional[float] = None
+    supplier_id: Optional[str] = None
+    po_reference: Optional[str] = None
+    expected_date: Optional[_dt.date] = None
+    unit_cost: Optional[float] = None
+    reason: Optional[str] = None
+
+
+@router.post("/stock-orders/{order_id}/{action}")
+async def stock_order_action(order_id: str, action: Literal["approve", "order", "cancel"], payload: StockOrderAction,
+                             user=Depends(_require_procurement)):
+    try:
+        res = _so.update_order(order_id, action, user.get("sub"), **payload.dict())
+        audit_event(f"stock_order_{action}", {"order_id": order_id, **payload.dict(exclude_none=True)}, actor_id=user.get("sub"),
+                    event_class="procurement", action=f"{action}_stock_order", subject_type="stock_order", subject_id=order_id)
+        return res
+    except Exception as exc:
+        _fail(exc, "stock order action failed")
+
+
+@router.get("/purchases")
+async def supplier_purchases(search: str = "", supplier_id: Optional[str] = None, limit: int = 100, offset: int = 0,
+                             _u=Depends(_require_procurement)):
+    try:
+        return _so.purchases(search, supplier_id, min(max(limit, 1), 500), max(offset, 0))
+    except Exception as exc:
+        _fail(exc, "purchases list failed")
+
+
+@router.get("/suppliers")
+async def supplier_directory(_u=Depends(_require_procurement)):
+    try:
+        return _so.supplier_directory()
+    except Exception as exc:
+        _fail(exc, "supplier directory failed")

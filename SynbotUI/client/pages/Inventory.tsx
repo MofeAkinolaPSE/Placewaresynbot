@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react";
+import { books, newIdemKey } from "@/lib/books-api";
+import { SupplierPick } from "@/components/books/kit";
+import { DrillProvider } from "@/components/books/lineage";
+import { useDrill } from "@/components/books/drill-context";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -67,7 +71,15 @@ const STATUS_ORDER = ["critical", "warning", "adequate", "out_of_stock"];
 
 type InventorySearchResult = { sku?: string; name: string };
 
-const Inventory = () => {
+// The lineage sheet: a product opens with who bought it, every invoice line, purchases and batches.
+const Inventory = () => (
+  <DrillProvider>
+    <InventoryPage />
+  </DrillProvider>
+);
+
+const InventoryPage = () => {
+  const drill = useDrill();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -83,7 +95,20 @@ const Inventory = () => {
   const [addStockSubmitting, setAddStockSubmitting] = useState(false);
 
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
-  const [adjustment, setAdjustment] = useState({ sku: "", item_name: "", quantity_change: 0, event_type: "ADJUSTMENT", reference: "" });
+  const [adjustment, setAdjustment] = useState({ sku: "", item_name: "", quantity_change: 0, event_type: "DAMAGE", reference: "" });
+  // Receiving stock goes through ACE Books: a supplier delivery (bill) or stock found (adjustment).
+  const blankReceive = { mode: "delivery" as "delivery" | "found", supplier: null as any, invoice: "", unit_cost: "", batch: "", expiry: "" };
+  const [receive, setReceive] = useState(blankReceive);
+  // Prefill the unit cost with the item's last cost in ACE Books.
+  useEffect(() => {
+    if (!addStockItem) return;
+    books.get<any[]>("/products", { search: addStockItem.sku, limit: 5 })
+      .then((rows) => {
+        const p = (rows ?? []).find((r) => r.sku === addStockItem.sku);
+        if (p?.last_cost) setReceive((r) => ({ ...r, unit_cost: r.unit_cost || String(Number(p.last_cost).toFixed(2)) }));
+      })
+      .catch(() => undefined);
+  }, [addStockItem?.sku]);
   const [adjustmentSubmitting, setAdjustmentSubmitting] = useState(false);
 
   const invalidateAll = () => {
@@ -266,21 +291,21 @@ const Inventory = () => {
   // record permanently.
   const [busySku, setBusySku] = useState<string | null>(null);
   const writeOffMutation = useMutation({
+    // Stock value lives in ACE Books: a write-off is a stock adjustment there, approved by a
+    // second person; operational stock follows automatically when it is posted.
     mutationFn: (row: any) =>
-      api.inventory.addStock({
-        sku: row.sku,
-        quantity_change: -Math.abs(Number(row.units ?? row.current_stock ?? 0)),
-        event_type: (row.days_to_expiry ?? 0) < 0 ? "EXPIRY" : "DAMAGE",
-        reference: `Written off from inventory dashboard${
-          (row.days_to_expiry ?? 0) < 0 ? ` (expired ${Math.abs(row.days_to_expiry)}d)` : ""
-        }`,
+      books.post("/inventory/adjustments", {
+        adjustment_date: new Date().toISOString().slice(0, 10),
+        reason_code: (row.days_to_expiry ?? 0) < 0 ? "EXPIRY" : "DAMAGE",
+        notes: `Written off from the inventory dashboard${(row.days_to_expiry ?? 0) < 0 ? ` (expired ${Math.abs(row.days_to_expiry)}d)` : ""}`,
+        lines: [{ sku: row.sku, quantity: -Math.abs(Number(row.units ?? row.current_stock ?? 0)) }],
       }),
     onMutate: (row: any) => setBusySku(row.sku),
     onSettled: () => setBusySku(null),
     onSuccess: (_d, row: any) => {
       toast({
-        title: "Stock written off",
-        description: `${Number(row.units ?? 0).toLocaleString()} units of ${row.sku} removed from live stock and recorded.`,
+        title: "Write-off sent for approval",
+        description: `${Number(row.units ?? 0).toLocaleString()} units of ${row.sku}: approve it in ACE Books › Stock › Adjustments; stock and the books update together.`,
       });
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["inventory-analytics"] });
@@ -298,19 +323,29 @@ const Inventory = () => {
     }
     try {
       setAddStockSubmitting(true);
-      await api.inventory.addStock({
-        sku: addStockItem.sku,
-        quantity_change: qty,
-        event_type: "RESTOCK",
-        reference: entryRef || undefined,
-      });
-      toast({ title: "Stock Added", description: `${qty} units of ${addStockItem.name} added.` });
+      if (receive.mode === "delivery") {
+        // A delivery is a supplier bill in ACE Books: stock (with batch & expiry) and what we owe, in one posting.
+        const bill = await books.post("/payables/bills", {
+          supplier_id: receive.supplier?.id, supplier_invoice_number: receive.invoice, bill_date: new Date().toISOString().slice(0, 10),
+          notes: entryRef || undefined,
+          lines: [{ line_type: "ITEM", sku: addStockItem.sku, quantity: qty, unit_cost: receive.unit_cost || 0,
+                    batch_number: receive.batch || undefined, expiry_date: receive.expiry || undefined }],
+        }, newIdemKey());
+        toast({ title: "Stock received", description: `${qty} units of ${addStockItem.name}, posted as ${bill.bill_number} in ACE Books.` });
+      } else {
+        const adj = await books.post("/inventory/adjustments", {
+          adjustment_date: new Date().toISOString().slice(0, 10), reason_code: "EXCESS", notes: entryRef || "Stock found / count gain (Inventory page)",
+          lines: [{ sku: addStockItem.sku, quantity: qty, unit_cost: receive.unit_cost || undefined, batch_number: receive.batch || undefined }],
+        });
+        toast({ title: "Sent for approval", description: `${adj.adjustment_number}: approve it in ACE Books › Stock › Adjustments to add the stock.` });
+      }
       setAddStockItem(null);
       setEntryQty("");
       setEntryRef("");
+      setReceive(blankReceive);
       invalidateAll();
     } catch (err: any) {
-      toast({ title: "Failed to Add Stock", description: err?.message ?? "Unknown error", variant: "destructive" });
+      toast({ title: "Could not record the stock", description: err?.message ?? "Unknown error", variant: "destructive" });
     } finally {
       setAddStockSubmitting(false);
     }
@@ -321,17 +356,17 @@ const Inventory = () => {
       toast({ title: "Validation Error", description: "Item and Quantity Change are required", variant: "destructive" });
       return;
     }
+    const reduces = ["DAMAGE", "EXPIRY", "SHORTAGE"].includes(adjustment.event_type);
     try {
       setAdjustmentSubmitting(true);
-      await api.inventory.addStock({
-        sku: adjustment.sku,
-        quantity_change: adjustment.quantity_change,
-        event_type: adjustment.event_type,
-        reference: adjustment.reference || undefined,
+      const adj = await books.post("/inventory/adjustments", {
+        adjustment_date: new Date().toISOString().slice(0, 10), reason_code: adjustment.event_type,
+        notes: adjustment.reference || undefined,
+        lines: [{ sku: adjustment.sku, quantity: reduces ? -Math.abs(adjustment.quantity_change) : adjustment.quantity_change }],
       });
-      toast({ title: "Adjustment Recorded", description: `${adjustment.event_type} for ${adjustment.sku} recorded.` });
+      toast({ title: "Adjustment sent for approval", description: `${adj.adjustment_number} for ${adjustment.sku}: approve it in ACE Books › Stock › Adjustments.` });
       setAdjustmentOpen(false);
-      setAdjustment({ sku: "", item_name: "", quantity_change: 0, event_type: "ADJUSTMENT", reference: "" });
+      setAdjustment({ sku: "", item_name: "", quantity_change: 0, event_type: "DAMAGE", reference: "" });
       invalidateAll();
     } catch (err: any) {
       toast({ title: "Failed to Record Adjustment", description: err.message, variant: "destructive" });
@@ -388,11 +423,17 @@ const Inventory = () => {
                 onClick={() => setAddStockItem({ sku: m.sku, name: m.name })}
               >
                 <PlusCircle className="h-3 w-3 mr-1" />
-                Add
+                Receive
               </Button>
             </div>
           )
         )}
+        <div className="flex gap-3 pt-0.5">
+          <button type="button" className="text-[11px] text-primary hover:underline"
+                  onClick={() => drill?.open({ type: "product", id: m.sku, label: m.sku })}>
+            Invoices (sales & purchases)
+          </button>
+        </div>
       </div>
     );
   };
@@ -676,15 +717,16 @@ const Inventory = () => {
       <DetailSheet
         open={!!addStockItem}
         onOpenChange={(open) => { if (!open) setAddStockItem(null); }}
-        title="Add Stock"
-        description={addStockItem ? `Record incoming stock for ${addStockItem.name}` : undefined}
+        title="Receive stock"
+        description={addStockItem ? `Stock for ${addStockItem.name} is recorded in ACE Books, so its value, the supplier balance and live stock stay in step.` : undefined}
         icon={PlusCircle}
         footer={
           <>
             <Button variant="outline" onClick={() => setAddStockItem(null)}>Cancel</Button>
-            <Button onClick={handleAddStock} disabled={addStockSubmitting || !entryQty || Number(entryQty) <= 0}>
+            <Button onClick={handleAddStock} disabled={addStockSubmitting || !entryQty || Number(entryQty) <= 0 ||
+              (receive.mode === "delivery" && (!receive.supplier || !receive.invoice.trim() || !(Number(receive.unit_cost) > 0)))}>
               {addStockSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add Stock
+              {receive.mode === "delivery" ? "Post delivery" : "Send for approval"}
             </Button>
           </>
         }
@@ -701,19 +743,46 @@ const Inventory = () => {
           <Input id="add-stock-qty" type="number" min="1" step="1" className="h-8 text-xs"
             placeholder="e.g. 100" value={entryQty} onChange={(e) => setEntryQty(e.target.value)} />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="add-stock-ref" className="text-xs">Reference / PO#</Label>
-          <Input id="add-stock-ref" className="h-8 text-xs"
-            placeholder="Optional — e.g. PO-2024-001" value={entryRef} onChange={(e) => setEntryRef(e.target.value)} />
+        <div className="flex gap-2">
+          <Button size="sm" variant={receive.mode === "delivery" ? "default" : "outline"} onClick={() => setReceive({ ...receive, mode: "delivery" })}>Supplier delivery</Button>
+          <Button size="sm" variant={receive.mode === "found" ? "default" : "outline"} onClick={() => setReceive({ ...receive, mode: "found" })}>Stock found / count gain</Button>
         </div>
+        {receive.mode === "delivery" && (
+          <>
+            <SupplierPick value={receive.supplier} onChange={(v) => setReceive({ ...receive, supplier: v })} />
+            <div className="space-y-2">
+              <Label className="text-xs">Supplier invoice no. <span className="text-destructive">*</span></Label>
+              <Input className="h-8 text-xs" value={receive.invoice} onChange={(e) => setReceive({ ...receive, invoice: e.target.value })} placeholder="As printed on the supplier invoice" />
+            </div>
+          </>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-1"><Label className="text-xs">Unit cost ₦{receive.mode === "delivery" && <span className="text-destructive"> *</span>}</Label>
+            <Input className="h-8 text-xs" type="number" value={receive.unit_cost} onChange={(e) => setReceive({ ...receive, unit_cost: e.target.value })}
+                   placeholder={receive.mode === "found" ? "blank = last cost" : ""} /></div>
+          <div className="space-y-1"><Label className="text-xs">Batch</Label>
+            <Input className="h-8 text-xs" value={receive.batch} onChange={(e) => setReceive({ ...receive, batch: e.target.value })} /></div>
+          <div className="space-y-1"><Label className="text-xs">Expiry</Label>
+            <Input className="h-8 text-xs" type="date" value={receive.expiry} onChange={(e) => setReceive({ ...receive, expiry: e.target.value })} /></div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="add-stock-ref" className="text-xs">Notes / PO#</Label>
+          <Input id="add-stock-ref" className="h-8 text-xs"
+            placeholder="Optional" value={entryRef} onChange={(e) => setEntryRef(e.target.value)} />
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {receive.mode === "delivery"
+            ? "Posts a supplier bill in ACE Books: stock in (with batch and expiry), the amount owed to the supplier, and the live stock count."
+            : "Creates a stock adjustment in ACE Books for a second person to approve; the stock is added when it is approved."}
+        </p>
       </DetailSheet>
 
       {/* Log Adjustment */}
       <DetailSheet
         open={adjustmentOpen}
-        onOpenChange={(open) => { setAdjustmentOpen(open); if (!open) setAdjustment({ sku: "", item_name: "", quantity_change: 0, event_type: "ADJUSTMENT", reference: "" }); }}
+        onOpenChange={(open) => { setAdjustmentOpen(open); if (!open) setAdjustment({ sku: "", item_name: "", quantity_change: 0, event_type: "DAMAGE", reference: "" }); }}
         title="Log Stock Adjustment"
-        description="Record a sale, damage write-off, expiry, or manual adjustment."
+        description="Recorded in ACE Books for a second person to approve. Sales are invoices, and deliveries are received with Receive stock."
         icon={RotateCcw}
         footer={
           <>
@@ -744,11 +813,11 @@ const Inventory = () => {
           <Select value={adjustment.event_type} onValueChange={(val) => setAdjustment({ ...adjustment, event_type: val })}>
             <SelectTrigger id="adj-type"><SelectValue placeholder="Select type" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="SALE">Sale</SelectItem>
-              <SelectItem value="RESTOCK">Restock</SelectItem>
-              <SelectItem value="DAMAGE">Damage / Write-off</SelectItem>
-              <SelectItem value="EXPIRY">Expiry</SelectItem>
-              <SelectItem value="ADJUSTMENT">Adjustment</SelectItem>
+              <SelectItem value="DAMAGE">Damage / write-off (reduces)</SelectItem>
+              <SelectItem value="EXPIRY">Expiry (reduces)</SelectItem>
+              <SelectItem value="SHORTAGE">Shortage (reduces)</SelectItem>
+              <SelectItem value="EXCESS">Excess / found (adds)</SelectItem>
+              <SelectItem value="COUNT_CORRECTION">Count correction (+/−)</SelectItem>
             </SelectContent>
           </Select>
         </div>

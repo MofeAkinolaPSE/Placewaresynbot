@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Eye, Download, RefreshCw,
@@ -318,7 +318,9 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 // Tab: All Invoices
 // ---------------------------------------------------------------------------
 
-export function InvoicesTab() {
+/** `openInvoiceId`: open this invoice's detail as soon as it is set (e.g. one
+ *  just raised from Frontdesk's New Invoice sheet); `onOpened` clears it. */
+export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: string | null; onOpened?: () => void } = {}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -359,6 +361,14 @@ export function InvoicesTab() {
       setDetailData({ invoice: inv });
     }
   }
+
+  useEffect(() => {
+    if (!openInvoiceId) return;
+    queryClient.invalidateQueries({ queryKey: ["fd-invoices"] });
+    openDetail({ id: openInvoiceId } as Invoice);
+    onOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openInvoiceId]);
 
   // Realtime — this is what makes the queue "light up" for a QC/Finance/Ops
   // user without them having to poll: any transition anywhere refreshes the

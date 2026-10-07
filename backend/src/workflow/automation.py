@@ -69,6 +69,20 @@ class WorkflowAutomation:
     async def _run_all_checks(self):
         """Run all automation checks."""
         logger.debug("Running workflow automation checks...")
+
+        # Once ACE Books is the system of record these checks have better owners,
+        # and their inputs (placeware_inventory_snapshot, placeware_ar_ledger) are
+        # retired Sage snapshots - running them raised 753 reorder requests for
+        # dead catalogue items. Stock reordering is the live reorder plan
+        # (services/stock_orders.py), expiry is ACE Books batches/recalls, and
+        # credit risk is ACE Books Credit Control alert rules.
+        try:
+            from src.fin.readmodel import live
+            if live():
+                return
+        except Exception as e:
+            logger.warning(f"ACE Books live check failed, automation skipped: {e}")
+            return
         
         # 1. Check for low stock and trigger replenishment
         await self._check_low_stock()

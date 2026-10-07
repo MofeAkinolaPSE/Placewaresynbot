@@ -32,6 +32,8 @@ import { authClient } from "@/lib/auth-client";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SageExportPanel } from "@/components/sage/SageExportPanel";
 
 // ---------------------------------------------------------------------------
 // Types — slugs must match backend _REGISTRY exactly
@@ -48,7 +50,8 @@ type SageFileType =
   | "sales_invoice_lines"
   | "inventory_transactions"
   | "gl_journal_entries"
-  | "staff";
+  | "staff"
+  | "item_accounts";
 
 type CardStatus = "idle" | "uploading" | "success" | "error";
 
@@ -126,6 +129,12 @@ const DATASETS: {
     label: "Staff Registry",
     description: "Employee / staff master list",
     icon: Users,
+  },
+  {
+    id: "item_accounts",
+    label: "Item GL Accounts",
+    description: "Sage Inventory Item List template (ITEM.CSV) — needed for Export to Sage",
+    icon: Package,
   },
 ];
 
@@ -352,126 +361,35 @@ const SageImport = () => {
     >
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Sage CSV Import</h1>
+        <h1 className="text-3xl font-bold text-foreground">Sage Import / Export</h1>
         <p className="text-muted-foreground mt-2">
-          Import ERP data from Sage 50 into ACE — all 10 document types supported.
+          Legacy Sage 50 reference uploads and the export bridge. ACE Books is the system of record; use these only
+          for history or as a fallback.
         </p>
       </div>
 
-      {/* Daily Invoice Refresh — the primary recurring workflow */}
-      <div
-        className={`pw-surface-interactive rounded-xl p-6 space-y-4 border ${
-          arIsStale ? "border-warning/50" : "border-info/30"
-        }`}
-      >
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Daily Invoice Refresh</h2>
-            <p className="text-sm text-muted-foreground">
-              Export these from Sage 50 and upload here to keep AR aging, credit risk, and
-              customer profitability current. Recommended cadence: daily.
-            </p>
-          </div>
-          <div
-            className={`text-xs font-medium rounded-lg px-3 py-1.5 whitespace-nowrap ${
-              arLastImported === null
-                ? "bg-muted text-muted-foreground"
-                : arIsStale
-                ? "bg-warning/15 text-warning"
-                : "bg-success/15 text-success"
-            }`}
-          >
-            {arLastImported === null
-              ? "No invoice data uploaded yet"
-              : arDaysAgo === 0
-              ? "AR data updated today"
-              : `AR data last updated ${arDaysAgo} day${arDaysAgo === 1 ? "" : "s"} ago`}
-            {arIsStale && " — overdue for refresh"}
-          </div>
-        </div>
+      <Tabs defaultValue="import" className="space-y-8">
+        <TabsList>
+          <TabsTrigger value="import">Import from Sage</TabsTrigger>
+          <TabsTrigger value="export">Export to Sage</TabsTrigger>
+        </TabsList>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {(
-            [
-              {
-                id: "sales_invoices" as SageFileType,
-                label: "Customer Management Details",
-                description: "Required — invoice #, due date, outstanding balance per customer",
-                icon: FileText,
-                required: true,
-              },
-              {
-                id: "sales_invoice_lines" as SageFileType,
-                label: "Items Sold to Customers",
-                description: "Optional — keeps product-level sales & margin data fresh (CRM 360)",
-                icon: BarChart3,
-                required: false,
-              },
-            ] as const
-          ).map((slot) => {
-            const file = fileMap[slot.id];
-            const status = cardStatus[slot.id] ?? "idle";
-            const result = cardResult[slot.id];
-            const Icon = slot.icon;
-            return (
-              <div key={slot.id} className="rounded-lg border border-border/60 p-4 flex flex-col gap-2">
-                <input
-                  type="file"
-                  id={`file-daily-${slot.id}`}
-                  className="hidden"
-                  accept=".csv,.xlsx"
-                  onChange={(e) => handleFileChange(slot.id, e)}
-                />
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Icon className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">{slot.label}</span>
-                    {!slot.required && (
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">optional</span>
-                    )}
-                  </div>
-                  {getCardStatusIcon(status)}
-                </div>
-                <p className="text-xs text-muted-foreground">{slot.description}</p>
-                {file && (
-                  <p className="text-xs text-muted-foreground truncate" title={file.name}>
-                    📎 {file.name}
-                  </p>
-                )}
-                {result && (
-                  <p className="text-xs text-success font-medium">
-                    {result.rows_inserted.toLocaleString()} rows inserted
-                  </p>
-                )}
-                <div className="flex gap-2 mt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="flex-1 text-xs"
-                    onClick={() => document.getElementById(`file-daily-${slot.id}`)?.click()}
-                    disabled={status === "uploading"}
-                  >
-                    <File className="w-3 h-3 mr-1" />
-                    {file ? "Change" : "Choose File"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={status === "success" ? "secondary" : "default"}
-                    className="flex-1 text-xs"
-                    onClick={() => uploadCard(slot.id)}
-                    disabled={!file || status === "uploading"}
-                  >
-                    {status === "uploading" ? (
-                      <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
-                    ) : (
-                      "Upload"
-                    )}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <TabsContent value="export">
+          <SageExportPanel />
+        </TabsContent>
+
+        <TabsContent value="import" className="space-y-8">
+
+      {/* ACE Books is the system of record: no recurring Sage upload feeds the app any more. */}
+      <div className="pw-surface-interactive space-y-2 rounded-xl border border-info/30 p-6">
+        <h2 className="text-lg font-semibold text-foreground">ACE Books is the system of record</h2>
+        <p className="text-sm text-muted-foreground">
+          Since go-live (1 Jul 2026), receivables, credit risk, customer profitability, stock, CRM 360, reorder
+          predictions and every report read ACE Books directly, so there is no daily Sage upload to keep them current.
+          The Sage data up to the go-live date (balances and full sales/purchase history) is already loaded; the final
+          July-to-date Sage load goes through <strong>ACE Books › Setup &amp; Migration › Sage migration</strong>.
+          The uploads below only refresh Sage reference tables kept for history and are not needed day to day.
+        </p>
       </div>
 
       {/* Batch upload bar */}
@@ -847,6 +765,8 @@ const SageImport = () => {
           </Table>
         </div>
       </div>
+        </TabsContent>
+      </Tabs>
     </motion.div>
   );
 };

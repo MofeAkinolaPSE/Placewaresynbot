@@ -12,6 +12,8 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from src.middleware import verify_jwt
 from pydantic import BaseModel, Field
 
 from src.db import db
@@ -85,6 +87,7 @@ async def list_calendar_events(
     month: Optional[str] = Query(None, description="YYYY-MM format to filter by month"),
     event_type: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    user=Depends(verify_jwt),
 ):
     """List calendar events, optionally filtered by month or type."""
     try:
@@ -114,7 +117,7 @@ async def list_calendar_events(
 
 
 @router.post("/events")
-async def create_calendar_event(payload: CalendarEventCreate):
+async def create_calendar_event(payload: CalendarEventCreate, user=Depends(verify_jwt)):
     """Create a new calendar event."""
     try:
         data = {
@@ -128,7 +131,8 @@ async def create_calendar_event(payload: CalendarEventCreate):
             "attendees": json.dumps(payload.attendees or []),
             "metadata": json.dumps(payload.metadata or {}),
         }
-        
+        if user.get("sub") and len(str(user["sub"])) == 36:
+            data["created_by"] = user["sub"]
         result = db.table("placeware_calendar_events").insert(data).execute()
         inserted = result.data[0] if hasattr(result, 'data') and result.data else data
 
@@ -145,7 +149,7 @@ async def create_calendar_event(payload: CalendarEventCreate):
 
 
 @router.patch("/events/{event_id}")
-async def update_calendar_event(event_id: str, payload: CalendarEventUpdate):
+async def update_calendar_event(event_id: str, payload: CalendarEventUpdate, user=Depends(verify_jwt)):
     """Update an existing calendar event."""
     try:
         data = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -170,7 +174,7 @@ async def update_calendar_event(event_id: str, payload: CalendarEventUpdate):
 
 
 @router.delete("/events/{event_id}")
-async def delete_calendar_event(event_id: str):
+async def delete_calendar_event(event_id: str, user=Depends(verify_jwt)):
     """Delete a calendar event."""
     try:
         db.table("placeware_calendar_events").delete().eq("id", event_id).execute()
@@ -194,7 +198,7 @@ LOGISTICS_ALERT_WINDOW_DAYS = 30
 
 
 @router.get("/logistics/alerts")
-async def get_logistics_alerts(window_days: int = Query(30, ge=1, le=180)):
+async def get_logistics_alerts(window_days: int = Query(30, ge=1, le=180), user=Depends(verify_jwt)):
     """
     Return batches/events with expiry dates within the alert window.
     Scans metadata.batch_expiry on all logistics calendar events that start
@@ -262,6 +266,7 @@ async def list_tasks(
     priority: Optional[str] = Query(None),
     assigned_to: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    user=Depends(verify_jwt),
 ):
     """List tasks, optionally filtered by status, priority, or assignee."""
     try:
@@ -284,7 +289,7 @@ async def list_tasks(
 
 
 @tasks_router.post("")
-async def create_task(payload: TaskCreate):
+async def create_task(payload: TaskCreate, user=Depends(verify_jwt)):
     """Create a new task."""
     try:
         data = {
@@ -331,7 +336,7 @@ async def create_task(payload: TaskCreate):
 
 
 @tasks_router.patch("/{task_id}")
-async def update_task(task_id: str, payload: TaskUpdate):
+async def update_task(task_id: str, payload: TaskUpdate, user=Depends(verify_jwt)):
     """Update an existing task."""
     try:
         data = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -361,7 +366,7 @@ async def update_task(task_id: str, payload: TaskUpdate):
 
 
 @tasks_router.delete("/{task_id}")
-async def delete_task(task_id: str):
+async def delete_task(task_id: str, user=Depends(verify_jwt)):
     """Delete a task."""
     try:
         db.table("placeware_tasks").delete().eq("id", task_id).execute()

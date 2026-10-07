@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
-from src.middleware import verify_jwt, require_role
+from src.middleware import verify_jwt, require_role, require_any_role
 from pydantic import BaseModel
 from typing import Optional, Any
 from ..db import db
@@ -24,10 +24,9 @@ class CustomerIn(BaseModel):
 
 
 @router.post("/customers")
-async def create_customer(request: Request, payload: CustomerIn, _u=Depends(require_role("crm"))):
+async def create_customer(request: Request, payload: CustomerIn, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
-        row = payload.dict()
-        row["created_at"] = None
+        row = payload.dict()   # created_at is defaulted by the table (sending NULL failed)
         resp = db.table("customers").insert(row).execute()
         data = resp.data or []
         return data[0] if data else {"status": "ok"}
@@ -125,7 +124,7 @@ class CustomerUpdate(BaseModel):
 
 
 @router.patch("/customers/{customer_id}")
-async def update_customer(customer_id: int, payload: CustomerUpdate, _u=Depends(require_role("crm"))):
+async def update_customer(customer_id: int, payload: CustomerUpdate, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         updates = {k: v for k, v in payload.dict().items() if v is not None}
         if not updates:
@@ -229,7 +228,7 @@ def _normalize_seed(seed: dict[str, Any], source: str) -> dict[str, Any]:
 
 
 @router.post("/leads")
-async def create_lead(request: Request, payload: LeadIn, _u=Depends(require_role("crm"))):
+async def create_lead(request: Request, payload: LeadIn, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         lead_payload = payload.dict(exclude_none=True)
 
@@ -286,7 +285,7 @@ async def list_opps(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
 
 
 @router.post("/opportunities")
-async def create_opp(request: Request, payload: dict, _u=Depends(require_role("crm"))):
+async def create_opp(request: Request, payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         auth = verify_jwt(request)
         actor = auth.get("sub") or auth.get("user_id")
@@ -324,7 +323,7 @@ async def create_opp(request: Request, payload: dict, _u=Depends(require_role("c
 
 
 @router.post("/activities")
-async def create_activity(payload: dict, _u=Depends(require_role("crm"))):
+async def create_activity(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         resp = db.table("crm_activities").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
@@ -333,7 +332,7 @@ async def create_activity(payload: dict, _u=Depends(require_role("crm"))):
 
 
 @router.post("/tickets")
-async def create_ticket(payload: dict, _u=Depends(require_role("crm"))):
+async def create_ticket(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         resp = db.table("support_tickets").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
@@ -351,7 +350,7 @@ async def list_campaigns(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt
 
 
 @router.post("/forecasts")
-async def create_forecast(payload: dict, _u=Depends(require_role("crm"))):
+async def create_forecast(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         resp = db.table("revenue_forecasts").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
@@ -360,7 +359,7 @@ async def create_forecast(payload: dict, _u=Depends(require_role("crm"))):
 
 
 @router.post("/lead-finder/prospects/source")
-async def source_prospects(request: Request, payload: ProspectSourceIn, _u=Depends(require_role("crm"))):
+async def source_prospects(request: Request, payload: ProspectSourceIn, _u=Depends(require_any_role("sales", "management", "crm"))):
     auth = verify_jwt(request)
     actor = auth.get("sub") or auth.get("user_id")
     limit = max(1, min(int(payload.limit or 20), 100))
@@ -431,7 +430,7 @@ async def score_and_ingest_prospect(
     request: Request,
     prospect_id: str,
     payload: ProspectScoreIn,
-    _u=Depends(require_role("crm")),
+    _u=Depends(require_any_role("sales", "management", "crm")),
 ):
     auth = verify_jwt(request)
     actor = auth.get("sub") or auth.get("user_id")
@@ -509,7 +508,7 @@ async def score_and_ingest_prospect(
 
 
 @router.post("/lead-finder/assign")
-async def assign_lead_and_follow_up(request: Request, payload: LeadAssignIn, _u=Depends(require_role("crm"))):
+async def assign_lead_and_follow_up(request: Request, payload: LeadAssignIn, _u=Depends(require_any_role("sales", "management", "crm"))):
     auth = verify_jwt(request)
     actor = auth.get("sub") or auth.get("user_id")
     due_at = dt.datetime.utcnow() + dt.timedelta(hours=max(1, min(int(payload.follow_up_hours or 24), 24 * 30)))
@@ -633,7 +632,7 @@ async def lead_finder_pipeline(limit: int = 100, _u=Depends(verify_jwt)):
 async def search_leads_by_location(
     request: Request,
     payload: LocationSearchIn,
-    _u=Depends(require_role("crm")),
+    _u=Depends(require_any_role("sales", "management", "crm")),
 ):
     """
     Discover leads via Google Places API (or mock fallback).

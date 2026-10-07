@@ -141,14 +141,14 @@ const QUICK_ACTIONS: QuickAction[] = [
   { id: "invoice", label: "Create Invoice", icon: ReceiptText, roles: ["admin", "crm", "sales"], kind: "navigate", target: "/customers/workspace?action=new-request" },
   { id: "receipt", label: "Approve Receipt", icon: ClipboardList, roles: ["admin", "finance"], kind: "navigate", target: "/finance/ar/receipts" },
   { id: "inventory", label: "View Inventory", icon: Package, roles: ["admin", "ops", "operations", "finance", "sales"], kind: "navigate", target: "/inventory" },
-  { id: "timesheet", label: "Log Timesheet", icon: CalendarDays, roles: ["admin", "hr", "ops", "management"], kind: "navigate", target: "/staff/time-tracker" },
+  { id: "timesheet", label: "My Workspace & Clock", icon: CalendarDays, roles: ["admin", "hr", "ops", "operations", "management", "finance", "sales", "quality_assurance", "qa", "procurement"], kind: "navigate", target: "/workspace" },
 ];
 
 type InventorySearchResult = { sku?: string; name: string };
 
 const QUICK_LINKS: { label: string; href: string; icon: typeof BarChart3; roles?: string[] }[] = [
   { label: "Executive Briefing", href: "/executive", icon: BarChart3, roles: ["admin", "management", "finance"] },
-  { label: "Finance Analytics", href: "/finance/analytics", icon: DollarSign, roles: ["admin", "finance"] },
+  { label: "ACE Books", href: "/finance/books", icon: DollarSign, roles: ["admin", "finance", "management"] },
   { label: "Calendar", href: "/calendar", icon: CalendarDays },
   { label: "Compliance & QMS", href: "/compliance", icon: ShieldCheck, roles: ["admin", "quality_assurance", "qa", "operations", "ops", "management"] },
   { label: "Ask ACE", href: "/synbot", icon: MessageSquare },

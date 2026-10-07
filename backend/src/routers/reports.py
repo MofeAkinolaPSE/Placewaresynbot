@@ -163,6 +163,7 @@ def _build_report_docx(
         badge_ok=approved,
         meta=[
             ("Report Type", report_type.replace("_", " ").title()),
+            ("About", scope["subject"]) if scope.get("subject") else
             ("Report Period", f"{scope.get('date_from', 'N/A')} to {scope.get('date_to', 'N/A')}"),
             ("Entity / Scope", scope.get("client_name") or scope.get("entity_filter") or "Placeware Nigeria"),
             ("Generated", datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")),
@@ -650,7 +651,111 @@ async def generate_report_docx(
     )
 
 
-# â”€â”€ History endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Reports about a chosen record (the standard way to generate) ────────────────
+# 1. choose the report type   2. choose the exact record   3. review what the system
+# gathered (add notes)         4. generate - written from that record only, with the
+# record attached as the appendix.
+
+class FromRecordRequest(BaseModel):
+    report_type: str
+    kind: str
+    id: str
+    notes: Optional[str] = None
+
+
+def _subjects_call(fn, *a):
+    try:
+        return fn(*a)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/catalog")
+async def report_catalog(_user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+    from src.services.report_subjects import KIND_LABEL, REPORT_TYPES
+    return {"types": REPORT_TYPES, "kind_labels": KIND_LABEL}
+
+
+@router.get("/subjects/{kind}")
+async def report_subjects(kind: str, search: str = Query(""), _user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+    import asyncio
+    from src.services.report_subjects import list_subjects
+    return {"items": await asyncio.to_thread(_subjects_call, list_subjects, kind, search)}
+
+
+@router.get("/dossier")
+async def report_dossier(report_type: str, kind: str, id: str, _user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+    import asyncio
+    from src.services.report_subjects import dossier, sections_for
+    d = await asyncio.to_thread(_subjects_call, dossier, report_type, kind, id)
+    return {**d, "sections": [s["title"] for s in sections_for(report_type, kind)]}
+
+
+@router.post("/from-record", response_model=ReportResponse)
+async def report_from_record(body: FromRecordRequest, user: Dict[str, Any] = Depends(verify_jwt)) -> ReportResponse:
+    import asyncio
+    import json as _json
+    from src.services.report_subjects import TYPE_BY_KEY, dossier, dossier_markdown, sections_for
+
+    d = await asyncio.to_thread(_subjects_call, dossier, body.report_type, body.kind, body.id)
+    if (body.notes or "").strip():
+        d["texts"].append({"label": "Notes from the person requesting the report", "value": body.notes.strip()})
+    tname = TYPE_BY_KEY[body.report_type]["name"]
+    title = d["title"] if body.kind in ("period", "current") else f"{tname}: {d['title']}"
+
+    def run():
+        from src.agent_registry import get_agent
+        agent = get_agent("report_generation_agent", context={
+            "intent_text": f"{title}. Write it only from the record provided.",
+            "report_type": body.report_type, "dossier": d, "title": title,
+            "sections": sections_for(body.report_type, body.kind),
+            "subject": {"kind": body.kind, "id": body.id, "label": title, "notes": body.notes, "created_by": user.get("sub")},
+            "actor_id": user.get("sub") or "api_reports", "simulation": False, "enable_memory": False,
+        })
+        if agent is None:
+            raise HTTPException(status_code=503, detail="Report writer not available")
+        return agent.run()
+
+    try:
+        insight = await asyncio.to_thread(run)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("record report failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}")
+
+    metrics = insight.metrics or {}
+    appendix = dossier_markdown(d)
+    sections = list(metrics.get("section_results") or [])
+    sections.append({"section_id": "appendix", "title": "Appendix: Record Details",
+                     "content": appendix.split("\n", 2)[2], "confidence_score": 1.0, "status": "complete", "order": 99})
+    full_report = (metrics.get("full_report") or "") + "\n\n" + appendix
+    metrics["full_report"], metrics["section_results"] = full_report, sections
+    rid = metrics.get("report_memory_id")
+    if rid:
+        try:
+            from src.fin.db import ex as _ex, tx as _tx
+            with _tx() as conn:
+                _ex(conn, "UPDATE placeware_report_memory SET full_report=%s, section_data=%s::jsonb WHERE id=%s::uuid",
+                    (full_report, _json.dumps(sections, default=str), rid))
+        except Exception as exc:
+            logger.warning("could not attach record appendix: %s", exc)
+    return _insight_to_response(insight, full_report, title, body.report_type)
+
+
+@router.get("/for-record")
+async def reports_for_record(kind: str, id: str, _user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+    """Reports already written about this record."""
+    from src.fin.db import q as _q, tx as _tx
+    with _tx() as conn:
+        rows = _q(conn, """SELECT id::text AS id, report_type, subject_label, approval_status, created_at, quality_score
+                           FROM placeware_report_memory WHERE subject_kind=%s AND subject_id=%s ORDER BY created_at DESC""", (kind, id))
+    return {"reports": rows}
+
+
+# â”€â”€ History endpointsâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.get("/history")
 async def report_history(
@@ -668,7 +773,8 @@ async def report_history(
         q = (
             db.table("placeware_report_memory")
             .select("id, report_type, summary, quality_score, approval_status, "
-                    "approved_by, approved_at, template_version, session_id, created_at")
+                    "approved_by, approved_at, template_version, session_id, created_at, "
+                    "subject_kind, subject_id, subject_label, created_by")
             .order("created_at", desc=True)
             .range(offset, offset + limit - 1)
         )
@@ -693,7 +799,7 @@ async def report_detail_docx(
         res = (
             db.table("placeware_report_memory")
             .select("report_type, full_report, summary, section_data, "
-                    "approval_status, approved_by, approved_at, session_id")
+                    "approval_status, approved_by, approved_at, session_id, subject_label")
             .eq("id", report_id)
             .single()
             .execute()
@@ -708,7 +814,7 @@ async def report_detail_docx(
     row          = res.data
     full_report  = row.get("full_report") or row.get("summary", "No content available.")
     report_type  = row.get("report_type", "report")
-    section_title = get_template(report_type).get("output_title", report_type.replace("_", " ").title())
+    section_title = row.get("subject_label") or get_template(report_type).get("output_title", report_type.replace("_", " ").title())
     approved     = row.get("approval_status") == "approved"
 
     # Load section_data if stored
@@ -722,7 +828,7 @@ async def report_detail_docx(
             pass
 
     # Load scope_params from the linked session if available
-    scope_params: Dict[str, Any] = {}
+    scope_params: Dict[str, Any] = {"subject": row["subject_label"]} if row.get("subject_label") else {}
     session_id = row.get("session_id")
     if session_id:
         try:

@@ -125,7 +125,13 @@ def margin_driver_report(client: DBClient = db) -> Dict[str, Any]:
     """Decompose overall margin into named GL-bucket cost drivers with MoM trend.
 
     Returns overall_margin_pct, top 3 compression drivers, and full driver list.
+    Once ACE Books is live the drivers come from its ledger, classified by account
+    type (the 4-digit GL ranges below never matched this client's 5-digit chart).
     """
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return books_analytics.margin_drivers()
     from src.services.sage_adapter.service import _latest_batch_for_table
     gl_batch = get_sage_kpi_batch_id() or _latest_batch_for_table("sage_gl_snapshot", client)
 

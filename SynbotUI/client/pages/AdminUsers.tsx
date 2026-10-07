@@ -24,6 +24,7 @@ import { motion } from "framer-motion";
 import { motionTransitions } from "@/lib/motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { AccessPreview, defaultDepartment, RoleDef, RolePicker } from "@/components/admin/RolePicker";
 
 type UserRecord = {
   id: string;
@@ -36,11 +37,9 @@ type UserRecord = {
 
 const DEFAULT_ATTESTATION = "I attest this access management action is authorized and policy-compliant.";
 
-// Must match placeware_staff's CHECK constraint exactly (backend/migrations/
-// 000_full_schema_with_rls.sql) -- these are Staff Directory departments,
-// a different concept from the Access Role select below (which controls
-// RBAC via `roles`, not the HR directory).
-const STAFF_DEPARTMENTS = ["Finance", "Sales", "Operations", "HR", "Management"];
+// HR departments come from the server (GET /users/roles, staff_workspace.DEPARTMENTS) so
+// they always match the database; this is only the fallback while it loads.
+const FALLBACK_DEPARTMENTS = ["Finance", "Sales", "Frontdesk", "Operations", "Procurement", "Logistics", "Quality", "HR", "Management", "Admin"];
 
 const parseRoles = (value: string): string[] =>
   value
@@ -104,6 +103,25 @@ const AdminUsers = () => {
   const usersQuery = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => api.users.list(200),
+  });
+  const rolesQuery = useQuery({ queryKey: ["admin-roles"], queryFn: () => api.users.roles(), staleTime: 600_000 });
+  const catalog: RoleDef[] = rolesQuery.data?.roles ?? [];
+  const departments = rolesQuery.data?.departments ?? FALLBACK_DEPARTMENTS;
+  const roleLabel = (k: string) => catalog.find((r) => r.key === k)?.label ?? k;
+
+  // Edit access (roles) of an existing account
+  const [accessUserId, setAccessUserId] = useState("");
+  const [accessRoles, setAccessRoles] = useState<string[]>([]);
+  const [accessReason, setAccessReason] = useState("");
+  const openAccess = (u: UserRecord) => { setAccessUserId(u.id); setAccessRoles(u.roles); setAccessReason(""); };
+  const accessMutation = useMutation({
+    mutationFn: () => api.users.setRoles(accessUserId, accessRoles, accessReason.trim()),
+    onSuccess: () => {
+      toast.success("Access updated - it applies when their session next refreshes (or at their next sign-in)");
+      setAccessUserId("");
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (error: any) => toast.error(error?.message || "Failed to update access"),
   });
 
   const users = useMemo<UserRecord[]>(() => {
@@ -198,16 +216,14 @@ const AdminUsers = () => {
   });
 
   const pwdError = passwordStrengthError(newPassword);
-  // Staff Directory link is optional as a pair -- either both full name and
-  // department are filled, or neither. Matches POST /users' own 400 case.
-  const staffLinkIncomplete = Boolean(newFullName.trim()) !== Boolean(newDepartment);
+  // Name / department / job title are optional: every login gets an HR profile automatically
+  // (named from the email, department from the role) which HR can complete later.
   const canCreate =
     newEmail.trim().length > 0 &&
     pwdError === null &&
     parseRoles(newRoles).length > 0 &&
     createReason.trim().length > 0 &&
-    createAttestation.trim().length > 0 &&
-    !staffLinkIncomplete;
+    createAttestation.trim().length > 0;
 
   return (
     <motion.div
@@ -247,21 +263,18 @@ const AdminUsers = () => {
                 : "Min 10 chars · uppercase · lowercase · number · special char"}
             </p>
           </div>
-          <Select value={newRoles} onValueChange={(v) => setNewRoles(v)}>
-            <SelectTrigger aria-label="Roles">
-              <SelectValue placeholder="Select role" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="viewer">Viewer</SelectItem>
-              <SelectItem value="sales">Sales</SelectItem>
-              <SelectItem value="hr">HR</SelectItem>
-              <SelectItem value="ops">Operations</SelectItem>
-              <SelectItem value="finance">Finance</SelectItem>
-              <SelectItem value="quality_assurance">Quality Assurance</SelectItem>
-              <SelectItem value="management">Management</SelectItem>
-              <SelectItem value="admin">Admin</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="space-y-2 md:col-span-2">
+            <p className="text-sm font-medium text-foreground">Access - tick every role this person needs</p>
+            {rolesQuery.isLoading ? <p className="text-xs text-muted-foreground">Loading roles…</p> : (
+              <RolePicker catalog={catalog} value={parseRoles(newRoles)}
+                onChange={(r) => {
+                  setNewRoles(r.join(","));
+                  const d = defaultDepartment(catalog, r);
+                  if (d && (!newDepartment || newDepartment === defaultDepartment(catalog, parseRoles(newRoles)))) setNewDepartment(d);
+                }} />
+            )}
+            <AccessPreview roles={parseRoles(newRoles)} />
+          </div>
           <Input
             value={createReason}
             onChange={(e) => setCreateReason(e.target.value)}
@@ -271,9 +284,10 @@ const AdminUsers = () => {
         </div>
 
         <div className="pt-2 border-t">
-          <p className="text-sm font-medium text-foreground">Staff Directory link (optional)</p>
+          <p className="text-sm font-medium text-foreground">HR profile</p>
           <p className="text-xs text-muted-foreground mb-3">
-            Fill in both name and department to also create a matching card on the HR Staff Directory page. Leave both blank to create a login-only account (e.g. a service/rider account).
+            Every new account appears in HR → Staff directory and on the Team automatically. Fill these in now or let HR complete them later
+            (the name is taken from the email and the department from the role until then).
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
@@ -287,7 +301,7 @@ const AdminUsers = () => {
                 <SelectValue placeholder="Department" />
               </SelectTrigger>
               <SelectContent>
-                {STAFF_DEPARTMENTS.map((d) => (
+                {departments.map((d) => (
                   <SelectItem key={d} value={d}>{d}</SelectItem>
                 ))}
               </SelectContent>
@@ -299,11 +313,6 @@ const AdminUsers = () => {
               aria-label="Job title"
             />
           </div>
-          {staffLinkIncomplete && (
-            <p className="text-xs text-destructive mt-1">
-              Provide both full name and department to link a staff record, or clear both.
-            </p>
-          )}
         </div>
 
         <Textarea
@@ -360,7 +369,7 @@ const AdminUsers = () => {
                   </span>
                 </div>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Roles: <span className="text-foreground/80">{user.roles.join(", ") || "—"}</span>
+                  Access: <span className="text-foreground/80">{user.roles.map(roleLabel).join(", ") || "—"}</span>
                 </p>
                 {/* Buttons share the row when both fit and wrap to their own
                     line when they don't -- "Reset Password" cannot shrink. */}
@@ -380,6 +389,9 @@ const AdminUsers = () => {
                     onClick={() => setPasswordUserId(user.id)}
                   >
                     Reset Password
+                  </Button>
+                  <Button size="sm" variant="outline" className="min-w-[7.5rem] flex-1" onClick={() => openAccess(user)}>
+                    Edit access
                   </Button>
                 </div>
               </div>
@@ -402,7 +414,7 @@ const AdminUsers = () => {
                     <TableCell className="sticky left-0 z-10 bg-background font-medium">
                       <EmailText email={user.email} />
                     </TableCell>
-                    <TableCell>{user.roles.join(", ")}</TableCell>
+                    <TableCell>{user.roles.map(roleLabel).join(", ")}</TableCell>
                     <TableCell>{user.is_active ? "active" : "inactive"}</TableCell>
                     <TableCell className="space-x-2">
                       <Button
@@ -417,6 +429,7 @@ const AdminUsers = () => {
                       >
                         Reset Password
                       </Button>
+                      <Button variant="outline" onClick={() => openAccess(user)}>Edit access</Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -425,6 +438,23 @@ const AdminUsers = () => {
           </div>
         )}
       </div>
+
+      {accessUserId && (
+        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">
+            Edit access - {users.find((u) => u.id === accessUserId)?.email}
+          </h2>
+          <RolePicker catalog={catalog} value={accessRoles} onChange={setAccessRoles} />
+          <AccessPreview roles={accessRoles} />
+          <Input value={accessReason} onChange={(e) => setAccessReason(e.target.value)} placeholder="Reason for the change (recorded in the audit log)" aria-label="Access change reason" />
+          <div className="flex gap-3">
+            <Button onClick={() => accessMutation.mutate()} disabled={accessMutation.isPending || !accessRoles.length || !accessReason.trim()}>
+              {accessMutation.isPending ? "Saving..." : "Save access"}
+            </Button>
+            <Button variant="ghost" onClick={() => setAccessUserId("")}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {selectedUserId && (
         <div className="pw-surface-interactive rounded-xl p-6 space-y-4">

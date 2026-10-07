@@ -636,6 +636,33 @@ def _map_hr_payroll(row: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _map_item_accounts(row: Dict[str, str]) -> Dict[str, Any]:
+    """Maps Sage's Inventory Item List import/export template (ITEM.CSV) ->
+    sage_item_accounts. Headers arrive normalised by _norm_header, so
+    "G/L COGS/Salary Acct" is g_l_cogs_salary_acct. Feeds the Sage export's
+    per-item Sales/Inventory/COGS accounts (routers/sage_export.py)."""
+    item_id = (row.get("item_id") or "").strip()
+    if not item_id:
+        raise ValueError("Item ID is required")
+
+    def _s(key: str) -> Optional[str]:
+        return (row.get(key) or "").strip() or None
+
+    return {
+        "item_id": item_id,
+        "item_description": _s("item_description"),
+        "item_class": _s("item_class"),
+        "inactive": _safe_bool(row.get("inactive"), default=False),
+        "sales_account": _s("g_l_sales_account"),
+        "inventory_account": _s("g_l_inventory_account"),
+        "cogs_account": _s("g_l_cogs_salary_acct"),
+        "costing_method": _s("costing_method"),
+        "last_unit_cost": _safe_float(row.get("last_unit_cost")),
+        "sales_price_1": _safe_float(row.get("sales_price_1")),
+        "stocking_um": _s("stocking_u_m"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Registry: file_type → (target_table, mapper_fn)
 # ---------------------------------------------------------------------------
@@ -657,6 +684,7 @@ _REGISTRY: Dict[str, Tuple[str, Callable[[Dict[str, str]], Dict[str, Any]]]] = {
     "gl_detail": ("sage_gl_detail_snapshot", _map_gl_detail),
     "cash_register": ("sage_cash_register_snapshot", _map_cash_register),
     "gl_account_summary": ("sage_gl_account_summary_snapshot", _map_gl_account_summary),
+    "item_accounts": ("sage_item_accounts", _map_item_accounts),
 }
 
 # Human-friendly metadata for UI listing
@@ -765,6 +793,13 @@ SUPPORTED_TYPES: List[Dict[str, Any]] = [
         "description": "Per-account beginning and ending balances (Financial Statements export). Required: account_code.",
         "target_table": "sage_gl_account_summary_snapshot",
         "required_columns": ["account_code"],
+    },
+    {
+        "file_type": "item_accounts",
+        "label": "Item GL Accounts (for Sage export)",
+        "description": "Sage's Inventory Item List template export (ITEM.CSV). Gives each item its Sales/Inventory/COGS accounts so ACE can build Sage Sales Journal imports.",
+        "target_table": "sage_item_accounts",
+        "required_columns": ["Item ID", "G/L Sales Account", "G/L Inventory Account", "G/L COGS/Salary Acct"],
     },
 ]
 
@@ -1051,6 +1086,8 @@ async def upload_csv(
     # history so the tables don't grow unbounded across many upload cycles.
     if file_type in ("sales_invoices", "sales_invoice_lines") and rows_inserted > 0:
         _prune_old_batches(target_table, keep=14)
+    if file_type == "item_accounts" and rows_inserted > 0:
+        _prune_old_batches(target_table, keep=3)
 
     # ── 6b. Mirror purchase orders into AP snapshot ───────────────────────────
     # AP data originates from purchase_orders.csv — open POs represent payables.

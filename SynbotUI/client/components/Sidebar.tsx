@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   DollarSign,
+  BookOpen,
   BarChart3,
   FileText,
   Upload,
@@ -50,9 +51,9 @@ type SidebarProps = {
   onMobileClose: () => void;
 };
 
-type NavChild = { label: string; href: string };
+export type NavChild = { label: string; href: string; roles?: string[] };
 
-type NavItem = {
+export type NavItem = {
   label: string;
   icon: React.ElementType;
   href?: string;
@@ -62,78 +63,72 @@ type NavItem = {
   aiPulse?: boolean;
 };
 
-const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
-  const location = useLocation();
-  const { roles, logout } = useAuth();
-
-  // Track which collapsible groups are open
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-
-  const toggleGroup = (label: string) => {
-    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
-  };
-
-  const isActive = (path: string) => location.pathname === path;
-  const isActiveGroup = (paths: string[]) =>
-    paths.some((p) => location.pathname.startsWith(p));
-
-  const navItems: NavItem[] = [
+export const NAV_ITEMS: NavItem[] = [
+    {
+      // Everyone's home: day, tasks, requests, messages, work clock, progress.
+      label: "My Workspace",
+      icon: ClipboardList,
+      href: "/workspace",
+    },
     {
       label: "Dashboard",
       icon: LayoutDashboard,
       href: "/",
     },
     {
-      label: "Executive Summary",
+      label: "Executive Overview",
       icon: BarChart3,
       href: "/executive",
       roles: ["admin", "management", "finance"],
     },
     {
-      label: "Finance",
-      icon: DollarSign,
-      roles: ["admin", "finance"],
+      label: "ACE Books",
+      icon: BookOpen,
+      roles: ["admin", "finance", "management"],
       children: [
-        { label: "Analytics", href: "/finance/analytics" },
-        { label: "Reports", href: "/finance/reports" },
-        { label: "AR & Alerts", href: "/finance/ar" },
-        { label: "Customer Receipts", href: "/finance/ar/receipts" },
-        { label: "Vendor Payments", href: "/finance/vendor-payments" },
-        { label: "Budget", href: "/finance/budget" },
-        { label: "Sage Import", href: "/finance/sage-import" },
+        { label: "Finance Control Tower", href: "/finance/books" },
+        { label: "Sales & Receivables", href: "/finance/books/sales" },
+        { label: "Purchases & Payables", href: "/finance/books/purchases" },
+        { label: "Stock", href: "/finance/books/stock" },
+        { label: "Banking", href: "/finance/books/banking" },
+        { label: "Journals & Ledger", href: "/finance/books/ledger" },
+        { label: "Financial Statements", href: "/finance/books/statements" },
+        { label: "Report Center", href: "/finance/books/reports" },
+        { label: "Credit Control & Alerts", href: "/finance/ar" },
+        { label: "Fixed Assets", href: "/finance/books/assets" },
+        { label: "Close & Controls", href: "/finance/books/close" },
+        { label: "Setup & Migration", href: "/finance/books/setup" },
+        { label: "Sage Import / Export", href: "/finance/sage-import" },
       ],
     },
     {
       label: "HR",
       icon: Users,
       href: "/hr",
-      roles: ["admin", "hr"],
+      roles: ["admin", "hr", "management"],
     },
     {
-      label: "Staff Dashboard",
-      icon: ClipboardList,
-      roles: ["admin", "hr", "ops", "management"],
-      children: [
-        { label: "Dashboard", href: "/staff/dashboard" },
-        { label: "Time Tracker", href: "/staff/time-tracker" },
-        { label: "Collaboration", href: "/staff/collaboration" },
-      ],
-    },
-    {
-      label: "Inventory",
+      // Stock, quality control and compliance are one department: they act on the same
+      // batches and stock, all recorded in ACE Books (see services/quality_hub.py).
+      label: "Inventory & Quality",
       icon: Package,
-      href: "/inventory",
-      roles: ["admin", "ops", "operations", "finance", "sales"],
+      roles: ["admin", "ops", "operations", "procurement", "finance", "sales", "quality_assurance", "qa", "management"],
+      children: [
+        { label: "Overview", href: "/quality" },
+        { label: "Stock", href: "/inventory" },
+        { label: "Quality Control", href: "/quality-control", roles: ["admin", "quality_assurance", "qa", "management"] },
+        { label: "Compliance & QMS", href: "/compliance", roles: ["admin", "quality_assurance", "qa", "operations", "ops", "management"] },
+      ],
     },
     {
       label: "Operations",
       icon: Factory,
-      roles: ["admin", "ops", "operations"],
+      roles: ["admin", "ops", "operations", "procurement", "management"],
       children: [
         { label: "Overview", href: "/operations" },
-        { label: "Project Controls", href: "/operations/project-controls" },
+        { label: "Project Controls", href: "/operations/project-controls", roles: ["admin", "ops", "operations", "management"] },
         { label: "Suppliers", href: "/operations/suppliers" },
-        { label: "Purchase Orders", href: "/operations/purchase-orders" },
+        { label: "Stock Orders & Purchases", href: "/operations/purchase-orders" },
         { label: "Logistics Monitor", href: "/operations/logistics" },
       ],
     },
@@ -146,36 +141,20 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       roles: ["admin", "sales", "management", "finance"],
       children: [
         { label: "Overview", href: "/crm" },
+        { label: "Customers", href: "/crm/customers" },
         { label: "Customer Workspace", href: "/customers/workspace" },
         { label: "Sales Pipeline", href: "/crm/sales" },
-        { label: "Lead Finder", href: "/crm/lead-finder" },
-        { label: "Leads", href: "/admin/leads" },
+        { label: "Leads & Prospecting", href: "/crm/lead-finder" },
       ],
     },
     {
-      // Its own department, not a CRM sub-page. No `roles` gate: the backend
-      // requires only verify_jwt for walk-ins, invoice creation, listing and
-      // stock checks -- QC/Finance/dispatch keep their own role gates inside
-      // the page. There is deliberately no "frontdesk" role; ALLOWED_ROLES
-      // rejects unknown roles, so assigning one would break login.
+      // Its own department with its own role. Walk-ins, requests and stock checks need
+      // only a login; the QC, finance and dispatch steps inside keep their own gates,
+      // so everyone who works that pipeline also sees it.
       label: "Frontdesk",
       icon: ConciergeBell,
       href: "/frontdesk",
-    },
-    {
-      label: "Compliance & QMS",
-      icon: ShieldCheck,
-      href: "/compliance",
-      // Reconciled to match constants.COMPLIANCE_OPS_ROLES and
-      // ProtectedRoute.tsx's own /compliance rule -- previously excluded
-      // ops/operations even though the route itself already let them in.
-      roles: ["admin", "quality_assurance", "qa", "operations", "ops", "management"],
-    },
-    {
-      label: "Quality Control",
-      icon: ClipboardList,
-      href: "/quality-control",
-      roles: ["admin", "quality_assurance", "qa", "management"],
+      roles: ["admin", "frontdesk", "management", "sales", "finance", "ops", "operations", "quality_assurance", "qa"],
     },
     {
       label: "Workflow",
@@ -218,7 +197,8 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
     {
       label: "Reports",
       icon: ScrollText,
-      roles: ["admin", "management", "finance", "manager"],
+      // everyone who owns records they may need to report on
+      roles: ["admin", "management", "finance", "manager", "quality_assurance", "qa", "ops", "operations", "procurement", "sales", "hr", "frontdesk"],
       children: [
         { label: "Generate Report", href: "/reports/new" },
         { label: "Report Library", href: "/reports" },
@@ -230,14 +210,35 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       href: "/settings",
       roles: ["admin"],
     },
-  ];
+];
+
+/** What a set of roles sees in the sidebar - also used by User Access to preview a new account. */
+export function visibleNav(roles: string[]): { label: string; children: string[] }[] {
+  const ok = (allowed?: string[]) => !allowed || allowed.length === 0 || roles.some((r) => allowed.includes(r));
+  return NAV_ITEMS.filter((i) => ok(i.roles)).map((i) => ({
+    label: i.label,
+    children: (i.children ?? []).filter((c) => ok(c.roles)).map((c) => c.label),
+  }));
+}
+
+const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
+  const location = useLocation();
+  const { roles, logout } = useAuth();
+
+  // Track which collapsible groups are open
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
+  const isActive = (path: string) => location.pathname === path;
+  const isActiveGroup = (paths: string[]) =>
+    paths.some((p) => location.pathname.startsWith(p));
+
 
   const canView = (allowed?: string[]) => {
     if (!allowed || allowed.length === 0) return true;
     return roles.some((role) => allowed.includes(role));
   };
 
-  const visibleNavItems = navItems.filter((item) => canView(item.roles));
+  const visibleNavItems = NAV_ITEMS.filter((item) => canView(item.roles));
 
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -296,10 +297,11 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
             {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const hasChildren = !!item.children;
-              const groupOpen = !!openGroups[item.label];
               const childActive = hasChildren
                 ? isActiveGroup(item.children!.map((c) => c.href))
                 : false;
+              // A group opens by itself while one of its pages is showing, until the user closes it.
+              const groupOpen = openGroups[item.label] ?? childActive;
               const itemActive = !hasChildren && isActive(item.href ?? "");
 
               if (hasChildren) {
@@ -307,7 +309,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
                   <Collapsible
                     key={item.label}
                     open={groupOpen}
-                    onOpenChange={() => toggleGroup(item.label)}
+                    onOpenChange={(o) => setOpenGroups((prev) => ({ ...prev, [item.label]: o }))}
                   >
                     <CollapsibleTrigger asChild>
                       <button
@@ -330,7 +332,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
                     </CollapsibleTrigger>
                     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
                       <div className="ml-3 mt-0.5 space-y-0.5 border-l border-sidebar-border/50 pl-3 pb-1">
-                        {item.children!.map((child) => (
+                        {item.children!.filter((c) => !c.roles || roles.some((r) => c.roles!.includes(r))).map((child) => (
                           <Link
                             key={child.href}
                             to={child.href}

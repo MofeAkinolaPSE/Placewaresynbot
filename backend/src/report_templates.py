@@ -236,8 +236,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "output_title": "Financial Performance Report",
         "keywords": ["financial performance", "cashflow", "cash flow", "financial overview", "financial summary"],
         "tables": [
-            {"table": "sage_gl_snapshot", "select": "*", "order": "period", "limit": 100},
-            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 100},
+            {"table": "v_gl_monthly", "select": "*", "order": "period", "limit": 200},
+            {"table": "v_customer_invoices", "select": "*", "order": "date", "limit": 200},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -460,8 +460,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "net income", "profit & loss", "loss statement",
         ],
         "tables": [
-            {"table": "sage_gl_snapshot", "select": "*", "order": "period", "limit": 100},
-            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 100},
+            {"table": "v_gl_monthly", "select": "*", "order": "period", "limit": 200},
+            {"table": "v_customer_invoices", "select": "*", "order": "date", "limit": 200},
         ],
         "scope_fields": [
             _scope_field("date_from", "Period From", "date", required=True),
@@ -503,8 +503,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "overdue payments", "receivables", "ar report", "accounts receivable aging",
         ],
         "tables": [
-            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 100},
-            {"table": "sage_customers_snapshot", "select": "*", "limit": 50},
+            {"table": "v_customer_invoices", "select": "*", "order": "date", "limit": 200},
+            {"table": "v_customer_sales_summary", "select": "*", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("date_from", "As At Date (From)", "date"),
@@ -583,8 +583,8 @@ REPORT_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "proforma invoice", "proforma", "invoice generation",
         ],
         "tables": [
-            {"table": "sage_ar_snapshot", "select": "*", "order": "date", "limit": 10},
-            {"table": "sage_customers_snapshot", "select": "*", "limit": 50},
+            {"table": "v_ar_open", "select": "*", "order": "doc_date", "limit": 50},
+            {"table": "v_customer_sales_summary", "select": "*", "limit": 50},
         ],
         "scope_fields": [
             _scope_field("client_name", "Client / Company Name", "text", required=True),

@@ -41,19 +41,19 @@ SYSTEM_NODE_DEFINITIONS: List[Dict[str, Any]] = [
         "node_key": "database.ar_snapshot",
         "component": "database",
         "label": "AR Snapshot Table",
-        "expected_state": {"min_row_count": 1, "table": "sage_ar_snapshot"},
+        "expected_state": {"min_row_count": 1, "table": "fin_sales_invoices"},
     },
     {
         "node_key": "database.ap_snapshot",
         "component": "database",
         "label": "AP Snapshot Table",
-        "expected_state": {"min_row_count": 1, "table": "sage_ap_snapshot"},
+        "expected_state": {"min_row_count": 1, "table": "fin_supplier_bills"},
     },
     {
         "node_key": "database.gl_snapshot",
         "component": "database",
         "label": "GL Snapshot Table",
-        "expected_state": {"min_row_count": 1, "table": "sage_gl_snapshot"},
+        "expected_state": {"min_row_count": 1, "table": "fin_journal_lines"},
     },
     {
         "node_key": "database.inventory_snapshot",
@@ -67,7 +67,7 @@ SYSTEM_NODE_DEFINITIONS: List[Dict[str, Any]] = [
         "component": "pipeline",
         "label": "Finance Sage Import Pipeline",
         "expected_state": {
-            "required_tables": ["sage_ar_snapshot", "sage_gl_snapshot", "sage_ap_snapshot"],
+            "required_tables": ["fin_sales_invoices", "fin_journal_lines", "fin_supplier_bills"],
         },
     },
     # ── API layer ───────────────────────────────────────────────────────────

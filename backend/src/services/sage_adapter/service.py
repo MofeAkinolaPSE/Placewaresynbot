@@ -109,7 +109,12 @@ def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[D
     NOTE: We do NOT use get_sage_kpi_batch_id() here. The globally promoted KPI
     batch_id belongs to finance/GL imports and will never match rows in
     sage_inventory_snapshot, returning 0 rows. Go directly to the table instead.
+    Once ACE Books is live, stock comes from v_inventory (ACE Books FIFO stock);
+    the Sage stock batch lists every item twice and would double every quantity.
     """
+    from src.fin.readmodel import live
+    if live():
+        return _books_stock(client, limit=limit)
     try:
         resp = (
             client.table("sage_inventory_snapshot")
@@ -162,9 +167,27 @@ def latest_inventory_snapshot(client: DBClient = db, limit: int = 200) -> List[D
     return _enrich_with_items_metadata(result, client)
 
 
+def _books_stock(client: DBClient = db, limit: int = 200, skus: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Legacy inventory-snapshot shape, from ACE Books (v_inventory + FIFO valuation)."""
+    from src.fin.db import q as _q, tx as _tx
+    with _tx() as conn:
+        rows = _q(conn, """SELECT v.sku, v.name, v.current_stock AS quantity, v.expiry_date, v.batch_number, v.category, v.reorder_level,
+                                  CASE WHEN v.current_stock > 0 THEN ROUND(val.v / v.current_stock, 2) END AS unit_cost,
+                                  COALESCE(val.v, 0) AS valuation, now() AS imported_at, v.stock_source
+                           FROM v_inventory v
+                           LEFT JOIN (SELECT sku, SUM(qty_remaining*unit_cost) v FROM fin_cost_layers GROUP BY sku) val ON val.sku=v.sku
+                           WHERE (%s::text[] IS NULL OR v.sku = ANY(%s)) AND (%s::text[] IS NOT NULL OR v.current_stock <> 0)
+                           ORDER BY valuation DESC LIMIT %s""", (skus, skus, skus, limit if not skus else len(skus)))
+    return [{**r, "quantity": float(r["quantity"] or 0), "valuation": float(r["valuation"] or 0),
+             "unit_cost": float(r["unit_cost"]) if r["unit_cost"] is not None else None} for r in rows]
+
+
 def inventory_by_skus(skus: List[str], client: DBClient = db) -> List[Dict[str, Any]]:
     if not skus:
         return []
+    from src.fin.readmodel import live
+    if live():
+        return _books_stock(client, skus=list(skus))
     resp = (
         client.table("sage_inventory_snapshot")
         .select("sku,name,quantity,unit_cost,valuation,imported_at")
@@ -185,8 +208,13 @@ def inventory_by_skus(skus: List[str], client: DBClient = db) -> List[Dict[str, 
 @ttl_cache(ttl_seconds=600, ignore_kwargs=("client",), tags=("finance", "finance_trend"))
 def ar_trend_summary(client: DBClient = db, periods: int = 6) -> Dict[str, Any]:
     """Compute simple AR totals per period (last N periods).
-    Groups by Month (YYYY-MM).
+    Groups by Month (YYYY-MM). Once ACE Books is live: invoiced and still-open
+    amounts per invoice month from v_customer_invoices (Sage history + ACE Books).
     """
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return {"periods": books_analytics.ar_by_month(periods), "source": "ACE Books"}
     ar_batch = _latest_batch_for_table("sage_ar_snapshot", client)
     q = client.table("sage_ar_snapshot").select("date,amount,balance").gt("amount", 0)
     if ar_batch:
@@ -221,6 +249,11 @@ def kpis(client: DBClient = db) -> Dict[str, Any]:
     total_revenue sums credit-side rows for revenue accounts (4000-4999).
     total_cost sums debit-side rows for cost/expense accounts (5000-6999).
     """
+    # ACE Books is the system of record once live; Sage snapshots freeze at the cut-over.
+    from src.fin import readmodel
+    if readmodel.live():
+        return readmodel.kpis()
+
     import datetime
     today = datetime.date.today()
     # Resolve batch per table to avoid cross-table mismatches when CSV files
@@ -334,6 +367,11 @@ def ar_aging_buckets(client: DBClient = db) -> Dict[str, Any]:
     invoice date + DEFAULT_AR_TERMS_DAYS standard trade terms is used as the
     fallback; rows without either date are treated as current.
     """
+    # ACE Books is the system of record once live; Sage snapshots freeze at the cut-over.
+    from src.fin import readmodel
+    if readmodel.live():
+        return readmodel.ar_aging_buckets()
+
     import datetime
     today = datetime.date.today()
     def parse_date(d):
@@ -371,6 +409,11 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
     Bucket may be provided as "0_30", "0-30", "0-30 days" etc.
     Output aggregates invoices per customer with total balances and metadata.
     """
+    # ACE Books is the system of record once live; Sage snapshots freeze at the cut-over.
+    from src.fin import readmodel
+    if readmodel.live():
+        return readmodel.ar_aging_customers(bucket)
+
     import datetime
 
     today = datetime.date.today()
@@ -500,7 +543,11 @@ def ar_aging_customers(bucket: str, client: DBClient = db) -> List[Dict[str, Any
 
 @ttl_cache(ttl_seconds=120, ignore_kwargs=("client",), tags=("finance", "finance_gl"))
 def get_latest_gl_snapshot(limit: int = 1000, client: DBClient = db) -> List[Dict[str, Any]]:
-    """Return latest GL rows from snapshot table."""
+    """Return latest GL rows (ACE Books monthly ledger movement once live, else the Sage snapshot)."""
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        return books_analytics.gl_rows(limit=limit)
     # Always use the truly most-recent GL batch, matching kpis()'s resolution —
     # the promoted batch pointer is a single, coarse cross-table marker that
     # isn't guaranteed to be re-promoted on every import, so preferring it here
@@ -574,7 +621,17 @@ def get_invoices(
 
     Reads placeware_invoices (populated automatically when sales_invoices.csv
     is imported). Falls back to v_ar_invoices Silver view if the table is empty.
+    Once ACE Books is live: every invoice from v_customer_invoices.
     """
+    from src.fin.readmodel import live
+    if live():
+        from src.fin.db import q as _q, tx as _tx
+        with _tx() as conn:
+            rows = _q(conn, """SELECT invoice_id AS invoice_number, customer_id, customer_name, date AS invoice_date, due_date,
+                                      amount AS total_amount, balance AS balance_due, status, source
+                               FROM v_customer_invoices WHERE (%s::text IS NULL OR status=%s)
+                               ORDER BY date DESC LIMIT %s""", (status, status, limit))
+        return {"invoices": rows, "total": len(rows), "note": "ACE Books (Sage history to 30 Jun 2026 + ACE Books invoices)"}
     try:
         q = (
             client.table("placeware_invoices")

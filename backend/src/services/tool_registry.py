@@ -146,6 +146,14 @@ class ToolRegistry:
             )
         return out
 
+    def required_roles(self, name: str) -> list[str]:
+        td = self._tools.get(name)
+        return sorted(td.metadata.required_roles) if td else []
+
+    def available_in_mode(self, name: str, mode: str) -> bool:
+        td = self._tools.get(name)
+        return bool(td and mode in td.metadata.allowed_modes)
+
     def execute(
         self,
         name: str,
@@ -247,10 +255,13 @@ def get_reconciliation_status() -> dict:
     }
 
 
+# Finance and sales data come from ACE Books views (the Sage AR/AP/GL/item snapshots froze
+# at the cut-over and must not be used to answer questions about the business today).
 SCHEMA_ALLOW_LIST = [
     "customers", "suppliers", "crm_prospects", "customer_360",
-    "sage_items_snapshot", "sage_purchase_orders_snapshot", "sage_vendors_snapshot",
-    "sage_ar_snapshot", "sage_ap_snapshot", "sage_gl_snapshot", "sage_gl_transactions",
+    "v_inventory", "v_sales_lines", "v_customer_invoices", "v_ar_open", "v_customer_sales_summary", "v_gl_monthly",
+    "fin_products", "fin_batches", "fin_supplier_bills", "fin_accounts",
+    "sage_purchase_orders_snapshot",
     "temperature_logs", "placeware_storage_zones",
     "inventory_items", "stock_levels", "inventory_movements",
     "event_ledger", "opportunities", "supplier_deliveries",
@@ -269,7 +280,7 @@ def live_schema_summary() -> dict:
         except Exception:
             columns = ["(columns unavailable)"]
         try:
-            count_resp = _db.table(table).select("id", count="exact").limit(1).execute()
+            count_resp = _db.table(table).select("*", count="exact").limit(1).execute()
             row_count = count_resp.count if count_resp.count is not None else len(count_resp.data or [])
         except Exception:
             row_count = "unknown"
@@ -283,6 +294,26 @@ def live_schema_summary() -> dict:
 
 def build_default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
+
+    # ── Live tools over the rebuilt modules (services/ace_tools.py) ────────────
+    from . import ace_tools as at
+    FIN = {"admin", "management", "finance"}
+    ALL = {"admin", "management", "finance", "sales", "ops", "operations", "procurement", "quality_assurance", "qa", "hr", "frontdesk", "viewer"}
+    for name, fn, desc, dept, roles in [
+        ("getExecutiveOverview", at.executive_overview, "Company overview from ACE Books and every department: profit, cash, receivables, payables, stock, sales, compliance, people, what needs attention.", "management", FIN),
+        ("getCashPosition", at.cash_position, "Cash and bank balances by account from ACE Books, with reconciliation status.", "finance", FIN),
+        ("getCustomerAccount", at.customer_account, "One customer (named in the question): sales, last order, usual reorder gap, balance, past due, credit limit, products, invoices, deals.", "crm", {"admin", "management", "finance", "sales"}),
+        ("getSupplierAccount", at.supplier_account, "One supplier (named in the question): what we owe, what we buy and how often.", "operations", {"admin", "management", "finance", "procurement", "ops", "operations"}),
+        ("getProductStock", at.product_stock, "One product (named in the question): units, lots with expiry and status, value, sales, cover, stock orders.", "inventory", ALL),
+        ("getQualityStatus", at.quality_status, "Quality and compliance now: compliance score, open recalls, open deviations, audits, maintenance, batches awaiting release, expiry.", "quality", {"admin", "management", "quality_assurance", "qa", "ops", "operations", "finance"}),
+        ("getStockOrders", at.stock_orders_status, "Stock orders and reordering: what needs ordering, orders open with suppliers, overdue deliveries, what we owe suppliers.", "operations", {"admin", "management", "finance", "procurement", "ops", "operations"}),
+        ("getStockLoans", at.stock_loans, "Stock lent to customers and not yet returned, with due dates.", "inventory", {"admin", "management", "finance", "ops", "operations", "sales"}),
+        ("getPipeline", at.pipeline_status, "Sales pipeline: open deals by stage, win rate, follow-ups due, recently won.", "crm", {"admin", "management", "finance", "sales"}),
+        ("getTeamStatus", at.team_status, "Team: who is online and on the clock now, hours this week by person, timesheets awaiting approval.", "hr", {"admin", "management", "hr"}),
+        ("getMyWork", at.my_work, "The asking person's own day: tasks due, requests to answer, what they're waiting on, items for their role.", "workspace", ALL | {"admin"}),
+    ]:
+        registry.register(ToolMetadata(name=name, description=desc, department=dept, source=f"services.ace_tools.{fn.__name__}",
+                                       required_roles=roles, allowed_modes={"assistant", "executive"}), fn)
 
     registry.register(
         ToolMetadata(

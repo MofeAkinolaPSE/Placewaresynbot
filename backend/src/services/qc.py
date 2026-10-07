@@ -29,10 +29,10 @@ def get_qc_summary(client: DBClient = db) -> Dict[str, Any]:
     # 1. Products expiring within 30 days
     expiring_critical = 0
     try:
-        exp = get_expiring_inventory(thresholds=[90, 60, 30], client=client)
-        expiring_critical = sum(
-            1 for i in (exp.get("items") or []) if i.get("tier") == "critical"
-        )
+        # products (not Sage lot codes) with a lot expired or within 30 days, from ACE Books stock
+        from .quality_hub import expiry_by_product
+        s = expiry_by_product(30)["summary"]
+        expiring_critical = int(s.get("critical", {}).get("products", 0)) + int(s.get("expired", {}).get("products", 0))
     except Exception as exc:
         logger.warning("Expiry KPI error: %s", exc)
 

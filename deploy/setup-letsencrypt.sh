@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⚠ LINUX VM ONLY. On the Windows + Docker Desktop server use deploy/issue-cert.ps1
+#   instead: this script writes to host folders the nginx container cannot see
+#   (the container reads the placeware_ssl_certs Docker volume) and looks for a
+#   container named "placeware_frontend" (the real one is placeware-frontend.v1).
+#
 # deploy/setup-letsencrypt.sh — Obtain a browser-trusted TLS certificate via
 # Let's Encrypt and install it at /etc/ssl/placeware/ (same path as self-signed
 # cert, so nginx config never needs changing).

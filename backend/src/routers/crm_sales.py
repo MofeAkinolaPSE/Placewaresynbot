@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.db import db
-from src.middleware import verify_jwt, require_role
+from src.middleware import verify_jwt, require_role, require_any_role
 from src.constants import BOT_NAME, BOT_BRAND
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ class SalesTargetUpdateIn(BaseModel):
 
 def _actor_id(request) -> Optional[str]:  # type: ignore[return]
     try:
-        from src.middleware import verify_jwt
+        from src.middleware import verify_jwt, require_any_role
         auth = verify_jwt(request)
         return auth.get("sub") or auth.get("user_id")
     except Exception:
@@ -412,7 +412,7 @@ VALID_CHANNELS = {"email", "sms"}
 @router.post("/bulk-message", status_code=201)
 async def create_bulk_message(
     payload: BulkMessageIn,
-    request=Depends(require_role("crm")),   # type: ignore[assignment]
+    request=Depends(require_any_role("sales", "management", "crm")),   # type: ignore[assignment]
 ):
     """Queue a bulk SMS / Email send to selected recipients or a client segment."""
     channel = payload.channel.strip().lower()
@@ -631,6 +631,56 @@ _CRM_SYSTEM_PROMPT = (
 )
 
 
+def _live_crm_context() -> str:
+    """Customers (segment, last order, usual gap, sales, balance, risk) and open deals, from crm_hub."""
+    try:
+        from src.services import crm_hub
+        d = crm_hub.customer_directory()
+        p = crm_hub.pipeline()
+    except Exception as exc:
+        logger.warning("Ask ACE live context unavailable: %s", exc)
+        return ""
+    rows = sorted([c for c in d.get("customers") or [] if c.get("segment") != "never"],
+                  key=lambda c: -float(c.get("sales_12m") or 0))[:60]
+    lines = [f"Sales data as of {d.get('as_of')}. Customers on file: {d.get('total')}; by segment: {d.get('counts')}.",
+             "Top 60 buying customers (name | segment | last order | days since | usual gap days | reorder due in days | "
+             "sales 12m | trend % | balance | past due | risk):"]
+    for c in rows:
+        lines.append(f"{c['name']} | {c.get('segment')} | {c.get('last_order')} | {c.get('days_since_order')} | "
+                     f"{round(float(c['avg_gap_days'])) if c.get('avg_gap_days') else '-'} | {c.get('reorder_due_in')} | "
+                     f"₦{float(c.get('sales_12m') or 0):,.0f} | {c.get('trend_pct')} | ₦{float(c.get('balance') or 0):,.0f} | "
+                     f"₦{float(c.get('overdue') or 0):,.0f} | {'; '.join(c.get('risk_reasons') or []) or '-'}")
+    lines.append("Open deals (company | stage | value | last contact):")
+    for stage, deals in (p.get("board") or {}).items():
+        if stage in ("won", "lost"):
+            continue
+        for x in deals[:40]:
+            lines.append(f"{x.get('company_name')} | {stage} | ₦{float(x.get('expected_value') or 0):,.0f} | {x.get('last_contacted_at') or 'never'}")
+    return "\n".join(lines)
+
+
+def _answer_crm(query_text: str, context: str, user: dict) -> dict:
+    from src.services.ace_voice import clean_answer, core_prompt
+    answer = ""
+    try:
+        from src.llm_client import LLMClient
+        answer = LLMClient().generate_response(
+            context=context, question=query_text,
+            instruction=core_prompt(user.get("roles") or ["sales"])
+            + "\n\nYou are answering from the CRM data in the context only (customers from ACE Books sales, and the deal pipeline). "
+              "If the data doesn't cover the question, say so in one line.",
+        )
+    except Exception as exc:
+        logger.error("NLQ LLM error: %s", exc)
+        answer = "I couldn't process that right now. Try again in a moment."
+    answer = clean_answer(answer)
+    try:
+        db.table("crm_nlq_history").insert({"query_text": query_text, "response_text": answer}).execute()
+    except Exception:
+        pass
+    return {"query": query_text, "answer": answer}
+
+
 @router.post("/query")
 async def nlq_query(
     payload: NLQIn,
@@ -642,7 +692,12 @@ async def nlq_query(
     """
     query_text = payload.query.strip()
 
-    # Build lightweight CRM context snapshot for the LLM
+    # Live CRM context (same data as the CRM pages: ACE Books sales + the pipeline)
+    live = _live_crm_context()
+    if live:
+        return _answer_crm(query_text, live, _u)
+
+    # Fallback: lightweight CRM context snapshot for the LLM
     try:
         # Try extended lead columns (post-077), fall back gracefully
         try:
@@ -727,6 +782,8 @@ async def nlq_query(
     except Exception as exc:
         logger.error("NLQ LLM error: %s", exc)
         answer = "I could not process that query right now. Please try again shortly."
+    from src.services.ace_voice import clean_answer
+    answer = clean_answer(answer)
 
     # Log query to history (best-effort)
     try:
@@ -825,7 +882,7 @@ async def get_leaderboard(
 @router.post("/bulk-message/{job_id}/dispatch")
 async def dispatch_bulk_message(
     job_id: str,
-    request=Depends(require_role("crm")),   # type: ignore[assignment]
+    request=Depends(require_any_role("sales", "management", "crm")),   # type: ignore[assignment]
 ):
     """
     Trigger immediate dispatch of a queued bulk message job.
@@ -1071,7 +1128,7 @@ VALID_PERIOD_TYPES = {"weekly", "monthly", "quarterly"}
 @router.post("/targets", status_code=201)
 async def create_target(
     payload: SalesTargetIn,
-    request=Depends(require_role("crm")),  # type: ignore[assignment]
+    request=Depends(require_any_role("sales", "management", "crm")),  # type: ignore[assignment]
 ):
     """
     Set a sales target for a rep or the whole team.
@@ -1130,7 +1187,7 @@ async def list_targets(
 async def update_target(
     target_id: str,
     payload: SalesTargetUpdateIn,
-    request=Depends(require_role("crm")),  # type: ignore[assignment]
+    request=Depends(require_any_role("sales", "management", "crm")),  # type: ignore[assignment]
 ):
     """Update a target's value or deal count."""
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}

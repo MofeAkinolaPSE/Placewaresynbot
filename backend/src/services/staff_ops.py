@@ -25,6 +25,13 @@ def create_staff_member(
         "role": role,
         "status": "active"
     }
+    # link to the login with the same email, so the person's clock and tasks attach to this record
+    try:
+        u = client.table("placeware_users").select("id").eq("email", (email or "").strip().lower()).execute().data or []
+        if u:
+            payload["user_id"] = u[0]["id"]
+    except Exception:
+        pass
     resp = client.table(TABLE_STAFF).insert(payload).execute()
     return resp.data[0] if resp.data else {}
 
@@ -56,13 +63,16 @@ def record_timesheet_entry(
     client: DBClient = db
 ) -> Dict[str, Any]:
     """Record a single timesheet entry."""
+    staff = client.table(TABLE_STAFF).select("user_id").eq("staff_id", staff_id).execute().data or [{}]
     payload = {
         "staff_id": staff_id,
+        "user_id": staff[0].get("user_id"),
         "date": work_date.isoformat(),
         "hours_worked": hours,
         "department": department,
         "activity_note": note,
-        "recorded_by": recorded_by
+        "recorded_by": recorded_by,
+        "source": "manual",
     }
     resp = client.table(TABLE_TIMESHEETS).insert(payload).execute()
     return resp.data[0] if resp.data else {}
@@ -179,7 +189,7 @@ def sync_staff_batch(staff_rows: List[Dict[str, Any]], client: DBClient = db) ->
         }
         
         # simple validation for department as per constraint
-        if record["department"] not in ('Finance', 'Sales', 'Operations', 'HR', 'Management'):
+        if record["department"] not in ('Finance', 'Sales', 'Operations', 'Procurement', 'Logistics', 'Quality', 'HR', 'Management', 'Admin'):
             record["department"] = "Operations" # Fallback
             
         to_upsert.append(record)

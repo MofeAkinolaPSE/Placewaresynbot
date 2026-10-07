@@ -1,441 +1,184 @@
-import { useState, useEffect } from "react";
+/**
+ * Operations › Suppliers.
+ *
+ * Every figure comes from ACE Books: what we owe (payables, netted as on the
+ * Payables screen), what we buy and how often (the Sage purchase journal to the
+ * cut-over + ACE Books supplier bills after it), and the price trend on the items
+ * each supplier sells us. The old page read delivery-scorecard tables that were
+ * never populated, so every "Metrics" click failed.
+ */
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, PlusCircle, ShoppingCart, TruckIcon, Users, Wallet } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { PlusCircle, Loader2, TruckIcon, RefreshCcw, ShieldCheck, AlertTriangle, Star, PackageCheck } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api-client";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/workspace/PageHeader";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { motionTransitions } from "@/lib/motion";
+import { api } from "@/lib/api-client";
+import { Dict, fmtDate, naira, num } from "@/lib/books-api";
+import { DrillProvider, Facts, RecordView } from "@/components/books/lineage";
+import { useAuth } from "@/components/AuthProvider";
 
-interface Supplier {
-  id?: string;
-  name: string;
-  contact_name?: string;
-  contact_email?: string;
-  phone?: string;
-  address?: string;
-  payment_terms?: string;
-  tax_id?: string;
-  bank_details?: string;
-  current_balance?: number;
-  status?: string;
-  created_at?: string;
-  // Agent-computed metric columns
-  reliability_score?: number;
-  avg_delay_days?: number;
-  rejection_count?: number;
-  total_shipments?: number;
-  compliance_issues?: number;
-}
-
-interface SupplierMetrics {
-  total_deliveries: number;
-  avg_lead_time_days: number;
-  on_time_rate: number;
-  quality_score: number;
-}
+const BLANK = { name: "", contact_name: "", contact_email: "", phone: "", address: "", payment_terms: "Net 30 Days", tax_id: "", bank_details: "" };
+const FILTERS: [string, string][] = [["active", "Bought from in the last 12 months"], ["balance", "We owe"], ["all", "All suppliers"]];
 
 export default function Suppliers() {
-  const isMobile = useIsMobile();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    contact_name: "",
-    contact_email: "",
-    phone: "",
-    address: "",
-    payment_terms: "",
-    tax_id: "",
-    bank_details: "",
-    current_balance: "",
-  });
-  const [selectedMetrics, setSelectedMetrics] = useState<{ name: string; metrics: SupplierMetrics } | null>(null);
-  const { toast } = useToast();
+  return (
+    <DrillProvider>
+      <SuppliersPage />
+    </DrillProvider>
+  );
+}
 
-  const fetchSuppliers = async () => {
+function SuppliersPage() {
+  const qc = useQueryClient();
+  const { roles } = useAuth();
+  const { data, isLoading } = useQuery({ queryKey: ["supplier-directory"], queryFn: () => api.procurement.supplierDirectory() });
+  const [filter, setFilter] = useState("active");
+  const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<Dict | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(BLANK);
+  const [saving, setSaving] = useState(false);
+  const t = data?.totals;
+  const all: Dict[] = data?.suppliers ?? [];
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter((s) => {
+      if (filter === "active" && !s.active) return false;
+      if (filter === "balance" && !(s.balance > 0)) return false;
+      return !q || `${s.name} ${s.code ?? ""} ${s.contact_name ?? ""}`.toLowerCase().includes(q);
+    });
+  }, [all, filter, search]);
+
+  const create = async () => {
+    if (!form.name.trim()) return toast.error("Supplier name is required");
+    setSaving(true);
     try {
-      setLoading(true);
-      const data = await api.suppliers.list();
-      setSuppliers(Array.isArray(data) ? data : (Array.isArray((data as any)?.data) ? (data as any).data : []));
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      await api.suppliers.create(Object.fromEntries(Object.entries(form).filter(([, v]) => v !== "")));
+      toast.success(`${form.name} added`);
+      setAdding(false);
+      setForm(BLANK);
+      qc.invalidateQueries({ queryKey: ["supplier-directory"] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not add the supplier");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
-
-  useEffect(() => {
-    fetchSuppliers();
-  }, []);
-
-  const handleCreate = async () => {
-    if (!formData.name.trim()) {
-      toast({ title: "Error", description: "Name is required", variant: "destructive" });
-      return;
-    }
-    try {
-      setCreating(true);
-      await api.suppliers.create({
-        ...formData,
-        current_balance: formData.current_balance ? parseFloat(formData.current_balance) : undefined,
-      });
-      toast({ title: "Supplier Created" });
-      setDialogOpen(false);
-      setFormData({
-        name: "",
-        contact_name: "",
-        contact_email: "",
-        phone: "",
-        address: "",
-        payment_terms: "",
-        tax_id: "",
-        bank_details: "",
-        current_balance: "",
-      });
-      fetchSuppliers();
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const viewMetrics = async (supplierName: string) => {
-    try {
-      const data = await api.suppliers.metrics(supplierName);
-      const metrics: SupplierMetrics = {
-        total_deliveries: Number(data?.deliveries_count || 0),
-        avg_lead_time_days: Number(data?.avg_delivery_time_hours || 0) / 24,
-        on_time_rate: Number(data?.on_time_rate || 0),
-        quality_score: Number(data?.reliability_score || 0) / 100,
-      };
-      setSelectedMetrics({ name: supplierName, metrics });
-    } catch (err: any) {
-      toast({ title: "No metrics available", description: err.message, variant: "destructive" });
-    }
-  };
-
-  // ── KPI aggregates derived from suppliers data ─────────────────────────
-  const totalSuppliers = suppliers.length;
-  const activeSuppliers = suppliers.filter((s) => (s.status || "active") === "active").length;
-  const avgReliability =
-    suppliers.filter((s) => s.reliability_score != null).length > 0
-      ? suppliers.reduce((sum, s) => sum + (s.reliability_score ?? 0), 0) /
-        suppliers.filter((s) => s.reliability_score != null).length
-      : null;
-  const totalBalance = suppliers.reduce((sum, s) => sum + (s.current_balance ?? 0), 0);
-  const complianceIssues = suppliers.reduce((sum, s) => sum + (s.compliance_issues ?? 0), 0);
-  const avgDelayDays =
-    suppliers.filter((s) => s.avg_delay_days != null).length > 0
-      ? suppliers.reduce((sum, s) => sum + (s.avg_delay_days ?? 0), 0) /
-        suppliers.filter((s) => s.avg_delay_days != null).length
-      : null;
 
   return (
-    <div className="p-8 space-y-8">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={motionTransitions.standard} className="space-y-5">
       <PageHeader
         icon={TruckIcon}
-        title="Supplier Management"
-        subtitle="Track suppliers, deliveries, and performance metrics."
-        actions={
-          <>
-            <Button variant="outline" onClick={fetchSuppliers} disabled={loading}>
-              <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <Button onClick={() => setDialogOpen(true)}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Supplier
-            </Button>
-          </>
-        }
+        title="Suppliers"
+        subtitle="What we owe, what we buy and how often (ACE Books)"
+        actions={roles.includes("admin") ? <Button onClick={() => setAdding(true)}><PlusCircle className="mr-2 h-4 w-4" />Add supplier</Button> : undefined}
       />
-
-      <DetailSheet
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title="Add New Supplier"
-        description="Enter supplier details."
-        icon={TruckIcon}
-        footer={
-          <Button onClick={handleCreate} disabled={creating} className="w-full">
-            {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create
-          </Button>
-        }
-      >
-        <div className="space-y-2">
-          <Label>Name</Label>
-          <Input
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Supplier name"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Contact</Label>
-          <Input
-            value={formData.contact_name}
-            onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-            placeholder="Contact person name"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Email</Label>
-          <Input
-            type="email"
-            value={formData.contact_email}
-            onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Phone</Label>
-          <Input
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Address</Label>
-          <Input
-            value={formData.address}
-            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Payment Terms</Label>
-          <Input
-            value={formData.payment_terms}
-            onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-            placeholder="e.g. Net 30"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Tax ID</Label>
-          <Input
-            value={formData.tax_id}
-            onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Bank Details</Label>
-          <Input
-            value={formData.bank_details}
-            onChange={(e) => setFormData({ ...formData, bank_details: e.target.value })}
-            placeholder="Bank — Account number"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Balance (₦)</Label>
-          <Input
-            type="number"
-            value={formData.current_balance}
-            onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
-            placeholder="0.00"
-          />
-        </div>
-      </DetailSheet>
-
-      {/* ── KPI Summary ──────────────────────────────────────────── */}
       <KpiStrip
         items={[
-          { label: "Total Suppliers", value: totalSuppliers, icon: TruckIcon },
-          { label: "Avg Reliability", value: avgReliability != null ? `${avgReliability.toFixed(1)}%` : "—", icon: Star },
-          { label: "Avg Delay", value: avgDelayDays != null ? `${avgDelayDays.toFixed(1)} d` : "—", icon: RefreshCcw },
-          { label: "Total Shipments", value: suppliers.reduce((s, r) => s + (r.total_shipments ?? 0), 0).toLocaleString(), icon: PackageCheck },
-          { label: "Outstanding (₦)", value: totalBalance.toLocaleString("en-NG", { maximumFractionDigits: 0 }), icon: ShieldCheck },
-          { label: "Compliance Issues", value: complianceIssues, icon: AlertTriangle, tone: complianceIssues > 0 ? "danger" : "default" },
+          { label: "Active suppliers", value: t ? t.active : "—", icon: Users, sub: t ? `${t.suppliers} on file · bought from in the last 12 months` : undefined, onClick: () => setFilter("active") },
+          { label: "We owe suppliers", value: t ? naira(t.balance) : "—", icon: Wallet, tone: (t?.overdue ?? 0) > 0 ? "warning" : "default",
+            sub: t ? `${naira(t.overdue)} past due · ${t.with_balance} suppliers` : undefined, onClick: () => setFilter("balance") },
+          { label: "Bought in the last 12 months", value: t ? naira(t.last12) : "—", icon: ShoppingCart, sub: data?.as_of ? `to ${fmtDate(data.as_of)}` : undefined },
+          { label: "Suppliers in credit", value: t ? naira(t.credits) : "—", icon: Wallet, sub: "paid ahead / unapplied payments" },
         ]}
       />
-
+      <div className="flex flex-wrap items-center gap-2">
+        {FILTERS.map(([k, label]) => (
+          <Button key={k} size="sm" variant={filter === k ? "default" : "outline"} className="h-8" onClick={() => setFilter(k)}>{label}</Button>
+        ))}
+        <Input className="ml-auto h-8 w-64" placeholder="Search supplier" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
       <Card>
-        <CardHeader>
-          <CardTitle>Suppliers</CardTitle>
-          <CardDescription>All registered suppliers and their performance.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : suppliers.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No suppliers registered yet. Upload a vendors.csv via Sage Import to populate this list.</p>
-          ) : isMobile ? (
-            <div className="space-y-3">
-              {suppliers.map((s, i) => (
-                <Card key={s.id || i} className="border-border/60">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="text-base leading-tight">{s.name}</CardTitle>
-                        <CardDescription>{s.contact_name || "No contact"}</CardDescription>
-                      </div>
-                      <Badge variant={s.status === "active" ? "default" : "secondary"}>
-                        {s.status || "active"}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground">Phone</span>
-                      <span className="truncate text-right">{s.phone || "-"}</span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground">Balance</span>
-                      <span className="tabular-nums text-right">
-                        {s.current_balance != null
-                          ? `₦${s.current_balance.toLocaleString("en-NG", { maximumFractionDigits: 2 })}`
-                          : "-"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground">Reliability</span>
-                      <span className="text-right">{s.reliability_score != null ? `${s.reliability_score.toFixed(1)}%` : "—"}</span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground">Compliance issues</span>
-                      <span className={s.compliance_issues && s.compliance_issues > 0 ? "font-semibold text-destructive" : ""}>
-                        {s.compliance_issues ?? "—"}
-                      </span>
-                    </div>
-                    <div className="pt-2">
-                      <Button size="sm" variant="outline" className="w-full" onClick={() => viewMetrics(s.name)}>
-                        <TruckIcon className="mr-1 h-3 w-3" />
-                        View Metrics
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : rows.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">No suppliers in this view.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 z-10 min-w-[180px] bg-muted/90">Name</TableHead>
-                    <TableHead className="min-w-[140px]">Contact</TableHead>
-                    <TableHead className="min-w-[200px] hidden md:table-cell">Email</TableHead>
-                    <TableHead className="min-w-[150px] hidden md:table-cell">Phone</TableHead>
-                    <TableHead className="min-w-[220px] hidden lg:table-cell">Address</TableHead>
-                    <TableHead className="min-w-[110px] hidden xl:table-cell">Payment Terms</TableHead>
-                    <TableHead className="min-w-[140px] hidden xl:table-cell">Tax ID</TableHead>
-                    <TableHead className="min-w-[200px] hidden xl:table-cell">Bank Details</TableHead>
-                    <TableHead className="min-w-[130px] text-right">Balance (₦)</TableHead>
-                    <TableHead className="min-w-[90px]">Status</TableHead>
-                    <TableHead className="min-w-[110px] text-right">Reliability</TableHead>
-                    <TableHead className="min-w-[100px] text-right hidden lg:table-cell">Avg Delay</TableHead>
-                    <TableHead className="min-w-[110px] text-right hidden lg:table-cell">Shipments</TableHead>
-                    <TableHead className="min-w-[100px] text-right">Compliance</TableHead>
-                    <TableHead className="min-w-[90px] text-right">Actions</TableHead>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Supplier</TableHead><TableHead className="text-right">Last 12 months</TableHead>
+                  <TableHead className="text-right">All time</TableHead><TableHead className="text-right">Items</TableHead>
+                  <TableHead className="text-right">Buys every</TableHead><TableHead className="text-right">Price trend</TableHead>
+                  <TableHead>Last invoice</TableHead><TableHead className="text-right">We owe</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((s) => (
+                  <TableRow key={s.id} className="cursor-pointer" onClick={() => setPicked(s)}>
+                    <TableCell className="max-w-[260px]">
+                      <div className="truncate font-medium">{s.name}</div>
+                      <div className="truncate text-[11px] text-muted-foreground">{[s.payment_terms, s.phone, s.contact_email].filter(Boolean).join(" · ") || "no contact details"}</div>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">{s.last12 ? naira(s.last12) : "—"}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">{s.lifetime ? naira(s.lifetime) : "—"}<div className="text-[11px] text-muted-foreground">{num(s.invoices)} invoices</div></TableCell>
+                    <TableCell className="text-right">{s.items ? num(s.items) : "—"}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">{s.avg_gap_days != null ? `${num(s.avg_gap_days)} days` : "—"}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap"><PriceTrend v={s.price_change_pct} /></TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{s.last_purchase ? fmtDate(s.last_purchase) : "—"}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      {s.balance ? naira(s.balance) : "—"}
+                      {s.overdue > 0 && <div className="text-[11px] text-amber-700 dark:text-amber-300">{naira(s.overdue)} past due</div>}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {suppliers.map((s, i) => (
-                    <TableRow key={s.id || i}>
-                      <TableCell className="sticky left-0 z-10 bg-background font-medium whitespace-nowrap">{s.name}</TableCell>
-                      <TableCell className="whitespace-nowrap">{s.contact_name || "-"}</TableCell>
-                      <TableCell className="hidden md:table-cell">{s.contact_email || "-"}</TableCell>
-                      <TableCell className="whitespace-nowrap hidden md:table-cell">{s.phone || "-"}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{s.address || "-"}</TableCell>
-                      <TableCell className="whitespace-nowrap hidden xl:table-cell">{s.payment_terms || "-"}</TableCell>
-                      <TableCell className="whitespace-nowrap hidden xl:table-cell">{s.tax_id || "-"}</TableCell>
-                      <TableCell className="whitespace-nowrap hidden xl:table-cell">{s.bank_details || "-"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">
-                        {s.current_balance != null
-                          ? s.current_balance.toLocaleString("en-NG", { minimumFractionDigits: 2 })
-                          : "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={s.status === "active" ? "default" : "secondary"}>
-                          {s.status || "active"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap">
-                        {s.reliability_score != null ? `${s.reliability_score.toFixed(1)}%` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap hidden lg:table-cell">
-                        {s.avg_delay_days != null ? `${s.avg_delay_days.toFixed(1)} d` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap hidden lg:table-cell">
-                        {s.total_shipments ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap">
-                        {s.compliance_issues != null ? (
-                          <span className={s.compliance_issues > 0 ? "text-destructive font-semibold" : ""}>
-                            {s.compliance_issues}
-                          </span>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => viewMetrics(s.name)}>
-                          <TruckIcon className="mr-1 h-3 w-3" />
-                          Metrics
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
+      <p className="text-xs text-muted-foreground">
+        Buying history is the Sage purchase journal up to go-live plus supplier bills posted in ACE Books since. "Price trend" compares the average unit cost of the same items
+        over the last 6 months with the 12 months before, weighted by spend.
+      </p>
 
-      {/* Metrics Modal */}
-      {selectedMetrics && (
-        <Dialog open={!!selectedMetrics} onOpenChange={() => setSelectedMetrics(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Metrics: {selectedMetrics.name}</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div className="text-center p-4 bg-muted rounded">
-                <p className="text-2xl font-bold">{selectedMetrics.metrics.total_deliveries}</p>
-                <p className="text-sm text-muted-foreground">Total Deliveries</p>
-              </div>
-              <div className="text-center p-4 bg-muted rounded">
-                <p className="text-2xl font-bold">{selectedMetrics.metrics.avg_lead_time_days.toFixed(1)}</p>
-                <p className="text-sm text-muted-foreground">Avg Lead Time (days)</p>
-              </div>
-              <div className="text-center p-4 bg-muted rounded">
-                <p className="text-2xl font-bold">{(selectedMetrics.metrics.on_time_rate * 100).toFixed(0)}%</p>
-                <p className="text-sm text-muted-foreground">On-Time Rate</p>
-              </div>
-              <div className="text-center p-4 bg-muted rounded">
-                <p className="text-2xl font-bold">{(selectedMetrics.metrics.quality_score * 100).toFixed(0)}%</p>
-                <p className="text-sm text-muted-foreground">Quality Score</p>
-              </div>
+      <DetailSheet open={!!picked} onOpenChange={(o) => !o && setPicked(null)} title={picked?.name ?? ""} icon={TruckIcon}
+                   description={picked ? [picked.code, picked.payment_terms].filter(Boolean).join(" · ") : undefined}>
+        {picked && (
+          <div className="space-y-4 text-sm">
+            <Facts items={[
+              ["Bought, last 12 months", naira(picked.last12)], ["Bought, all time", naira(picked.lifetime)], ["Invoices", num(picked.invoices)],
+              ["Buying since", picked.first_purchase ? fmtDate(picked.first_purchase) : "—"], ["Last invoice", picked.last_purchase ? fmtDate(picked.last_purchase) : "—"],
+              ["Buys every", picked.avg_gap_days != null ? `${num(picked.avg_gap_days)} days` : "—"],
+              ["Items bought", num(picked.items)], ["Price trend", <PriceTrend v={picked.price_change_pct} />], ["Contact", picked.contact_name ?? "—"],
+              ["Phone", picked.phone ?? "—"], ["Email", picked.contact_email ?? "—"], ["Address", picked.address ?? "—"],
+            ]} />
+            <div className="border-t pt-3">
+              <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Account (ACE Books)</div>
+              <RecordView t={{ type: "supplier", id: picked.id }} />
             </div>
-            <DialogFooter>
-              <Button onClick={() => setSelectedMetrics(null)}>Close</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
+          </div>
+        )}
+      </DetailSheet>
+
+      <DetailSheet open={adding} onOpenChange={setAdding} title="Add supplier" icon={PlusCircle}
+                   description="The supplier's balance comes from the bills and payments recorded in ACE Books."
+                   footer={<Button onClick={create} disabled={saving} className="w-full">{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add supplier</Button>}>
+        {([["name", "Name"], ["contact_name", "Contact person"], ["contact_email", "Email"], ["phone", "Phone"], ["address", "Address"],
+           ["payment_terms", "Payment terms"], ["tax_id", "Tax ID"], ["bank_details", "Bank details"]] as [keyof typeof BLANK, string][]).map(([k, label]) => (
+          <div key={k} className="space-y-1">
+            <Label className="text-xs">{label}</Label>
+            <Input value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+          </div>
+        ))}
+      </DetailSheet>
+    </motion.div>
   );
+}
+
+function PriceTrend({ v }: { v: number | null | undefined }) {
+  if (v == null) return <span className="text-muted-foreground">—</span>;
+  const n = Number(v);
+  const cls = n > 2 ? "text-red-600 dark:text-red-400" : n < -2 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground";
+  return <span className={cls}>{n > 0 ? "+" : ""}{n.toFixed(1)}%</span>;
 }

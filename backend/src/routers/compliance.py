@@ -490,7 +490,14 @@ async def complete_audit(
         )
 
         audit_event("compliance.audit.complete", {"id": audit_id}, actor_id=user.get("sub"), event_class="compliance")
-        return {"message": "Audit marked complete. Report is being generated.", "audit_id": audit_id}
+        # A recurring audit puts its next occurrence on the calendar.
+        next_id = None
+        try:
+            from src.services.quality_hub import schedule_next_audit
+            next_id = schedule_next_audit(audit_id)
+        except Exception:
+            logger.exception("scheduling the next audit failed")
+        return {"message": "Audit marked complete. Report is being generated.", "audit_id": audit_id, "next_audit_id": next_id}
     except HTTPException:
         raise
     except Exception as exc:
@@ -1074,44 +1081,37 @@ async def initiate_recall(
     background_tasks: BackgroundTasks,
     user=Depends(verify_jwt),
 ):
+    """Initiate a recall through the shared quality service: the ACE Books recall opens with it
+    (batch frozen, buyers traced), then the recall notice PDF is generated."""
     _require_qa(user)
+    from src.services import quality_hub as qh
+    from src.fin.errors import FinError
     try:
-        recall_id = _generate_sequential_id(RECALL_ID_PREFIX, TABLE_RECALL_CASES, "recall_id")
-        row = db.table(TABLE_RECALL_CASES).insert({
-            **body.model_dump(),
-            "recall_id":        recall_id,
-            "initiation_date":  date.today().isoformat(),
-            "status":           "initiated",
-            "distribution_data": body.distribution_data or [],
-            "created_by":       user.get("username"),
-        }).execute()
-        inserted = (row.data or [{}])[0]
-        # Generate recall notice PDF in background
-        background_tasks.add_task(
-            _generate_recall_notice_bg,
-            db_id=inserted.get("id", ""),
-            recall_data=inserted,
-            generated_by=user.get("username") or "system",
-        )
-        audit_event("compliance.recall.initiate", {"recall_id": recall_id}, actor_id=user.get("sub"), event_class="compliance")
-        return {"recall": inserted}
-    except Exception as exc:
-        logger.exception("initiate_recall failed")
-        raise HTTPException(500, str(exc))
+        rec = qh.initiate_recall(user, body.model_dump())
+    except qh.QualityError as exc:
+        raise HTTPException(409, str(exc))
+    except FinError as exc:
+        raise HTTPException(exc.status, exc.message)
+    row = (db.table(TABLE_RECALL_CASES).select("*").eq("id", rec["id"]).limit(1).execute().data or [{}])[0]
+    background_tasks.add_task(
+        _generate_recall_notice_bg,
+        db_id=rec["id"],
+        recall_data=row,
+        generated_by=user.get("username") or "system",
+    )
+    return {"recall": rec}
 
 
 @router.put("/recalls/{recall_id}")
 async def update_recall(recall_id: str, body: RecallUpdate, user=Depends(verify_jwt)):
     _require_qa(user)
+    from src.services import quality_hub as qh
     try:
-        update_data = {k: v for k, v in body.model_dump().items() if v is not None}
-        if update_data.get("status") in ("completed", "closed"):
-            update_data["resolved_at"] = date.today().isoformat()
-        row = db.table(TABLE_RECALL_CASES).update(update_data).eq("id", recall_id).execute()
-        audit_event("compliance.recall.update", {"id": recall_id}, actor_id=user.get("sub"), event_class="compliance")
-        return {"recall": (row.data or [{}])[0]}
-    except Exception as exc:
-        raise HTTPException(500, str(exc))
+        return {"recall": qh.update_recall(user, recall_id, body.model_dump(exclude_none=True))}
+    except qh.QualityError as exc:
+        raise HTTPException(409, str(exc))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
 
 
 @router.post("/recalls/{recall_id}/generate-documents")

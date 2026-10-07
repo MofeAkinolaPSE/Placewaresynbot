@@ -46,9 +46,10 @@ def detect_finance_blank_dashboard() -> Dict[str, Any]:
     """Run a focused diagnosis for blank finance cards/charts."""
     checks: List[Dict[str, Any]] = []
 
-    ar_rows = _safe_table_count("sage_ar_snapshot")
-    ap_rows = _safe_table_count("sage_ap_snapshot")
-    gl_rows = _safe_table_count("sage_gl_snapshot")
+    # ACE Books is the finance source (the Sage snapshots froze at the cut-over).
+    ar_rows = _safe_table_count("fin_sales_invoices")
+    ap_rows = _safe_table_count("fin_supplier_bills")
+    gl_rows = _safe_table_count("fin_journal_lines")
 
     checks.append({"check": "ar_snapshot_rows", "ok": ar_rows > 0, "value": ar_rows})
     checks.append({"check": "ap_snapshot_rows", "ok": ap_rows > 0, "value": ap_rows})
@@ -65,7 +66,12 @@ def detect_finance_blank_dashboard() -> Dict[str, Any]:
     )
     checks.append({"check": "kpis_non_zero", "ok": bool(kpi_non_zero), "value": finance_kpis})
 
-    gl_snapshot = get_latest_gl_snapshot(limit=20)
+    from src.fin.readmodel import live
+    if live():
+        from src.services import books_analytics
+        gl_snapshot = books_analytics.gl_rows(limit=20, include_opening=True)   # ACE Books ledger (incl. migrated opening)
+    else:
+        gl_snapshot = get_latest_gl_snapshot(limit=20)
     checks.append({"check": "latest_gl_batch_readable", "ok": len(gl_snapshot) > 0, "value": len(gl_snapshot)})
 
     failures = [c for c in checks if not c["ok"]]
