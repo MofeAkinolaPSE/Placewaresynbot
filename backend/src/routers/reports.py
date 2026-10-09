@@ -358,7 +358,7 @@ def _insight_to_response(
 # â”€â”€ Session endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.get("/types")
-async def list_report_types(_user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+def list_report_types(_user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
     """Return all supported report types with their client-facing names and required scope fields."""
     from src.report_templates import get_required_scope_fields
     result = []
@@ -374,7 +374,7 @@ async def list_report_types(_user: Dict[str, Any] = Depends(verify_jwt)) -> Dict
 
 
 @router.post("/session")
-async def create_report_session(
+def create_report_session(
     body: ReportRequest,
     user: Dict[str, Any] = Depends(verify_jwt),
 ) -> Dict[str, Any]:
@@ -411,7 +411,7 @@ async def create_report_session(
 
 
 @router.put("/session/{session_id}/scope")
-async def update_session_scope(
+def update_session_scope(
     session_id: str,
     body: SessionUpdateRequest,
     _user: Dict[str, Any] = Depends(verify_jwt),
@@ -442,7 +442,7 @@ async def update_session_scope(
 
 
 @router.get("/session/{session_id}")
-async def get_report_session(
+def get_report_session(
     session_id: str,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> Dict[str, Any]:
@@ -457,7 +457,7 @@ async def get_report_session(
 
 
 @router.post("/session/{session_id}/generate", response_model=ReportResponse)
-async def generate_from_session(
+def generate_from_session(
     session_id: str,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> ReportResponse:
@@ -490,7 +490,7 @@ async def generate_from_session(
 
 
 @router.post("/session/{session_id}/generate/invoice")
-async def generate_invoice_from_session(
+def generate_invoice_from_session(
     session_id: str,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> StreamingResponse:
@@ -548,7 +548,7 @@ async def generate_invoice_from_session(
 
 
 @router.post("/{report_id}/approve")
-async def approve_report(
+def approve_report(
     report_id: str,
     user: Dict[str, Any] = Depends(verify_jwt),
 ) -> Dict[str, Any]:
@@ -605,7 +605,7 @@ async def approve_report(
 # â”€â”€ Legacy direct-generate endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/generate", response_model=ReportResponse)
-async def generate_report(
+def generate_report(
     body: ReportRequest,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> ReportResponse:
@@ -619,7 +619,7 @@ async def generate_report(
 
 
 @router.post("/generate/docx")
-async def generate_report_docx(
+def generate_report_docx(
     body: ReportRequest,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> StreamingResponse:
@@ -673,7 +673,7 @@ def _subjects_call(fn, *a):
 
 
 @router.get("/catalog")
-async def report_catalog(_user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+def report_catalog(_user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
     from src.services.report_subjects import KIND_LABEL, REPORT_TYPES
     return {"types": REPORT_TYPES, "kind_labels": KIND_LABEL}
 
@@ -746,7 +746,7 @@ async def report_from_record(body: FromRecordRequest, user: Dict[str, Any] = Dep
 
 
 @router.get("/for-record")
-async def reports_for_record(kind: str, id: str, _user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
+def reports_for_record(kind: str, id: str, _user: Dict[str, Any] = Depends(verify_jwt)) -> Dict[str, Any]:
     """Reports already written about this record."""
     from src.fin.db import q as _q, tx as _tx
     with _tx() as conn:
@@ -758,7 +758,7 @@ async def reports_for_record(kind: str, id: str, _user: Dict[str, Any] = Depends
 # â”€â”€ History endpointsâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.get("/history")
-async def report_history(
+def report_history(
     report_type: Optional[str] = Query(None, description="Filter by report type"),
     status: Optional[str]      = Query(None, description="Filter by approval_status"),
     limit: int                 = Query(20, ge=1, le=100),
@@ -790,7 +790,7 @@ async def report_history(
 
 
 @router.get("/history/{report_id}/docx")
-async def report_detail_docx(
+def report_detail_docx(
     report_id: str,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> StreamingResponse:
@@ -859,7 +859,7 @@ async def report_detail_docx(
 
 
 @router.get("/history/{report_id}")
-async def report_detail(
+def report_detail(
     report_id: str,
     _user: Dict[str, Any] = Depends(verify_jwt),
 ) -> Dict[str, Any]:

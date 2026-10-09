@@ -10,6 +10,7 @@ import datetime as dt
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+from src.fin import journal_map
 from src.fin.books_ledger import ONE, accounts, history_until
 from src.fin.db import ZERO, money, q, q1
 
@@ -42,8 +43,11 @@ JOURNAL_LAYOUT = {
                                               _c("description", "Trans Description"), _c("debit", "Debit Amt", "money"),
                                               _c("credit", "Credit Amt", "money")]),
 }
-JOURNAL_KEYS = {"sales": "SJ", "cash-receipts": "CRJ", "cash-disbursements": "CDJ", "purchases": "PJ", "cogs": "COGS",
-                "general": "GENJ", "inventory-adjustments": "INAJ"}
+JOURNAL_LAYOUT["FA"] = ("Fixed Assets Journal", [_c("date", "Date", "date"), _c("account", "Account ID"),
+                                                   _c("account_name", "Account Description"), _c("reference", "Reference"),
+                                                   _c("jrnl", "Jrnl"), _c("description", "Trans Description"),
+                                                   _c("debit", "Debit Amt", "money"), _c("credit", "Credit Amt", "money")])
+JOURNAL_KEYS = journal_map.KEY_CODE
 _LOAD_KIND = {"SJ": "SALES_JOURNAL", "CRJ": "CASH_RECEIPTS_JOURNAL", "CDJ": "CASH_DISBURSEMENTS_JOURNAL",
               "PJ": "PURCHASE_JOURNAL", "COGS": "COGS_JOURNAL", "GENJ": "GENERAL_JOURNAL"}
 
@@ -56,32 +60,51 @@ def journal(conn, entity_id: str, key: str, f: dt.date, t: dt.date, search: Opti
     if code not in JOURNAL_LAYOUT:
         raise invalid(f"Unknown journal {key}", allowed=sorted(JOURNAL_KEYS))
     title, columns = JOURNAL_LAYOUT[code]
+    if code == "FA":
+        return _assets_journal(conn, entity_id, key, title, columns, f, t, search, limit)
     h = history_until(conn, entity_id)
     names = {c: a["name"] for c, a in accounts(conn, entity_id).items()}
     rows: List[Dict[str, Any]] = []
     sp = [f"%{search}%"] * 3 if search else []
     if h and f <= h:
         hf, ht = f, min(t, h)
-        cov = q1(conn, "SELECT MIN(date_from) d FROM fin_sage_loads WHERE legal_entity_id=%s AND kind=%s",
+        cov = q1(conn, "SELECT MIN(date_from) a, MAX(date_to) b FROM fin_sage_loads WHERE legal_entity_id=%s AND kind=%s",
                  (entity_id, _LOAD_KIND.get(code, "-")))
-        if cov and cov["d"] and cov["d"] <= hf:
+        sf = " AND (description ILIKE %s OR reference ILIKE %s OR account_code ILIKE %s)" if search else ""
+
+        def from_gl(a: dt.date, b: dt.date):
+            # dates the exported journal does not cover: the same lines, from Sage's General Ledger
+            return q(conn, f"""SELECT txn_date, account_code, NULL AS account_description, reference, description, NULL::numeric AS qty,
+                                      NULL AS um, debit, credit
+                               FROM fin_sage_gl_lines WHERE legal_entity_id=%s AND jrnl=%s AND txn_date BETWEEN %s AND %s {sf}
+                                 AND (debit <> 0 OR credit <> 0)
+                               ORDER BY txn_date, reference, debit DESC, seq LIMIT %s""", [entity_id, code, a, b] + sp + [limit])
+
+        src: List[Dict[str, Any]] = []
+        ca, cb = (cov["a"], cov["b"]) if cov and cov["a"] else (None, None)
+        if ca and ca <= ht and cb >= hf:
+            if hf < ca:
+                src += from_gl(hf, ca - ONE)
             # the journal exactly as Sage exported it (order of entry, qty and U/M)
-            sf = " AND (description ILIKE %s OR reference ILIKE %s OR account_code ILIKE %s)" if search else ""
-            src = q(conn, f"""SELECT txn_date, account_code, account_description, reference, description, qty, um, debit, credit
-                              FROM fin_sage_journal_lines WHERE legal_entity_id=%s AND kind=%s AND txn_date BETWEEN %s AND %s {sf}
-                              ORDER BY txn_date, seq LIMIT %s""", [entity_id, code, hf, ht] + sp + [limit])
+            src += q(conn, f"""SELECT txn_date, account_code, account_description, reference, description, qty, um, debit, credit
+                               FROM fin_sage_journal_lines WHERE legal_entity_id=%s AND kind=%s AND txn_date BETWEEN %s AND %s {sf}
+                               ORDER BY txn_date, seq LIMIT %s""", [entity_id, code, max(hf, ca), min(ht, cb)] + sp + [limit])
+            if cb < ht:
+                src += from_gl(cb + ONE, ht)
         else:
-            # before the exported journal starts: the same lines, from Sage's General Ledger
-            sf = " AND (description ILIKE %s OR reference ILIKE %s OR account_code ILIKE %s)" if search else ""
-            src = q(conn, f"""SELECT txn_date, account_code, NULL AS account_description, reference, description, NULL::numeric AS qty,
-                                     NULL AS um, debit, credit
-                              FROM fin_sage_gl_lines WHERE legal_entity_id=%s AND jrnl=%s AND txn_date BETWEEN %s AND %s {sf}
-                              ORDER BY txn_date, reference, debit DESC, seq LIMIT %s""", [entity_id, code, hf, ht] + sp + [limit])
+            src = from_gl(hf, ht)
+        if code == "GENJ":
+            # corrections posted from Data issues (Sage-era lines, jrnl ADJ, no load) belong to the General Journal
+            src += q(conn, f"""SELECT txn_date, account_code, NULL AS account_description, reference, description, NULL::numeric AS qty,
+                                      NULL AS um, debit, credit, 'ADJ' AS jrnl
+                               FROM fin_sage_gl_lines WHERE legal_entity_id=%s AND jrnl='ADJ' AND load_id IS NULL
+                                 AND txn_date BETWEEN %s AND %s {sf} AND (debit <> 0 OR credit <> 0)
+                               ORDER BY txn_date, reference, seq LIMIT %s""", [entity_id, hf, ht] + sp + [limit])
         for r in src:
             rows.append({"date": r["txn_date"], "account": r["account_code"],
                          "account_name": r["account_description"] or names.get(r["account_code"]),
                          "reference": r["reference"], "description": r["description"], "qty": r["qty"], "um": r["um"],
-                         "debit": r["debit"], "credit": r["credit"], "source": "sage", "jrnl": code})
+                         "debit": r["debit"], "credit": r["credit"], "source": "sage", "jrnl": r.get("jrnl") or code})
     a_from = max(f, h + ONE) if h else f
     if a_from <= t:
         ace_key = {v: k for k, v in JOURNAL_KEYS.items()}[code]
@@ -92,9 +115,35 @@ def journal(conn, entity_id: str, key: str, f: dt.date, t: dt.date, search: Opti
                          "reference": r["reference"] or r["journal_number"], "description": r["description"],
                          "qty": None, "um": None, "debit": r["debit"], "credit": r["credit"], "source": "ace",
                          "journal_id": r["journal_id"], "journal_number": r["journal_number"],
-                         "source_type": r["source_type"], "source_id": r["source_id"], "sku": r.get("product_sku"), "jrnl": code})
+                         "source_type": r["source_type"], "source_id": r["source_id"], "sku": r.get("product_sku"),
+                         "jrnl": r.get("jrnl") or code})
     return {"key": key, "code": code, "title": title, "columns": columns, "date_from": f, "date_to": t,
             "history_until": h, "rows": rows, "truncated": len(rows) >= limit,
+            "total_debit": sum((money(r["debit"]) for r in rows), ZERO),
+            "total_credit": sum((money(r["credit"]) for r in rows), ZERO)}
+
+
+def _assets_journal(conn, entity_id: str, key: str, title: str, columns: List[Dict[str, Any]], f: dt.date, t: dt.date,
+                    search: Optional[str], limit: int) -> Dict[str, Any]:
+    """Every entry on the fixed-asset and accumulated-depreciation accounts - purchases, disposals
+    and depreciation, from Sage's years and ACE Books - in date order, whichever journal posted it."""
+    from src.fin import books_ledger
+    accs = q(conn, """SELECT code, name FROM fin_accounts WHERE legal_entity_id=%s
+                      AND subtype IN ('FIXED_ASSET', 'ACCUMULATED_DEPRECIATION') ORDER BY code""", (entity_id,))
+    names = {a["code"]: a["name"] for a in accs}
+    rows: List[Dict[str, Any]] = []
+    for a in accs:
+        for l in books_ledger.lines(conn, entity_id, a["code"], f, t, search=search):
+            if not (money(l["debit"]) or money(l["credit"])):
+                continue  # Sage's "Fiscal Year End Balance" markers
+            rows.append({"date": l["date"], "account": a["code"], "account_name": names[a["code"]], "reference": l["reference"],
+                         "description": l["description"], "debit": l["debit"], "credit": l["credit"], "source": l["source"],
+                         "jrnl": l["jrnl"], "journal_id": l.get("journal_id"), "journal_number": l.get("journal_number"),
+                         "source_type": l.get("source_type"), "source_id": l.get("source_id")})
+    rows.sort(key=lambda r: (r["date"], str(r["reference"] or ""), r["account"]))
+    rows = rows[:limit]
+    return {"key": key, "code": "FA", "title": title, "columns": columns, "date_from": f, "date_to": t,
+            "history_until": history_until(conn, entity_id), "rows": rows, "truncated": len(rows) >= limit,
             "total_debit": sum((money(r["debit"]) for r in rows), ZERO),
             "total_credit": sum((money(r["credit"]) for r in rows), ZERO)}
 
@@ -310,10 +359,10 @@ def sage_invoice(conn, entity_id: str, number: str) -> Dict[str, Any]:
                               s.customer_id, COALESCE(c.name, s.customer_name) AS customer, c.customer_code,
                               p.name AS product_name, p.lot_expiry,
                               CASE WHEN s.quantity IS NOT NULL AND s.quantity <> 0 THEN round(s.amount / s.quantity, 2) END AS unit_price,
-                              b.batch_number, b.manufacture_date, b.expiry_date AS batch_expiry
+                              b.id::text AS batch_id, b.batch_number, b.lot_code, b.pack_batch_number, b.manufacture_date, b.expiry_date AS batch_expiry
                        FROM fin_sage_sales_lines s LEFT JOIN customers c ON c.id=s.customer_id
                        LEFT JOIN fin_products p ON p.legal_entity_id=s.legal_entity_id AND p.sku=s.sku
-                       LEFT JOIN LATERAL (SELECT batch_number, manufacture_date, expiry_date FROM fin_batches b
+                       LEFT JOIN LATERAL (SELECT id, batch_number, lot_code, pack_batch_number, manufacture_date, expiry_date FROM fin_batches b
                                           WHERE b.legal_entity_id=s.legal_entity_id AND b.sku=s.sku ORDER BY b.created_at LIMIT 1) b ON TRUE
                        WHERE s.legal_entity_id=%s AND s.invoice_number=%s ORDER BY s.invoice_date, s.line_no""", (entity_id, number))
     ar = q1(conn, """SELECT txn_date, SUM(debit - credit) AS total, MAX(description) AS customer FROM fin_sage_journal_lines
@@ -357,3 +406,67 @@ def sage_bill(conn, entity_id: str, number: str, supplier_id: Optional[str] = No
             "supplier_id": lines[0]["supplier_id"] if lines else None,
             "supplier_name": lines[0]["supplier"] if lines else None,
             "total": total, "paid": sum((money(p["amount"]) for p in payments), ZERO)}
+
+
+# ---------------------------------------------------------------------------
+# Invoice register (client meeting 7 Oct: "which invoice did we raise last; start from there")
+# ---------------------------------------------------------------------------
+
+def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optional[str] = None,
+                     customer_id: Optional[int] = None, limit: int = 5000) -> Dict[str, Any]:
+    """Every invoice raised in f..t, newest first: Sage's (its Sales Journal - including the ones
+    paid before ACE Books took over) and ACE Books' own. Each row says how much is still open and
+    opens its full lineage (lines, batches, payments, journal)."""
+    e = entity_id
+    ar = q1(conn, """SELECT a.code FROM fin_account_mappings m JOIN fin_accounts a ON a.id=m.account_id
+                     WHERE m.legal_entity_id=%s AND m.mapping_key='AR_CONTROL'""", (e,))
+    ace = q(conn, """SELECT i.id::text AS invoice_id, i.invoice_number AS number, i.invoice_date AS date, i.due_date, i.customer_id,
+                            c.name AS customer, COALESCE(i.original_total, i.total) AS amount, i.total - i.amount_settled AS balance,
+                            i.status, i.source_type, i.is_opening, i.journal_id::text AS journal_id, j.journal_number
+                     FROM fin_sales_invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN fin_journals j ON j.id=i.journal_id
+                     WHERE i.legal_entity_id=%s AND i.invoice_date BETWEEN %s AND %s""", (e, f, t))
+    opening = {r["number"].split("/")[0]: r for r in ace if r["is_opening"]}
+    rows: Dict[str, Dict[str, Any]] = {}
+    if ar:
+        for s in q(conn, """
+                WITH x AS (SELECT reference, MIN(txn_date) AS date, SUM(debit - credit) AS amount FROM fin_sage_journal_lines
+                           WHERE legal_entity_id=%s AND kind='SJ' AND account_code=%s AND txn_date BETWEEN %s AND %s
+                             AND reference IS NOT NULL GROUP BY reference)
+                SELECT x.reference AS number, x.date, x.amount, sl.customer_id, COALESCE(c.name, sl.customer_name) AS customer
+                FROM x LEFT JOIN LATERAL (SELECT s.customer_id, s.customer_name FROM fin_sage_sales_lines s
+                                          WHERE s.legal_entity_id=%s AND s.invoice_number=x.reference LIMIT 1) sl ON TRUE
+                LEFT JOIN customers c ON c.id=sl.customer_id""", (e, ar["code"], f, t, e)):
+            o = opening.get(s["number"])
+            credit = money(s["amount"]) < 0
+            rows[s["number"]] = {
+                "number": s["number"], "date": s["date"], "customer_id": s["customer_id"] or (o or {}).get("customer_id"),
+                "customer": s["customer"] or (o or {}).get("customer"), "amount": s["amount"],
+                "balance": o["balance"] if o else ZERO, "kind": "credit memo" if credit else "invoice",
+                "status": ("OPEN" if o and money(o["balance"]) != 0 else "PAID") if not credit else "CREDIT",
+                "source": "sage", "invoice_id": o["invoice_id"] if o else None, "journal_number": None, "journal_id": None,
+                "due_date": o["due_date"] if o else None}
+    for r in ace:
+        key = r["number"].split("/")[0] if r["is_opening"] else r["number"]
+        if r["is_opening"] and key in rows:
+            continue
+        rows[key if r["is_opening"] else f"ace:{r['invoice_id']}"] = {
+            "number": r["number"], "date": r["date"], "customer_id": r["customer_id"], "customer": r["customer"],
+            "amount": r["amount"], "balance": r["balance"], "kind": "invoice",
+            "status": r["status"] if not r["is_opening"] else ("OPEN" if money(r["balance"]) != 0 else "PAID"),
+            "source": "sage" if r["is_opening"] else ("frontdesk" if r["source_type"] == "FRONTDESK" else "ace"),
+            "invoice_id": r["invoice_id"], "journal_number": r["journal_number"], "journal_id": r["journal_id"], "due_date": r["due_date"]}
+    out = list(rows.values())
+    if customer_id:
+        out = [r for r in out if r["customer_id"] == customer_id]
+    if search:
+        s = search.strip().lower()
+        out = [r for r in out if s in str(r["number"]).lower() or s in (r["customer"] or "").lower()]
+    num = lambda n: int(n) if str(n).isdigit() else -1
+    out.sort(key=lambda r: (r["date"], num(r["number"]), str(r["number"])), reverse=True)
+    for r in out:
+        r["paid"] = money(r["amount"]) - money(r["balance"]) if r["kind"] == "invoice" else ZERO
+    from src.fin import numbering
+    return {"date_from": f, "date_to": t, "count": len(out), "rows": out[:limit],
+            "total": sum((money(r["amount"]) for r in out if r["kind"] == "invoice"), ZERO),
+            "open": sum((money(r["balance"]) for r in out), ZERO),
+            "last_invoice": numbering.last_invoice(conn, e), "next_invoice_number": numbering.next_invoice_preview(conn, e)}

@@ -46,7 +46,7 @@ def _get_item_by_id(item_id: str):
 
 
 @router.post('/inventory/items', status_code=201)
-async def create_item(request: Request, payload: InventoryItem):
+def create_item(request: Request, payload: InventoryItem):
     verify_jwt(request, required_role='ops')
     item = payload.dict()
     try:
@@ -63,7 +63,7 @@ async def create_item(request: Request, payload: InventoryItem):
 
 
 @router.get('/inventory/stock')
-async def list_stock(request: Request):
+def list_stock(request: Request):
     verify_jwt(request)
     resp = db.table(TABLE_STOCK).select("*").execute()
     data = resp.data or []
@@ -220,7 +220,7 @@ async def create_movement(request: Request, payload: InventoryMovement):
 
 
 @router.post('/inventory/requests', status_code=201)
-async def create_request(request: Request, payload: InventoryRequest):
+def create_request(request: Request, payload: InventoryRequest):
     verify_jwt(request, required_role='ops')
     r = payload.dict()
     try:
@@ -237,14 +237,14 @@ async def create_request(request: Request, payload: InventoryRequest):
 
 
 @router.get('/inventory/movements/incoming')
-async def list_incoming(request: Request):
+def list_incoming(request: Request):
     verify_jwt(request)
     resp = db.table(TABLE_MOVES).select("*").gt("change", 0).order("created_at", desc=True).limit(200).execute()
     return resp.data or []
 
 
 @router.get('/inventory/movements/outgoing')
-async def list_outgoing(request: Request):
+def list_outgoing(request: Request):
     verify_jwt(request)
     resp = db.table(TABLE_MOVES).select("*").lt("change", 0).order("created_at", desc=True).limit(200).execute()
     return resp.data or []

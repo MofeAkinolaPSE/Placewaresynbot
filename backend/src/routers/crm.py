@@ -24,7 +24,7 @@ class CustomerIn(BaseModel):
 
 
 @router.post("/customers")
-async def create_customer(request: Request, payload: CustomerIn, _u=Depends(require_any_role("sales", "management", "crm"))):
+def create_customer(request: Request, payload: CustomerIn, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         row = payload.dict()   # created_at is defaulted by the table (sending NULL failed)
         resp = db.table("customers").insert(row).execute()
@@ -39,7 +39,7 @@ async def create_customer(request: Request, payload: CustomerIn, _u=Depends(requ
 # would otherwise be swallowed by the {customer_id}:int pattern and 422
 # trying to coerce "search" to int.
 @router.get("/customers/search")
-async def search_customers(
+def search_customers(
     q: str = Query(..., min_length=2),
     limit: int = Query(default=10, le=50),
     _u=Depends(verify_jwt),
@@ -88,7 +88,7 @@ async def search_customers(
 
 
 @router.get("/customers/{customer_id}")
-async def get_customer(customer_id: int, _u=Depends(verify_jwt)):
+def get_customer(customer_id: int, _u=Depends(verify_jwt)):
     try:
         resp = db.table("customers").select("*").eq("id", customer_id).limit(1).execute()
         data = resp.data or []
@@ -102,7 +102,7 @@ async def get_customer(customer_id: int, _u=Depends(verify_jwt)):
 
 
 @router.get("/customers")
-async def list_customers(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
+def list_customers(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
     try:
         resp = db.table("customers").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
@@ -124,7 +124,7 @@ class CustomerUpdate(BaseModel):
 
 
 @router.patch("/customers/{customer_id}")
-async def update_customer(customer_id: int, payload: CustomerUpdate, _u=Depends(require_any_role("sales", "management", "crm"))):
+def update_customer(customer_id: int, payload: CustomerUpdate, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         updates = {k: v for k, v in payload.dict().items() if v is not None}
         if not updates:
@@ -267,7 +267,7 @@ async def create_lead(request: Request, payload: LeadIn, _u=Depends(require_any_
 
 
 @router.get("/leads")
-async def list_leads(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
+def list_leads(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
     try:
         resp = db.table("leads").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
@@ -276,7 +276,7 @@ async def list_leads(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
 
 
 @router.get("/opportunities")
-async def list_opps(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
+def list_opps(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
     try:
         resp = db.table("opportunities").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
@@ -323,7 +323,7 @@ async def create_opp(request: Request, payload: dict, _u=Depends(require_any_rol
 
 
 @router.post("/activities")
-async def create_activity(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
+def create_activity(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         resp = db.table("crm_activities").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
@@ -332,7 +332,7 @@ async def create_activity(payload: dict, _u=Depends(require_any_role("sales", "m
 
 
 @router.post("/tickets")
-async def create_ticket(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
+def create_ticket(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         resp = db.table("support_tickets").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
@@ -341,7 +341,7 @@ async def create_ticket(payload: dict, _u=Depends(require_any_role("sales", "man
 
 
 @router.get("/campaigns")
-async def list_campaigns(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
+def list_campaigns(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt)):
     try:
         resp = db.table("campaigns").select("*").range(offset, offset + limit - 1).execute()
         return resp.data or []
@@ -350,7 +350,7 @@ async def list_campaigns(limit: int = 50, offset: int = 0, _u=Depends(verify_jwt
 
 
 @router.post("/forecasts")
-async def create_forecast(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
+def create_forecast(payload: dict, _u=Depends(require_any_role("sales", "management", "crm"))):
     try:
         resp = db.table("revenue_forecasts").insert(payload).execute()
         return resp.data[0] if resp.data else {"status": "ok"}
@@ -617,7 +617,7 @@ async def assign_lead_and_follow_up(request: Request, payload: LeadAssignIn, _u=
 
 
 @router.get("/lead-finder/pipeline")
-async def lead_finder_pipeline(limit: int = 100, _u=Depends(verify_jwt)):
+def lead_finder_pipeline(limit: int = 100, _u=Depends(verify_jwt)):
     bounded_limit = max(1, min(limit, 500))
     prospects = db.table("crm_prospects").select("*").order("created_at", desc=True).limit(bounded_limit).execute().data or []
     followups = db.table("crm_followups").select("*").order("created_at", desc=True).limit(bounded_limit).execute().data or []
@@ -747,7 +747,7 @@ async def search_leads_by_location(
 
 
 @router.get("/lead-finder/export")
-async def export_prospects(limit: int = 1000, _u=Depends(verify_jwt)):
+def export_prospects(limit: int = 1000, _u=Depends(verify_jwt)):
     """
     Download all crm_prospects as a CSV file.
     Returns a streaming CSV response (suitable for browser download).

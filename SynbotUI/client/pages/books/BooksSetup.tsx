@@ -11,6 +11,7 @@ import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { BooksShell } from "@/components/books/BooksShell";
 import { AccountPick, AccountSheet, act, Amount, CsvButton, Empty, ErrorNote, Loading, Section, StatusBadge, useBooks } from "@/components/books/kit";
 import { books, Dict, fmtDate, today, yearStart } from "@/lib/books-api";
+import { askConfirm, askText } from "@/lib/ask";
 
 const SUBTYPES: [string, string][] = [
   ["CASH", "ASSET"], ["RECEIVABLE", "ASSET"], ["INVENTORY", "ASSET"], ["OTHER_CURRENT_ASSET", "ASSET"], ["FIXED_ASSET", "ASSET"],
@@ -53,8 +54,13 @@ function ChartOfAccounts() {
   const [inactive, setInactive] = useState(false);
   const [edit, setEdit] = useState<Dict | null>(null);
   const [ledger, setLedger] = useState<Dict | null>(null);
-  const { data, isLoading, error } = useBooks<Dict[]>(["coa", type, inactive], "/accounts", { account_type: type || undefined, include_inactive: inactive });
-  const rows = (data ?? []).filter((a) => !search || `${a.code} ${a.name}`.toLowerCase().includes(search.toLowerCase()));
+  const [asOf, setAsOf] = useState(today());
+  const [used, setUsed] = useState("");
+  // balances and activity over the whole ledger - Sage's years and ACE Books
+  const { data, isLoading, error } = useBooks<Dict[]>(["coa", type, inactive, asOf], "/accounts",
+    { account_type: type || undefined, include_inactive: inactive, as_of: asOf, history: true });
+  const rows = (data ?? []).filter((a) => (!search || `${a.code} ${a.name}`.toLowerCase().includes(search.toLowerCase()))
+    && (used === "" || (used === "used" ? a.entries > 0 : a.entries === 0)));
   return (
     <Section title={`Chart of accounts (${rows.length})`} actions={<>
       <CsvButton filename="chart-of-accounts.csv" rows={rows.map((a) => ({ code: a.code, name: a.name, type: a.account_type, subtype: a.subtype, status: a.status, sage_code: a.legacy_code, balance: a.balance }))} />
@@ -64,26 +70,33 @@ function ChartOfAccounts() {
         <select className="h-9 rounded-md border bg-background px-2 text-sm" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">All types</option>{["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"].map((t) => <option key={t} value={t}>{t.toLowerCase()}</option>)}
         </select>
+        <select className="h-9 rounded-md border bg-background px-2 text-sm" value={used} onChange={(e) => setUsed(e.target.value)}>
+          <option value="">Used and unused</option><option value="used">With entries</option><option value="unused">Never used</option></select>
+        <label className="flex items-center gap-1 text-xs">As at <Input type="date" className="h-9 w-40" value={asOf} onChange={(e) => setAsOf(e.target.value || today())} /></label>
         <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={inactive} onChange={(e) => setInactive(e.target.checked)} />show inactive</label>
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
       {data && (
         <Table>
-          <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Subtype</TableHead><TableHead className="text-right">Balance</TableHead><TableHead className="text-right">Postings</TableHead><TableHead /></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Subtype</TableHead>
+            <TableHead className="text-right">Balance at {fmtDate(asOf)}</TableHead><TableHead className="text-right">Entries</TableHead><TableHead>First · last entry</TableHead><TableHead /></TableRow></TableHeader>
           <TableBody>{rows.map((a) => (
             <TableRow key={a.id} className={a.status !== "ACTIVE" ? "opacity-60" : ""}>
               <TableCell className="font-mono text-xs">{a.code}</TableCell>
               <TableCell><div>{a.name}</div><div className="text-[11px] text-muted-foreground">{[a.is_control && "control", !a.is_postable && "header", a.status !== "ACTIVE" && "inactive"].filter(Boolean).join(" · ")}</div></TableCell>
               <TableCell className="text-xs">{label(a.account_type)}</TableCell><TableCell className="text-xs">{label(a.subtype)}</TableCell>
-              <TableCell className="text-right"><button className="hover:underline" onClick={() => setLedger({ id: a.id, code: a.code, name: a.name })}><Amount value={a.balance} blankZero /></button></TableCell>
-              <TableCell className="text-right text-xs">{a.posting_count}</TableCell>
+              <TableCell className="text-right"><button className="hover:underline" title="Open every ledger line behind this figure" onClick={() => setLedger({ id: a.id, code: a.code, name: a.name })}>
+                {Number(a.balance_as_of) ? <Amount value={a.balance_as_of} /> : <span className="text-muted-foreground">0.00</span>}</button>
+                {a.balance_basis === "year to date" && <div className="text-[10px] text-muted-foreground">year to date</div>}</TableCell>
+              <TableCell className="text-right text-xs">{a.entries ? a.entries.toLocaleString() : <span className="text-muted-foreground">none</span>}</TableCell>
+              <TableCell className="whitespace-nowrap text-xs">{a.first_entry ? `${fmtDate(a.first_entry)} · ${fmtDate(a.last_entry)}` : ""}</TableCell>
               <TableCell><Button size="sm" variant="ghost" onClick={() => setEdit(a)}>Edit</Button></TableCell>
             </TableRow>
           ))}</TableBody>
         </Table>
       )}
       <AccountEditor account={edit} onClose={() => setEdit(null)} />
-      <AccountSheet account={ledger} from={yearStart()} to={today()} onClose={() => setLedger(null)} />
+      <AccountSheet account={ledger} from={`${asOf.slice(0, 4)}-01-01`} to={asOf} onClose={() => setLedger(null)} />
     </Section>
   );
 }
@@ -101,7 +114,7 @@ function AccountEditor({ account, onClose }: { account: Dict | null; onClose: ()
   };
   const toggle = async () => {
     if (account!.status === "ACTIVE") {
-      const reason = window.prompt("Why deactivate this account? (it will no longer accept postings)");
+      const reason = await askText("Why deactivate this account? (it will no longer accept postings)");
       if (reason !== null && (await act(() => books.post(`/accounts/${account!.id}/deactivate`, { reason }), "Account deactivated"))) done();
     } else if (await act(() => books.post(`/accounts/${account!.id}/activate`, {}), "Account activated")) done();
   };
@@ -214,20 +227,38 @@ function Budgets() {
   const create = async () => {
     const fy = years?.find((y) => y.status === "OPEN") ?? years?.[0];
     if (!fy) return;
-    const name = window.prompt(`Budget name for ${fy.name}`, `${fy.name} budget`);
+    const name = await askText(`Budget name for ${fy.name}`, `${fy.name} budget`);
     const b = name && (await act(() => books.post("/budgets", { fiscal_year_id: fy.id, name }), "Budget created"));
     if (b) { refetch(); setOpen(b.id); }
+  };
+  const rename = async (b: Dict) => {
+    const name = await askText("New name for the budget", b.name);
+    if (name && name !== b.name && (await act(() => books.patch(`/budgets/${b.id}`, { name }), "Budget renamed"))) refetch();
+  };
+  const copy = async (b: Dict) => {
+    const name = await askText("Name of the copy", `${b.name} (revised)`);
+    const n = name && (await act(() => books.post(`/budgets/${b.id}/copy`, { name }), "Budget copied"));
+    if (n) { refetch(); setOpen(n.id); }
+  };
+  const remove = async (b: Dict) => {
+    if (!(await askConfirm(`Delete the budget "${b.name}" and its ${b.accounts} account line(s)? It stays in the audit trail.`))) return;
+    if (await act(() => books.del(`/budgets/${b.id}`), "Budget deleted")) refetch();
   };
   return (
     <Section title="Budgets" actions={<Button size="sm" onClick={create}><Plus className="mr-1 h-4 w-4" />New budget</Button>}>
       {isLoading && <Loading />}<ErrorNote error={error} />
       {data && (data.length === 0 ? <Empty>No budgets yet.</Empty> : (
         <Table>
-          <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Year</TableHead><TableHead className="text-right">Accounts</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Year</TableHead><TableHead className="text-right">Accounts</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
           <TableBody>{data.map((b) => (
             <TableRow key={b.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setOpen(b.id)}>
               <TableCell>{b.name}</TableCell><TableCell>{b.fiscal_year}</TableCell><TableCell className="text-right">{b.accounts}</TableCell>
               <TableCell className="text-right"><Amount value={b.total} /></TableCell><TableCell><StatusBadge status={b.status} /></TableCell>
+              <TableCell className="whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => rename(b)}>Rename</Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copy(b)}>Copy</Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => remove(b)}>Delete</Button>
+              </TableCell>
             </TableRow>
           ))}</TableBody>
         </Table>
@@ -255,9 +286,14 @@ function BudgetEditor({ id, onClose }: { id: string | null; onClose: () => void 
     if (lines.length && (await act(() => books.put(`/budgets/${id}/lines`, { lines }), "Budget saved"))) { setCells({}); refetch(); }
   };
   const approve = async () => { if (await act(() => books.post(`/budgets/${id}/approve`, {}), "Budget approved")) refetch(); };
+  const reopen = async () => { if (await act(() => books.patch(`/budgets/${id}`, { status: "DRAFT" }), "Budget reopened for editing")) refetch(); };
+  const removeLine = async (l: Dict) => {
+    if (await askConfirm(`Remove ${l.code} ${l.name} from the budget?`) && (await act(() => books.put(`/budgets/${id}/lines`, { lines: [{ account_id: l.account_id, remove: true }] }), "Line removed"))) refetch();
+  };
   return (
     <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={b ? b.name : "Budget"} description={b ? `${b.fiscal_year} · ${b.status.toLowerCase()}` : ""}
-                 footer={b && !locked ? <div className="flex gap-2"><Button variant="outline" disabled={!Object.keys(cells).length} onClick={saveCells}>Save changes</Button><Button onClick={approve}>Approve</Button></div> : undefined}>
+                 footer={b && !locked ? <div className="flex gap-2"><Button variant="outline" disabled={!Object.keys(cells).length} onClick={saveCells}>Save changes</Button><Button onClick={approve}>Approve</Button></div>
+                   : b ? <Button variant="outline" onClick={reopen}>Reopen for editing</Button> : undefined}>
       {isLoading && <Loading />}<ErrorNote error={error} />
       {b && (
         <div className="space-y-3 text-sm">
@@ -281,6 +317,7 @@ function BudgetEditor({ id, onClose }: { id: string | null; onClose: () => void 
                                onChange={(e) => setCells({ ...cells, [l.account_id]: { ...(cells[l.account_id] ?? {}), [p.id]: e.target.value } })} />}</TableCell>
                     ))}
                     <TableCell className="text-right font-semibold"><Amount value={l.total} /></TableCell>
+                    <TableCell>{!locked && <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => removeLine(l)}>Remove</Button>}</TableCell>
                   </TableRow>
                 ))}</TableBody>
               </Table>
@@ -389,7 +426,7 @@ function BatchSheet({ id, onClose, onDone }: { id: string | null; onClose: () =>
   const [result, setResult] = useState<Dict | null>(null);
   useEffect(() => setResult(null), [id]);
   const load = async () => {
-    if (!window.confirm("Load this batch into ACE Books? This posts opening balances / creates records.")) return;
+    if (!await askConfirm("Load this batch into ACE Books? This posts opening balances / creates records.")) return;
     const r = await act(() => books.post(`/migration/batches/${id}/load`, {}), "Loaded");
     if (r) { setResult(r.result); refetch(); onDone(); }
   };

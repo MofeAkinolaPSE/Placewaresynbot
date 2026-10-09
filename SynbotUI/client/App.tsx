@@ -4,6 +4,7 @@ import { lazy, Suspense } from "react";
 
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import { AskHost } from "@/lib/ask";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter, Navigate, Routes, Route } from "react-router-dom";
@@ -91,6 +92,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <AskHost />
         <AuthProvider>
           <SessionPrewarm />
           <PresenceHeartbeat />

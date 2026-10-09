@@ -7,6 +7,22 @@ services:
       context: ./db
     image: placeware-postgres:18
     restart: unless-stopped
+    # Sized for 30-50 laptops: Postgres defaults (128MB buffers, 4MB work_mem) leave the Sage
+    # history (400k+ GL lines) reading from disk. The backend opens up to
+    # UVICORN_WORKERS x PG_MAX_CONN = 75 pooled connections plus a few for agents and backups.
+    # JIT off: it added ~0.3s of compile time to every report query for no gain at this size.
+    # Keep in step with docker-compose.swarm.yml.
+    command: >
+      postgres
+      -c max_connections=150
+      -c shared_buffers=768MB
+      -c effective_cache_size=2GB
+      -c work_mem=8MB
+      -c maintenance_work_mem=128MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c jit=off
+    shm_size: 256mb   # parallel query workers share memory here; Docker's 64MB default is too small
     environment:
       POSTGRES_USER: postgres
       # Use POSTGRES_PASSWORD from .env in production (docker-compose.prod.yml enforces it).
@@ -45,9 +61,16 @@ services:
     image: placeware-backend:latest
     build: .
     ports:
-      - "8000:8000"
+      # loopback only: from outside, the API is reached through nginx (HTTPS, security headers,
+      # rate limits); on the server itself http://localhost:8000 (and /docs) still works
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
+    environment:
+      # 3 workers serve requests in parallel (background jobs still run once: src/services/leader.py);
+      # each holds up to PG_MAX_CONN database connections. Keep in step with docker-compose.swarm.yml.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-3}
+      PG_MAX_CONN: ${PG_MAX_CONN:-25}
     volumes:
       # NeuroLayer licence: drop a signed system.dat in backend/.license/ on the host.
       # Picked up within ~30s, no restart. See tools/licensing/ and the licensing runbook.

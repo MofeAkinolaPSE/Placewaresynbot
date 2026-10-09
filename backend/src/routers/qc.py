@@ -137,7 +137,7 @@ def _row_or_404(table: str, id_: str, label: str = "Record") -> dict:
 # ===========================================================================
 
 @router.get("/dashboard")
-async def qc_dashboard(user=Depends(_require_any)):
+def qc_dashboard(user=Depends(_require_any)):
     """Returns a single payload with all QC KPIs for the dashboard overview tab.
     Delegates to services/qc.py::get_qc_summary() -- also reused directly by
     the ACE Workstation aggregator (services/intelligence.py)."""
@@ -149,7 +149,7 @@ async def qc_dashboard(user=Depends(_require_any)):
 # ===========================================================================
 
 @router.get("/expiry-alerts")
-async def expiry_alerts(
+def expiry_alerts(
     days: int = Query(default=90, ge=1, le=365,
                       description="Look-ahead window in days. Returns items expiring within this window."),
     user=Depends(_require_any),
@@ -253,7 +253,7 @@ async def log_temperature(
 
 
 @router.get("/temperature-logs")
-async def list_temperature_logs(
+def list_temperature_logs(
     location:     Optional[str] = Query(default=None),
     date_from:    Optional[str] = Query(default=None, description="YYYY-MM-DD"),
     date_to:      Optional[str] = Query(default=None, description="YYYY-MM-DD"),
@@ -288,7 +288,7 @@ async def list_temperature_logs(
 
 
 @router.get("/temperature-logs/deviations")
-async def active_deviations(user=Depends(_require_any)):
+def active_deviations(user=Depends(_require_any)):
     """Return active (unescalated) temperature deviations using the helper view."""
     try:
         resp = db.table("v_temp_deviations_pending").select("*").execute()
@@ -432,7 +432,7 @@ async def create_deviation(
 
 
 @router.get("/deviations")
-async def list_deviations(
+def list_deviations(
     status:         Optional[str] = Query(default=None,
                                           description="open | under_investigation | closed | escalated"),
     classification: Optional[str] = Query(default=None),
@@ -570,7 +570,7 @@ class NafdacBatchIn(BaseModel):
 
 
 @router.post("/nafdac/batches", status_code=201)
-async def register_nafdac_batch(
+def register_nafdac_batch(
     payload: NafdacBatchIn,
     user=Depends(verify_jwt),
 ):
@@ -584,7 +584,7 @@ async def register_nafdac_batch(
 
 
 @router.get("/nafdac/batches")
-async def list_nafdac_batches(
+def list_nafdac_batches(
     status:    Optional[str] = Query(default=None,
                                      description="pending | approved | rejected | suspended"),
     product:   Optional[str] = Query(default=None),
@@ -625,7 +625,7 @@ class NafdacApproveIn(BaseModel):
 
 
 @router.patch("/nafdac/batches/{batch_id}/approve")
-async def approve_nafdac_batch(
+def approve_nafdac_batch(
     batch_id: str,
     payload:  NafdacApproveIn,
     user=Depends(_require_qc),
@@ -641,7 +641,7 @@ class NafdacRejectIn(BaseModel):
 
 
 @router.patch("/nafdac/batches/{batch_id}/reject")
-async def reject_nafdac_batch(
+def reject_nafdac_batch(
     batch_id: str,
     payload:  NafdacRejectIn,
     user=Depends(_require_qc),
@@ -688,7 +688,7 @@ VALID_RECALL_SCOPE = {"voluntary", "mandatory"}
 
 
 @router.post("/recalls", status_code=201)
-async def initiate_recall(
+def initiate_recall(
     payload: RecallCreateIn,
     user=Depends(_require_qc),
 ):
@@ -700,7 +700,7 @@ async def initiate_recall(
 
 
 @router.get("/recalls")
-async def list_recalls(
+def list_recalls(
     status:  Optional[str] = Query(default=None,
                                    description="initiated | in_progress | completed | closed"),
     product: Optional[str] = Query(default=None),
@@ -738,7 +738,7 @@ class RecallStatusIn(BaseModel):
 
 
 @router.patch("/recalls/{recall_id}/status")
-async def update_recall_status(
+def update_recall_status(
     recall_id: str,
     payload:   RecallStatusIn,
     user=Depends(_require_qc),

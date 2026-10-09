@@ -18,17 +18,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { useQueryClient } from "@tanstack/react-query";
-import { books, Dict, fmtDate, naira, num, today, yearStart } from "@/lib/books-api";
+import { books, Dict, fmtDate, naira, newIdemKey, num, packBatch, today, yearStart } from "@/lib/books-api";
 import { DrillContext, DrillTarget, sourceTarget } from "./drill-context";
-import { act, Amount, CsvButton, DateRange, DrillLink, ErrorNote, Loading, sourceLink, StatusBadge, useBooks } from "./kit";
+import { act, Amount, BankSelect, CsvButton, DateRange, DrillLink, ErrorNote, Loading, sourceLink, StatusBadge, useBooks } from "./kit";
 import { GlAccountDetail } from "./gl";
 import { DataIssueBody } from "./data-issues";
+import { RecallBody, RecallNotice } from "./recall-panel";
+import { AddItems, Amendments, CorrectReceipt, CorrectVoucher } from "./corrections";
+import { askConfirm, askText } from "@/lib/ask";
 
 const TITLES: Record<string, string> = {
   journal: "Journal", account: "Account", invoice: "Sales invoice", receipt: "Customer receipt", creditnote: "Credit note",
   bill: "Supplier bill", payment: "Supplier payment", debitnote: "Debit note", voucher: "Voucher", customer: "Customer",
   supplier: "Supplier", product: "Product", batch: "Batch", adjustment: "Stock adjustment", loan: "Stock loan", asset: "Fixed asset",
-  sageinvoice: "Invoice", sagebill: "Supplier invoice", sagereceipt: "Receipt", sagetxn: "Transaction", dataissue: "Data issue",
+  sageinvoice: "Invoice", sagebill: "Supplier invoice", sagereceipt: "Receipt", sagetxn: "Transaction", dataissue: "Data issue", recall: "Recall",
 };
 
 export function DrillProvider({ children }: { children: ReactNode }) {
@@ -81,6 +84,7 @@ export function RecordView({ t }: { t: DrillTarget }) {
     case "sagereceipt": return <SageReceiptBody id={t.id} />;
     case "sagetxn": return <SageTxnBody id={t.id} />;
     case "dataissue": return <DataIssueBody id={t.id} />;
+    case "recall": return <RecallBody id={t.id} />;
     default: return null;
   }
 }
@@ -133,6 +137,19 @@ const Cust = ({ id, name }: { id?: any; name?: string }) => (id ? <DrillLink to=
 const Sup = ({ id, name }: { id?: any; name?: string }) => (id ? <DrillLink to={{ type: "supplier", id: String(id), label: name }}>{name ?? "supplier"}</DrillLink> : <>{name ?? "—"}</>);
 const Prod = ({ sku, children }: { sku?: string; children?: ReactNode }) => (sku ? <DrillLink to={{ type: "product", id: sku, label: sku }}>{children ?? sku}</DrillLink> : <>{children}</>);
 const Bat = ({ id, n }: { id?: string; n?: string }) => (id ? <DrillLink to={{ type: "batch", id, label: n }}>{n ?? "batch"}</DrillLink> : <>{n ?? ""}</>);
+/** An invoice line's batch: the number on the pack (what the invoice prints), else a prompt to enter it;
+ *  Placeware's Sage lot letter underneath. */
+function BatchCell({ id, l }: { id?: string | null; l: Dict }) {
+  const pack = packBatch(l);
+  const lot = l.lot_code ?? (pack ? null : l.batch_number) ?? (l.sku ? l.sku.match(/\(([^)]*)\)\s*\w*$/)?.[1] : null);
+  return (
+    <>
+      {pack ? (id ? <Bat id={id} n={pack} /> : pack)
+        : id ? <DrillLink to={{ type: "batch", id, label: lot ?? "batch" }}><span className="text-amber-600">enter batch no.</span></DrillLink> : null}
+      {lot && <div className="text-[10px] text-muted-foreground">lot {lot}</div>}
+    </>
+  );
+}
 const SageInv = ({ number, openingId }: { number: string; openingId?: string | null }) =>
   openingId ? <DrillLink to={{ type: "invoice", id: openingId, label: number }}>{number}</DrillLink>
             : <DrillLink to={{ type: "sageinvoice" as any, id: number, label: number }}>{number}</DrillLink>;
@@ -193,10 +210,22 @@ export function JournalBody({ id }: { id: string }) {
 function JournalContent({ j }: { j: Dict }) {
   const [lines, box] = useListFilter<Dict>(j.lines.map((l: Dict) => ({ ...l, _acc: `${l.account_code} ${l.account_name}` })), "Search account, description, item");
   const manual = !j.source_type || j.source_type === "MANUAL_JOURNAL";
+  const qc = useQueryClient();
+  const [gone, setGone] = useState(false);
+  const deletable = j.status === "POSTED" && !j.reversed_by_id && manual && ["MANUAL", "ADJUSTMENT"].includes(j.journal_type);
+  const del = async () => {
+    const reason = await askText(`Delete ${j.journal_number}? Every report will go back to how it was before it was posted.
+
+Why is it being deleted? (kept in the audit trail)`);
+    if (reason && (await act(() => books.post(`/journals/${j.id}/reverse`, { reason }), "Entry deleted - its reversal is posted on the same date"))) {
+      setGone(true); qc.invalidateQueries({ queryKey: ["books"] });
+    }
+  };
   return (
     <div className="space-y-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2"><StatusBadge status={j.status} /><Badge variant="outline">{j.journal_type.toLowerCase()}</Badge>
-        <span className="text-muted-foreground">{fmtDate(j.journal_date)} · {j.period_name}</span></div>
+      <div className="flex flex-wrap items-center gap-2"><StatusBadge status={gone ? "REVERSED" : j.status} /><Badge variant="outline">{j.journal_type.toLowerCase()}</Badge>
+        <span className="text-muted-foreground">{fmtDate(j.journal_date)} · {j.period_name}</span>
+        {deletable && !gone && <Button size="sm" variant="destructive" className="ml-auto h-7" onClick={del}>Delete entry</Button>}</div>
       <Facts items={[["Journal", j.journal_number], ["Narration", j.description],
         ["Source", !manual && j.source_ref ? <DrillLink to={sourceTarget(j.source_type, j.source_id)}>{j.source_type?.replace(/_/g, " ").toLowerCase()} {j.source_ref}</DrillLink> : manual ? "manual journal" : null],
         ["Created by", j.created_by], ["Posted by", j.posted_by], ["Lines", j.lines.length]]} />
@@ -285,7 +314,7 @@ function HistoryLines({ lines, kind }: { lines: Dict[]; kind: "sale" | "purchase
             <TableRow key={i}>
               <TableCell className="text-right">{l.quantity != null ? num(l.quantity) : "—"}</TableCell>
               <TableCell><div>{l.sku ? <Prod sku={l.sku}>{l.product_name || l.description}</Prod> : l.description}</div><div className="text-xs text-muted-foreground">{l.sku} · GL {l.account_code}</div></TableCell>
-              <TableCell className="text-xs">{l.batch_number || (l.sku ? (l.sku.match(/\(([^)]*)\)\s*\w*$/)?.[1] ?? "") : "")}</TableCell>
+              <TableCell className="text-xs"><BatchCell id={l.batch_id} l={l} /></TableCell>
               <TableCell className="whitespace-nowrap text-xs">{l.expiry_date ? fmtDate(l.expiry_date) : ""}</TableCell>
               <TableCell className="text-right">{l.quantity ? <Amount value={l.unit_price ?? l.unit_cost ?? Number(l.amount) / Number(l.quantity)} /> : ""}</TableCell>
               <TableCell className="text-right"><Amount value={l.amount} /></TableCell>
@@ -308,6 +337,11 @@ export function InvoiceBody({ id }: { id: string }) {
             {i.source_type === "FRONTDESK" && <Badge variant="outline">from Frontdesk</Badge>}</div>
           <PrintInvoiceButton kind="ace" id={id} />
         </div>
+        {Number(i.balance_due) > 0 && i.status !== "VOID" && i.status !== "DRAFT" &&
+          <QuickReceipt invoiceId={id} invoiceNumber={i.invoice_number} customerId={i.customer_id} balance={Number(i.balance_due)} />}
+        {["POSTED", "PARTIALLY_PAID", "PAID"].includes(i.status) && !i.is_opening && <AddItems inv={i} />}
+        <Amendments rows={i.amendments} />
+        <RecallNotice recalls={i.recalls} />
         <Facts items={[["Customer", <Cust id={i.customer_id} name={i.customer_name} />], ["Customer ID", i.customer_code], ["Invoice date", fmtDate(i.invoice_date)], ["Due date", fmtDate(i.due_date)],
           ["Payment terms", i.terms_days === 0 ? "C.O.D." : i.terms_days ? `Net ${i.terms_days} days` : null], ["Customer PO", i.customer_po || i.reference], ["Shipping method", i.shipping_method],
           ["Journal", i.journal_id ? <J id={i.journal_id} n={i.journal_number} /> : null], ["Credit override", i.credit_override_reason]]} />
@@ -318,7 +352,7 @@ export function InvoiceBody({ id }: { id: string }) {
               <TableRow key={l.id}>
                 <TableCell className="text-right">{num(l.quantity)}</TableCell>
                 <TableCell><div>{l.sku ? <Prod sku={l.sku}>{l.description || l.sku}</Prod> : l.description}</div><div className="text-[11px] text-muted-foreground">{l.sku} · {l.line_type.toLowerCase()} → {l.account_code}</div></TableCell>
-                <TableCell className="text-xs">{l.batch_id ? <Bat id={l.batch_id} n={l.batch_number} /> : l.shipped_batch ?? ""}</TableCell>
+                <TableCell className="text-xs"><BatchCell id={l.batch_id} l={{ ...l, pack_batch_number: l.pack_batch_number ?? l.shipped_pack, batch_number: l.batch_number ?? l.shipped_batch, lot_code: l.lot_code ?? l.shipped_lot }} /></TableCell>
                 <TableCell className="whitespace-nowrap text-xs">{fmtDate(l.manufacture_date ?? l.shipped_mfg)}</TableCell>
                 <TableCell className="whitespace-nowrap text-xs">{fmtDate(l.expiry_date ?? l.shipped_expiry)}</TableCell>
                 <TableCell className="text-right"><Amount value={l.unit_price} />{Number(l.discount_amount) > 0 && <div className="text-xs text-muted-foreground">−{naira(l.discount_amount)}</div>}</TableCell>
@@ -353,6 +387,9 @@ function SageInvoiceBody({ number }: { number: string }) {
           <div className="flex gap-2">{d.ace_invoice_id && <DrillLink to={{ type: "invoice", id: d.ace_invoice_id, label: d.invoice_number }}>open item in ACE Books</DrillLink>}
             <PrintInvoiceButton kind="sage" id={number} /></div>
         </div>
+        <RecallNotice recalls={d.recalls} />
+        {d.ace_invoice_id && Number(d.balance) > 0 &&
+          <QuickReceipt invoiceId={d.ace_invoice_id} invoiceNumber={d.invoice_number} customerId={d.customer_id} balance={Number(d.balance)} />}
         <Facts items={[["Customer", <Cust id={d.customer_id} name={d.customer_name} />], ["Customer ID", d.customer_code], ["Invoice date", fmtDate(d.invoice_date)],
           ["Invoice amount", <Amount value={d.total} bold />], ["Paid / credited", <Amount value={d.paid} />], ["Balance", <Amount value={d.balance} bold />],
           ["Cost of sales", <Amount value={d.cost} />]]} />
@@ -449,6 +486,9 @@ export function ReceiptBody({ id }: { id: string }) {
           <div key={a.id} className="flex justify-between text-xs"><DrillLink to={{ type: "invoice", id: a.invoice_id, label: a.invoice_number }}>{a.invoice_number}</DrillLink>
             <span>{fmtDate(a.allocation_date)} · <Amount value={a.amount} />{a.reversed ? " (reversed)" : ""}</span></div>))}</>)}
         {r.void_reason && <p className="text-xs text-red-600">Voided: {r.void_reason}</p>}
+        {r.replaced_by_id && <p className="text-xs">Replaced by <DrillLink to={{ type: "receipt", id: String(r.replaced_by_id), label: r.replaced_by_number }}>{r.replaced_by_number}</DrillLink></p>}
+        {r.replaces_id && <p className="text-xs">Corrects <DrillLink to={{ type: "receipt", id: String(r.replaces_id), label: r.replaces_number }}>{r.replaces_number}</DrillLink></p>}
+        {r.status === "POSTED" && <CorrectReceipt r={r} />}
         <PageLink to={sourceLink("CUSTOMER_RECEIPT", id)} />
       </div>
     )}</Load>
@@ -485,11 +525,58 @@ export function CreditNoteBody({ id }: { id: string }) {
 // Purchasing & banking documents
 // ---------------------------------------------------------------------------
 
+/** Record the customer's payment of this invoice from its panel: amount defaults to what is
+ *  still owed, choose the bank and confirm. The receipt is applied to the invoice, so the invoice,
+ *  the register, the customer's balance and the bank update together. */
+function QuickReceipt({ invoiceId, invoiceNumber, customerId, balance }: { invoiceId: string; invoiceNumber: string; customerId: any; balance: number }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ amount: balance.toFixed(2), receipt_date: today(), method: "TRANSFER", bank_account_id: "", reference: "" });
+  const [idem, setIdem] = useState(newIdemKey);
+  const [busy, setBusy] = useState(false);
+  const amt = Number(f.amount || 0);
+  const save = async () => {
+    setBusy(true);
+    const r = await act(() => books.post<Dict>("/receivables/receipts", {
+      customer_id: customerId, receipt_date: f.receipt_date, method: f.method, bank_account_id: f.bank_account_id, amount: amt.toFixed(2),
+      reference: f.reference || undefined, allocations: [{ invoice_id: invoiceId, amount: Math.min(amt, balance).toFixed(2) }],
+    }, idem), `Receipt recorded against ${invoiceNumber}`);
+    setBusy(false);
+    if (r) { setOpen(false); setIdem(newIdemKey()); qc.invalidateQueries({ queryKey: ["books"] }); }
+  };
+  if (!open) return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs dark:bg-emerald-500/10">
+      <span>{naira(balance)} still owed on {invoiceNumber}.</span>
+      <Button size="sm" className="ml-auto h-7" onClick={() => setOpen(true)}>Record receipt</Button>
+      <Link to={`/finance/books/sales?tab=receipts&new=receipt&customer=${customerId}&apply=${invoiceId}`} className="text-primary hover:underline">full receipt form</Link>
+    </div>
+  );
+  return (
+    <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:bg-emerald-500/10">
+      <div className="font-semibold">Payment received for {invoiceNumber}</div>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <div><div className="mb-1 text-muted-foreground">Amount</div><Input className="h-8" type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
+        <div><div className="mb-1 text-muted-foreground">Date</div><Input className="h-8" type="date" value={f.receipt_date} onChange={(e) => setF({ ...f, receipt_date: e.target.value })} /></div>
+        <div><div className="mb-1 text-muted-foreground">Method</div>
+          <select className="h-8 w-full rounded-md border bg-background px-2" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
+            {["TRANSFER", "CHEQUE", "CASH", "POS", "OTHER"].map((m) => <option key={m} value={m}>{m.toLowerCase()}</option>)}</select></div>
+        <div><div className="mb-1 text-muted-foreground">Cheque / transfer ref</div><Input className="h-8" value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></div>
+      </div>
+      <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label="Received into" />
+      {amt > balance && <p className="text-amber-700">{naira(amt - balance)} more than is owed: it stays on the customer's account.</p>}
+      <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button size="sm" disabled={busy || !f.bank_account_id || !(amt > 0)} onClick={save}>{busy ? "Posting…" : `Confirm receipt of ${naira(amt)}`}</Button></div>
+    </div>
+  );
+}
+
 export function BillBody({ id }: { id: string }) {
   return (
     <Load path={`/payables/bills/${id}`}>{(b) => (
       <div className="space-y-3 text-sm">
-        <div className="flex flex-wrap items-center gap-2"><StatusBadge status={b.status} /><span className="font-mono">{b.bill_number}</span></div>
+        <div className="flex flex-wrap items-center gap-2"><StatusBadge status={b.status} /><span className="font-mono">{b.bill_number}</span>
+          {Number(b.balance_due) > 0 && b.status !== "VOID" && (
+            <Button asChild size="sm" className="ml-auto"><Link to={`/finance/books/purchases?tab=payments&new=payment&supplier=${b.supplier_id}&pay=${id}`}>Pay this bill</Link></Button>)}</div>
         <Facts items={[["Supplier", <Sup id={b.supplier_id} name={b.supplier_name} />], ["Supplier invoice", b.supplier_invoice_number], ["Bill date", fmtDate(b.bill_date)],
           ["Due", fmtDate(b.due_date)], ["Journal", b.journal_id ? <J id={b.journal_id} n={b.journal_number} /> : null], ["Notes", b.notes]]} />
         {b.lines?.length > 0 && (<><H>What was bought</H><Table>
@@ -524,6 +611,43 @@ export function PaymentBody({ id }: { id: string }) {
   );
 }
 
+/** Apply the unused part of a supplier credit to their open bills (oldest first by default). */
+function UseCredit({ dn }: { dn: Dict }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [amt, setAmt] = useState<Record<string, string>>({});
+  const { data: items } = useBooks<Dict[]>(["ap-open", dn.supplier_id], "/payables/open-items", { supplier_id: dn.supplier_id }, open);
+  const bills = (items ?? []).filter((i) => i.doc_type === "BILL" && Number(i.open_amount) > 0).sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
+  const total = Object.values(amt).reduce((s, v) => s + Number(v || 0), 0);
+  const unused = Number(dn.unused);
+  const save = async () => {
+    const allocations = Object.entries(amt).filter(([, v]) => Number(v) > 0).map(([bill_id, amount]) => ({ bill_id, amount }));
+    if (await act(() => books.post(`/payables/debit-notes/${dn.id}/allocate`, { allocations }), "Credit applied - the bills' balances are reduced")) {
+      setOpen(false); setAmt({}); qc.invalidateQueries({ queryKey: ["books"] });
+    }
+  };
+  if (!open) return (
+    <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs dark:bg-emerald-500/10">
+      <span>{naira(unused)} of this credit is unused.</span><Button size="sm" className="ml-auto h-7" onClick={() => setOpen(true)}>Apply to a bill</Button>
+    </div>
+  );
+  return (
+    <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:bg-emerald-500/10">
+      <div className="font-semibold">Apply {naira(unused)} to {dn.supplier_name}'s open bills</div>
+      {bills.length === 0 ? <p className="text-muted-foreground">No open bills from this supplier: the credit waits for their next bill.</p> : (
+        <Table><TableHeader><TableRow><TableHead>Bill</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Open</TableHead><TableHead className="w-32">Apply</TableHead></TableRow></TableHeader>
+          <TableBody>{bills.map((b) => (
+            <TableRow key={b.doc_id}><TableCell className="font-mono">{b.doc_number}</TableCell><TableCell>{fmtDate(b.due_date)}</TableCell><TableCell className="text-right"><Amount value={b.open_amount} /></TableCell>
+              <TableCell><Input className="h-7" type="number" value={amt[b.doc_id] ?? ""} placeholder={String(Math.min(unused - total, Number(b.open_amount)).toFixed(2))}
+                onFocus={() => !amt[b.doc_id] && setAmt({ ...amt, [b.doc_id]: Math.max(0, Math.min(unused - total, Number(b.open_amount))).toFixed(2) })}
+                onChange={(e) => setAmt({ ...amt, [b.doc_id]: e.target.value })} /></TableCell></TableRow>))}</TableBody></Table>)}
+      <div className="flex items-center justify-end gap-2"><span className={total > unused + 0.001 ? "text-red-600" : "text-muted-foreground"}>Applying {naira(total)} of {naira(unused)}</span>
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button size="sm" disabled={!(total > 0) || total > unused + 0.001} onClick={save}>Apply credit</Button></div>
+    </div>
+  );
+}
+
 export function DebitNoteBody({ id }: { id: string }) {
   return (
     <Load path={`/payables/debit-notes/${id}`}>{(d) => (
@@ -531,9 +655,18 @@ export function DebitNoteBody({ id }: { id: string }) {
         <Facts items={[["Number", d.debit_note_number], ["Supplier", <Sup id={d.supplier_id} name={d.supplier_name} />], ["Date", fmtDate(d.note_date)],
           ["Against bill", d.bill_id ? <DrillLink to={{ type: "bill", id: d.bill_id, label: d.bill_number }}>{d.bill_number}</DrillLink> : "none"], ["Reason", d.reason],
           ["Journal", <J id={d.journal_id} n={d.journal_number} />]]} />
-        <Totals rows={[["Total", d.total, true], ["Applied", d.amount_settled]]} />
-        {(d.lines ?? []).length > 0 && <Table><TableBody>{d.lines.map((l: Dict) => (
-          <TableRow key={l.id}><TableCell><Prod sku={l.sku} /> {l.batch_id && <Bat id={l.batch_id} />}</TableCell><TableCell className="text-right">{num(l.quantity)}</TableCell><TableCell className="text-right"><Amount value={l.line_total} /></TableCell></TableRow>))}</TableBody></Table>}
+        {d.recall && <p className="text-xs">Part of recall <DrillLink to={{ type: "recall", id: String(d.recall.recall_id), label: d.recall.recall_number }}>{d.recall.recall_number}</DrillLink></p>}
+        {(d.lines ?? []).length > 0 && (<><H>Goods returned</H><Table>
+          <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Batch</TableHead><TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Credit</TableHead></TableRow></TableHeader>
+          <TableBody>{d.lines.map((l: Dict) => (
+          <TableRow key={l.id}><TableCell>{l.sku ? <Prod sku={l.sku} /> : l.description}</TableCell>
+            <TableCell className="text-xs">{l.batch_id ? <Bat id={l.batch_id} n={l.batch_number} /> : "—"}{l.expiry_date && <div className="text-muted-foreground">exp {fmtDate(l.expiry_date)}</div>}</TableCell>
+            <TableCell className="text-right">{num(l.quantity)}</TableCell><TableCell className="text-right"><Amount value={l.line_total} /></TableCell></TableRow>))}</TableBody></Table></>)}
+        <Totals rows={[["Credit", d.total, true], ["Used against bills", d.amount_settled], ["Still unused", d.unused, true]]} />
+        {(d.allocations ?? []).length > 0 && (<><H>Used against</H>{d.allocations.map((a: Dict) => (
+          <div key={a.id} className="flex justify-between text-xs"><DrillLink to={{ type: "bill", id: String(a.bill_id), label: a.bill_number }}>{a.supplier_invoice_number || a.bill_number}</DrillLink>
+            <span>{fmtDate(a.allocation_date)} · <Amount value={a.amount} />{a.reversed ? " (reversed)" : ""}</span></div>))}</>)}
+        {Number(d.unused) > 0 && d.status !== "VOID" && <UseCredit dn={d} />}
       </div>
     )}</Load>
   );
@@ -550,6 +683,9 @@ export function VoucherBody({ id }: { id: string }) {
           <TableRow key={l.id}><TableCell><DrillLink to={{ type: "account", id: l.account_id, label: l.account_code }}>{l.account_code} · {l.account_name}</DrillLink><div className="text-xs text-muted-foreground">{l.description}</div></TableCell>
             <TableCell className="text-right"><Amount value={l.amount} /></TableCell></TableRow>))}</TableBody></Table></>)}
         {v.void_reason && <p className="text-xs text-red-600">Voided: {v.void_reason}</p>}
+        {v.replaced_by_id && <p className="text-xs">Replaced by <DrillLink to={{ type: "voucher", id: String(v.replaced_by_id), label: v.replaced_by_number }}>{v.replaced_by_number}</DrillLink></p>}
+        {v.replaces_id && <p className="text-xs">Corrects <DrillLink to={{ type: "voucher", id: String(v.replaces_id), label: v.replaces_number }}>{v.replaces_number}</DrillLink></p>}
+        {v.status === "POSTED" && <CorrectVoucher v={v} />}
       </div>
     )}</Load>
   );
@@ -773,7 +909,7 @@ function ProductContent({ d, range, setRange }: { d: Dict; range: { from: string
 }
 
 function BatchEdit({ b, onDone }: { b: Dict; onDone: () => void }) {
-  const [f, setF] = useState({ batch_number: b.batch_number ?? "", manufacture_date: b.manufacture_date ?? "", expiry_date: b.expiry_date ?? "" });
+  const [f, setF] = useState({ pack_batch_number: b.pack_batch_number ?? packBatch(b), manufacture_date: b.manufacture_date ?? "", expiry_date: b.expiry_date ?? "" });
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
@@ -783,10 +919,10 @@ function BatchEdit({ b, onDone }: { b: Dict; onDone: () => void }) {
   };
   return (
     <div className="grid grid-cols-1 gap-2 rounded-lg border p-3 sm:grid-cols-4">
-      <div><div className="text-[11px] text-muted-foreground">Batch number (as printed)</div><Input className="h-8" value={f.batch_number} onChange={(e) => setF({ ...f, batch_number: e.target.value })} /></div>
+      <div><div className="text-[11px] text-muted-foreground">Batch number on the pack (printed on invoices)</div><Input className="h-8" placeholder="e.g. Y3C77D4" value={f.pack_batch_number} onChange={(e) => setF({ ...f, pack_batch_number: e.target.value })} /></div>
       <div><div className="text-[11px] text-muted-foreground">Man. date</div><Input className="h-8" type="date" value={f.manufacture_date ?? ""} onChange={(e) => setF({ ...f, manufacture_date: e.target.value })} /></div>
       <div><div className="text-[11px] text-muted-foreground">Exp. date</div><Input className="h-8" type="date" value={f.expiry_date ?? ""} onChange={(e) => setF({ ...f, expiry_date: e.target.value })} /></div>
-      <div className="flex items-end"><Button size="sm" disabled={busy || !f.batch_number.trim()} onClick={save}>Save</Button></div>
+      <div className="flex items-end"><Button size="sm" disabled={busy} onClick={save}>Save</Button></div>
     </div>
   );
 }
@@ -797,11 +933,11 @@ function BatchBody({ id }: { id: string }) {
   return (
     <Load path={`/inventory/batches/${id}/trace`}>{(d) => (
       <div className="space-y-3 text-sm">
-        <Facts cols={4} items={[["Product", <Prod sku={d.batch.sku} />], ["Batch number", d.batch.batch_number], ["Lot (Sage)", d.batch.lot_code !== d.batch.batch_number ? d.batch.lot_code : null],
+        <Facts cols={4} items={[["Product", <Prod sku={d.batch.sku} />], ["Batch number (pack)", packBatch(d.batch) || <span className="text-amber-600">not entered yet</span>], ["Lot (Sage)", d.batch.lot_code ?? (packBatch(d.batch) ? null : d.batch.batch_number)],
           ["Man. date", fmtDate(d.batch.manufacture_date)], ["Exp. date", fmtDate(d.batch.expiry_date)], ["Status", <StatusBadge status={d.batch.status} />],
           ["On hand", num(d.on_hand?.quantity)], ["Value", <Amount value={d.on_hand?.value} />]]} />
         {editing ? <BatchEdit b={d.batch} onDone={() => { setEditing(false); qc.invalidateQueries({ queryKey: ["books"] }); }} />
-          : <Button size="sm" variant="outline" onClick={() => setEditing(true)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit batch number / dates</Button>}
+          : <Button size="sm" variant="outline" onClick={() => setEditing(true)}><Pencil className="mr-1 h-3.5 w-3.5" />Enter pack batch number / dates</Button>}
         <H>Who received this batch</H>
         {d.customers.length === 0 ? <p className="text-xs text-muted-foreground">No customer has received it in ACE Books yet (Sage sales history is per item — see the product).</p> : d.customers.map((c: Dict) => (
           <div key={c.customer_id} className="flex justify-between text-xs"><Cust id={c.customer_id} name={c.customer_name} /><span>{num(c.quantity_sold)} sold{Number(c.quantity_on_loan) ? `, ${num(c.quantity_on_loan)} on loan` : ""}</span></div>))}

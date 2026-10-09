@@ -25,7 +25,7 @@ def _write_runs(runs):
 
 
 @router.post("/reconcile/trigger")
-async def trigger_reconcile(request: Request):
+def trigger_reconcile(request: Request):
     # admin only
     verify_jwt(request, required_role="admin")
     runs = _load_runs()
@@ -40,6 +40,6 @@ async def trigger_reconcile(request: Request):
 
 
 @router.get("/reconcile/runs")
-async def list_runs(request: Request):
+def list_runs(request: Request):
     verify_jwt(request)
     return _load_runs()

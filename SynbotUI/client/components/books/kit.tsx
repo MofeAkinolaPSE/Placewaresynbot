@@ -196,12 +196,98 @@ export function DateRange({ from, to, onChange, single, presets = true }: { from
   );
 }
 
+/** CSV of what is on screen. Without `columns` it exports the table(s) shown next to the button -
+ *  the same headings, rows and text the user sees (amounts as plain numbers) - never the raw
+ *  record with internal fields. With `columns`, those fields of `rows`. */
 export function CsvButton({ filename, rows, columns }: { filename: string; rows: Dict[] | undefined; columns?: { key: string; label: string }[] }) {
+  const click = (e: { currentTarget: HTMLElement }) => {
+    if (columns && rows) return downloadCsv(filename, rows, columns);
+    const out = tablesNear(e.currentTarget);
+    if (out.length) return downloadRows(filename, out);
+    if (rows) downloadCsv(filename, rows, columns);
+  };
   return (
-    <Button size="sm" variant="outline" disabled={!rows?.length} onClick={() => rows && downloadCsv(filename, rows, columns)}>
+    <Button size="sm" variant="outline" disabled={!rows?.length} onClick={click}>
       <Download className="mr-1.5 h-4 w-4" /> CSV
     </Button>
   );
+}
+
+/** The visible table(s) in the nearest container around `el`, as rows of cell text. */
+function tablesNear(el: HTMLElement): string[][] {
+  let scope: HTMLElement | null = el.parentElement;
+  while (scope && !scope.querySelector("table")) scope = scope.parentElement;
+  if (!scope) return [];
+  const cell = (c: Element) => {
+    const t = ((c as HTMLElement).innerText ?? c.textContent ?? "").replace(/\s*\n+\s*/g, " · ").trim();
+    // ₦1,234.56 -> 1234.56 and (₦1,234.56) -> -1234.56, so the sheet can add them up
+    const m = t.match(/^(\()?([-−])?₦\s?([\d,]+(?:\.\d+)?)\)?$/);
+    if (m) return `${m[1] || m[2] ? "-" : ""}${m[3].replace(/,/g, "")}`;
+    return t;
+  };
+  const out: string[][] = [];
+  scope.querySelectorAll("table").forEach((table, i) => {
+    if (table.closest("[hidden]")) return;
+    if (i > 0) out.push([]);
+    table.querySelectorAll("tr").forEach((tr) => {
+      const cells = Array.from(tr.querySelectorAll("th,td")).map(cell);
+      if (cells.some((c) => c !== "")) out.push(cells);
+    });
+  });
+  return out;
+}
+
+function downloadRows(filename: string, rows: string[][]) {
+  const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  // the byte-order mark makes Excel read ₦ and accents as UTF-8
+  const url = URL.createObjectURL(new Blob(["﻿" + rows.map((r) => r.map(esc).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/** Before a party is chosen on a statement page: every customer / supplier with an open balance
+ *  (Sage items brought forward and ACE Books documents), largest first. Clicking one opens their
+ *  statement. */
+export function PartyBalances({ kind, onPick }: { kind: "customer" | "supplier"; onPick: (p: Dict) => void }) {
+  const [search, setSearch] = useState("");
+  const { data, isLoading, error } = useBooks<Dict>(["party-balances", kind], kind === "customer" ? "/reports/aged-receivables" : "/reports/aged-payables",
+    { as_of: today() });
+  const rows: Dict[] = (data?.rows ?? [])
+    .map((r: Dict) => ({ id: kind === "customer" ? r.customer_id : r.supplier_id, name: kind === "customer" ? r.customer_name : r.supplier_name,
+                          code: r.customer_code ?? r.supplier_code, total: Number(r.total || 0), buckets: r.buckets ?? [] }))
+    .filter((r: Dict) => !search || `${r.name ?? ""} ${r.code ?? ""}`.toLowerCase().includes(search.toLowerCase()))
+    .sort((a: Dict, b: Dict) => b.total - a.total);
+  const overdue = (r: Dict) => r.buckets.slice(1).reduce((s: number, x: any) => s + Number(x || 0), 0);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">{kind === "customer" ? "Customers" : "Suppliers"} with an open balance today - click one to open the statement.</span>
+        <Input className="h-8 w-60" placeholder={`Filter ${kind}s`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+      {isLoading && <Loading />}<ErrorNote error={error} />
+      {data && (rows.length === 0 ? <Empty>No open balances.</Empty> : (
+        <Table>
+          <TableHeader><TableRow><TableHead>{kind === "customer" ? "Customer" : "Supplier"}</TableHead><TableHead className="text-right">Balance</TableHead>
+            <TableHead className="text-right">Overdue</TableHead></TableRow></TableHeader>
+          <TableBody>{rows.slice(0, 300).map((r: Dict) => (
+            <TableRow key={String(r.id)} className="cursor-pointer hover:bg-muted/50" onClick={() => onPick({ id: r.id, name: r.name, customer_code: r.code })}>
+              <TableCell>{r.name}<span className="ml-2 font-mono text-[11px] text-muted-foreground">{r.code}</span></TableCell>
+              <TableCell className="text-right"><Amount value={r.total} /></TableCell>
+              <TableCell className={`text-right ${overdue(r) > 0 ? "text-red-600" : ""}`}><Amount value={overdue(r)} blankZero /></TableCell>
+            </TableRow>
+          ))}</TableBody>
+        </Table>
+      ))}
+    </div>
+  );
+}
+
+/** Marks a row that comes from the Sage years (listed beside ACE Books documents). */
+export function SageTag() {
+  return <span className="ml-1 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-medium text-muted-foreground">Sage</span>;
 }
 
 export function Empty({ children }: { children: ReactNode }) {
@@ -405,7 +491,7 @@ export function JournalSheet({ id, onClose }: { id: string | null; onClose: () =
   );
 }
 
-export function AccountSheet({ account, from, to, onClose }: { account: { id: string; code?: string; name?: string } | null; from: string; to: string; onClose: () => void }) {
+export function AccountSheet({ account, from, to, onClose }: { account: Dict | null; from: string; to: string; onClose: () => void }) {
   const [range, setRange] = useState({ from, to });
   useEffect(() => setRange({ from, to }), [from, to, account?.id]);
   if (account?.code) {
@@ -423,7 +509,7 @@ export function AccountSheet({ account, from, to, onClose }: { account: { id: st
   return <LegacyAccountSheet account={account} range={range} setRange={setRange} onClose={onClose} />;
 }
 
-function LegacyAccountSheet({ account, range, setRange, onClose }: { account: { id: string; code?: string; name?: string } | null; range: { from: string; to: string }; setRange: (r: { from: string; to: string }) => void; onClose: () => void }) {
+function LegacyAccountSheet({ account, range, setRange, onClose }: { account: Dict | null; range: { from: string; to: string }; setRange: (r: { from: string; to: string }) => void; onClose: () => void }) {
   const [journal, setJournal] = useState<string | null>(null);
   const { data, isLoading, error } = useBooks<Dict>(["activity", account?.id, range], `/accounts/${account?.id}/activity`,
     { from: range.from, to: range.to, limit: 2000 }, !!account);

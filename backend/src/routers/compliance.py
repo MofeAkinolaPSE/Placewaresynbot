@@ -182,7 +182,7 @@ async def _archive_document(
     # Run in a fire-and-forget background thread so it never blocks the response.
     try:
         from src.services.knowledge_ingestor import ingest_bytes as _ingest_bytes
-        import asyncio
+        import threading
 
         ingest_meta = {
             "document_type": doc_type,
@@ -193,11 +193,12 @@ async def _archive_document(
             "related_type":  related_type,
             "archive_id":    doc_id,
         }
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(
-            None,
-            lambda: _ingest_bytes(file_bytes, filename, ingest_meta, source="generated"),
-        )
+        # A thread rather than the event loop's executor: this also runs from sync handlers,
+        # which have no running loop.
+        threading.Thread(
+            target=lambda: _ingest_bytes(file_bytes, filename, ingest_meta, source="generated"),
+            daemon=True,
+        ).start()
     except Exception as _exc:
         logger.warning("Knowledge base auto-ingest failed for %s: %s", filename, _exc)
 
@@ -209,7 +210,7 @@ async def _archive_document(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/status")
-async def compliance_status(user=Depends(verify_jwt)):
+def compliance_status(user=Depends(verify_jwt)):
     """Return aggregated compliance health metrics for the dashboard."""
     try:
         today = date.today().isoformat()
@@ -292,7 +293,7 @@ class ActivityUpdate(BaseModel):
 
 
 @router.get("/activities")
-async def list_activities(
+def list_activities(
     status: Optional[str] = None,
     department: Optional[str] = None,
     limit: int = 50,
@@ -312,7 +313,7 @@ async def list_activities(
 
 
 @router.get("/activities/overdue")
-async def list_overdue_activities(user=Depends(verify_jwt)):
+def list_overdue_activities(user=Depends(verify_jwt)):
     try:
         today = date.today().isoformat()
         res = (
@@ -329,7 +330,7 @@ async def list_overdue_activities(user=Depends(verify_jwt)):
 
 
 @router.post("/activities", status_code=201)
-async def create_activity(body: ActivityCreate, user=Depends(verify_jwt)):
+def create_activity(body: ActivityCreate, user=Depends(verify_jwt)):
     _require_qa(user)
     try:
         row = db.table(TABLE_COMPLIANCE_ACTIVITY).insert({
@@ -345,7 +346,7 @@ async def create_activity(body: ActivityCreate, user=Depends(verify_jwt)):
 
 
 @router.put("/activities/{activity_id}")
-async def update_activity(activity_id: str, body: ActivityUpdate, user=Depends(verify_jwt)):
+def update_activity(activity_id: str, body: ActivityUpdate, user=Depends(verify_jwt)):
     _require_qa(user)
     try:
         update_data = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -369,7 +370,7 @@ async def update_activity(activity_id: str, body: ActivityUpdate, user=Depends(v
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/audits")
-async def list_audits(
+def list_audits(
     year: Optional[int] = None,
     department: Optional[str] = None,
     status: Optional[str] = None,
@@ -407,7 +408,7 @@ async def list_audits(
 
 
 @router.get("/audits/upcoming")
-async def upcoming_audits(user=Depends(verify_jwt)):
+def upcoming_audits(user=Depends(verify_jwt)):
     """Return audits with month_due within the next 30 days."""
     try:
         today = date.today()
@@ -430,7 +431,7 @@ async def upcoming_audits(user=Depends(verify_jwt)):
 
 
 @router.post("/audits/{audit_id}/start")
-async def start_audit(audit_id: str, user=Depends(verify_jwt)):
+def start_audit(audit_id: str, user=Depends(verify_jwt)):
     _require_qa(user)
     try:
         row = (
@@ -454,7 +455,7 @@ class AuditComplete(BaseModel):
 
 
 @router.post("/audits/{audit_id}/complete")
-async def complete_audit(
+def complete_audit(
     audit_id: str,
     body: AuditComplete,
     background_tasks: BackgroundTasks,
@@ -559,7 +560,7 @@ class AuditReportRequest(BaseModel):
 
 
 @router.post("/audits/{audit_id}/generate-report")
-async def generate_audit_report(
+def generate_audit_report(
     audit_id: str,
     body: AuditReportRequest,
     background_tasks: BackgroundTasks,
@@ -624,7 +625,7 @@ class DeviationUpdate(BaseModel):
 
 
 @router.get("/deviations")
-async def list_deviations(
+def list_deviations(
     status: Optional[str] = None,
     classification: Optional[str] = None,
     department: Optional[str] = None,
@@ -646,7 +647,7 @@ async def list_deviations(
 
 
 @router.get("/deviations/{deviation_id}")
-async def get_deviation(deviation_id: str, user=Depends(verify_jwt)):
+def get_deviation(deviation_id: str, user=Depends(verify_jwt)):
     try:
         res = (
             db.table(TABLE_DEVIATION_REPORTS)
@@ -665,7 +666,7 @@ async def get_deviation(deviation_id: str, user=Depends(verify_jwt)):
 
 
 @router.post("/deviations", status_code=201)
-async def create_deviation(body: DeviationCreate, user=Depends(verify_jwt)):
+def create_deviation(body: DeviationCreate, user=Depends(verify_jwt)):
     _require_qa(user)
     try:
         dev_id = _generate_sequential_id(DEVIATION_ID_PREFIX, TABLE_DEVIATION_REPORTS, "deviation_id")
@@ -685,7 +686,7 @@ async def create_deviation(body: DeviationCreate, user=Depends(verify_jwt)):
 
 
 @router.put("/deviations/{deviation_id}")
-async def update_deviation(deviation_id: str, body: DeviationUpdate, user=Depends(verify_jwt)):
+def update_deviation(deviation_id: str, body: DeviationUpdate, user=Depends(verify_jwt)):
     _require_qa(user)
     try:
         update_data = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -772,7 +773,7 @@ class EquipmentCreate(BaseModel):
 
 
 @router.get("/equipment")
-async def list_equipment(
+def list_equipment(
     equipment_type: Optional[str] = None,
     status: Optional[str] = None,
     user=Depends(verify_jwt),
@@ -792,7 +793,7 @@ async def list_equipment(
 
 
 @router.get("/equipment/{equipment_id}")
-async def get_equipment(equipment_id: str, user=Depends(verify_jwt)):
+def get_equipment(equipment_id: str, user=Depends(verify_jwt)):
     try:
         equip_res = (
             db.table(TABLE_EQUIPMENT_REGISTRY)
@@ -818,7 +819,7 @@ async def get_equipment(equipment_id: str, user=Depends(verify_jwt)):
 
 
 @router.post("/equipment", status_code=201)
-async def register_equipment(body: EquipmentCreate, user=Depends(verify_jwt)):
+def register_equipment(body: EquipmentCreate, user=Depends(verify_jwt)):
     _require_qa(user)
     try:
         row = db.table(TABLE_EQUIPMENT_REGISTRY).insert({
@@ -836,7 +837,7 @@ async def register_equipment(body: EquipmentCreate, user=Depends(verify_jwt)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/maintenance")
-async def list_maintenance(
+def list_maintenance(
     status: Optional[str] = None,
     maintenance_type: Optional[str] = None,
     user=Depends(verify_jwt),
@@ -854,7 +855,7 @@ async def list_maintenance(
 
 
 @router.get("/maintenance/overdue")
-async def overdue_maintenance(user=Depends(verify_jwt)):
+def overdue_maintenance(user=Depends(verify_jwt)):
     try:
         res = (
             db.table(TABLE_MAINTENANCE_SCHEDULE)
@@ -869,7 +870,7 @@ async def overdue_maintenance(user=Depends(verify_jwt)):
 
 
 @router.get("/maintenance/upcoming")
-async def upcoming_maintenance(window_days: int = 14, user=Depends(verify_jwt)):
+def upcoming_maintenance(window_days: int = 14, user=Depends(verify_jwt)):
     try:
         today = date.today()
         horizon = (today + timedelta(days=window_days)).isoformat()
@@ -894,7 +895,7 @@ class MaintenanceComplete(BaseModel):
 
 
 @router.post("/maintenance/{schedule_id}/complete")
-async def complete_maintenance(
+def complete_maintenance(
     schedule_id: str,
     body: MaintenanceComplete,
     background_tasks: BackgroundTasks,
@@ -987,7 +988,7 @@ class MaintenanceCertRequest(BaseModel):
 
 
 @router.post("/maintenance/{schedule_id}/generate-certificate")
-async def generate_maintenance_certificate(
+def generate_maintenance_certificate(
     schedule_id: str,
     body: MaintenanceCertRequest,
     background_tasks: BackgroundTasks,
@@ -1041,7 +1042,7 @@ class RecallUpdate(BaseModel):
 
 
 @router.get("/recalls")
-async def list_recalls(
+def list_recalls(
     status: Optional[str] = None,
     limit: int = 50,
     user=Depends(verify_jwt),
@@ -1057,7 +1058,7 @@ async def list_recalls(
 
 
 @router.get("/recalls/{recall_id}")
-async def get_recall(recall_id: str, user=Depends(verify_jwt)):
+def get_recall(recall_id: str, user=Depends(verify_jwt)):
     try:
         res = (
             db.table(TABLE_RECALL_CASES)
@@ -1076,7 +1077,7 @@ async def get_recall(recall_id: str, user=Depends(verify_jwt)):
 
 
 @router.post("/recalls", status_code=201)
-async def initiate_recall(
+def initiate_recall(
     body: RecallCreate,
     background_tasks: BackgroundTasks,
     user=Depends(verify_jwt),
@@ -1103,7 +1104,7 @@ async def initiate_recall(
 
 
 @router.put("/recalls/{recall_id}")
-async def update_recall(recall_id: str, body: RecallUpdate, user=Depends(verify_jwt)):
+def update_recall(recall_id: str, body: RecallUpdate, user=Depends(verify_jwt)):
     _require_qa(user)
     from src.services import quality_hub as qh
     try:
@@ -1115,7 +1116,7 @@ async def update_recall(recall_id: str, body: RecallUpdate, user=Depends(verify_
 
 
 @router.post("/recalls/{recall_id}/generate-documents")
-async def generate_recall_documents(
+def generate_recall_documents(
     recall_id: str,
     background_tasks: BackgroundTasks,
     user=Depends(verify_jwt),
@@ -1212,7 +1213,7 @@ async def _generate_all_recall_docs_bg(recall_id: str, recall: Dict, generated_b
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/sop")
-async def list_sops(
+def list_sops(
     category: Optional[str] = None,
     status: Optional[str] = "active",
     user=Depends(verify_jwt),

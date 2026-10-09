@@ -11,7 +11,7 @@ import { useParams } from "react-router-dom";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBooks } from "@/components/books/kit";
-import { Dict } from "@/lib/books-api";
+import { Dict, packBatch } from "@/lib/books-api";
 
 const money = (v: any) => (v == null || v === "" ? "" : Number(v).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const qty = (v: any) => (v == null ? "" : Number(v).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -38,14 +38,15 @@ export default function InvoicePrint() {
   const L = lay.layout;
   const customer = kind === "sage" ? cust?.customer : inv.customer;
   const lines: Dict[] = kind === "sage" ? inv.lines.map((l: Dict) => ({
-    quantity: l.quantity, description: l.product_name || l.description, batch: l.batch_number ?? (l.sku?.match(/\(([^)]*)\)\s*\w*$/)?.[1] ?? ""),
-    mfg: l.manufacture_date, exp: l.expiry_date, price: l.unit_price ?? (l.quantity ? Number(l.amount) / Number(l.quantity) : null), amount: l.amount,
+    quantity: l.quantity, description: l.product_name || l.description, batch: packBatch(l),
+    mfg: l.manufacture_date, exp: l.expiry_date ?? l.batch_expiry ?? l.lot_expiry, price: l.unit_price ?? (l.quantity ? Number(l.amount) / Number(l.quantity) : null), amount: l.amount,
   })) : [...(inv.lines ?? []).map((l: Dict) => ({
     quantity: l.line_type === "ITEM" || l.line_type === "SERVICE" ? l.quantity : null, description: l.description || l.sku,
-    batch: l.batch_number ?? l.shipped_batch ?? "", mfg: l.manufacture_date ?? l.shipped_mfg, exp: l.expiry_date ?? l.shipped_expiry,
+    batch: packBatch({ pack_batch_number: l.pack_batch_number ?? l.shipped_pack, batch_number: l.batch_number ?? l.shipped_batch, lot_code: l.lot_code ?? l.shipped_lot }),
+    mfg: l.manufacture_date ?? l.shipped_mfg, exp: l.expiry_date ?? l.shipped_expiry,
     price: l.line_type === "ITEM" || l.line_type === "SERVICE" ? l.unit_price : null, amount: l.line_total,
   })), ...(inv.history_lines ?? []).map((l: Dict) => ({
-    quantity: l.quantity, description: l.product_name || l.description, batch: l.batch_number ?? "", mfg: l.manufacture_date, exp: l.expiry_date,
+    quantity: l.quantity, description: l.product_name || l.description, batch: packBatch(l), mfg: l.manufacture_date, exp: l.expiry_date ?? l.batch_expiry ?? l.lot_expiry,
     price: l.unit_price, amount: l.amount,
   }))];
   const number = kind === "sage" ? inv.invoice_number : inv.invoice_number;
@@ -125,8 +126,9 @@ export default function InvoicePrint() {
         {/* signatures + totals */}
         <div className="mt-2 grid grid-cols-[1fr_260px] gap-4">
           <div className="space-y-2 pt-2">
-            <div>Prepared by(Name/Sign) ..................................................</div>
-            <div>Authorised by ..................................................</div>
+            <Sig label="Prepared by(Name/Sign)" name={inv.signoff?.prepared_by} at={inv.signoff?.prepared_at} />
+            {inv.signoff?.qc_by && <Sig label="QC checked by" name={inv.signoff.qc_by} at={inv.signoff.qc_at} />}
+            <Sig label="Authorised by" name={inv.signoff?.authorised_by} at={inv.signoff?.authorised_at} />
             <div>Delivered ..................................................</div>
             <div>Customer Name ..................................................</div>
             <div>Customer Sign ..................................................</div>
@@ -145,6 +147,18 @@ export default function InvoicePrint() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A signature line: the signer's name and date printed on the dotted line when known. */
+function Sig({ label, name, at }: { label: string; name?: string | null; at?: string | null }) {
+  return (
+    <div className="flex items-end gap-1">
+      <span className="shrink-0">{label}</span>
+      <span className="min-w-[180px] flex-1 border-b border-dotted border-neutral-500 pl-1 italic">
+        {name ? `${name}${at ? `  ${mdy(String(at).slice(0, 10))}` : ""}` : ""}
+      </span>
     </div>
   );
 }

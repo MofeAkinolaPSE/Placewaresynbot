@@ -13,12 +13,12 @@ router = APIRouter()
 
 
 @router.get("/schemas", response_model=List[Dict[str, Any]])
-async def list_schemas():
+def list_schemas():
     return service_list_schemas()
 
 
 @router.get("/schemas/{department}/{event_type}")
-async def get_schema(department: str, event_type: str):
+def get_schema(department: str, event_type: str):
     schema = service_get_schema(department, event_type)
     if schema:
         return schema
@@ -26,7 +26,7 @@ async def get_schema(department: str, event_type: str):
 
 
 @router.post("/schemas", status_code=201)
-async def create_schema(request: Request, payload: dict):
+def create_schema(request: Request, payload: dict):
     # Require admin/manager to create schemas
     auth = verify_jwt(request)
     roles = set(auth.get("roles") or [])
@@ -42,7 +42,7 @@ async def create_schema(request: Request, payload: dict):
 
 
 @router.post("/schemas/validate")
-async def validate_event(payload: dict):
+def validate_event(payload: dict):
     # payload must include department and event_type to choose schema
     department = payload.get("department")
     event_type = payload.get("event_type")

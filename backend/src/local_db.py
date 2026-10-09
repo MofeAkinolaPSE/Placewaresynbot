@@ -1,9 +1,38 @@
 import os
+import threading
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 import logging
 from urllib.parse import urlparse
+
+
+class WaitingConnectionPool(psycopg2.pool.ThreadedConnectionPool):
+    """ThreadedConnectionPool that waits for a free connection instead of raising
+    "connection pool exhausted". Sync route handlers run in a thread pool (up to 40 threads per
+    worker), so with 30-50 laptops more requests than connections can be in flight at once; they
+    now queue for a few milliseconds rather than failing with a 500."""
+
+    def __init__(self, minconn, maxconn, *args, wait_seconds: float = 30.0, **kwargs):
+        super().__init__(minconn, maxconn, *args, **kwargs)
+        self._slots = threading.BoundedSemaphore(maxconn)
+        self._wait = wait_seconds
+
+    def getconn(self, key=None):
+        if not self._slots.acquire(timeout=self._wait):
+            raise psycopg2.pool.PoolError(f"no database connection free after {self._wait:.0f}s")
+        try:
+            return super().getconn(key)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def putconn(self, conn=None, key=None, close=False):
+        super().putconn(conn, key, close)
+        try:
+            self._slots.release()
+        except ValueError:  # released more often than acquired (a connection put back twice)
+            pass
 
 
 class Result:
@@ -473,15 +502,20 @@ class RPCQuery:
                 rows = cur.fetchall()
                 return Result(rows)
 
-            # Generic single-json param RPC
+            # Generic RPC: a dict payload is the function's named arguments (as Supabase calls them),
+            # e.g. {"p_project_id": x} -> fn(p_project_id => x); anything else is one json argument
+            from psycopg2 import sql as _sql
+            fn = _sql.SQL("public.") + _sql.Identifier(self.name)
             if self.payload is None:
-                cur.execute(f"select * from public.{self.name}()")
-                rows = cur.fetchall()
-                return Result(rows)
+                cur.execute(_sql.SQL("select * from {}()").format(fn))
+            elif isinstance(self.payload, dict):
+                args = _sql.SQL(", ").join(_sql.SQL("{} => %s").format(_sql.Identifier(k)) for k in self.payload)
+                cur.execute(_sql.SQL("select * from {}({})").format(fn, args),
+                            [psycopg2.extras.Json(v) if isinstance(v, (dict, list)) else v for v in self.payload.values()])
             else:
-                cur.execute(f"select * from public.{self.name}(%s)", (psycopg2.extras.Json(self.payload),))
-                rows = cur.fetchall()
-                return Result(rows)
+                cur.execute(_sql.SQL("select * from {}(%s)").format(fn), (psycopg2.extras.Json(self.payload),))
+            rows = cur.fetchall()
+            return Result(rows)
         except Exception as e:
             logging.error(f"local_db RPC execute error ({self.name}): {e}")
             try:
@@ -510,7 +544,7 @@ class LocalDBClient:
         try:
             # minconn=1, maxconn configurable via env
             maxconn = int(os.getenv('PG_MAX_CONN', '10'))
-            self.pool = psycopg2.pool.ThreadedConnectionPool(1, maxconn, dsn=database_url)
+            self.pool = WaitingConnectionPool(1, maxconn, dsn=database_url)
         except Exception:
             # Fallback to direct connection to preserve compatibility
             conn = psycopg2.connect(database_url)

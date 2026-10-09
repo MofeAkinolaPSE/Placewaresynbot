@@ -94,7 +94,7 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 @router.post('/logistics/riders', status_code=201)
-async def create_rider(request: Request, payload: Rider):
+def create_rider(request: Request, payload: Rider):
     verify_jwt(request, required_role='ops')
     r = payload.dict()
     r['id'] = str(uuid.uuid4())
@@ -115,7 +115,7 @@ async def create_rider(request: Request, payload: Rider):
 
 
 @router.get('/logistics/riders')
-async def list_riders(request: Request, active: bool | None = None):
+def list_riders(request: Request, active: bool | None = None):
     """All riders (any status), optionally filtered — unlike /logistics/live-positions
     (active + GPS-having only), this is the real "list every rider" endpoint the
     Riders tab needs. Added alongside /logistics/deliveries below: LogisticsMonitor.tsx
@@ -134,7 +134,7 @@ async def list_riders(request: Request, active: bool | None = None):
 
 
 @router.post('/logistics/deliveries', status_code=201)
-async def create_delivery(request: Request, payload: Delivery):
+def create_delivery(request: Request, payload: Delivery):
     verify_jwt(request, required_role='ops')
     d = payload.dict()
     d['id'] = str(uuid.uuid4())
@@ -154,7 +154,7 @@ async def create_delivery(request: Request, payload: Delivery):
 
 
 @router.get('/logistics/deliveries')
-async def list_deliveries(request: Request, status: str | None = None, limit: int = 100, offset: int = 0):
+def list_deliveries(request: Request, status: str | None = None, limit: int = 100, offset: int = 0):
     """All deliveries (any status), optionally filtered, enriched with rider info —
     unlike /logistics/active-deliveries (assigned/in_transit only), this is the real
     "list every delivery" endpoint the Deliveries tab needs, including everything
@@ -272,7 +272,7 @@ async def assign_delivery(request: Request, delivery_id: str, payload: dict):
 
 
 @router.post('/logistics/assign')
-async def assign_routes(request: Request):
+def assign_routes(request: Request):
     # simple round-robin assigner
     verify_jwt(request, required_role='ops')
     try:
@@ -318,7 +318,7 @@ async def assign_routes(request: Request):
 
 
 @router.get('/logistics/riders/{rider_id}/route')
-async def get_rider_route(request: Request, rider_id: str):
+def get_rider_route(request: Request, rider_id: str):
     verify_jwt(request)
     try:
         rresp = db.table('routes').select('*').eq('rider_id', rider_id).execute()
@@ -406,7 +406,7 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
 
 
 @router.post('/logistics/compute-route')
-async def compute_route_endpoint(request: Request, payload: dict):
+def compute_route_endpoint(request: Request, payload: dict):
     """Compute a route (uses Google Maps when API key available; otherwise returns a mock route)."""
     verify_jwt(request)
     origin = payload.get('origin')
@@ -466,7 +466,7 @@ async def start_delivery(request: Request, delivery_id: str):
 # Rider PWA: look up delivery info by token (no JWT — token IS the credential)
 # ---------------------------------------------------------------------------
 @router.get('/logistics/track/{token}')
-async def get_delivery_by_token(token: str):
+def get_delivery_by_token(token: str):
     """Public endpoint — rider page fetches delivery details using its token."""
     try:
         resp = db.table('deliveries').select('*').eq('tracking_token', token).execute()
@@ -488,7 +488,7 @@ async def get_delivery_by_token(token: str):
 # instead of being reissued by staff every time).
 # ---------------------------------------------------------------------------
 @router.get('/logistics/riders/by-code/{code}')
-async def resolve_rider_by_code(code: str):
+def resolve_rider_by_code(code: str):
     """Public, code-authenticated lookup. Resolves a rider's persistent
     access_code to whichever delivery is currently assigned to them,
     auto-starting it (minting a tracking_token, same effect as staff's
@@ -644,7 +644,7 @@ async def location_ping(request: Request):
 # Live positions — dashboard poll (replaces map on SSE-unsupported clients)
 # ---------------------------------------------------------------------------
 @router.get('/logistics/live-positions')
-async def live_positions(request: Request):
+def live_positions(request: Request):
     """Return latest position for every active rider (from denorm columns)."""
     verify_jwt(request)
     try:
@@ -663,7 +663,7 @@ async def live_positions(request: Request):
 # Active deliveries snapshot (for map overlay)
 # ---------------------------------------------------------------------------
 @router.get('/logistics/active-deliveries')
-async def active_deliveries(request: Request):
+def active_deliveries(request: Request):
     """All in-transit/assigned deliveries with rider location snapshot."""
     verify_jwt(request)
     try:
@@ -699,7 +699,7 @@ async def active_deliveries(request: Request):
 # Ping history for a single delivery (route replay / audit trail)
 # ---------------------------------------------------------------------------
 @router.get('/logistics/deliveries/{delivery_id}/pings')
-async def delivery_pings(request: Request, delivery_id: str):
+def delivery_pings(request: Request, delivery_id: str):
     """Return ordered GPS ping history for a delivery. JWT required."""
     verify_jwt(request)
     try:

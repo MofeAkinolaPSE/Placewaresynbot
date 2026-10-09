@@ -838,7 +838,7 @@ _SAGE_SNAPSHOT_TABLES = [
 
 
 @router.post("/truncate")
-async def truncate_sage_snapshots(request: Request):
+def truncate_sage_snapshots(request: Request):
     """Truncate all sage_*_snapshot tables to prepare for a fresh import.
 
     WARNING: This deletes all imported Sage data from the snapshot tables.
@@ -876,13 +876,13 @@ async def truncate_sage_snapshots(request: Request):
 
 
 @router.get("/supported")
-async def list_supported_types():
+def list_supported_types():
     """List all supported CSV file types with their target tables and required columns."""
     return {"file_types": SUPPORTED_TYPES}
 
 
 @router.get("/freshness")
-async def import_freshness(request: Request):
+def import_freshness(request: Request):
     """Return the most recent import timestamp for the daily-refresh tables.
 
     Powers the "AR data last updated: N days ago" banner on the Sage Import
@@ -913,7 +913,7 @@ async def import_freshness(request: Request):
 
 
 @router.get("/jobs")
-async def list_import_jobs(request: Request, limit: int = 20):
+def list_import_jobs(request: Request, limit: int = 20):
     """Return the most recent CSV import jobs (newest first).
 
     Roles: admin, finance, management

@@ -34,7 +34,7 @@ def _require_procurement(request: Request) -> Dict[str, Any]:
 
 @router.get("")
 @router.get("/")
-async def api_list_replenishment(
+def api_list_replenishment(
     status: Optional[str] = Query(None, description="recommended | approved | ordered | received | cancelled"),
     limit: int = Query(100, le=500),
     _u=Depends(verify_jwt),
@@ -57,7 +57,7 @@ async def api_list_replenishment(
 
 
 @router.get("/summary")
-async def api_replenishment_summary(_u=Depends(verify_jwt)):
+def api_replenishment_summary(_u=Depends(verify_jwt)):
     """Counts per status, for the queue's tab badge and KPI."""
     try:
         rows = db.table("replenishment_requests").select("status").limit(5000).execute().data or []
@@ -78,7 +78,7 @@ class ReplenishCreate(BaseModel):
 
 
 @router.post("/create")
-async def api_create_replenishment(payload: ReplenishCreate, request: Request, user=Depends(verify_jwt)):
+def api_create_replenishment(payload: ReplenishCreate, request: Request, user=Depends(verify_jwt)):
     actor = getattr(request.state, "user", {}).get("sub") if hasattr(request.state, "user") else None
     return create_replenishment_request(payload.sku, payload.product_id, payload.requested_qty, actor)
 
@@ -88,7 +88,7 @@ class ReplenishApprove(BaseModel):
 
 
 @router.post("/approve")
-async def api_approve_replenishment(payload: ReplenishApprove, request: Request, user=Depends(_require_procurement)):
+def api_approve_replenishment(payload: ReplenishApprove, request: Request, user=Depends(_require_procurement)):
     actor = getattr(request.state, "user", {}).get("sub") if hasattr(request.state, "user") else None
     return approve_replenishment(payload.request_id, actor)
 
@@ -99,7 +99,7 @@ class CreatePO(BaseModel):
 
 
 @router.post("/create_po")
-async def api_create_po(payload: CreatePO, request: Request, user=Depends(_require_procurement)):
+def api_create_po(payload: CreatePO, request: Request, user=Depends(_require_procurement)):
     actor = getattr(request.state, "user", {}).get("sub") if hasattr(request.state, "user") else None
     return create_po_for_request(payload.request_id, payload.po_id, actor)
 
@@ -110,7 +110,7 @@ class ReplenishReceived(BaseModel):
 
 
 @router.post("/received")
-async def api_replenishment_received(payload: ReplenishReceived, request: Request, user=Depends(_require_procurement)):
+def api_replenishment_received(payload: ReplenishReceived, request: Request, user=Depends(_require_procurement)):
     actor = getattr(request.state, "user", {}).get("sub") if hasattr(request.state, "user") else None
     result = mark_replenishment_received(payload.request_id, payload.received_qty, actor)
     if not result.get("ok"):
@@ -124,7 +124,7 @@ class ReplenishCancel(BaseModel):
 
 
 @router.post("/cancel")
-async def api_cancel_replenishment(payload: ReplenishCancel, request: Request, user=Depends(_require_procurement)):
+def api_cancel_replenishment(payload: ReplenishCancel, request: Request, user=Depends(_require_procurement)):
     """Cancel a reorder that hasn't been received. Sets status='cancelled'
     rather than deleting the row, so the request stays visible in history --
     matches how the 774-item stale backlog was cleared: marked cancelled, not

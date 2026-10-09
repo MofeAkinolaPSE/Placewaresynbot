@@ -51,7 +51,7 @@ def _actor(user: Dict[str, Any]) -> Optional[str]:
 
 
 @router.get("/preview")
-async def preview(
+def preview(
     request: Request,
     date_from: dt.date = Query(..., alias="from"),
     date_to: dt.date = Query(..., alias="to"),
@@ -64,7 +64,7 @@ async def preview(
 
 
 @router.post("/batches")
-async def create_batch(body: BatchIn, request: Request):
+def create_batch(body: BatchIn, request: Request):
     user = _require_finance(request)
     try:
         result = S.generate(body.date_from, body.date_to, _actor(user), body.docs)
@@ -79,13 +79,13 @@ async def create_batch(body: BatchIn, request: Request):
 
 
 @router.get("/batches")
-async def list_batches(request: Request, limit: int = Query(50, ge=1, le=200)):
+def list_batches(request: Request, limit: int = Query(50, ge=1, le=200)):
     _require_finance(request)
     return {"batches": S.list_batches(limit)}
 
 
 @router.get("/batches/{batch_id}/download")
-async def download_batch(batch_id: str, request: Request):
+def download_batch(batch_id: str, request: Request):
     _require_finance(request)
     try:
         name, payload = S.batch_zip(batch_id)
@@ -99,7 +99,7 @@ async def download_batch(batch_id: str, request: Request):
 
 
 @router.get("/batches/{batch_id}/files/{file_name}")
-async def download_file(batch_id: str, file_name: str, request: Request):
+def download_file(batch_id: str, file_name: str, request: Request):
     """One Sage import file (e.g. SALES.CSV) from a batch."""
     _require_finance(request)
     try:
@@ -114,7 +114,7 @@ async def download_file(batch_id: str, file_name: str, request: Request):
 
 
 @router.delete("/batches/{batch_id}")
-async def delete_batch(batch_id: str, request: Request):
+def delete_batch(batch_id: str, request: Request):
     """Release a batch that was NOT imported into Sage so it can be re-exported."""
     user = _require_finance(request)
     if not S.delete_batch(batch_id):
@@ -127,13 +127,13 @@ async def delete_batch(batch_id: str, request: Request):
 
 
 @router.get("/settings")
-async def get_settings(request: Request):
+def get_settings(request: Request):
     _require_finance(request)
     return S._public_settings(S.get_settings())
 
 
 @router.put("/settings")
-async def put_settings(body: SettingsIn, request: Request):
+def put_settings(body: SettingsIn, request: Request):
     user = _require_finance(request)
     changes = body.model_dump(exclude_unset=True)
     for k in ("writeoff_gl_account", "ar_account", "delivery_gl_account", "discount_gl_account"):

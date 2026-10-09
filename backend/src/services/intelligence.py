@@ -230,21 +230,15 @@ def create_alert(
     invalidate_cache_tags("alerts", "executive", "risk_signals", "recommendations", "anomalies")
 
     # Best-effort realtime notification (non-blocking)
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(
-            realtime_hub.broadcast(
-                "alerts_updates",
-                {
-                    "event": "alert_created",
-                    "severity": severity,
-                    "category": category,
-                    "title": title,
-                },
-            )
-        )
-    except RuntimeError:
-        pass
+    realtime_hub.broadcast_threadsafe(
+        "alerts_updates",
+        {
+            "event": "alert_created",
+            "severity": severity,
+            "category": category,
+            "title": title,
+        },
+    )
 
 @ttl_cache(ttl_seconds=30, ignore_kwargs=("client",), tags=("alerts", "executive"))
 def get_active_alerts(client: DBClient = db) -> List[Dict[str, Any]]:
@@ -763,7 +757,7 @@ def risk_signals(client: DBClient = db) -> Dict[str, Any]:
             "data_source": "reports/ar_aging",
         })
     finance = finance_kpis(client)
-    if finance.get("ar", {}).get("overdue_count", 0) > 10:
+    if (finance.get("ar", {}).get("overdue_count") or 0) > 10:
         risks.append({
             "domain": "Finance",
             "risk_type": "Overdue Invoices",
@@ -796,8 +790,8 @@ def risk_signals(client: DBClient = db) -> Dict[str, Any]:
 
     # Inventory: low stock and out-of-stock alerts
     inv = get_inventory_summary(limit=100, client=client)
-    low_stock = [i for i in inv if i.get("current_stock", 0) < 10]
-    out_stock = [i for i in inv if i.get("current_stock", 0) <= 0]
+    low_stock = [i for i in inv if (i.get("current_stock") or 0) < 10]
+    out_stock = [i for i in inv if (i.get("current_stock") or 0) <= 0]
     if out_stock:
         risks.append({
             "domain": "Inventory",
@@ -817,7 +811,7 @@ def risk_signals(client: DBClient = db) -> Dict[str, Any]:
 
     # Operations: downtime and fulfillment delays
     ops = ops_kpis(client)
-    if ops.get("downtime_minutes_total", 0) > 500:
+    if (ops.get("downtime_minutes_total") or 0) > 500:
         risks.append({
             "domain": "Ops",
             "risk_type": "Downtime Spike",
@@ -825,7 +819,7 @@ def risk_signals(client: DBClient = db) -> Dict[str, Any]:
             "signal": f"Total downtime {ops['downtime_minutes_total']:.0f} minutes.",
             "data_source": "ops/kpis",
         })
-    if ops.get("fulfillment_days_avg", 0) > 5:
+    if (ops.get("fulfillment_days_avg") or 0) > 5:
         risks.append({
             "domain": "Ops",
             "risk_type": "Fulfillment Delays",
@@ -836,7 +830,7 @@ def risk_signals(client: DBClient = db) -> Dict[str, Any]:
 
     # HR: absence and overtime
     hr = payroll_and_absence_summary(client=client, periods=3)
-    if hr.get("overtime_pct_payroll", 0) > 0.15:
+    if (hr.get("overtime_pct_payroll") or 0) > 0.15:
         risks.append({
             "domain": "HR",
             "risk_type": "Overtime Pressure",
@@ -927,7 +921,7 @@ def recommendations(client: DBClient = db) -> Dict[str, Any]:
         })
 
     finance = finance_kpis(client)
-    if finance.get("ar", {}).get("overdue_count", 0) > 10:
+    if (finance.get("ar", {}).get("overdue_count") or 0) > 10:
         recs.append({
             "action": "Segment overdue accounts and assign repayment plans.",
             "reason": f"{finance['ar']['overdue_count']} invoices are overdue.",
@@ -937,8 +931,8 @@ def recommendations(client: DBClient = db) -> Dict[str, Any]:
 
     # Inventory: low stock
     inv = get_inventory_summary(limit=100, client=client)
-    low_stock = [i for i in inv if i.get("current_stock", 0) < 10]
-    out_stock = [i for i in inv if i.get("current_stock", 0) <= 0]
+    low_stock = [i for i in inv if (i.get("current_stock") or 0) < 10]
+    out_stock = [i for i in inv if (i.get("current_stock") or 0) <= 0]
     if out_stock:
         recs.append({
             "action": "Prioritize replenishment for out‑of‑stock SKUs.",
@@ -956,14 +950,14 @@ def recommendations(client: DBClient = db) -> Dict[str, Any]:
 
     # Ops: downtime and fulfillment
     ops = ops_kpis(client)
-    if ops.get("downtime_minutes_total", 0) > 500:
+    if (ops.get("downtime_minutes_total") or 0) > 500:
         recs.append({
             "action": "Schedule preventive maintenance on high‑downtime assets.",
             "reason": f"Total downtime is {ops['downtime_minutes_total']:.0f} minutes.",
             "data_source": "ops/kpis",
             "confidence": "Medium",
         })
-    if ops.get("fulfillment_days_avg", 0) > 5:
+    if (ops.get("fulfillment_days_avg") or 0) > 5:
         recs.append({
             "action": "Optimize pick‑pack workflows to reduce fulfillment time.",
             "reason": f"Average fulfillment time is {ops['fulfillment_days_avg']:.1f} days.",
@@ -973,7 +967,7 @@ def recommendations(client: DBClient = db) -> Dict[str, Any]:
 
     # HR: overtime and absences
     hr = payroll_and_absence_summary(client=client, periods=3)
-    if hr.get("overtime_pct_payroll", 0) > 0.15:
+    if (hr.get("overtime_pct_payroll") or 0) > 0.15:
         recs.append({
             "action": "Rebalance shifts or automate repetitive tasks to reduce overtime.",
             "reason": f"Overtime is {hr['overtime_pct_payroll']*100:.1f}% of payroll.",

@@ -88,6 +88,7 @@ export const NAV_ITEMS: NavItem[] = [
       children: [
         { label: "Finance Control Tower", href: "/finance/books" },
         { label: "Sales & Receivables", href: "/finance/books/sales" },
+        { label: "Invoice Register", href: "/finance/books/sales?tab=register" },
         { label: "Purchases & Payables", href: "/finance/books/purchases" },
         { label: "Stock", href: "/finance/books/stock" },
         { label: "Banking", href: "/finance/books/banking" },
@@ -228,7 +229,11 @@ const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
   // Track which collapsible groups are open
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
-  const isActive = (path: string) => location.pathname === path;
+  // a link may carry a tab (e.g. /finance/books/sales?tab=register): active when that tab is open
+  const isActive = (path: string) => {
+    const [p, qs] = path.split("?");
+    return location.pathname === p && (!qs || location.search.includes(qs));
+  };
   const isActiveGroup = (paths: string[]) =>
     paths.some((p) => location.pathname.startsWith(p));
 

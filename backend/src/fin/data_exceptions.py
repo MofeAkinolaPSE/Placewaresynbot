@@ -201,8 +201,8 @@ def _tb_gl(conn, e: str) -> int:
         return 0
     as_of = snap["as_of"]
     acc = books_ledger.accounts(conn, e)
-    hist = books_ledger._hist_balances(conn, e, as_of)
-    jan = books_ledger._hist_balances(conn, e, dt.date(as_of.year, 1, 1), start_of_day=True)
+    hist = books_ledger._hist_balances_uncached(conn, e, as_of)
+    jan = books_ledger._hist_balances_uncached(conn, e, dt.date(as_of.year, 1, 1), start_of_day=True)
     # Sage's Trial Balance knows nothing of the stock corrections made here; only corrections
     # decided on this check count towards it.
     for a in q(conn, """SELECT a.gl_delta FROM fin_data_exception_actions a JOIN fin_data_exceptions x ON x.id=a.exception_id
@@ -274,7 +274,7 @@ def _party_control(conn, e: str, kind: str) -> int:
     today = dt.date.today()
     h = books_ledger.history_until(conn, e) or today
     as_of = max(today, h)
-    gl = books_ledger.balances(conn, e, as_of, [acct["code"]]).get(acct["code"], ZERO)
+    gl = books_ledger.balances(conn, e, as_of, [acct["code"]], fresh=True).get(acct["code"], ZERO)
     if kind == "AP_CONTROL":
         gl = -gl
     items = reports.ar_open_items(conn, e, as_of) if kind == "AR_CONTROL" else reports.ap_open_items(conn, e, as_of)
@@ -326,7 +326,7 @@ def _inventory_control(conn, e: str) -> int:
     h = books_ledger.history_until(conn, e) or today
     as_of = max(today, h)
     acc = books_ledger.accounts(conn, e)
-    bal = books_ledger.balances(conn, e, as_of)
+    bal = books_ledger.balances(conn, e, as_of, fresh=True)
     gl_by = {c: v for c, v in bal.items() if acc.get(c, {}).get("subtype") == "INVENTORY" and v != 0}
     stock_by: Dict[str, Decimal] = {}
     for r in q(conn, """SELECT COALESCE(a.code, d.code) AS code, SUM(l.qty_remaining * l.unit_cost) AS v

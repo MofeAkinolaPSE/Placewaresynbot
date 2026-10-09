@@ -1504,14 +1504,14 @@ export const api = {
 
     submitQc: (invoiceId: string, payload: {
       passed: boolean;
-      inspector_name: string;
+      inspector_name?: string;
       notes?: string;
       batch_numbers?: string[];
     }) => sendJson<any>(`/frontdesk/invoices/${invoiceId}/qc`, "POST", payload),
 
     financeApproval: (invoiceId: string, payload: {
       approved: boolean;
-      approver_name: string;
+      approver_name?: string;
       reason?: string;
     }) => sendJson<any>(`/frontdesk/invoices/${invoiceId}/finance`, "POST", payload),
 
@@ -1600,6 +1600,7 @@ export const api = {
     recall: (id: string) => fetchRaw<any>(`/quality/recalls/${id}`),
     openRecall: (payload: Record<string, any>) => sendJson<any>("/quality/recalls", "POST", payload),
     updateRecall: (id: string, payload: Record<string, any>) => sendJson<any>(`/quality/recalls/${id}`, "PATCH", payload),
+    voidRecall: (id: string, reason: string) => sendJson<any>(`/quality/recalls/${id}/void`, "POST", { reason }),
     // a customer returns recalled stock: credit note on the invoice they bought it on + stock back (frozen)
     recordRecallReturn: (id: string, payload: Record<string, any>) => sendJson<any>(`/quality/recalls/${id}/returns`, "POST", payload),
     customerInvoices: (customerId: string | number, opts: { batch_id?: string; sku?: string } = {}) =>

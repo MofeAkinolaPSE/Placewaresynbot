@@ -410,11 +410,31 @@ def list_journals(conn, entity_id: str, *, status: Optional[str] = None, date_fr
         where.append("(j.journal_number ILIKE %s OR j.description ILIKE %s OR j.source_ref ILIKE %s)")
         params += [f"%{search}%"] * 3
     w = " AND ".join(where)
-    total = q1(conn, f"SELECT COUNT(*) n FROM fin_journals j WHERE {w}", params)["n"]
-    rows = q(conn, f"""SELECT j.id, j.journal_number, j.journal_date, j.journal_type, j.description, j.status,
-                              j.total_debit, j.total_credit, j.source_type, j.source_ref, j.created_by,
-                              j.posted_at, j.reversal_of_id, j.reversed_by_id
-                       FROM fin_journals j WHERE {w}
-                       ORDER BY j.journal_date DESC, j.journal_number DESC LIMIT %s OFFSET %s""",
-             params + [limit, offset])
+    union = f"""SELECT j.id::text AS id, j.journal_number, j.journal_date, j.journal_type, j.description, j.status,
+                       j.total_debit, j.total_credit, j.source_type, j.source_ref, j.created_by,
+                       j.posted_at, j.reversal_of_id::text AS reversal_of_id, j.reversed_by_id::text AS reversed_by_id, 'ACE' AS source
+                FROM fin_journals j WHERE {w}"""
+    sp: List[Any] = []
+    # The general journal entries made in Sage, one row per transaction (date + reference), unless the
+    # filter asks for something only ACE Books has (a status other than posted, a type or source).
+    if not journal_type and not source_type and (not status or "POSTED" in status.split(",")):
+        sw, sp = ["l.legal_entity_id=%s", "l.jrnl='GENJ'"], [entity_id]
+        if date_from:
+            sw.append("l.txn_date >= %s")
+            sp.append(date_from)
+        if date_to:
+            sw.append("l.txn_date <= %s")
+            sp.append(date_to)
+        if search:
+            sw.append("(l.reference ILIKE %s OR l.description ILIKE %s)")
+            sp += [f"%{search}%"] * 2
+        union += f"""
+                UNION ALL
+                SELECT NULL, COALESCE(NULLIF(l.reference, ''), 'GENJ'), l.txn_date, 'SAGE', MAX(l.description), 'POSTED',
+                       SUM(l.debit), SUM(l.credit), 'SAGE_GENJ', l.reference, NULL, NULL, NULL, NULL, 'SAGE'
+                FROM fin_sage_gl_lines l WHERE {' AND '.join(sw)}
+                GROUP BY l.txn_date, l.reference HAVING SUM(l.debit) <> 0 OR SUM(l.credit) <> 0"""
+    total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params + sp)["n"]
+    rows = q(conn, f"SELECT * FROM ({union}) u ORDER BY journal_date DESC, journal_number DESC LIMIT %s OFFSET %s",
+             params + sp + [limit, offset])
     return {"items": rows, "total": total}

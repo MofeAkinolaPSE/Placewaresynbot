@@ -14,7 +14,9 @@ export type DrillType =
   /** id "<date>|<jrnl>|<reference>" - every line of one Sage General Ledger transaction */
   | "sagetxn"
   /** a Data issue (Close & Controls) - also the source of every FIX- correction journal */
-  | "dataissue";
+  | "dataissue"
+  /** an ACE Books recall (id = fin_recalls.id): invoices affected, returns, supplier debit notes */
+  | "recall";
 
 /** The record behind a Sage General Ledger line: the invoice for a sale, else the whole transaction. */
 export function sageLineTarget(l: { date: string; jrnl?: string | null; reference?: string | null }): DrillTarget {
@@ -45,7 +47,20 @@ export const SOURCE_TYPES: Record<string, DrillType> = {
   FIXED_ASSET: "asset",
   FIXED_ASSET_DISPOSAL: "asset",
   DATA_CORRECTION: "dataissue",
+  RECALL: "recall",
 };
+
+/** A Sage-era row listed beside ACE Books documents (no ACE id): the Sage record it opens. */
+export function historyTarget(kind: "receipt" | "payment" | "bill" | "voucher" | "journal" | "adjustment", r: Record<string, any>): DrillTarget {
+  switch (kind) {
+    case "receipt": return { type: "sagereceipt", id: `${r.receipt_date}|${r.receipt_number ?? ""}|${r.customer_name ?? ""}`, label: r.receipt_number };
+    case "payment": return { type: "sagetxn", id: `${r.payment_date}|CDJ|${r.payment_number ?? ""}`, label: r.payment_number };
+    case "bill": return { type: "sagebill", id: `${r.bill_number}|${r.supplier_id ?? ""}`, label: r.bill_number };
+    case "voucher": return { type: "sagetxn", id: `${r.voucher_date}|${r.jrnl ?? "CDJ"}|${r.reference ?? ""}`, label: r.reference || r.jrnl };
+    case "journal": return { type: "sagetxn", id: `${r.journal_date}|GENJ|${r.source_ref ?? ""}`, label: r.journal_number };
+    case "adjustment": return { type: "sagetxn", id: `${r.adjustment_date}|INAJ|${r.reference ?? ""}`, label: r.adjustment_number };
+  }
+}
 
 export function sourceTarget(sourceType?: string | null, sourceId?: string | null): DrillTarget | null {
   if (!sourceType || !sourceId) return null;

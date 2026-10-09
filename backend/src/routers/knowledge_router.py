@@ -133,7 +133,7 @@ async def ingest_document_upload(
 # ---------------------------------------------------------------------------
 
 @router.get("/knowledge/search")
-async def knowledge_search(
+def knowledge_search(
     request: Request,
     q: str = Query(..., min_length=2, description="Search query"),
     department: Optional[str] = Query(None),
@@ -190,7 +190,7 @@ async def knowledge_search(
 # ---------------------------------------------------------------------------
 
 @router.get("/api/documents")
-async def list_documents(
+def list_documents(
     request: Request,
     doc_type: Optional[str] = Query(None, description="Filter by document type"),
     department: Optional[str] = Query(None),
@@ -283,7 +283,7 @@ async def list_documents(
 # ---------------------------------------------------------------------------
 
 @router.get("/api/documents/{doc_id}")
-async def get_document(request: Request, doc_id: str):
+def get_document(request: Request, doc_id: str):
     """Return document metadata and, where available, the first few stored chunks
     (for text rendering in the UI viewer modal).
 
@@ -404,7 +404,7 @@ def _get_chunks_for_archive(archive_id: str, limit: int = 10) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 @router.get("/knowledge/gaps")
-async def list_knowledge_gaps(
+def list_knowledge_gaps(
     request: Request,
     status: Optional[str] = Query(None, description="pending | resolved | ignored"),
     page: int = Query(1, ge=1),
@@ -438,7 +438,7 @@ async def list_knowledge_gaps(
 # ---------------------------------------------------------------------------
 
 @router.patch("/knowledge/gaps/{gap_id}/resolve")
-async def resolve_knowledge_gap(request: Request, gap_id: int):
+def resolve_knowledge_gap(request: Request, gap_id: int):
     """Mark a knowledge gap as resolved.  Required roles: admin."""
     _require_roles(request, ADMIN_ONLY)
 

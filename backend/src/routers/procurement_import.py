@@ -216,7 +216,7 @@ async def transition_shipment_status(
 
 
 @router.get("/shipments")
-async def get_shipments(
+def get_shipments(
     status: str | None = Query(default=None),
     supplier_name: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -227,7 +227,7 @@ async def get_shipments(
 
 
 @router.get("/shipments/{shipment_id}/events")
-async def get_shipment_events(
+def get_shipment_events(
     shipment_id: str,
     limit: int = Query(default=100, ge=1, le=500),
     user: dict[str, Any] = Depends(require_procurement_read),
@@ -370,7 +370,7 @@ async def escalate_shipment(
 
 
 @router.get("/events/poll")
-async def poll_procurement_events(
+def poll_procurement_events(
     since_event_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=100, ge=1, le=500),
     user: dict[str, Any] = Depends(require_procurement_read),
@@ -430,7 +430,7 @@ async def stream_procurement_events(
 
 
 @router.get("/scorecard")
-async def get_supplier_scorecard(user: dict[str, Any] = Depends(require_procurement_read)):
+def get_supplier_scorecard(user: dict[str, Any] = Depends(require_procurement_read)):
     rows = list_procurement_shipments(limit=500)
     analysis = run_clearance_analysis(rows)
     return {"data": analysis.get("supplier_scorecard", []), "viewer": user.get("sub")}

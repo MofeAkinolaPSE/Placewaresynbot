@@ -39,14 +39,14 @@ def _require_ops_access(request: Request, user=Depends(verify_jwt)):
 
 
 @router.get("/state-map")
-async def api_twin_state_map(user_ctx=Depends(_require_ops_access)):
+def api_twin_state_map(user_ctx=Depends(_require_ops_access)):
     """Return the current health state of every system node."""
     nodes = get_current_state_map()
     return {"nodes": nodes, "count": len(nodes)}
 
 
 @router.get("/anomalies")
-async def api_twin_anomalies(
+def api_twin_anomalies(
     limit: int = Query(50, ge=1, le=200),
     user_ctx=Depends(_require_ops_access),
 ):
@@ -56,13 +56,13 @@ async def api_twin_anomalies(
 
 
 @router.get("/dependency-graph")
-async def api_twin_dependency_graph(user_ctx=Depends(_require_ops_access)):
+def api_twin_dependency_graph(user_ctx=Depends(_require_ops_access)):
     """Return nodes and edges for the system dependency graph."""
     return get_dependency_graph()
 
 
 @router.post("/sync")
-async def api_twin_sync(request: Request, user_ctx=Depends(_require_ops_access)):
+def api_twin_sync(request: Request, user_ctx=Depends(_require_ops_access)):
     """Manually trigger a full twin sync cycle."""
     actor_id = user_ctx.get("sub")
     result = run_twin_sync()
@@ -79,7 +79,7 @@ async def api_twin_sync(request: Request, user_ctx=Depends(_require_ops_access))
 
 
 @router.post("/anomalies/{anomaly_id}/resolve")
-async def api_twin_resolve_anomaly(
+def api_twin_resolve_anomaly(
     anomaly_id: str,
     request: Request,
     user_ctx=Depends(_require_ops_access),

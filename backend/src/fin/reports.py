@@ -277,7 +277,7 @@ def aged_receivables(conn, entity_id: str, as_of: dt.date, basis: str = "due_dat
         c["buckets"][idx] += amt
         c["total"] += amt
         c["items"].append({**it, "bucket": labels[idx], "days": (as_of - ref).days})
-    rows = sorted(per.values(), key=lambda r: -r["total"])
+    rows = sorted(per.values(), key=lambda r: ((r["customer_name"] or "").strip().lower(), str(r["customer_id"])))
     totals = [sum((r["buckets"][i] for r in rows), ZERO) for i in range(len(labels))]
     return {"as_of": as_of, "basis": basis, "buckets": labels, "rows": rows, "bucket_totals": totals,
             "total": sum(totals, ZERO)}
@@ -323,7 +323,7 @@ def aged_payables(conn, entity_id: str, as_of: dt.date, basis: str = "due_date")
         s["buckets"][idx] += amt
         s["total"] += amt
         s["items"].append({**it, "bucket": labels[idx], "days": (as_of - ref).days})
-    rows = sorted(per.values(), key=lambda r: -r["total"])
+    rows = sorted(per.values(), key=lambda r: ((r["supplier_name"] or "").strip().lower(), r["supplier_id"]))
     totals = [sum((r["buckets"][i] for r in rows), ZERO) for i in range(len(labels))]
     return {"as_of": as_of, "basis": basis, "buckets": labels, "rows": rows, "bucket_totals": totals,
             "total": sum(totals, ZERO)}
@@ -410,15 +410,6 @@ def subledger_balances(conn, entity_id: str, as_of: dt.date) -> Dict[str, Decima
 # COGS, Inventory Adjustment, General) - all views over the GL by source.
 # ---------------------------------------------------------------------------
 
-JOURNAL_SOURCES = {
-    "sales": ("SALES_INVOICE", "CREDIT_NOTE"),
-    "cash-receipts": ("CUSTOMER_RECEIPT",),
-    "purchases": ("SUPPLIER_BILL", "DEBIT_NOTE"),
-    "cash-disbursements": ("SUPPLIER_PAYMENT", "CASH_VOUCHER"),
-    "inventory-adjustments": ("STOCK_ADJUSTMENT", "STOCK_LOAN", "STOCK_LOAN_RETURN", "STOCK_LOAN_WRITEOFF"),
-    "general": ("MANUAL_JOURNAL",),
-    "assets": ("FIXED_ASSET", "DEPRECIATION_RUN", "FIXED_ASSET_DISPOSAL"),
-}
 
 
 def journal_report(conn, entity_id: str, kind: str, date_from: dt.date, date_to: dt.date) -> Dict[str, Any]:
@@ -430,16 +421,19 @@ def journal_report(conn, entity_id: str, kind: str, date_from: dt.date, date_to:
                           AND g.source_type IN ('SALES_INVOICE','CREDIT_NOTE')
                           ORDER BY g.journal_date, g.journal_number, g.line_no""", (entity_id, date_from, date_to))
     else:
-        sources = JOURNAL_SOURCES.get(kind)
-        if not sources:
+        from src.fin import journal_map
+        code = journal_map.KEY_CODE.get(kind)
+        if not code:
             from src.fin.errors import invalid
-            raise invalid(f"Unknown journal {kind}", allowed=sorted(list(JOURNAL_SOURCES) + ["cogs"]))
-        rows = q(conn, """SELECT g.journal_date AS date, g.account_code, g.account_name, g.source_ref AS reference,
+            raise invalid(f"Unknown journal {kind}", allowed=sorted(journal_map.KEY_CODE))
+        # the same mapping the General Ledger's Jrnl column uses, so every posting is in exactly one journal
+        rows = q(conn, f"""SELECT g.journal_date AS date, g.account_code, g.account_name, g.source_ref AS reference,
                                  g.product_sku, COALESCE(g.description, g.journal_description) AS description,
-                                 g.debit, g.credit, g.journal_id, g.journal_number, g.source_type, g.source_id
+                                 g.debit, g.credit, g.journal_id, g.journal_number, g.source_type, g.source_id,
+                                 {journal_map.code_sql()} AS jrnl
                           FROM fin_v_general_ledger g WHERE g.legal_entity_id=%s AND g.journal_date BETWEEN %s AND %s
-                          AND g.source_type = ANY(%s) ORDER BY g.journal_date, g.journal_number, g.line_no""",
-                 (entity_id, date_from, date_to, list(sources)))
+                          AND {journal_map.code_sql()} = ANY(%s) ORDER BY g.journal_date, g.journal_number, g.line_no""",
+                 (entity_id, date_from, date_to, list(journal_map.report_codes(code))))
     return {"kind": kind, "date_from": date_from, "date_to": date_to, "rows": rows,
             "total_debit": sum((money(r["debit"]) for r in rows), ZERO),
             "total_credit": sum((money(r["credit"]) for r in rows), ZERO)}

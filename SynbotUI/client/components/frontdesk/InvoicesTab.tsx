@@ -147,17 +147,22 @@ function fmtMonthYear(ym?: string | null): string {
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-NG", { month: "short", year: "numeric" });
 }
 
+/** Text from the database, safe to put inside the print window's HTML (a customer name or address
+ *  containing markup must print as text, never run as script in the app's origin). */
+const esc = (v: unknown): string =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+
 export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
   const win = window.open("", "_blank", "width=1000,height=800");
   if (!win) return;
 
   const itemRows = invoice.items.map((it) => `
     <tr>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${it.quantity}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee">${it.product}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${it.batch_number || '<span class="muted">—</span>'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.manufacture_date ? fmtMonthYear(it.manufacture_date) : '<span class="muted">—</span>'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.expiry_date ? fmtDateOnly(it.expiry_date) : '<span class="muted">—</span>'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${esc(it.quantity)}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${esc(it.product)}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${it.batch_number ? esc(it.batch_number) : '<span class="muted">—</span>'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.manufacture_date ? esc(fmtMonthYear(it.manufacture_date)) : '<span class="muted">—</span>'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.expiry_date ? esc(fmtDateOnly(it.expiry_date)) : '<span class="muted">—</span>'}</td>
       <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">₦${Number(it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
       <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:600">₦${Number(it.line_total ?? it.quantity * it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
     </tr>`
@@ -171,13 +176,13 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
   const deliveredBy = invoice.delivered_by || null;
   const shipDate = invoice.dispatched_at ? fmtDateOnly(invoice.dispatched_at) : "Pending dispatch";
   const dueDate = invoice.due_date ? fmtDateOnly(invoice.due_date) : "—";
-  const billingAddress = (invoice.billing_address || "").replace(/\n/g, "<br>");
-  const shippingAddress = (invoice.shipping_address || "").replace(/\n/g, "<br>");
+  const billingAddress = esc(invoice.billing_address).replace(/\n/g, "<br>");
+  const shippingAddress = esc(invoice.shipping_address).replace(/\n/g, "<br>");
 
   win.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<title>Invoice ${invoice.invoice_number}</title>
+<title>Invoice ${esc(invoice.invoice_number)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Segoe UI',Arial,sans-serif;padding:40px;color:#12203A;background:#fff;font-size:13px}
@@ -220,10 +225,10 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
   <div>
     <div class="inv-title">INVOICE</div>
     <div class="inv-meta">
-      Invoice Number: <strong>${invoice.invoice_number}</strong><br>
+      Invoice Number: <strong>${esc(invoice.invoice_number)}</strong><br>
       Invoice Date: <strong>${fmtDateOnly(invoice.created_at)}</strong><br>
       Page: <strong>1 of 1</strong>
-      <div style="margin-top:6px"><span class="status-badge">${STATUS_LABELS[invoice.status]?.label ?? invoice.status}</span></div>
+      <div style="margin-top:6px"><span class="status-badge">${esc(STATUS_LABELS[invoice.status]?.label ?? invoice.status)}</span></div>
     </div>
   </div>
 </div>
@@ -232,11 +237,11 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 <div class="grid2">
   <div>
     <div class="section-label">Bill To</div>
-    <div class="field" style="font-weight:700;font-size:15px">${invoice.customer_name}</div>
-    ${invoice.company_name ? `<div class="field">${invoice.company_name}</div>` : ""}
+    <div class="field" style="font-weight:700;font-size:15px">${esc(invoice.customer_name)}</div>
+    ${invoice.company_name ? `<div class="field">${esc(invoice.company_name)}</div>` : ""}
     <div class="field">${billingAddress || '<span class="muted">—</span>'}</div>
-    ${walkIn?.contact_phone ? `<div class="field">📞 ${walkIn.contact_phone}</div>` : ""}
-    ${walkIn?.email ? `<div class="field">✉ ${walkIn.email}</div>` : ""}
+    ${walkIn?.contact_phone ? `<div class="field">📞 ${esc(walkIn.contact_phone)}</div>` : ""}
+    ${walkIn?.email ? `<div class="field">✉ ${esc(walkIn.email)}</div>` : ""}
   </div>
   <div>
     <div class="section-label">Ship To</div>
@@ -247,25 +252,25 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 <div class="grid3">
   <div>
     <div class="section-label">Customer ID</div>
-    <div class="field">${customerId}</div>
+    <div class="field">${esc(customerId)}</div>
   </div>
   <div>
     <div class="section-label">Customer PO</div>
-    <div class="field">${invoice.customer_po || '<span class="muted">—</span>'}</div>
+    <div class="field">${invoice.customer_po ? esc(invoice.customer_po) : '<span class="muted">—</span>'}</div>
   </div>
   <div>
     <div class="section-label">Payment Terms</div>
-    <div class="field">${invoice.payment_terms || "Due on Receipt"}</div>
+    <div class="field">${esc(invoice.payment_terms || "Due on Receipt")}</div>
   </div>
 </div>
 <div class="grid3">
   <div>
     <div class="section-label">Sales Rep</div>
-    <div class="field">${salesRep}</div>
+    <div class="field">${esc(salesRep)}</div>
   </div>
   <div>
     <div class="section-label">Shipping Method</div>
-    <div class="field">${invoice.shipping_method || '<span class="muted">—</span>'}</div>
+    <div class="field">${invoice.shipping_method ? esc(invoice.shipping_method) : '<span class="muted">—</span>'}</div>
   </div>
   <div>
     <div class="section-label">Ship Date / Due Date</div>
@@ -294,10 +299,10 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 <div class="compliance-note">Goods received in good condition with cold chain maintained. Not returnable.</div>
 
 <div class="sig-grid">
-  <div class="sig-cell"><div class="sig-name">${salesRep !== "—" ? salesRep : ""}</div><div class="sig-line">Prepared by (Name/Sign)</div></div>
-  <div class="sig-cell"><div class="sig-name">${authorisedBy ?? ""}</div><div class="sig-line">Authorised by</div></div>
-  <div class="sig-cell"><div class="sig-name">${deliveredBy ?? ""}</div><div class="sig-line">Delivered</div></div>
-  <div class="sig-cell"><div class="sig-name">${invoice.customer_name}</div><div class="sig-line">Customer Name</div></div>
+  <div class="sig-cell"><div class="sig-name">${salesRep !== "—" ? esc(salesRep) : ""}</div><div class="sig-line">Prepared by (Name/Sign)</div></div>
+  <div class="sig-cell"><div class="sig-name">${esc(authorisedBy)}</div><div class="sig-line">Authorised by</div></div>
+  <div class="sig-cell"><div class="sig-name">${esc(deliveredBy)}</div><div class="sig-line">Delivered</div></div>
+  <div class="sig-cell"><div class="sig-name">${esc(invoice.customer_name)}</div><div class="sig-line">Customer Name</div></div>
   <div class="sig-cell"><div class="sig-name">&nbsp;</div><div class="sig-line">Customer Sign</div></div>
 </div>
 
@@ -307,11 +312,13 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 </div>
 
 <div class="no-print" style="margin-top:24px;text-align:center">
-  <button onclick="window.print()" style="background:linear-gradient(90deg,#003A91,#62C76A);color:#fff;padding:12px 32px;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600">🖨️ Print / Save as PDF</button>
+  <button id="print-btn" style="background:linear-gradient(90deg,#003A91,#62C76A);color:#fff;padding:12px 32px;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600">🖨️ Print / Save as PDF</button>
 </div>
-<script>setTimeout(()=>window.print(),400);</script>
 </body></html>`);
   win.document.close();
+  // wired from here, not inline in the popup: the Content-Security-Policy blocks inline scripts
+  win.document.getElementById("print-btn")?.addEventListener("click", () => win.print());
+  setTimeout(() => win.print(), 400);
 }
 
 // ---------------------------------------------------------------------------

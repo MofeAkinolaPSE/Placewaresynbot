@@ -12,6 +12,7 @@ import { BooksShell } from "@/components/books/BooksShell";
 import { act, CsvButton, DateRange, Empty, ErrorNote, Loading, Section, StatusBadge, useBooks } from "@/components/books/kit";
 import { books, BooksError, Dict, fmtDate, monthStart, today } from "@/lib/books-api";
 import { DataIssuesPanel } from "@/components/books/data-issues";
+import { askConfirm, askText } from "@/lib/ask";
 
 export default function BooksClose() {
   const [sp, setSp] = useSearchParams();
@@ -66,16 +67,16 @@ function Periods() {
   const [period, setPeriod] = useState<Dict | null>(null);
   const done = () => { refetch(); qc.invalidateQueries({ queryKey: ["books"] }); };
   const reopen = async (p: Dict) => {
-    const reason = window.prompt(`Why is ${p.name} being reopened?`);
+    const reason = await askText(`Why is ${p.name} being reopened?`);
     if (reason && (await act(() => books.post(`/periods/${p.id}/reopen`, { reason }), `${p.name} reopened`))) done();
   };
   const closeYear = async (y: Dict) => {
-    if (!window.confirm(`Close ${y.name}? Income and expense balances will be moved to retained earnings and the next year opened. All its periods must be closed first.`)) return;
+    if (!await askConfirm(`Close ${y.name}? Income and expense balances will be moved to retained earnings and the next year opened. All its periods must be closed first.`)) return;
     if (await act(() => books.post(`/fiscal-years/${y.id}/close`, {}), `${y.name} closed`)) done();
   };
   const addYear = async () => {
     const last = years?.[0];
-    const start = window.prompt("First day of the new fiscal year (YYYY-MM-DD)", last ? nextDay(last.end_date) : `${new Date().getFullYear()}-01-01`);
+    const start = await askText("First day of the new fiscal year (YYYY-MM-DD)", last ? nextDay(last.end_date) : `${new Date().getFullYear()}-01-01`);
     if (start && (await act(() => books.post("/fiscal-years", { start_date: start }), "Fiscal year created"))) done();
   };
   return (
@@ -169,7 +170,7 @@ function Frontdesk() {
   const { data: unposted, refetch: refetchUnposted } = useBooks<Dict[]>(["fd-unposted"], "/integrations/frontdesk/unposted");
   const { data: settings } = useBooks<Dict>(["settings"], "/settings");
   const exclude = async (id: string, ref: string) => {
-    const reason = window.prompt(`Keep ${ref} out of the books permanently? Give a reason (e.g. "test transaction").`);
+    const reason = await askText(`Keep ${ref} out of the books permanently? Give a reason (e.g. "test transaction").`);
     if (reason && (await act(() => books.post(`/integrations/frontdesk/${id}/exclude`, { reason }), `${ref} excluded from the books`))) {
       refetch(); refetchUnposted(); qc.invalidateQueries({ queryKey: ["books"] });
     }

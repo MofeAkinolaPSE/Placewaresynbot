@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 from src.fin import audit, inventory, posting, rules
 from src.fin.db import ZERO, ex, jsonb, money, q, q1, qty
 from src.fin.errors import FinError, invalid, not_found
+from src.fin import numbering
 from src.fin.numbering import next_number
 
 LINE_TYPES = ("ITEM", "SERVICE", "CHARGE", "DISCOUNT")
@@ -151,6 +152,11 @@ def create_invoice(conn, ctx, data: Dict[str, Any], *, source_type: str = "MANUA
     for l in lines:
         batch_id = l.get("batch_id") or (inventory.ensure_batch(conn, ctx.entity_id, l["sku"], l.get("batch_number"))
                                          if l["line_type"] == "ITEM" and l.get("batch_number") else None)
+        if batch_id and (l.get("pack_batch_number") or l.get("manufacture_date")):
+            # the batch number on the pack and its manufacture date, kept on the batch for every later invoice
+            ex(conn, """UPDATE fin_batches SET pack_batch_number=COALESCE(%s, pack_batch_number),
+                        manufacture_date=COALESCE(%s, manufacture_date) WHERE id=%s AND legal_entity_id=%s""",
+               ((str(l.get("pack_batch_number") or "").strip() or None), l.get("manufacture_date") or None, batch_id, ctx.entity_id))
         ex(conn, """INSERT INTO fin_sales_invoice_lines (invoice_id, line_no, line_type, sku, batch_id, description,
                     quantity, unit_price, discount_amount, line_total, account_id)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -159,6 +165,35 @@ def create_invoice(conn, ctx, data: Dict[str, Any], *, source_type: str = "MANUA
     audit.record(conn, ctx, "INVOICE_CREATED", "sales_invoice", inv["id"], ref=number,
                  after={"customer": c["name"], "total": total})
     return get_invoice(conn, ctx.entity_id, inv["id"])
+
+
+def _signoff(conn, inv: Dict[str, Any]) -> Dict[str, Any]:
+    """Who prepared, QC-checked and authorised the invoice (printed on it). A Frontdesk request
+    carries its QC and Finance sign-off; an invoice raised in ACE Books is prepared and posted by
+    its user."""
+    out: Dict[str, Any] = {}
+    fd = None
+    try:
+        fd = q1(conn, """SELECT f.created_by::text AS created_by, f.created_at, f.qc_inspector, f.qc_checked_at,
+                                f.finance_approver, f.finance_decided_at
+                         FROM fin_source_postings p JOIN frontdesk_invoices f ON f.id::text = p.source_id
+                         WHERE p.source_type='FRONTDESK' AND p.document_id::text=%s LIMIT 1""", (str(inv["id"]),))
+    except Exception:
+        fd = None
+    try:
+        from src.services.people import names_for
+        ids = [x for x in ((fd or {}).get("created_by"), inv.get("created_by"), inv.get("posted_by")) if x]
+        names = names_for(ids) if ids else {}
+    except Exception:
+        names = {}
+    nm = lambda x: names.get(str(x)) if x else None
+    if fd:
+        out = {"prepared_by": nm(fd["created_by"]), "prepared_at": fd["created_at"], "qc_by": fd["qc_inspector"],
+               "qc_at": fd["qc_checked_at"], "authorised_by": fd["finance_approver"], "authorised_at": fd["finance_decided_at"]}
+    elif not inv.get("is_opening"):
+        out = {"prepared_by": nm(inv.get("created_by")), "prepared_at": inv.get("created_at"),
+               "authorised_by": nm(inv.get("posted_by")), "authorised_at": inv.get("posted_at")}
+    return out
 
 
 def get_invoice(conn, entity_id: str, invoice_id: str) -> Dict[str, Any]:
@@ -170,20 +205,27 @@ def get_invoice(conn, entity_id: str, invoice_id: str) -> Dict[str, Any]:
     if not inv:
         raise not_found("Invoice", invoice_id)
     inv["lines"] = q(conn, """SELECT l.*, a.code AS account_code, a.name AS account_name, b.batch_number, b.lot_code,
-                                     b.manufacture_date, b.expiry_date,
+                                     b.manufacture_date, b.expiry_date, b.pack_batch_number,
+                                     COALESCE(b.pack_batch_number, cb.pack_batch_number) AS shipped_pack,
+                                     COALESCE(b.lot_code, cb.lot_code) AS shipped_lot,
                                      COALESCE(b.batch_number, cb.batch_number) AS shipped_batch,
                                      COALESCE(b.manufacture_date, cb.manufacture_date) AS shipped_mfg,
                                      COALESCE(b.expiry_date, cb.expiry_date) AS shipped_expiry,
                                      CASE WHEN l.quantity <> 0 THEN round(l.cost_amount / l.quantity, 2) END AS unit_cost
                               FROM fin_sales_invoice_lines l LEFT JOIN fin_accounts a ON a.id=l.account_id
                               LEFT JOIN fin_batches b ON b.id=l.batch_id
-                              LEFT JOIN LATERAL (SELECT bb.batch_number, bb.manufacture_date, bb.expiry_date
+                              LEFT JOIN LATERAL (SELECT bb.batch_number, bb.manufacture_date, bb.expiry_date, bb.pack_batch_number, bb.lot_code
                                                  FROM fin_layer_consumptions lc JOIN fin_cost_layers cl ON cl.id=lc.layer_id
                                                  JOIN fin_batches bb ON bb.id=cl.batch_id
                                                  WHERE lc.inventory_txn_id=l.inventory_txn_id ORDER BY lc.quantity DESC LIMIT 1) cb ON TRUE
                               WHERE l.invoice_id=%s ORDER BY l.line_no""", (invoice_id,))
     inv["customer"] = q1(conn, """SELECT id, name, customer_code, contact_details, credit_limit, payment_terms_days
                                   FROM customers WHERE id=%s""", (inv["customer_id"],))
+    inv["signoff"] = _signoff(conn, inv)
+    inv["amendments"] = q(conn, """SELECT a.*, j.journal_number FROM fin_invoice_amendments a LEFT JOIN fin_journals j ON j.id=a.journal_id
+                                   WHERE a.invoice_id=%s ORDER BY a.created_at""", (invoice_id,))
+    from src.fin import inventory
+    inv["recalls"] = inventory.recalls_for_invoice(conn, entity_id, invoice_id=str(invoice_id))
     inv["allocations"] = q(conn, """
         SELECT a.*, COALESCE(r.receipt_number, n.credit_note_number) AS source_number
         FROM fin_ar_allocations a
@@ -237,8 +279,31 @@ def post_invoice(conn, ctx, invoice_id: str, *, override_credit: bool = False,
     cust = inv["customer_id"]
     jl: List[Dict[str, Any]] = [{"account_id": ar["id"], "debit": total, "customer_id": cust,
                                  "description": f"Invoice {inv['invoice_number']}"}]
-    txns: List[str] = []
     lines = q(conn, "SELECT * FROM fin_sales_invoice_lines WHERE invoice_id=%s ORDER BY line_no", (invoice_id,))
+    more, txns = _line_postings(conn, ctx, inv, lines, inv["invoice_date"])
+    jl += more
+    if money(inv["tax_total"]) > 0:
+        jl.append({"account_id": rules.account(conn, ctx.entity_id, "OUTPUT_TAX")["id"], "credit": money(inv["tax_total"]),
+                   "customer_id": cust, "description": "Tax on sales"})
+    j = posting.post_system(conn, ctx, event_type="SALES_INVOICE_POSTED", journal_date=inv["invoice_date"], lines=jl,
+                            description=f"Sales invoice {inv['invoice_number']}", source_type="SALES_INVOICE",
+                            source_id=invoice_id, source_ref=inv["invoice_number"])
+    inventory.link_journal(conn, txns, j["id"])
+    ex(conn, """UPDATE fin_sales_invoices SET status='POSTED', journal_id=%s, posted_by=%s, posted_at=now(),
+                credit_check=%s, credit_override_by=%s, credit_override_reason=%s WHERE id=%s""",
+       (j["id"], ctx.actor_id, jsonb(check), ctx.actor_id if check["exceeds"] else None,
+        override_reason if check["exceeds"] else None, invoice_id))
+    audit.record(conn, ctx, "INVOICE_POSTED", "sales_invoice", invoice_id, ref=inv["invoice_number"],
+                 metadata={"journal": j["journal_number"], "total": str(total), "credit_override": check["exceeds"]})
+    return get_invoice(conn, ctx.entity_id, invoice_id)
+
+
+def _line_postings(conn, ctx, inv: Dict[str, Any], lines: List[Dict[str, Any]], txn_date: dt.date):
+    """Revenue / discount / charge lines of an invoice's journal, and its stock issues (COGS at FIFO
+    cost). Returns (journal lines, inventory transaction ids). The receivable line is the caller's."""
+    cust = inv["customer_id"]
+    jl: List[Dict[str, Any]] = []
+    txns: List[str] = []
     disc_acct = None
     for l in lines:
         gross = money(Decimal(str(l["quantity"])) * Decimal(str(l["unit_price"])))
@@ -261,9 +326,9 @@ def post_invoice(conn, ctx, invoice_id: str, *, override_credit: bool = False,
             if prod["product_type"] == "INVENTORY":
                 inventory.require_sellable(conn, ctx.entity_id, str(l["batch_id"]) if l["batch_id"] else None)
                 t = inventory.issue(conn, ctx, sku=l["sku"], quantity=l["quantity"], txn_type="SALE",
-                                    txn_date=inv["invoice_date"], batch_id=str(l["batch_id"]) if l["batch_id"] else None,
+                                    txn_date=txn_date, batch_id=str(l["batch_id"]) if l["batch_id"] else None,
                                     source_type=inv["source_type"] if inv["source_type"] == "FRONTDESK" else "SALES_INVOICE",
-                                    source_id=invoice_id, reference=inv["invoice_number"], customer_id=cust)
+                                    source_id=str(inv["id"]), reference=inv["invoice_number"], customer_id=cust)
                 cost = t["cost"]
                 txns.append(str(t["id"]))
                 ex(conn, "UPDATE fin_sales_invoice_lines SET cost_amount=%s, inventory_txn_id=%s WHERE id=%s",
@@ -273,19 +338,68 @@ def post_invoice(conn, ctx, invoice_id: str, *, override_credit: bool = False,
                     jl += [{"account_id": acc["cogs_account_id"], "debit": cost, "product_sku": l["sku"],
                             "description": f"Cost of {l['description']}"},
                            {"account_id": acc["inventory_account_id"], "credit": cost, "product_sku": l["sku"]}]
-    if money(inv["tax_total"]) > 0:
-        jl.append({"account_id": rules.account(conn, ctx.entity_id, "OUTPUT_TAX")["id"], "credit": money(inv["tax_total"]),
-                   "customer_id": cust, "description": "Tax on sales"})
-    j = posting.post_system(conn, ctx, event_type="SALES_INVOICE_POSTED", journal_date=inv["invoice_date"], lines=jl,
-                            description=f"Sales invoice {inv['invoice_number']}", source_type="SALES_INVOICE",
-                            source_id=invoice_id, source_ref=inv["invoice_number"])
+    return jl, txns
+
+
+def amend_invoice(conn, ctx, invoice_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Add items to a posted invoice (the customer adds to the order before paying, client 9 Oct).
+    The invoice keeps its number and gains the lines; the addition is posted as its own journal on
+    the invoice (receivable up, revenue, stock out at FIFO cost), so the original posting is never
+    edited. Removing or changing an item is a credit note (or void and re-raise)."""
+    ctx.require("sales.invoice.post")
+    inv = q1(conn, "SELECT * FROM fin_sales_invoices WHERE id=%s AND legal_entity_id=%s FOR UPDATE", (invoice_id, ctx.entity_id))
+    if not inv:
+        raise not_found("Invoice", invoice_id)
+    if inv["status"] not in ("POSTED", "PARTIALLY_PAID", "PAID"):
+        raise FinError("INVALID_STATE_TRANSITION", f"A {inv['status'].lower()} invoice cannot take more items"
+                       + (" - edit the draft instead" if inv["status"] == "DRAFT" else ""))
+    if inv["is_opening"]:
+        raise FinError("INVALID_STATE_TRANSITION", "This invoice was raised in Sage: raise a new invoice for the extra items")
+    reason = (data.get("reason") or "").strip()
+    if not reason:
+        raise invalid("Say why items are being added (e.g. customer added to the order)")
+    priced = _price_lines(conn, ctx.entity_id, data.get("lines") or [])
+    if not priced:
+        raise invalid("Add at least one item")
+    if any(l["line_type"] == "DISCOUNT" for l in priced):
+        raise invalid("A discount after posting is a credit note")
+    on = data.get("amend_date") or dt.date.today()
+    if on < inv["invoice_date"]:
+        raise invalid("The addition cannot be dated before the invoice")
+    start = int(q1(conn, "SELECT COALESCE(MAX(line_no), 0) AS n FROM fin_sales_invoice_lines WHERE invoice_id=%s", (invoice_id,))["n"])
+    added_sub = sum((l["gross"] for l in priced if l["line_type"] in ("ITEM", "SERVICE")), ZERO)
+    added_disc = sum((l["discount_amount"] for l in priced), ZERO)
+    added_chg = sum((l["line_total"] for l in priced if l["line_type"] == "CHARGE"), ZERO)
+    added = added_sub - added_disc + added_chg
+    if added <= 0:
+        raise invalid("The items added must have a value")
+    new_ids = []
+    for k, l in enumerate(priced, start=1):
+        batch_id = l.get("batch_id") or (inventory.ensure_batch(conn, ctx.entity_id, l["sku"], l.get("batch_number"))
+                                         if l["line_type"] == "ITEM" and l.get("batch_number") else None)
+        row = q1(conn, """INSERT INTO fin_sales_invoice_lines (invoice_id, line_no, line_type, sku, batch_id, description,
+                          quantity, unit_price, discount_amount, line_total, account_id)
+                          VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                 (invoice_id, start + k, l["line_type"], l.get("sku"), batch_id, l.get("description"), l["quantity"],
+                  l["unit_price"], l["discount_amount"], l["line_total"], l["account_id"]))
+        new_ids.append(row)
+    ar = rules.account(conn, ctx.entity_id, "AR_CONTROL")
+    more, txns = _line_postings(conn, ctx, inv, new_ids, on)
+    jl = [{"account_id": ar["id"], "debit": added, "customer_id": inv["customer_id"],
+           "description": f"Invoice {inv['invoice_number']}: items added"}] + more
+    import uuid as _uuid
+    j = posting.post_system(conn, ctx, event_type="SALES_INVOICE_AMENDED", journal_date=on, lines=jl,
+                            description=f"Sales invoice {inv['invoice_number']}: items added - {reason}",
+                            source_type="SALES_INVOICE", source_id=invoice_id, source_ref=inv["invoice_number"],
+                            idempotency_key=f"SALES_INVOICE_AMENDED:{invoice_id}:{_uuid.uuid4().hex}")
     inventory.link_journal(conn, txns, j["id"])
-    ex(conn, """UPDATE fin_sales_invoices SET status='POSTED', journal_id=%s, posted_by=%s, posted_at=now(),
-                credit_check=%s, credit_override_by=%s, credit_override_reason=%s WHERE id=%s""",
-       (j["id"], ctx.actor_id, jsonb(check), ctx.actor_id if check["exceeds"] else None,
-        override_reason if check["exceeds"] else None, invoice_id))
-    audit.record(conn, ctx, "INVOICE_POSTED", "sales_invoice", invoice_id, ref=inv["invoice_number"],
-                 metadata={"journal": j["journal_number"], "total": str(total), "credit_override": check["exceeds"]})
+    ex(conn, """UPDATE fin_sales_invoices SET subtotal=subtotal+%s, discount_total=discount_total+%s, charge_total=charge_total+%s,
+                total=total+%s WHERE id=%s""", (added_sub, added_disc, added_chg, added, invoice_id))
+    _refresh_invoice_status(conn, invoice_id)
+    ex(conn, """INSERT INTO fin_invoice_amendments (invoice_id, journal_id, amend_date, added_total, line_from, line_to, reason, created_by)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""", (invoice_id, j["id"], on, added, start + 1, start + len(priced), reason, ctx.actor_id))
+    audit.record(conn, ctx, "INVOICE_AMENDED", "sales_invoice", invoice_id, ref=inv["invoice_number"], reason=reason,
+                 metadata={"added": str(added), "lines": len(priced), "journal": j["journal_number"]})
     return get_invoice(conn, ctx.entity_id, invoice_id)
 
 
@@ -311,6 +425,10 @@ def void_invoice(conn, ctx, invoice_id: str, reason: str, on: Optional[dt.date] 
                        "Payments are applied to this invoice; unapply them or issue a credit note instead")
     rev = posting.reverse(conn, ctx, str(inv["journal_id"]), reversal_date=on or inv["invoice_date"],
                           reason=f"Void invoice {inv['invoice_number']}: {reason}", allow_system=True)
+    for a in q(conn, "SELECT id, journal_id, amend_date FROM fin_invoice_amendments WHERE invoice_id=%s AND NOT reversed", (invoice_id,)):
+        posting.reverse(conn, ctx, str(a["journal_id"]), reversal_date=on or a["amend_date"],
+                        reason=f"Void invoice {inv['invoice_number']} (added items): {reason}", allow_system=True)
+        ex(conn, "UPDATE fin_invoice_amendments SET reversed=TRUE WHERE id=%s", (a["id"],))
     for l in q(conn, "SELECT * FROM fin_sales_invoice_lines WHERE invoice_id=%s AND inventory_txn_id IS NOT NULL", (invoice_id,)):
         t = inventory.restore(conn, ctx, original_txn_id=str(l["inventory_txn_id"]), quantity=l["quantity"],
                               txn_type="RETURN_IN", txn_date=on or inv["invoice_date"], source_type="SALES_INVOICE_VOID",
@@ -319,8 +437,10 @@ def void_invoice(conn, ctx, invoice_id: str, reason: str, on: Optional[dt.date] 
         inventory.link_journal(conn, [str(t["id"])], rev["id"])
     ex(conn, """UPDATE fin_sales_invoices SET status='VOID', void_journal_id=%s, voided_by=%s, voided_at=now(),
                 void_reason=%s WHERE id=%s""", (rev["id"], ctx.actor_id, reason, invoice_id))
+    released = numbering.release_if_last(conn, ctx, "SALES_INVOICE", inv["invoice_number"], "fin_sales_invoices",
+                                         "invoice_number", invoice_id)
     audit.record(conn, ctx, "INVOICE_VOIDED", "sales_invoice", invoice_id, ref=inv["invoice_number"], reason=reason,
-                 metadata={"reversal": rev["journal_number"]})
+                 metadata={"reversal": rev["journal_number"], "number_released": bool(released)})
     return get_invoice(conn, ctx.entity_id, invoice_id)
 
 
@@ -476,9 +596,11 @@ def create_receipt(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_receipt(conn, entity_id: str, receipt_id: str) -> Dict[str, Any]:
     r = q1(conn, """SELECT r.*, c.name AS customer_name, b.name AS bank_account_name, j.journal_number,
-                           (r.amount + r.wht_amount - r.amount_allocated) AS unapplied
+                           (r.amount + r.wht_amount - r.amount_allocated) AS unapplied,
+                           rb.receipt_number AS replaced_by_number, rp.receipt_number AS replaces_number
                     FROM fin_customer_receipts r LEFT JOIN customers c ON c.id=r.customer_id
                     LEFT JOIN fin_bank_accounts b ON b.id=r.bank_account_id LEFT JOIN fin_journals j ON j.id=r.journal_id
+                    LEFT JOIN fin_customer_receipts rb ON rb.id=r.replaced_by_id LEFT JOIN fin_customer_receipts rp ON rp.id=r.replaces_id
                     WHERE r.id=%s AND r.legal_entity_id=%s""", (receipt_id, entity_id))
     if not r:
         raise not_found("Receipt", receipt_id)
@@ -516,10 +638,34 @@ def void_receipt(conn, ctx, receipt_id: str, reason: str, on: Optional[dt.date] 
     rev = posting.reverse(conn, ctx, str(r["journal_id"]), reversal_date=on or r["receipt_date"],
                           reason=f"Void receipt {r['receipt_number']}: {reason}", allow_system=True)
     _unapply(conn, "RECEIPT", receipt_id)
+    numbering.release_if_last(conn, ctx, "RECEIPT", r["receipt_number"], "fin_customer_receipts", "receipt_number", receipt_id)
     ex(conn, "UPDATE fin_customer_receipts SET status='VOID', void_journal_id=%s, void_reason=%s, amount_allocated=0 WHERE id=%s",
        (rev["id"], reason, receipt_id))
     audit.record(conn, ctx, "RECEIPT_VOIDED", "customer_receipt", receipt_id, ref=r["receipt_number"], reason=reason)
     return get_receipt(conn, ctx.entity_id, receipt_id)
+
+
+def correct_receipt(conn, ctx, receipt_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """A receipt posted with a mistake (wrong customer, amount, bank, date or invoice): the wrong one
+    is voided - its journal reversed and its invoices reopened - and the right one is posted in the
+    same transaction. The two point at each other; when the wrong one was the last receipt issued,
+    the right one takes its number."""
+    ctx.require("receivables.receipt.void")
+    reason = (data.get("reason") or "").strip()
+    if not reason:
+        raise invalid("Say what was wrong (e.g. posted to the wrong customer)")
+    old = q1(conn, "SELECT * FROM fin_customer_receipts WHERE id=%s AND legal_entity_id=%s", (receipt_id, ctx.entity_id))
+    if not old:
+        raise not_found("Receipt", receipt_id)
+    if old["status"] != "POSTED":
+        raise FinError("INVALID_STATE_TRANSITION", "Only a posted receipt can be corrected")
+    void_receipt(conn, ctx, receipt_id, f"Corrected: {reason}", on=old["receipt_date"])
+    new = create_receipt(conn, ctx, {**data, "notes": (f"{data.get('notes') or ''} Replaces {old['receipt_number']} ({reason}).").strip()})
+    ex(conn, "UPDATE fin_customer_receipts SET replaced_by_id=%s WHERE id=%s", (new["id"], receipt_id))
+    ex(conn, "UPDATE fin_customer_receipts SET replaces_id=%s WHERE id=%s", (receipt_id, new["id"]))
+    audit.record(conn, ctx, "RECEIPT_CORRECTED", "customer_receipt", new["id"], ref=new["receipt_number"], reason=reason,
+                 metadata={"replaces": old["receipt_number"]})
+    return get_receipt(conn, ctx.entity_id, str(new["id"]))
 
 
 def list_receipts(conn, entity_id: str, *, customer_id: Any = None, search: Optional[str] = None,
@@ -538,14 +684,32 @@ def list_receipts(conn, entity_id: str, *, customer_id: Any = None, search: Opti
         where.append("(r.receipt_number ILIKE %s OR c.name ILIKE %s OR r.reference ILIKE %s)")
         params += [f"%{search}%"] * 3
     w = " AND ".join(where)
-    total = q1(conn, f"SELECT COUNT(*) n FROM fin_customer_receipts r LEFT JOIN customers c ON c.id=r.customer_id WHERE {w}", params)["n"]
-    rows = q(conn, f"""SELECT r.id, r.receipt_number, r.receipt_date, r.customer_id, c.name AS customer_name, r.method,
-                              b.name AS bank_account_name, r.amount, r.wht_amount, r.amount_allocated,
-                              (r.amount + r.wht_amount - r.amount_allocated) AS unapplied, r.reference, r.status
-                       FROM fin_customer_receipts r LEFT JOIN customers c ON c.id=r.customer_id
-                       LEFT JOIN fin_bank_accounts b ON b.id=r.bank_account_id
-                       WHERE {w} ORDER BY r.receipt_date DESC, r.receipt_number DESC LIMIT %s OFFSET %s""",
-             params + [limit, offset])
+    # Receipts taken in Sage (customer ledger, cash receipts journal) are listed with ACE Books' own.
+    sw, sp = ["l.legal_entity_id=%s", "l.party_kind='CUSTOMER'", "l.row_kind='TXN'", "l.jrnl='CRJ'", "l.credit > 0"], [entity_id]
+    if customer_id:
+        sw.append("l.customer_id=%s")
+        sp.append(int(customer_id))
+    if date_from:
+        sw.append("l.txn_date >= %s")
+        sp.append(date_from)
+    if date_to:
+        sw.append("l.txn_date <= %s")
+        sp.append(date_to)
+    if search:
+        sw.append("(l.trans_no ILIKE %s OR l.party_name ILIKE %s)")
+        sp += [f"%{search}%"] * 2
+    union = f"""SELECT r.id::text AS id, r.receipt_number, r.receipt_date, r.customer_id, c.name AS customer_name, r.method,
+                       b.name AS bank_account_name, r.amount, r.wht_amount, r.amount_allocated,
+                       (r.amount + r.wht_amount - r.amount_allocated) AS unapplied, r.reference, r.status, 'ACE' AS source
+                FROM fin_customer_receipts r LEFT JOIN customers c ON c.id=r.customer_id
+                LEFT JOIN fin_bank_accounts b ON b.id=r.bank_account_id WHERE {w}
+                UNION ALL
+                SELECT NULL, l.trans_no, l.txn_date, l.customer_id, l.party_name, NULL, NULL, l.credit, 0, l.credit, 0,
+                       l.trans_no, 'POSTED', 'SAGE'
+                FROM fin_sage_party_ledger l WHERE {' AND '.join(sw)}"""
+    total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params + sp)["n"]
+    rows = q(conn, f"SELECT * FROM ({union}) u ORDER BY receipt_date DESC, receipt_number DESC LIMIT %s OFFSET %s",
+             params + sp + [limit, offset])
     return {"items": rows, "total": total}
 
 

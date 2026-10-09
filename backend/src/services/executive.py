@@ -23,7 +23,6 @@ from typing import Any, Callable, Dict, List, Optional
 from src.fin.db import q, q1, tx
 
 log = logging.getLogger(__name__)
-_CACHE: Dict[str, Any] = {}
 TTL = 300
 
 
@@ -318,9 +317,15 @@ def _attention(fin, sales, cust, stock, qual, ppl) -> List[Dict[str, Any]]:
 
 
 def overview(refresh: bool = False) -> Dict[str, Any]:
-    hit = _CACHE.get("ov")
-    if hit and not refresh and time.monotonic() - hit[0] < TTL:
-        return hit[1]
+    # Shared by every worker and built once when several people open it together; any save
+    # drops it (src/utils/shared_response.py). refresh=True always rebuilds.
+    if refresh:
+        return _build_overview()
+    from src.utils.shared_response import shared_response
+    return shared_response("executive:overview", TTL, _build_overview)
+
+
+def _build_overview() -> Dict[str, Any]:
     t0 = time.monotonic()
     fin = _safe("finance", _finance)
     sales = _safe("sales", _sales, {}) or {}
@@ -338,5 +343,4 @@ def overview(refresh: bool = False) -> Dict[str, Any]:
         "working_capital": wc,
         "attention": _attention(fin, sales, cust, stock, qual, ppl),
     }
-    _CACHE["ov"] = (time.monotonic(), out)
     return out

@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
+import { historyTarget, useDrill } from "@/components/books/drill-context";
+import { SageTag } from "@/components/books/kit";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, CheckCircle2, ChevronDown, ChevronRight, Plus, Search, Trash2, XCircle } from "lucide-react";
@@ -13,11 +15,13 @@ import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { FilterBar } from "@/components/workspace/FilterBar";
 import { BooksShell } from "@/components/books/BooksShell";
 import { JournalBody } from "@/components/books/lineage";
+import { JournalReports } from "@/pages/books/BooksStatements";
 import {
   AccountPick, AccountSheet, act, Amount, CsvButton, DateRange, Empty, ErrorNote, Loading, Section, sourceLink, StatusBadge,
   useBooks, useLines,
 } from "@/components/books/kit";
 import { books, Dict, fmtDate, monthStart, naira, newIdemKey, today, yearStart } from "@/lib/books-api";
+import { askConfirm, askText } from "@/lib/ask";
 
 export default function BooksLedger() {
   const [params, setParams] = useSearchParams();
@@ -28,11 +32,17 @@ export default function BooksLedger() {
                 actions={<Button size="sm" onClick={() => open("new", "journal")}><Plus className="mr-1 h-4 w-4" />Journal entry</Button>}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="journals">Journals</TabsTrigger>
+          <TabsTrigger value="journals">Journal entries</TabsTrigger>
+          <TabsTrigger value="books">Journals by type</TabsTrigger>
           <TabsTrigger value="tb">Trial balance</TabsTrigger>
           <TabsTrigger value="gl">General ledger</TabsTrigger>
         </TabsList>
         <TabsContent value="journals"><JournalList onOpen={(id) => open("journal", id)} /></TabsContent>
+        <TabsContent value="books">
+          <p className="mb-3 text-sm text-muted-foreground">Sales, cash receipts, purchases, cash disbursements, cost of goods sold, inventory
+            adjustments, general and fixed-asset journals, in Sage's own layout, for any period (Sage's years and ACE Books).</p>
+          <JournalReports />
+        </TabsContent>
         <TabsContent value="tb"><TrialBalance /></TabsContent>
         <TabsContent value="gl"><GeneralLedger onJournal={(id) => open("journal", id)} /></TabsContent>
       </Tabs>
@@ -48,6 +58,7 @@ export default function BooksLedger() {
 const STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "POSTED", "REVERSED", "REJECTED"];
 
 function JournalList({ onOpen }: { onOpen: (id: string) => void }) {
+  const drill = useDrill();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
@@ -69,9 +80,10 @@ function JournalList({ onOpen }: { onOpen: (id: string) => void }) {
         <Table>
           <TableHeader><TableRow><TableHead>Journal</TableHead><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Description</TableHead><TableHead>Source</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.items.map((j: Dict) => (
-            <TableRow key={j.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(j.id)}>
-              <TableCell className="font-mono text-xs">{j.journal_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(j.journal_date)}</TableCell>
-              <TableCell className="text-xs">{j.journal_type.toLowerCase()}</TableCell>
+            <TableRow key={j.id ?? `s:${j.journal_date}:${j.source_ref}`} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => (j.id ? onOpen(j.id) : drill?.open(historyTarget("journal", j)))}>
+              <TableCell className="font-mono text-xs">{j.journal_number}{j.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(j.journal_date)}</TableCell>
+              <TableCell className="text-xs">{j.source === "SAGE" ? "general (Sage)" : j.journal_type.toLowerCase()}</TableCell>
               <TableCell className="max-w-[280px] truncate text-xs">{j.description}</TableCell>
               <TableCell className="font-mono text-xs">{j.source_ref}</TableCell>
               <TableCell className="text-right"><Amount value={j.total_debit} /></TableCell><TableCell><StatusBadge status={j.status} /></TableCell>
@@ -150,14 +162,17 @@ function JournalDetail({ id, onClose, onEdit, onOpen }: { id: string | null; onC
   useEffect(() => setCheck(null), [id]);
   const done = () => { refetch(); qc.invalidateQueries({ queryKey: ["books"] }); };
   const run = async (action: string, body: Dict = {}, ok?: string) => { if (await act(() => books.post(`/journals/${id}/${action}`, body), ok)) done(); };
+  // "Delete entry": posts the exact reversal on the entry's own date, so every balance and report is as
+  // if it had never been posted; the entry and its reversal stay in Journals and the audit trail.
   const reverse = async () => {
-    const reason = window.prompt("Reason for reversing this journal?");
+    const reason = await askText(`Delete ${j?.journal_number}? Every report will go back to how it was before it was posted.
+
+Why is it being deleted? (kept in the audit trail)`);
     if (!reason) return;
-    const date = window.prompt("Reversal date (YYYY-MM-DD)", today());
-    const r = await act(() => books.post(`/journals/${id}/reverse`, { reason, reversal_date: date || undefined }), "Reversal posted");
-    if (r) { done(); if (r.id && r.id !== id) onOpen(r.id); }
+    const r = await act(() => books.post(`/journals/${id}/reverse`, { reason }), "Entry deleted - its reversal is posted on the same date");
+    if (r) { done(); onClose(); }
   };
-  const del = async () => { if (window.confirm("Delete this draft?") && (await act(() => books.del(`/journals/${id}`), "Draft deleted"))) { qc.invalidateQueries({ queryKey: ["books"] }); onClose(); } };
+  const del = async () => { if (await askConfirm("Delete this draft?") && (await act(() => books.del(`/journals/${id}`), "Draft deleted"))) { qc.invalidateQueries({ queryKey: ["books"] }); onClose(); } };
   const link = j ? sourceLink(j.source_type, j.source_id) : null;
   const manual = j && (!j.source_type || j.source_type === "MANUAL_JOURNAL");
   return (
@@ -171,12 +186,12 @@ function JournalDetail({ id, onClose, onEdit, onOpen }: { id: string | null; onC
                        <Button size="sm" onClick={() => run("submit", {}, "Submitted for approval")}>Submit for approval</Button>
                        <Button size="sm" variant="secondary" onClick={() => run("post", {}, "Posted")}>Post now</Button></>}
                      {j.status === "SUBMITTED" && <>
-                       <Button size="sm" variant="outline" onClick={() => { const reason = window.prompt("Reason for rejecting?"); if (reason) run("reject", { reason }, "Rejected"); }}>Reject</Button>
-                       <Button size="sm" onClick={() => run("approve", { comment: window.prompt("Approval comment (optional)") ?? undefined }, "Approved")}>Approve</Button></>}
+                       <Button size="sm" variant="outline" onClick={async () => { const reason = await askText("Reason for rejecting?"); if (reason) run("reject", { reason }, "Rejected"); }}>Reject</Button>
+                       <Button size="sm" onClick={async () => run("approve", { comment: (await askText("Approval comment (optional)")) || undefined }, "Approved")}>Approve</Button></>}
                      {j.status === "APPROVED" && <Button size="sm" onClick={() => run("post", {}, "Posted")}>Post</Button>}
-                     {j.status === "POSTED" && !j.reversed_by_id && <Button size="sm" variant="destructive" onClick={reverse}>Reverse</Button>}
+                     {j.status === "POSTED" && !j.reversed_by_id && <Button size="sm" variant="destructive" onClick={reverse}>Delete entry</Button>}
                    </div>) : j?.status === "POSTED" && !j.reversed_by_id && j.journal_type !== "OPENING" ? (
-                   <Button size="sm" variant="destructive" onClick={reverse}>Reverse</Button>) : undefined}>
+                   <Button size="sm" variant="destructive" onClick={reverse}>Delete entry</Button>) : undefined}>
       {isLoading && <Loading />}<ErrorNote error={error} />
       {check && (
         <div className={`mb-3 rounded-md border p-2 text-xs ${check.valid ? "border-emerald-400 text-emerald-700" : "border-red-400 text-red-700"}`}>

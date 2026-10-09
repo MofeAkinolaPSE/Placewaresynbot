@@ -1216,7 +1216,7 @@ async def handle_intent(request: Request, body: IntentRequest):
 
 
 @router.get("/agents")
-async def list_available_agents():
+def list_available_agents():
     """List available domain agents for EOS."""
     return {
         "agents": [

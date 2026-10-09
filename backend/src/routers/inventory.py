@@ -68,7 +68,7 @@ def require_inventory_read(request: Request) -> Dict[str, Any]:
 # --- Endpoints ---
 
 @router.post("/event")
-async def post_inventory_event(
+def post_inventory_event(
     event: InventoryEventRequest,
     user: Dict[str, Any] = Depends(require_inventory_write)
 ):
@@ -103,7 +103,7 @@ async def post_inventory_event(
         raise HTTPException(500, detail="Failed to record inventory event")
 
 @router.get("/sku/{sku}")
-async def get_sku_stock(
+def get_sku_stock(
     sku: str,
     user: Dict[str, Any] = Depends(require_inventory_read)
 ):
@@ -118,7 +118,7 @@ async def get_sku_stock(
         raise HTTPException(500, detail="Failed to retrieve stock data")
 
 @router.get("/summary")
-async def get_summary_view(
+def get_summary_view(
     request: Request,
     user: Dict[str, Any] = Depends(require_inventory_read)
 ):
@@ -132,7 +132,7 @@ async def get_summary_view(
 
 
 @router.get("/items")
-async def list_items(
+def list_items(
     limit: int = 200,
     company_id: Optional[str] = Query(None, description="Filter by company: PlacewareNig or PlacewarePha"),
     user: Dict[str, Any] = Depends(require_inventory_read),
@@ -213,7 +213,7 @@ def _rank_for_sale(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 @router.get("/search")
-async def search_items(
+def search_items(
     q: str = Query(..., min_length=1),
     limit: int = 20,
     user: Dict[str, Any] = Depends(require_inventory_read),
@@ -256,7 +256,7 @@ async def search_items(
 
 
 @router.get("/workspace/cards")
-async def workspace_cards(
+def workspace_cards(
     company_id: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(require_inventory_read),
@@ -271,7 +271,7 @@ async def workspace_cards(
 
 
 @router.get("/workspace/families/detail")
-async def workspace_family_detail(
+def workspace_family_detail(
     family: str = Query(...),
     company_id: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(require_inventory_read),
@@ -286,7 +286,7 @@ async def workspace_family_detail(
 
 
 @router.get("/workspace/top-sellers")
-async def workspace_top_sellers(
+def workspace_top_sellers(
     limit: int = 10,
     company_id: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(require_inventory_read),
@@ -302,7 +302,7 @@ async def workspace_top_sellers(
 
 
 @router.get("/workspace/analytics")
-async def workspace_analytics(
+def workspace_analytics(
     company_id: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(require_inventory_read),
 ):
@@ -318,7 +318,7 @@ async def workspace_analytics(
 
 
 @router.get("/workspace/pending-reorders-count")
-async def workspace_pending_reorders_count(user: Dict[str, Any] = Depends(require_inventory_read)):
+def workspace_pending_reorders_count(user: Dict[str, Any] = Depends(require_inventory_read)):
     """Count of not-yet-received replenishment requests, for the workspace
     KPI strip. replenishment_requests has no list endpoint of its own today
     (only create/approve/create_po/received action endpoints in

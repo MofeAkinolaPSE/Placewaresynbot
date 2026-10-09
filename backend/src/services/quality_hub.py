@@ -251,6 +251,8 @@ def initiate_recall(user: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any
                    data.get("scope") or "voluntary", data.get("regulatory_authority") or "NAFDAC", json.dumps(dist, default=str),
                    str(user.get("sub") or ""), data.get("severity") or "major", bool(data.get("nafdac_notified")),
                    (fin or {}).get("id"), _d(data.get("expected_return_date")) or _today() + dt.timedelta(days=14)))
+        if fin:
+            notify_recall(conn, f"Recall {rid} opened by Quality ({fin['recall_number']} in ACE Books)", _recall_note(fin), str(user.get("sub") or ""))
         _audit_log(conn, user, "recall_initiated", "recall_case", row["id"],
                    {"recall_id": rid, "fin_recall": (fin or {}).get("recall_number"), "batch": row and (b or {}).get("batch_number")})
         # A customer bringing the batch back (e.g. "we wanted three, they brought five"): record the
@@ -263,6 +265,75 @@ def initiate_recall(user: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any
                 "quantity": data["return_quantity"], "unit_price": data.get("unit_price"), "unit_cost": data.get("unit_cost"),
                 "credit": data.get("credit", True)})
     return get_recall(row["id"])
+
+
+RECALL_TEAMS = ["quality_assurance", "qa", "finance", "management", "admin"]
+
+
+def notify_recall(conn, title: str, body: str, actor: Optional[str]) -> None:
+    """Tell Quality and Finance about a recall, whichever side opened or voided it (bell + inbox,
+    link to the recall). Never blocks the recall: a failure is rolled back to a savepoint."""
+    try:
+        from src.services.staff_workspace import _is_uuid, notify
+        actor = str(actor) if actor and _is_uuid(str(actor)) else None   # system / script actors are not users
+        with conn.cursor() as cur:
+            cur.execute("SAVEPOINT recall_notify")
+        ids = [r["id"] for r in q(conn, "SELECT id::text AS id FROM placeware_users WHERE is_active AND roles && %s", (RECALL_TEAMS,))
+               if r["id"] != str(actor or "")]
+        notify(conn, ids, "recall", "action", title, body, "path", "/quality-control?tab=recalls", actor)
+        with conn.cursor() as cur:
+            cur.execute("RELEASE SAVEPOINT recall_notify")
+    except Exception:
+        with conn.cursor() as cur:
+            cur.execute("ROLLBACK TO SAVEPOINT recall_notify")
+
+
+def _recall_note(fin: Dict[str, Any]) -> str:
+    items = fin.get("items") or []
+    return (f"{fin.get('product_name') or fin['sku']} batch {fin['batch_number']} is frozen. "
+            f"{len(items)} invoice(s) / loan(s) took it out ({sum(float(i['quantity_sold'] or 0) for i in items):,.0f} units). "
+            f"Reason: {fin['reason']}")
+
+
+def case_for_fin_recall(conn, fin: Dict[str, Any], actor: Optional[str], data: Optional[Dict[str, Any]] = None) -> str:
+    """The QC recall case for an ACE Books recall (opened from ACE Books Stock): one recall,
+    listed in both places. Returns the case id (existing or new)."""
+    data = data or {}
+    have = q1(conn, "SELECT id::text AS id FROM recall_cases WHERE fin_recall_id=%s", (fin["id"],))
+    if have:
+        return have["id"]
+    fam = q1(conn, f"SELECT {FAMILY_SQL.format(name='fp.name', sku='fp.sku')} AS f FROM fin_products fp WHERE fp.sku=%s LIMIT 1",
+             (fin["sku"],))
+    dist = [{"customer_id": i["customer_id"], "name": i.get("customer_name"), "qty": _f(i["quantity_sold"]),
+             "invoices": i.get("invoice_number")} for i in fin.get("items", [])]
+    rid = _next_id(conn, "RECALL", "recall_cases", "recall_id")
+    row = q1(conn, """INSERT INTO recall_cases (recall_id, batch_number, product_name, sku, recall_reason, initiation_date, scope, status,
+                                                regulatory_authority, distribution_data, created_by, severity, nafdac_notified,
+                                                fin_recall_id, expected_return_date)
+                      VALUES (%s,%s,%s,%s,%s,%s,%s,'initiated',%s,%s::jsonb,%s,%s,%s,%s,%s) RETURNING id::text AS id""",
+             (rid, fin["batch_number"], (fam or {}).get("f") or fin.get("product_name") or fin["sku"], fin["sku"], fin["reason"], _today(),
+              data.get("scope") or "voluntary", data.get("regulatory_authority") or "NAFDAC", json.dumps(dist, default=str),
+              str(actor or ""), data.get("severity") or "major", bool(data.get("nafdac_notified")), fin["id"],
+              _d(data.get("expected_return_date")) or _today() + dt.timedelta(days=14)))
+    notify_recall(conn, f"Recall {rid} opened in ACE Books ({fin['recall_number']})", _recall_note(fin), actor)
+    return row["id"]
+
+
+def void_recall(user: Dict[str, Any], recall_case_id: str, reason: str) -> Dict[str, Any]:
+    """Void a recall from Quality Control. Linked to ACE Books: the ACE Books recall is voided too
+    (batch released). A case never linked to ACE Books (no batch frozen, nothing posted) is deleted."""
+    from src.fin import inventory
+    with tx() as conn:
+        r = q1(conn, "SELECT id::text AS id, recall_id, fin_recall_id::text AS f FROM recall_cases WHERE id=%s FOR UPDATE", (recall_case_id,))
+        if not r:
+            raise LookupError("Recall not found")
+        if r["f"]:
+            inventory.void_recall(conn, _ctx(conn, user), r["f"], reason)
+            _audit_log(conn, user, "recall_voided", "recall_case", recall_case_id, {"reason": reason})
+            return {"id": recall_case_id, "status": "voided"}
+        ex(conn, "DELETE FROM recall_cases WHERE id=%s", (recall_case_id,))
+        _audit_log(conn, user, "recall_deleted", "recall_case", recall_case_id, {"recall_id": r["recall_id"], "reason": reason})
+    return {"id": recall_case_id, "deleted": True}
 
 
 def record_return(user: Dict[str, Any], recall_case_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -305,7 +376,7 @@ def list_recalls(status: Optional[str] = None) -> List[Dict[str, Any]]:
                                  (SELECT COALESCE(SUM(qty_remaining),0) FROM fin_cost_layers l WHERE l.batch_id=f.batch_id) AS units_frozen
                           FROM recall_cases r LEFT JOIN fin_recalls f ON f.id=r.fin_recall_id
                           WHERE (%s::text IS NULL OR r.status=%s)
-                          ORDER BY (r.status IN ('initiated','in_progress')) DESC, r.initiation_date DESC""", (status, status))
+                          ORDER BY (r.status IN ('initiated','in_progress')) DESC, (r.status = 'voided'), r.initiation_date DESC""", (status, status))
     names = names_for([r["created_by"] for r in rows])
     today = _today()
     for r in rows:

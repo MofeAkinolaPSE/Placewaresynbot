@@ -120,7 +120,7 @@ class CustomerIngestPayload(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/financials")
-async def ingest_financials(payload: FinancialIngestPayload, request: Request):
+def ingest_financials(payload: FinancialIngestPayload, request: Request):
     """Insert GL P&L entries into sage_gl_snapshot and auto-promote the batch.
 
     Roles: admin, finance
@@ -196,7 +196,7 @@ async def ingest_financials(payload: FinancialIngestPayload, request: Request):
 
 
 @router.post("/customers")
-async def ingest_customers(payload: CustomerIngestPayload, request: Request):
+def ingest_customers(payload: CustomerIngestPayload, request: Request):
     """Upsert customer master into sage_customers_snapshot and the CRM customers table.
 
     Roles: admin, sales, finance

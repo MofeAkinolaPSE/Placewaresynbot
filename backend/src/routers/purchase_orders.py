@@ -83,7 +83,7 @@ def _is_overdue(r: Dict[str, Any], today: _dt.date) -> bool:
 
 
 @router.get("/purchase-orders")
-async def list_purchase_orders(
+def list_purchase_orders(
     status: Optional[str] = None,
     vendor_id: Optional[str] = None,
     limit: int = 200,
@@ -169,7 +169,7 @@ def compute_po_summary(client=db) -> Dict[str, Any]:
 
 
 @router.get("/purchase-orders/summary")
-async def purchase_orders_summary(_u=Depends(_require_procurement)):
+def purchase_orders_summary(_u=Depends(_require_procurement)):
     try:
         return compute_po_summary()
     except Exception:
@@ -183,7 +183,7 @@ class PoStatusUpdate(BaseModel):
 
 
 @router.patch("/purchase-orders/{po_id}/status")
-async def update_po_status(po_id: str, payload: PoStatusUpdate, user=Depends(_require_procurement)):
+def update_po_status(po_id: str, payload: PoStatusUpdate, user=Depends(_require_procurement)):
     """Close or cancel a PO. Restricted to these two target values -- this is
     the specific human action requested (closing stale/fulfilled orders), not
     a full PO lifecycle state machine."""
@@ -226,7 +226,7 @@ async def update_po_status(po_id: str, payload: PoStatusUpdate, user=Depends(_re
 
 
 @router.post("/purchase-orders/backfill-close-stale")
-async def backfill_close_stale(user=Depends(verify_jwt)):
+def backfill_close_stale(user=Depends(verify_jwt)):
     """Admin-only, idempotent: closes existing POs that have been sitting at
     'open' for more than _STALE_OPEN_DAYS past their expected delivery date --
     the real backlog created by the CSV importer's old blank-status-to-'open'
@@ -293,7 +293,7 @@ def _fail(exc: Exception, what: str):
 
 
 @router.get("/stock-orders/summary")
-async def stock_orders_summary(_u=Depends(_require_procurement)):
+def stock_orders_summary(_u=Depends(_require_procurement)):
     try:
         return _so.summary()
     except Exception as exc:
@@ -301,7 +301,7 @@ async def stock_orders_summary(_u=Depends(_require_procurement)):
 
 
 @router.get("/reorder-plan")
-async def reorder_plan(_u=Depends(_require_procurement)):
+def reorder_plan(_u=Depends(_require_procurement)):
     try:
         return _so.reorder_plan()
     except Exception as exc:
@@ -309,7 +309,7 @@ async def reorder_plan(_u=Depends(_require_procurement)):
 
 
 @router.get("/stock-orders")
-async def list_stock_orders(status: Optional[str] = None, limit: int = 300, _u=Depends(_require_procurement)):
+def list_stock_orders(status: Optional[str] = None, limit: int = 300, _u=Depends(_require_procurement)):
     try:
         return {"data": _so.list_orders(status, min(max(limit, 1), 2000))}
     except Exception as exc:
@@ -325,7 +325,7 @@ class StockOrderCreate(BaseModel):
 
 
 @router.post("/stock-orders")
-async def create_stock_order(payload: StockOrderCreate, user=Depends(_require_procurement)):
+def create_stock_order(payload: StockOrderCreate, user=Depends(_require_procurement)):
     try:
         row = _so.raise_order(payload.sku, payload.qty, user.get("sub"), payload.supplier_id, payload.unit_cost, payload.notes)
         audit_event("stock_order_raised", {"sku": payload.sku, "qty": payload.qty, "order_id": row["id"]}, actor_id=user.get("sub"),
@@ -345,7 +345,7 @@ class StockOrderAction(BaseModel):
 
 
 @router.post("/stock-orders/{order_id}/{action}")
-async def stock_order_action(order_id: str, action: Literal["approve", "order", "cancel"], payload: StockOrderAction,
+def stock_order_action(order_id: str, action: Literal["approve", "order", "cancel"], payload: StockOrderAction,
                              user=Depends(_require_procurement)):
     try:
         res = _so.update_order(order_id, action, user.get("sub"), **payload.dict())
@@ -357,7 +357,7 @@ async def stock_order_action(order_id: str, action: Literal["approve", "order", 
 
 
 @router.get("/purchases")
-async def supplier_purchases(search: str = "", supplier_id: Optional[str] = None, limit: int = 100, offset: int = 0,
+def supplier_purchases(search: str = "", supplier_id: Optional[str] = None, limit: int = 100, offset: int = 0,
                              _u=Depends(_require_procurement)):
     try:
         return _so.purchases(search, supplier_id, min(max(limit, 1), 500), max(offset, 0))
@@ -366,7 +366,7 @@ async def supplier_purchases(search: str = "", supplier_id: Optional[str] = None
 
 
 @router.get("/suppliers")
-async def supplier_directory(_u=Depends(_require_procurement)):
+def supplier_directory(_u=Depends(_require_procurement)):
     try:
         return _so.supplier_directory()
     except Exception as exc:

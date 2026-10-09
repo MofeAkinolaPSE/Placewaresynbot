@@ -49,6 +49,67 @@ def _require_frontdesk_qc(request: Request) -> dict:
     return payload
 
 
+def _signer_name(user: dict, typed: Optional[str] = None) -> str:
+    """The name that signs a check: the person's own account (HR profile name, else email)."""
+    uid = user.get("sub")
+    try:
+        from src.services.people import names_for
+        name = names_for([uid]).get(str(uid))
+        if name:
+            return name
+    except Exception:
+        pass
+    return (typed or "").strip() or user.get("email") or str(uid)
+
+
+def _notify_roles(roles: set, title: str, body: str, path: str, actor: Optional[str], kind: str = "frontdesk") -> None:
+    """In-app notification (inbox + bell) to everyone holding one of these roles."""
+    try:
+        from src.fin.db import tx, q
+        from src.services.staff_workspace import notify
+        with tx() as conn:
+            ids = [r["id"] for r in q(conn, "SELECT id::text AS id FROM placeware_users WHERE is_active AND roles && %s",
+                                      (list(roles),))]
+            notify(conn, ids, kind, "action", title, body, "path", path, actor)
+    except Exception as exc:  # a notification must never block the workflow
+        logger.warning("frontdesk notification failed: %s", exc)
+
+
+def _notify_qc_waiting(created: dict, actor_id: Optional[str]) -> None:
+    """A new invoice request goes to QC: everyone with the QC role is told, with a link to their queue."""
+    who = created.get("company_name") or created.get("customer_name") or "a customer"
+    _notify_roles({"quality_assurance", "qa"}, f"Invoice {created.get('invoice_number') or ''} for {who} is waiting for your QC check",
+                  f"Check the items, batches and expiry against stock, then pass or fail it (total ₦{float(created.get('total_amount') or 0):,.2f}).",
+                  "/quality-control?tab=release", actor_id, kind="qc_check")
+
+
+def _release_frontdesk_numbers(walk_in_id: str, actor: Optional[str]) -> None:
+    """A cancelled request that holds the last invoice number gives it back, so the next invoice
+    takes it and no number is skipped (the cancelled request is renamed "<number>-VOID")."""
+    try:
+        from src.fin import numbering
+        from src.fin.context import system_context
+        from src.fin.db import q, tx
+        with tx() as conn:
+            ctx = system_context(conn, actor=str(actor or "frontdesk"))
+            for r in q(conn, """SELECT id::text AS id, invoice_number FROM frontdesk_invoices
+                                WHERE walk_in_id::text=%s AND status='cancelled' AND invoice_number IS NOT NULL""", (str(walk_in_id),)):
+                numbering.release_if_last(conn, ctx, "SALES_INVOICE", r["invoice_number"], "frontdesk_invoices", "invoice_number",
+                                          r["id"], check_frontdesk=False)
+    except Exception as exc:
+        logger.warning("releasing the invoice number of a cancelled request failed: %s", exc)
+
+
+def _notify_users(user_ids: list, title: str, body: str, path: str, actor: Optional[str], kind: str = "frontdesk") -> None:
+    try:
+        from src.fin.db import tx
+        from src.services.staff_workspace import notify
+        with tx() as conn:
+            notify(conn, user_ids, kind, "info", title, body, "path", path, actor)
+    except Exception as exc:
+        logger.warning("frontdesk notification failed: %s", exc)
+
+
 async def _broadcast_frontdesk(event: str, invoice_id: str, walk_in_id: str | None, status: str) -> None:
     """Best-effort realtime push so a QC/Finance/Ops queue view (InvoicesTab)
     can auto-refresh without polling. Never allowed to fail the request."""
@@ -130,14 +191,16 @@ class InvoiceCreateIn(BaseModel):
 
 class QCCheckIn(BaseModel):
     passed:         bool
-    inspector_name: str = Field(..., min_length=2)
+    # The signature is the signed-in QC person's own name (from their account); a typed name is
+    # only kept for old clients and ignored when the account has a name.
+    inspector_name: Optional[str] = None
     notes:          Optional[str] = None
     batch_numbers:  Optional[list[str]] = None
 
 
 class FinanceApprovalIn(BaseModel):
     approved:       bool
-    approver_name:  str = Field(..., min_length=2)
+    approver_name:  Optional[str] = None
     reason:         Optional[str] = None
 
 
@@ -249,7 +312,7 @@ def _transition_walk_in(walk_in_id: str, new_status: str, actor: Optional[str] =
 # ---------------------------------------------------------------------------
 
 @router.post("/walk-ins", status_code=201)
-async def register_walk_in(
+def register_walk_in(
     payload: WalkInCreateIn,
     user: dict = Depends(verify_jwt),
 ):
@@ -301,7 +364,7 @@ async def register_walk_in(
 # ---------------------------------------------------------------------------
 
 @router.get("/walk-ins")
-async def list_walk_ins(
+def list_walk_ins(
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD, defaults to today"),
     status: Optional[str] = Query(default=None),
     limit: int = Query(default=50, le=200),
@@ -342,7 +405,7 @@ async def list_walk_ins(
 # ---------------------------------------------------------------------------
 
 @router.get("/walk-ins/{walk_in_id}")
-async def get_walk_in(
+def get_walk_in(
     walk_in_id: str,
     _u=Depends(verify_jwt),
 ):
@@ -474,6 +537,7 @@ async def create_invoice(
         pass
 
     await _broadcast_frontdesk("invoice_qc_pending", invoice_id, walk_in_id, "qc_pending")
+    _notify_qc_waiting(created, actor_id)
 
     return {"status": "created", "invoice": created}
 
@@ -495,7 +559,9 @@ async def submit_qc(
     actor_id = user.get("sub")
 
     try:
-        inv_resp = db.table("frontdesk_invoices").select("id,walk_in_id,status").eq("id", invoice_id).limit(1).execute()
+        inv_resp = (db.table("frontdesk_invoices")
+                    .select("id,walk_in_id,status,created_by,invoice_number,company_name,customer_name,total_amount")
+                    .eq("id", invoice_id).limit(1).execute())
         inv_rows = inv_resp.data or []
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to fetch invoice")
@@ -505,10 +571,17 @@ async def submit_qc(
 
     inv = inv_rows[0]
     walk_in_id = inv["walk_in_id"]
+    if inv.get("status") not in ("qc_pending", "qc_failed"):
+        raise HTTPException(status_code=409, detail="This invoice is not waiting for a QC check")
+    if inv.get("created_by") and str(inv["created_by"]) == str(actor_id):
+        raise HTTPException(status_code=403, detail="You raised this invoice, so a QC colleague has to check it. "
+                                                    "It is in their Quality Control queue and they have been notified.")
+    signer = _signer_name(user, payload.inspector_name)
 
     qc_update = {
         "qc_passed":       payload.passed,
-        "qc_inspector":    payload.inspector_name,
+        "qc_inspector":    signer,
+        "qc_inspector_id": actor_id,
         "qc_notes":        payload.notes,
         "qc_batch_numbers": payload.batch_numbers or [],
         "qc_checked_at":   _now(),
@@ -537,7 +610,7 @@ async def submit_qc(
     try:
         audit_event(
             "frontdesk_qc_checked",
-            {"invoice_id": invoice_id, "passed": payload.passed, "inspector": payload.inspector_name},
+            {"invoice_id": invoice_id, "passed": payload.passed, "inspector": signer},
             actor_id=actor_id,
             event_class="frontdesk",
             action="qc_check",
@@ -552,6 +625,15 @@ async def submit_qc(
         "invoice_finance_pending" if payload.passed else "invoice_qc_failed",
         invoice_id, walk_in_id, qc_update["status"],
     )
+    who = inv.get("company_name") or inv.get("customer_name") or "a customer"
+    number = inv.get("invoice_number") or ""
+    if payload.passed:
+        _notify_roles({"finance"}, f"Invoice {number} for {who} passed QC - ready for your approval",
+                      f"Checked by {signer}. Approve it to post it to ACE Books.", "/frontdesk", actor_id, kind="finance_approval")
+    if inv.get("created_by"):
+        _notify_users([str(inv["created_by"])],
+                      f"Invoice {number} {'passed' if payload.passed else 'FAILED'} QC",
+                      f"Checked by {signer}." + (f" Notes: {payload.notes}" if payload.notes else ""), "/frontdesk", actor_id, kind="qc_result")
 
     return {
         "invoice_id": invoice_id,
@@ -594,7 +676,8 @@ async def finance_approval(
 
     fin_update = {
         "finance_approved":  payload.approved,
-        "finance_approver":  payload.approver_name,
+        "finance_approver":  _signer_name(user, payload.approver_name),
+        "finance_approver_id": actor_id,
         "finance_reason":    payload.reason,
         "finance_decided_at": _now(),
         "status":            new_status,
@@ -656,7 +739,7 @@ async def finance_approval(
 # ---------------------------------------------------------------------------
 
 @router.post("/invoices/{invoice_id}/notify")
-async def notify_executive(
+def notify_executive(
     invoice_id: str,
     payload: NotifyExecutiveIn,
     user: dict = Depends(require_role("finance")),
@@ -985,7 +1068,7 @@ async def send_for_delivery(
 # ---------------------------------------------------------------------------
 
 @router.get("/clients/search")
-async def search_clients(
+def search_clients(
     q: str = Query(..., min_length=2, description="Name, company, or phone fragment"),
     limit: int = Query(default=10, le=50),
     _u=Depends(verify_jwt),
@@ -1040,7 +1123,7 @@ async def search_clients(
 # ---------------------------------------------------------------------------
 
 @router.get("/clients/{walk_in_id}/history")
-async def client_history(
+def client_history(
     walk_in_id: str,
     _u=Depends(verify_jwt),
 ):
@@ -1121,7 +1204,7 @@ async def client_history(
 # ---------------------------------------------------------------------------
 
 @router.get("/invoices")
-async def list_invoices(
+def list_invoices(
     status: Optional[str] = Query(default=None),
     date_from: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
     date_to:   Optional[str] = Query(default=None, description="YYYY-MM-DD"),
@@ -1160,7 +1243,7 @@ async def list_invoices(
 # ---------------------------------------------------------------------------
 
 @router.get("/invoices/{invoice_id}")
-async def get_invoice(
+def get_invoice(
     invoice_id: str,
     _u=Depends(verify_jwt),
 ):
@@ -1242,7 +1325,7 @@ async def get_invoice(
 
 
 @router.get("/invoices/{invoice_id}/history")
-async def get_invoice_history(
+def get_invoice_history(
     invoice_id: str,
     _u=Depends(verify_jwt),
 ):
@@ -1280,7 +1363,7 @@ async def get_invoice_history(
 # ---------------------------------------------------------------------------
 
 @router.get("/stock-check")
-async def stock_check(
+def stock_check(
     products: str = Query(..., description="Comma-separated product names or SKUs"),
     _u=Depends(verify_jwt),
 ):
@@ -1357,7 +1440,7 @@ async def stock_check(
 # ---------------------------------------------------------------------------
 
 @router.get("/reports/daily")
-async def daily_report(
+def daily_report(
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD, defaults to today"),
     _u=Depends(verify_jwt),
 ):
@@ -1451,7 +1534,7 @@ async def daily_report(
 # ---------------------------------------------------------------------------
 
 @router.post("/walk-ins/{walk_in_id}/cancel", status_code=200)
-async def cancel_walk_in(
+def cancel_walk_in(
     walk_in_id: str,
     reason: Optional[str] = Body(default=None, embed=True),
     user=Depends(verify_jwt),
@@ -1503,6 +1586,7 @@ async def cancel_walk_in(
         ]).execute()
     except Exception:
         pass
+    _release_frontdesk_numbers(walk_in_id, actor_id)
 
     try:
         audit_event(
@@ -1698,6 +1782,7 @@ async def quick_request(
         pass
 
     await _broadcast_frontdesk("invoice_qc_pending", invoice_id, walk_in_id, "qc_pending")
+    _notify_qc_waiting(created, actor_id)
 
     return {"status": "created", "invoice": created, "walk_in_id": walk_in_id}
 

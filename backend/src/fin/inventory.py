@@ -331,6 +331,40 @@ def create_count(conn, ctx, count_date: dt.date, skus: Optional[List[str]] = Non
     return get_count(conn, ctx.entity_id, c["id"])
 
 
+def count_overview(conn, entity_id: str) -> Dict[str, Any]:
+    """What a stock count covers, before any count exists: the book quantity and value of every
+    item and batch, its expiry and status, when the item was last counted, and the lots the books
+    show as short (sold below zero in Sage - a count is how they are corrected)."""
+    rows = q(conn, """
+        SELECT l.sku, p.name AS product_name, l.batch_id, b.batch_number, b.pack_batch_number, b.expiry_date,
+               COALESCE(b.status, 'AVAILABLE') AS batch_status,
+               SUM(l.qty_remaining) AS book_qty, SUM(l.qty_remaining * l.unit_cost) AS book_value,
+               lc.last_counted
+        FROM fin_cost_layers l
+        LEFT JOIN fin_batches b ON b.id = l.batch_id
+        LEFT JOIN fin_products p ON p.legal_entity_id = l.legal_entity_id AND p.sku = l.sku
+        LEFT JOIN LATERAL (SELECT MAX(c.count_date) AS last_counted FROM fin_stock_count_lines cl
+                           JOIN fin_stock_counts c ON c.id = cl.count_id AND c.status = 'POSTED'
+                           WHERE cl.sku = l.sku) lc ON TRUE
+        WHERE l.legal_entity_id = %s
+        GROUP BY l.sku, p.name, l.batch_id, b.batch_number, b.pack_batch_number, b.expiry_date, b.status, lc.last_counted
+        HAVING SUM(l.qty_remaining) <> 0
+        ORDER BY l.sku, b.expiry_date NULLS LAST""", (entity_id,))
+    short = q(conn, """SELECT id::text AS id, title, amount, quantity, detail->>'sku' AS sku
+                       FROM fin_data_exceptions WHERE legal_entity_id=%s AND kind='STOCK_SHORT_LOT' AND status='OPEN'
+                       ORDER BY amount DESC NULLS LAST""", (entity_id,))
+    today = dt.date.today()
+    for r in rows:
+        r["expired"] = bool(r["expiry_date"] and r["expiry_date"] < today)
+    return {"lines": rows, "short_lots": short,
+            "summary": {"items": len({r["sku"] for r in rows}), "lines": len(rows),
+                        "book_value": sum((Decimal(str(r["book_value"] or 0)) for r in rows), Decimal("0")),
+                        "expired_lines": sum(1 for r in rows if r["expired"]),
+                        "blocked_lines": sum(1 for r in rows if r["batch_status"] != "AVAILABLE"),
+                        "never_counted": len({r["sku"] for r in rows if not r["last_counted"]}),
+                        "short_lots": len(short)}}
+
+
 def get_count(conn, entity_id: str, count_id: str) -> Dict[str, Any]:
     c = q1(conn, "SELECT * FROM fin_stock_counts WHERE id=%s AND legal_entity_id=%s", (count_id, entity_id))
     if not c:
@@ -539,26 +573,168 @@ def open_recall(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
     r = q1(conn, """INSERT INTO fin_recalls (legal_entity_id, recall_number, sku, batch_id, reason, notes, opened_by)
                     VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
            (ctx.entity_id, number, batch["sku"], batch["id"], data["reason"], data.get("notes"), ctx.actor_id))
-    traced = set()
-    for c in trace_batch(conn, ctx.entity_id, str(batch["id"]))["customers"]:
-        traced.add(c["customer_id"])
-        ex(conn, """INSERT INTO fin_recall_items (recall_id, customer_id, invoice_number, quantity_sold, updated_by, sku)
-                    VALUES (%s,%s,%s,%s,%s,%s)""",
-           (r["id"], c["customer_id"], ", ".join(d for d in (c["documents"] or []) if d),
-            Decimal(str(c["quantity_sold"])) + Decimal(str(c["quantity_on_loan"])), ctx.actor_id, batch["sku"]))
-    # Buyers from the Sage years: in Sage each lot is its own item, so everyone who bought this item bought this lot.
-    for c in q(conn, """SELECT customer_id, string_agg(DISTINCT invoice_number, ', ') AS docs, SUM(quantity) AS qty
-                        FROM fin_sage_sales_lines WHERE legal_entity_id=%s AND sku=%s AND customer_id IS NOT NULL AND quantity > 0
-                        GROUP BY customer_id""", (ctx.entity_id, batch["sku"])):
-        if c["customer_id"] in traced:
-            continue
-        ex(conn, """INSERT INTO fin_recall_items (recall_id, customer_id, invoice_number, quantity_sold, updated_by, sku)
-                    VALUES (%s,%s,%s,%s,%s,%s)""", (r["id"], c["customer_id"], c["docs"], c["qty"], ctx.actor_id, batch["sku"]))
+    for d in affected_documents(conn, ctx.entity_id, batch):
+        _insert_recall_line(conn, ctx, r["id"], batch["sku"], d)
     # Stock still on hand is frozen: it cannot be sold while recalled.
     ex(conn, "UPDATE fin_batches SET status='RECALLED' WHERE id=%s", (batch["id"],))
     audit.record(conn, ctx, "RECALL_OPENED", "recall", r["id"], ref=number, reason=data["reason"],
                  metadata={"sku": batch["sku"], "batch": batch["batch_number"]})
     return get_recall(conn, ctx.entity_id, r["id"])
+
+
+def affected_documents(conn, entity_id: str, batch: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every document that took the batch out to a customer, one row per invoice or loan, with the
+    quantity of this batch on it and the price it was sold at:
+      - ACE Books invoices, traced through the FIFO layers the sale consumed (so a sale that did not
+        name the batch is still found), priced from the invoice line;
+      - loans (stock out with the customer, not sold);
+      - Sage invoices: in Sage each lot is its own item, so a sale of the item is a sale of the lot."""
+    ace = q(conn, """
+        SELECT 'ACE' AS source, i.id AS invoice_id, i.invoice_number, i.invoice_date, i.customer_id,
+               SUM(lc.quantity) AS quantity, MAX(il.unit_price) AS unit_price
+        FROM fin_cost_layers l
+        JOIN fin_layer_consumptions lc ON lc.layer_id = l.id
+        JOIN fin_inventory_transactions t ON t.id = lc.inventory_txn_id AND t.txn_type = 'SALE'
+        JOIN fin_sales_invoice_lines il ON il.inventory_txn_id = t.id
+        JOIN fin_sales_invoices i ON i.id = il.invoice_id AND i.status NOT IN ('VOID', 'DRAFT')
+        WHERE l.batch_id = %s
+        GROUP BY i.id, i.invoice_number, i.invoice_date, i.customer_id""", (batch["id"],))
+    loans = q(conn, """
+        SELECT 'LOAN' AS source, NULL::uuid AS invoice_id, t.reference AS invoice_number, MIN(t.txn_date) AS invoice_date,
+               t.customer_id, SUM(lc.quantity) AS quantity, NULL::numeric AS unit_price
+        FROM fin_cost_layers l
+        JOIN fin_layer_consumptions lc ON lc.layer_id = l.id
+        JOIN fin_inventory_transactions t ON t.id = lc.inventory_txn_id AND t.txn_type = 'LOAN_OUT'
+        WHERE l.batch_id = %s AND t.customer_id IS NOT NULL
+        GROUP BY t.reference, t.customer_id""", (batch["id"],))
+    sage = q(conn, """
+        SELECT 'SAGE' AS source, NULL::uuid AS invoice_id, invoice_number, MIN(invoice_date) AS invoice_date, customer_id,
+               SUM(quantity) AS quantity, round(SUM(amount) / NULLIF(SUM(quantity), 0), 2) AS unit_price
+        FROM fin_sage_sales_lines
+        WHERE legal_entity_id = %s AND sku = %s AND customer_id IS NOT NULL AND quantity > 0
+        GROUP BY invoice_number, customer_id""", (entity_id, batch["sku"]))
+    seen = {d["invoice_number"] for d in ace}
+    rows = ace + loans + [d for d in sage if d["invoice_number"] not in seen]
+    return sorted(rows, key=lambda d: (d["invoice_date"] or dt.date.min), reverse=True)
+
+
+def _insert_recall_line(conn, ctx, recall_id: str, sku: str, d: Dict[str, Any], by_hand: bool = False) -> None:
+    ex(conn, """INSERT INTO fin_recall_items (recall_id, customer_id, invoice_id, invoice_number, invoice_date, quantity_sold,
+                                              unit_price, source, added_by_hand, updated_by, sku)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+       (recall_id, d["customer_id"], d.get("invoice_id"), d["invoice_number"], d.get("invoice_date"), d["quantity"],
+        d.get("unit_price"), d["source"], by_hand, ctx.actor_id, sku))
+
+
+def add_recall_invoice(conn, ctx, recall_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Add an invoice the trace did not find (e.g. the batch was sold without being named and the
+    customer says they have it). The invoice must carry the recalled item; its quantity and price
+    of that item become the recall line."""
+    ctx.require("inventory.recall.create")
+    r = get_recall(conn, ctx.entity_id, recall_id)
+    if r["status"] != "OPEN":
+        raise FinError("INVALID_STATE_TRANSITION", "This recall is closed")
+    number = str(data.get("invoice_number") or "").strip()
+    d = None
+    if data.get("invoice_id") or (number and not data.get("sage")):
+        d = q1(conn, """SELECT 'ACE' AS source, i.id AS invoice_id, i.invoice_number, i.invoice_date, i.customer_id,
+                               SUM(l.quantity) AS quantity, MAX(l.unit_price) AS unit_price
+                        FROM fin_sales_invoices i JOIN fin_sales_invoice_lines l ON l.invoice_id = i.id AND l.sku = %s
+                        WHERE i.legal_entity_id = %s AND i.status NOT IN ('VOID', 'DRAFT')
+                          AND (i.id::text = %s OR i.invoice_number = %s)
+                        GROUP BY i.id, i.invoice_number, i.invoice_date, i.customer_id""",
+               (r["sku"], ctx.entity_id, str(data.get("invoice_id") or ""), number))
+    if not d and number:
+        d = q1(conn, """SELECT 'SAGE' AS source, NULL::uuid AS invoice_id, invoice_number, MIN(invoice_date) AS invoice_date,
+                               MAX(customer_id) AS customer_id, SUM(quantity) AS quantity,
+                               round(SUM(amount) / NULLIF(SUM(quantity), 0), 2) AS unit_price
+                        FROM fin_sage_sales_lines WHERE legal_entity_id = %s AND sku = %s AND invoice_number = %s
+                        GROUP BY invoice_number""", (ctx.entity_id, r["sku"], number))
+    if not d:
+        raise invalid(f"Invoice {number or data.get('invoice_id')} has no {r.get('product_name') or r['sku']} on it")
+    if any((i["invoice_id"] and d["invoice_id"] and str(i["invoice_id"]) == str(d["invoice_id"])) or i["invoice_number"] == d["invoice_number"]
+           for i in r["items"]):
+        raise invalid(f"Invoice {d['invoice_number']} is already on this recall")
+    if data.get("quantity"):
+        d["quantity"] = qty(data["quantity"])
+    _insert_recall_line(conn, ctx, recall_id, r["sku"], d, by_hand=True)
+    audit.record(conn, ctx, "RECALL_INVOICE_ADDED", "recall", recall_id, ref=r["recall_number"],
+                 metadata={"invoice": d["invoice_number"], "source": d["source"], "quantity": str(d["quantity"])})
+    return get_recall(conn, ctx.entity_id, recall_id)
+
+
+def recall_supply(conn, entity_id: str, recall: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Where the recalled batch came from: the supplier bill(s) in ACE Books that received it, else
+    the Sage purchase invoices of the item (each Sage lot is its own item)."""
+    rows = q(conn, """SELECT 'ACE' AS source, b.id AS bill_id, b.bill_number, b.supplier_invoice_number, b.bill_date,
+                             b.supplier_id, s.name AS supplier_name, SUM(l.quantity) AS quantity,
+                             round(SUM(l.line_total) / NULLIF(SUM(l.quantity), 0), 2) AS unit_cost
+                      FROM fin_supplier_bill_lines l JOIN fin_supplier_bills b ON b.id = l.bill_id AND b.status <> 'VOID'
+                      LEFT JOIN suppliers s ON s.id = b.supplier_id
+                      WHERE l.batch_id = %s
+                      GROUP BY b.id, b.bill_number, b.supplier_invoice_number, b.bill_date, b.supplier_id, s.name""",
+             (recall["batch_id"],))
+    if rows:
+        return rows
+    return q(conn, """SELECT 'SAGE' AS source, NULL::uuid AS bill_id, bill_number, bill_number AS supplier_invoice_number,
+                             MIN(bill_date) AS bill_date, supplier_id, MAX(supplier_name) AS supplier_name, SUM(quantity) AS quantity,
+                             round(SUM(amount) / NULLIF(SUM(quantity), 0), 2) AS unit_cost
+                      FROM fin_sage_purchase_lines WHERE legal_entity_id = %s AND sku = %s AND quantity > 0
+                      GROUP BY bill_number, supplier_id ORDER BY MIN(bill_date) DESC""", (entity_id, recall["sku"]))
+
+
+def return_recall_to_supplier(conn, ctx, recall_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Send recalled stock back to the supplier: a debit note against the bill the batch came in on
+    reduces what we owe them, and the units leave the (frozen) batch at book cost."""
+    from src.fin import purchases
+    ctx.require("inventory.recall.create")
+    r = get_recall(conn, ctx.entity_id, recall_id)
+    quantity = qty(data.get("quantity") or 0)
+    if quantity <= 0:
+        raise invalid("How many units go back to the supplier?")
+    src = None
+    if data.get("bill_id"):
+        src = next((x for x in r["supply"] if x["bill_id"] and str(x["bill_id"]) == str(data["bill_id"])), None)
+    elif data.get("bill_number"):
+        src = next((x for x in r["supply"] if x["bill_number"] == data["bill_number"]), None)
+    elif len(r["supply"]) == 1:
+        src = r["supply"][0]
+    supplier_id = data.get("supplier_id") or (src or {}).get("supplier_id")
+    if not supplier_id:
+        raise invalid("Choose the supplier (no bill in ACE Books or Sage shows who supplied this batch)")
+    unit_cost = money(data.get("unit_cost") or (src or {}).get("unit_cost") or 0)
+    on = data.get("note_date") or dt.date.today()
+    dn = purchases.create_debit_note(conn, ctx, {
+        "supplier_id": supplier_id, "note_date": on,
+        "bill_id": str(src["bill_id"]) if src and src.get("bill_id") else None,
+        "sage_bill_number": src["bill_number"] if src and src["source"] == "SAGE" else None,
+        "reason": f"Recall {r['recall_number']}: {r['reason']}",
+        "lines": [{"line_type": "ITEM", "sku": r["sku"], "quantity": quantity, "batch_id": str(r["batch_id"]),
+                   "line_total": money(quantity * unit_cost) if unit_cost > 0 else None,
+                   "description": f"{r.get('product_name') or r['sku']} batch {r['batch_number']} (recalled) returned"}]})
+    ex(conn, """INSERT INTO fin_recall_supplier_returns (recall_id, supplier_id, bill_id, sage_bill_number, debit_note_id, quantity,
+                                                         unit_cost, created_by) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+       (recall_id, supplier_id, src["bill_id"] if src else None, src["bill_number"] if src and src["source"] == "SAGE" else None,
+        dn["id"], quantity, unit_cost or None, ctx.actor_id))
+    audit.record(conn, ctx, "RECALL_RETURNED_TO_SUPPLIER", "recall", recall_id, ref=r["recall_number"],
+                 metadata={"debit_note": dn.get("debit_note_number"), "quantity": str(quantity)})
+    return {**get_recall(conn, ctx.entity_id, recall_id), "debit_note": dn}
+
+
+def recalls_for_invoice(conn, entity_id: str, invoice_id: Optional[str] = None,
+                        invoice_number: Optional[str] = None) -> List[Dict[str, Any]]:
+    """The recalls an invoice is part of (shown on the invoice, ACE Books or Sage)."""
+    return q(conn, """SELECT r.id AS recall_id, r.recall_number, r.status, r.reason, r.sku, b.batch_number,
+                             i.quantity_sold, i.quantity_returned, i.contact_status, i.credit_note_id, n.credit_note_number,
+                             n.total AS credit_total, rc.id AS qc_case_id, rc.recall_id AS qc_recall
+                      FROM fin_recall_items i JOIN fin_recalls r ON r.id = i.recall_id
+                      JOIN fin_batches b ON b.id = r.batch_id
+                      LEFT JOIN fin_credit_notes n ON n.id = i.credit_note_id
+                      LEFT JOIN recall_cases rc ON rc.fin_recall_id = r.id
+                      WHERE r.legal_entity_id = %s AND ((%s::text IS NOT NULL AND i.invoice_id::text = %s)
+                                                        OR (%s::text IS NOT NULL AND i.invoice_number = %s))
+                      ORDER BY r.opened_at DESC""",
+             (entity_id, invoice_id, invoice_id, invoice_number, invoice_number))
 
 
 def get_recall(conn, entity_id: str, recall_id: str) -> Dict[str, Any]:
@@ -571,8 +747,22 @@ def get_recall(conn, entity_id: str, recall_id: str) -> Dict[str, Any]:
     r["items"] = q(conn, """SELECT i.*, c.name AS customer_name, c.contact_details, n.credit_note_number, n.total AS credit_total
                             FROM fin_recall_items i LEFT JOIN customers c ON c.id=i.customer_id
                             LEFT JOIN fin_credit_notes n ON n.id=i.credit_note_id WHERE i.recall_id=%s
-                            ORDER BY i.quantity_sold DESC""", (recall_id,))
+                            ORDER BY i.invoice_date DESC NULLS LAST, i.quantity_sold DESC""", (recall_id,))
     r["on_hand"] = on_hand(conn, entity_id, r["sku"], str(r["batch_id"]))
+    r["supply"] = recall_supply(conn, entity_id, r)
+    r["supplier_returns"] = q(conn, """SELECT x.*, s.name AS supplier_name, d.debit_note_number, d.total AS debit_total,
+                                              b.bill_number
+                                       FROM fin_recall_supplier_returns x LEFT JOIN suppliers s ON s.id = x.supplier_id
+                                       LEFT JOIN fin_debit_notes d ON d.id = x.debit_note_id
+                                       LEFT JOIN fin_supplier_bills b ON b.id = x.bill_id
+                                       WHERE x.recall_id = %s ORDER BY x.created_at""", (recall_id,))
+    case = q1(conn, "SELECT id::text AS id, recall_id, status, severity FROM recall_cases WHERE fin_recall_id=%s", (recall_id,))
+    r["qc_case"] = case
+    r["totals"] = {"invoices": len([i for i in r["items"] if i["source"] != "LOAN"]),
+                   "units_out": sum((Decimal(str(i["quantity_sold"] or 0)) for i in r["items"]), Decimal("0")),
+                   "units_returned": sum((Decimal(str(i["quantity_returned"] or 0)) for i in r["items"]), Decimal("0")),
+                   "credited": sum((Decimal(str(i["credit_total"] or 0)) for i in r["items"]), Decimal("0")),
+                   "to_supplier": sum((Decimal(str(x["quantity"] or 0)) for x in r["supplier_returns"]), Decimal("0"))}
     return r
 
 
@@ -607,6 +797,14 @@ def record_recall_return(conn, ctx, recall_id: str, data: Dict[str, Any]) -> Dic
         if not item:
             raise not_found("Recall line", data["item_id"])
         customer_id = customer_id or item["customer_id"]
+        # the line already names the invoice and the price it was sold at
+        if not data.get("invoice_id") and not data.get("sage_invoice_number"):
+            if item.get("invoice_id"):
+                data = {**data, "invoice_id": str(item["invoice_id"])}
+            elif item.get("source") == "SAGE" and item.get("invoice_number"):
+                data = {**data, "sage_invoice_number": item["invoice_number"]}
+        if not data.get("unit_price") and item.get("unit_price") and data.get("credit", True):
+            data = {**data, "unit_price": item["unit_price"]}
     if not customer_id:
         raise invalid("Choose the customer returning the stock")
     quantity = qty(data.get("quantity") or 0)
@@ -639,6 +837,36 @@ def record_recall_return(conn, ctx, recall_id: str, data: Dict[str, Any]) -> Dic
     audit.record(conn, ctx, "RECALL_RETURN_RECORDED", "recall", recall_id, ref=r["recall_number"],
                  metadata={"customer_id": customer_id, "quantity": str(quantity), "credit_note": cn["credit_note_number"] if cn else None})
     return {**get_recall(conn, ctx.entity_id, recall_id), "credit_note": cn}
+
+
+def void_recall(conn, ctx, recall_id: str, reason: str) -> Dict[str, Any]:
+    """A recall opened by mistake: the batch is released (sellable again) and the recall and its
+    Quality Control case are marked void (kept for the audit trail). Not possible once a return has
+    been posted - void those credit / debit notes first, so no figure is left without its reason."""
+    ctx.require("inventory.recall.create")
+    if not (reason or "").strip():
+        raise invalid("Give the reason for voiding the recall")
+    r = get_recall(conn, ctx.entity_id, recall_id)
+    if r["status"] == "VOID":
+        raise FinError("INVALID_STATE_TRANSITION", "This recall is already void")
+    notes = [i["credit_note_number"] for i in r["items"] if i.get("credit_note_id")
+             and q1(conn, "SELECT 1 FROM fin_credit_notes WHERE id=%s AND status <> 'VOID'", (i["credit_note_id"],))]
+    notes += [x["debit_note_number"] for x in r["supplier_returns"] if x.get("debit_note_id")
+              and q1(conn, "SELECT 1 FROM fin_debit_notes WHERE id=%s AND status <> 'VOID'", (x["debit_note_id"],))]
+    if notes:
+        raise FinError("INVALID_STATE_TRANSITION",
+                       f"Returns were posted on this recall ({', '.join(n for n in notes if n)}). Void those notes first, then the recall.")
+    ex(conn, """UPDATE fin_recalls SET status='VOID', void_reason=%s, voided_by=%s, voided_at=now() WHERE id=%s""",
+       (reason.strip(), ctx.actor_id, recall_id))
+    if not q1(conn, "SELECT 1 FROM fin_recalls WHERE batch_id=%s AND status='OPEN' AND id<>%s", (r["batch_id"], recall_id)):
+        ex(conn, "UPDATE fin_batches SET status='AVAILABLE' WHERE id=%s AND status='RECALLED'", (r["batch_id"],))
+    ex(conn, "UPDATE recall_cases SET status='voided', resolved_at=now(), updated_at=now() WHERE fin_recall_id=%s", (recall_id,))
+    from src.services.quality_hub import notify_recall
+    notify_recall(conn, f"Recall {r['recall_number']} voided", f"{r.get('product_name') or r['sku']} batch {r['batch_number']} "
+                  f"is sellable again. Reason: {reason}", ctx.actor_id)
+    audit.record(conn, ctx, "RECALL_VOIDED", "recall", recall_id, ref=r["recall_number"], reason=reason,
+                 metadata={"batch": r["batch_number"], "batch_released": True})
+    return get_recall(conn, ctx.entity_id, recall_id)
 
 
 def close_recall(conn, ctx, recall_id: str, notes: Optional[str] = None) -> Dict[str, Any]:
@@ -683,6 +911,8 @@ def update_batch(conn, ctx, batch_id: str, data: Dict[str, Any]) -> Dict[str, An
     for k in ("manufacture_date", "expiry_date"):
         if k in data:
             fields[k] = data[k] or None
+    if "pack_batch_number" in data:
+        fields["pack_batch_number"] = (str(data["pack_batch_number"] or "").strip() or None)
     if "notes" in data:
         fields["notes"] = data["notes"]
     if not fields:

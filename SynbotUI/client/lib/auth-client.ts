@@ -157,3 +157,15 @@ class AuthClient {
 }
 
 export const authClient = new AuthClient();
+
+/** The signed-in user's id (the access token's subject), or "" when signed out. */
+export function myUserId(): string {
+  try {
+    const t = authClient.getAccessToken();
+    if (!t) return "";
+    const part = t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return String(JSON.parse(atob(part)).sub ?? "");
+  } catch {
+    return "";
+  }
+}

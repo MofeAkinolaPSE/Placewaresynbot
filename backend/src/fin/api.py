@@ -20,13 +20,14 @@ from src.fin import (accounts, assets, audit, banking, books_ledger, closing, co
 from src.fin.context import build_context
 from src.fin.db import plain, q, q1, tx
 from src.fin.errors import FinError, from_db_error, invalid
+from src.utils.shared_response import shared_response
 
 router = APIRouter(prefix="/fin", tags=["ACE Books"])
 
 DATE_KEYS = {"journal_date", "invoice_date", "due_date", "receipt_date", "note_date", "bill_date", "payment_date",
              "voucher_date", "adjustment_date", "count_date", "loan_date", "expected_return_date", "return_date",
              "acquisition_date", "depreciation_start", "disposal_date", "statement_date", "start_date", "cutover_date",
-             "expiry_date", "manufacture_date", "reversal_date", "as_of", "on"}
+             "expiry_date", "manufacture_date", "reversal_date", "as_of", "on", "amend_date"}
 
 
 def _date(v: Any) -> Any:
@@ -46,12 +47,19 @@ def _dates(d: Any) -> Any:
     return d
 
 
-def _run(request: Request, fn: Callable, perm: Optional[str] = None) -> Any:
+def _run(request: Request, fn: Callable, perm: Optional[str] = None, cache_ttl: int = 0) -> Any:
+    """cache_ttl > 0: read-only reports shared across workers and users (src/utils/shared_response.py).
+    The caller's permission is still checked first; the key is the entity plus the full query, and
+    any save anywhere drops it."""
     try:
         with tx() as conn:
             ctx = build_context(request, conn)
             if perm:
                 ctx.require(perm)
+            if cache_ttl:
+                params = "&".join(f"{k}={v}" for k, v in sorted(request.query_params.multi_items()))
+                key = f"fin:resp:{ctx.entity_id}:{request.url.path}?{params}"
+                return shared_response(key, cache_ttl, lambda: plain(fn(conn, ctx)))
             return plain(fn(conn, ctx))
     except FinError as e:
         raise HTTPException(status_code=e.status, detail=e.to_detail())
@@ -59,6 +67,10 @@ def _run(request: Request, fn: Callable, perm: Optional[str] = None) -> Any:
         err = from_db_error(e)
         if err:
             raise HTTPException(status_code=err.status, detail=err.to_detail())
+        if isinstance(e, psycopg2.DataError):
+            # a malformed id, date or number in the request: the caller's mistake, not a server fault
+            raise HTTPException(status_code=400, detail={"code": "VALIDATION_FAILED",
+                                                         "message": "A value in the request is not valid (check the ids and dates)"})
         raise
 
 
@@ -122,7 +134,8 @@ def put_mapping(key: str, request: Request, payload: Dict[str, Any] = Body(...))
 
 @router.get("/dashboard")
 def get_dashboard(request: Request, as_of: Optional[str] = None):
-    return _run(request, lambda c, x: dashboard.control_tower(c, x.entity_id, _date(as_of) or _today()), "reports.view")
+    return _run(request, lambda c, x: dashboard.control_tower(c, x.entity_id, _date(as_of) or _today()), "reports.view",
+                cache_ttl=60)
 
 
 # ---------------------------------------------------------------------------
@@ -173,9 +186,32 @@ def reopen_period(period_id: str, request: Request, payload: Dict[str, Any] = Bo
 
 @router.get("/accounts")
 def list_accounts(request: Request, search: Optional[str] = None, account_type: Optional[str] = None,
-                  include_inactive: bool = True):
-    return _run(request, lambda c, x: accounts.list_accounts(c, x.entity_id, search=search, account_type=account_type,
-                                                              include_inactive=include_inactive), "accounting.view")
+                  include_inactive: bool = True, as_of: Optional[str] = None, history: bool = False):
+    """The chart of accounts. With history=true every account also carries its balance at `as_of`
+    from the whole ledger (Sage's years and ACE Books) and how many entries it has had, when the
+    first and last were - so the chart shows every account's real activity, not only ACE's own."""
+    def fn(conn, ctx):
+        rows = accounts.list_accounts(conn, ctx.entity_id, search=search, account_type=account_type,
+                                      include_inactive=include_inactive)
+        if not history:
+            return rows
+        on = _date(as_of) or _today()
+        bal = books_ledger.balances(conn, ctx.entity_id, on)
+        # income and expense show their year to date (Sage closes them each year)
+        ytd = books_ledger.ytd_pl(conn, ctx.entity_id, on)
+        act = {r["account_code"]: r for r in q(conn, """
+            SELECT account_code, COUNT(*) AS n, MIN(txn_date) AS first, MAX(txn_date) AS last FROM fin_sage_gl_lines
+            WHERE legal_entity_id=%s AND (debit <> 0 OR credit <> 0) AND txn_date <= %s GROUP BY account_code""", (ctx.entity_id, on))}
+        for r in rows:
+            pl = r["account_type"] in ("REVENUE", "EXPENSE")
+            r["balance_as_of"] = ytd.get(r["code"], 0) if pl else bal.get(r["code"], 0)
+            r["balance_basis"] = "year to date" if pl else "balance"
+            s = act.get(r["code"]) or {}
+            r["entries"] = int(s.get("n") or 0) + int(r.get("posting_count") or 0)
+            r["first_entry"] = s.get("first")
+            r["last_entry"] = s.get("last")
+        return rows
+    return _run(request, fn, "accounting.view")
 
 
 @router.post("/accounts")
@@ -294,7 +330,7 @@ def trial_balance(request: Request, date_from: Optional[str] = Query(None, alias
             rows.append(row)
         return {"date_from": f, "date_to": t, "history_until": s["history_until"], "rows": rows, "totals": tot,
                 "balanced": tot["closing_debit"] == tot["closing_credit"], "difference": tot["closing_debit"] - tot["closing_credit"]}
-    return _run(request, fn, "reports.view")
+    return _run(request, fn, "reports.view", cache_ttl=60)
 
 
 @router.get("/general-ledger")
@@ -335,7 +371,7 @@ def ledger_gl_summary(request: Request, date_from: Optional[str] = Query(None, a
     def fn(conn, ctx):
         f, t = _range(date_from, date_to)
         return books_ledger.gl_summary(conn, ctx.entity_id, f, t, codes.split(",") if codes else None, include_zero)
-    return _run(request, fn, "reports.view")
+    return _run(request, fn, "reports.view", cache_ttl=60)
 
 
 @router.get("/ledger/gl-account/{code}")
@@ -351,7 +387,7 @@ def ledger_gl_account(code: str, request: Request, date_from: Optional[str] = Qu
 def ledger_trial_balance(request: Request, as_of: Optional[str] = None, include_zero: bool = False):
     """Sage 'General Ledger Trial Balance': Account ID, Description, Debit, Credit as of a date."""
     return _run(request, lambda c, x: books_ledger.trial_balance_as_of(c, x.entity_id, _date(as_of) or _today(), include_zero),
-                "reports.view")
+                "reports.view", cache_ttl=60)
 
 
 @router.get("/ledger/journal/{key}")
@@ -430,7 +466,7 @@ def report(name: str, request: Request, date_from: Optional[str] = Query(None, a
             fy = reports._fy_start(conn, ctx.entity_id, t) if not date_from else f
             return reports.budget_vs_actual(conn, ctx.entity_id, budget_id, fy, t)
         raise FinError("RESOURCE_NOT_FOUND", f"Unknown report {name}")
-    return _run(request, fn, "reports.view")
+    return _run(request, fn, "reports.view", cache_ttl=60)
 
 
 @router.get("/reports/customer-statement/{customer_id}")
@@ -566,7 +602,7 @@ def customer_credit(customer_id: int, request: Request, amount: float = 0):
 
 @router.get("/suppliers")
 def find_suppliers(request: Request, search: str = "", limit: int = 20):
-    return _run(request, lambda c, x: q(c, """SELECT id, name, external_vendor_id AS supplier_code, payment_terms FROM suppliers
+    return _run(request, lambda c, x: q(c, """SELECT id, name, external_vendor_id AS supplier_code, payment_terms, address, phone, contact_email FROM suppliers
                                                WHERE name ILIKE %s OR external_vendor_id ILIKE %s ORDER BY name LIMIT %s""",
                                          (f"%{search}%", f"%{search}%", limit)), "payables.view")
 
@@ -604,7 +640,7 @@ def find_products(request: Request, search: str = "", limit: int = 30, customer_
                           ORDER BY ({sellable} > 0) DESC, p.name, fb.expiry_date NULLS LAST, p.sku
                           LIMIT %s""", (ctx.entity_id, f"%{search}%", f"%{search}%", limit))
         for r in rows:
-            r["batches"] = q(conn, """SELECT b.id, b.batch_number, b.lot_code, b.manufacture_date, b.expiry_date, b.status,
+            r["batches"] = q(conn, """SELECT b.id, b.batch_number, b.lot_code, b.pack_batch_number, b.manufacture_date, b.expiry_date, b.status,
                                              SUM(l.qty_remaining) AS available,
                                              round(SUM(l.qty_remaining * l.unit_cost) / NULLIF(SUM(l.qty_remaining),0), 2) AS unit_cost,
                                              (b.status='AVAILABLE' AND (b.expiry_date IS NULL OR b.expiry_date >= current_date)) AS sellable
@@ -707,6 +743,21 @@ def post_invoice(invoice_id: str, request: Request, payload: Dict[str, Any] = Bo
                                                           override_reason=payload.get("override_reason")))
 
 
+@router.post("/sales/invoices/{invoice_id}/amend")
+def amend_invoice(invoice_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: sales.amend_invoice(c, x, invoice_id, _dates(payload)))
+
+
+@router.post("/receivables/receipts/{receipt_id}/correct")
+def correct_receipt(receipt_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: sales.correct_receipt(c, x, receipt_id, _dates(payload)))
+
+
+@router.post("/banking/vouchers/{voucher_id}/correct")
+def correct_voucher(voucher_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: banking.correct_voucher(c, x, voucher_id, _dates(payload)))
+
+
 @router.post("/sales/invoices/{invoice_id}/void")
 def void_invoice(invoice_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
     return _run(request, lambda c, x: sales.void_invoice(c, x, invoice_id, payload.get("reason", ""), _date(payload.get("on"))))
@@ -732,9 +783,42 @@ def allocate_credit_note(cn_id: str, request: Request, payload: Dict[str, Any] =
     return _run(request, lambda c, x: sales.allocate_credit_note(c, x, cn_id, payload.get("allocations") or []))
 
 
+@router.get("/sales/invoice-register")
+def sales_invoice_register(request: Request, date_from: Optional[str] = Query(None, alias="from"),
+                           date_to: Optional[str] = Query(None, alias="to"), search: Optional[str] = None,
+                           customer_id: Optional[int] = None):
+    def fn(conn, ctx):
+        f, t = _range(date_from, date_to)
+        return ledger_reports.invoice_register(conn, ctx.entity_id, f, t, search or None, customer_id)
+    return _run(request, fn, "receivables.view")
+
+
 @router.get("/receivables/open-items")
 def ar_open_items(request: Request, customer_id: int, as_of: Optional[str] = None):
-    return _run(request, lambda c, x: reports.ar_open_items(c, x.entity_id, _date(as_of) or _today(), customer_id), "receivables.view")
+    """A customer's open items. Invoices carry what was sold on them (`items`), so a receipt can be
+    applied knowing which goods or service it pays for."""
+    def fn(conn, ctx):
+        rows = reports.ar_open_items(conn, ctx.entity_id, _date(as_of) or _today(), customer_id)
+        ids = [str(r["doc_id"]) for r in rows if r["doc_type"] == "INVOICE"]
+        if ids:
+            what = {str(r["id"]): r for r in q(conn, """
+                SELECT i.id, i.invoice_date, i.is_opening, COALESCE(i.original_total, i.total) AS invoice_total,
+                       COALESCE((SELECT string_agg(COALESCE(NULLIF(l.description,''), l.sku) || CASE WHEN l.line_type IN ('ITEM','SERVICE')
+                                         THEN ' x' || trim(to_char(l.quantity, 'FM999999990.##')) ELSE '' END, ', ' ORDER BY l.line_no)
+                                 FROM fin_sales_invoice_lines l WHERE l.invoice_id=i.id),
+                                (SELECT string_agg(COALESCE(s.description, s.sku) || COALESCE(' x' || trim(to_char(s.quantity, 'FM999999990.##')), ''),
+                                                   ', ' ORDER BY s.line_no)
+                                 FROM fin_sage_sales_lines s WHERE s.legal_entity_id=i.legal_entity_id
+                                   AND s.invoice_number=split_part(i.invoice_number, '/', 1))) AS items
+                FROM fin_sales_invoices i WHERE i.id = ANY(%s::uuid[])""", (ids,))}
+            for r in rows:
+                w = what.get(str(r["doc_id"]))
+                if w:
+                    r["items"] = w["items"]
+                    r["invoice_total"] = w["invoice_total"]
+                    r["from_sage"] = w["is_opening"]
+        return rows
+    return _run(request, fn, "receivables.view")
 
 
 @router.get("/receivables/receipts")
@@ -829,8 +913,17 @@ def void_payment(payment_id: str, request: Request, payload: Dict[str, Any] = Bo
 
 
 @router.get("/payables/debit-notes")
-def list_debit_notes(request: Request, limit: int = 100, offset: int = 0):
-    return _run(request, lambda c, x: purchases.list_debit_notes(c, x.entity_id, limit, offset), "payables.view")
+def list_debit_notes(request: Request, limit: int = 100, offset: int = 0, supplier_id: Optional[str] = None,
+                     search: Optional[str] = None, status: Optional[str] = None,
+                     date_from: Optional[str] = Query(None, alias="from"), date_to: Optional[str] = Query(None, alias="to")):
+    return _run(request, lambda c, x: purchases.list_debit_notes(c, x.entity_id, limit, offset, supplier_id=supplier_id, search=search,
+                                                                  date_from=_date(date_from), date_to=_date(date_to), status=status),
+                "payables.view")
+
+
+@router.post("/payables/debit-notes/{dn_id}/allocate")
+def allocate_debit_note(dn_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: purchases.allocate_debit_note(c, x, dn_id, payload.get("allocations") or []))
 
 
 @router.post("/payables/debit-notes")
@@ -848,11 +941,20 @@ def get_debit_note(dn_id: str, request: Request):
 # ---------------------------------------------------------------------------
 
 @router.get("/inventory/adjustments")
-def list_adjustments(request: Request, limit: int = 100):
-    return _run(request, lambda c, x: q(c, """SELECT a.*, (SELECT COUNT(*) FROM fin_stock_adjustment_lines l WHERE l.adjustment_id=a.id) AS lines
-                                               FROM fin_stock_adjustments a WHERE a.legal_entity_id=%s
-                                               ORDER BY a.adjustment_date DESC, a.adjustment_number DESC LIMIT %s""",
-                                         (x.entity_id, limit)), "inventory.view")
+def list_adjustments(request: Request, limit: int = 300):
+    """ACE Books adjustments, then the inventory adjustments made in Sage (one row per transaction)."""
+    def fn(conn, ctx):
+        ace = q(conn, """SELECT a.*, a.id::text AS id, 'ACE' AS source,
+                                (SELECT COUNT(*) FROM fin_stock_adjustment_lines l WHERE l.adjustment_id=a.id) AS lines
+                         FROM fin_stock_adjustments a WHERE a.legal_entity_id=%s
+                         ORDER BY a.adjustment_date DESC, a.adjustment_number DESC LIMIT %s""", (ctx.entity_id, limit))
+        sage = q(conn, """SELECT NULL AS id, COALESCE(NULLIF(reference, ''), 'INAJ') AS adjustment_number, txn_date AS adjustment_date,
+                                 MAX(description) AS notes, 'SAGE' AS reason_code, 'POSTED' AS status, COUNT(*) AS lines,
+                                 SUM(debit) AS total_value, reference, 'SAGE' AS source
+                          FROM fin_sage_gl_lines WHERE legal_entity_id=%s AND jrnl='INAJ' AND (debit <> 0 OR credit <> 0)
+                          GROUP BY txn_date, reference ORDER BY txn_date DESC LIMIT %s""", (ctx.entity_id, limit))
+        return ace + sage
+    return _run(request, fn, "inventory.view")
 
 
 @router.post("/inventory/adjustments")
@@ -877,9 +979,19 @@ def post_adjustment(adj_id: str, request: Request):
 
 @router.get("/inventory/counts")
 def list_counts(request: Request):
-    return _run(request, lambda c, x: q(c, """SELECT s.*, (SELECT COUNT(*) FROM fin_stock_count_lines l WHERE l.count_id=s.id) AS lines
-                                               FROM fin_stock_counts s WHERE s.legal_entity_id=%s ORDER BY s.count_date DESC""",
+    return _run(request, lambda c, x: q(c, """SELECT s.*, v.lines, v.counted, v.variance_lines, v.variance_qty
+                                               FROM fin_stock_counts s
+                                               LEFT JOIN LATERAL (SELECT COUNT(*) AS lines, COUNT(l.counted_qty) AS counted,
+                                                                         COUNT(*) FILTER (WHERE l.counted_qty IS NOT NULL AND l.counted_qty <> l.system_qty) AS variance_lines,
+                                                                         COALESCE(SUM(l.counted_qty - l.system_qty) FILTER (WHERE l.counted_qty IS NOT NULL), 0) AS variance_qty
+                                                                  FROM fin_stock_count_lines l WHERE l.count_id=s.id) v ON TRUE
+                                               WHERE s.legal_entity_id=%s ORDER BY s.count_date DESC, s.created_at DESC""",
                                          (x.entity_id,)), "inventory.view")
+
+
+@router.get("/inventory/counts/overview")
+def count_overview(request: Request):
+    return _run(request, lambda c, x: inventory.count_overview(c, x.entity_id), "inventory.view")
 
 
 @router.post("/inventory/counts")
@@ -977,7 +1089,8 @@ def recall_return(recall_id: str, request: Request, payload: Dict[str, Any] = Bo
 @router.get("/settings/invoice-layout")
 def invoice_layout(request: Request):
     return _run(request, lambda c, x: {"layout": setup.invoice_layout(c, x.entity_id),
-                                       "next_invoice_number": numbering.next_invoice_preview(c, x.entity_id)})
+                                       "next_invoice_number": numbering.next_invoice_preview(c, x.entity_id),
+                                       "last_invoice": numbering.last_invoice(c, x.entity_id)})
 
 
 @router.put("/settings/invoice-layout")
@@ -987,14 +1100,22 @@ def save_invoice_layout(request: Request, payload: Dict[str, Any] = Body(...)):
 
 @router.get("/inventory/recalls")
 def list_recalls(request: Request):
-    return _run(request, lambda c, x: q(c, """SELECT r.*, b.batch_number, (SELECT COUNT(*) FROM fin_recall_items i WHERE i.recall_id=r.id) AS customers
-                                               FROM fin_recalls r JOIN fin_batches b ON b.id=r.batch_id WHERE r.legal_entity_id=%s
-                                               ORDER BY r.opened_at DESC""", (x.entity_id,)), "inventory.view")
+    return _run(request, lambda c, x: q(c, """SELECT r.*, b.batch_number, s.customers, s.units_out, s.units_returned
+                                               FROM fin_recalls r JOIN fin_batches b ON b.id=r.batch_id
+                                               LEFT JOIN LATERAL (SELECT COUNT(*) AS customers, COALESCE(SUM(quantity_sold), 0) AS units_out,
+                                                                         COALESCE(SUM(quantity_returned), 0) AS units_returned
+                                                                  FROM fin_recall_items i WHERE i.recall_id=r.id) s ON TRUE
+                                               WHERE r.legal_entity_id=%s ORDER BY r.opened_at DESC""", (x.entity_id,)), "inventory.view")
 
 
 @router.post("/inventory/recalls")
 def open_recall(request: Request, payload: Dict[str, Any] = Body(...)):
-    return _run(request, lambda c, x: inventory.open_recall(c, x, payload))
+    def fn(conn, ctx):
+        r = inventory.open_recall(conn, ctx, payload)
+        from src.services import quality_hub
+        quality_hub.case_for_fin_recall(conn, r, ctx.actor_id, payload)
+        return inventory.get_recall(conn, ctx.entity_id, str(r["id"]))
+    return _run(request, fn)
 
 
 @router.get("/inventory/recalls/{recall_id}")
@@ -1002,9 +1123,24 @@ def get_recall(recall_id: str, request: Request):
     return _run(request, lambda c, x: inventory.get_recall(c, x.entity_id, recall_id), "inventory.view")
 
 
+@router.post("/inventory/recalls/{recall_id}/invoices")
+def recall_add_invoice(recall_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: inventory.add_recall_invoice(c, x, recall_id, payload))
+
+
+@router.post("/inventory/recalls/{recall_id}/supplier-return")
+def recall_supplier_return(recall_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: inventory.return_recall_to_supplier(c, x, recall_id, _dates(payload)))
+
+
 @router.patch("/inventory/recalls/{recall_id}/items/{item_id}")
 def update_recall_item(recall_id: str, item_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
     return _run(request, lambda c, x: inventory.update_recall_item(c, x, recall_id, item_id, payload))
+
+
+@router.post("/inventory/recalls/{recall_id}/void")
+def void_recall(recall_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: inventory.void_recall(c, x, recall_id, payload.get("reason", "")))
 
 
 @router.post("/inventory/recalls/{recall_id}/close")
@@ -1098,6 +1234,11 @@ def complete_reconciliation(statement_id: str, request: Request):
 # Fixed assets
 # ---------------------------------------------------------------------------
 
+@router.get("/assets/history")
+def asset_history(request: Request, as_of: Optional[str] = None):
+    return _run(request, lambda c, x: assets.asset_history(c, x.entity_id, _date(as_of) or _today()), "assets.view")
+
+
 @router.get("/assets/categories")
 def asset_categories(request: Request):
     return _run(request, lambda c, x: assets.list_categories(c, x.entity_id), "assets.view")
@@ -1155,6 +1296,21 @@ def create_budget(request: Request, payload: Dict[str, Any] = Body(...)):
 @router.get("/budgets/{budget_id}")
 def get_budget(budget_id: str, request: Request):
     return _run(request, lambda c, x: closing.get_budget(c, x.entity_id, budget_id), "budget.view")
+
+
+@router.patch("/budgets/{budget_id}")
+def update_budget(budget_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: closing.update_budget(c, x, budget_id, payload))
+
+
+@router.delete("/budgets/{budget_id}")
+def delete_budget(budget_id: str, request: Request):
+    return _run(request, lambda c, x: closing.delete_budget(c, x, budget_id))
+
+
+@router.post("/budgets/{budget_id}/copy")
+def copy_budget(budget_id: str, request: Request, payload: Dict[str, Any] = Body(default={})):
+    return _run(request, lambda c, x: closing.copy_budget(c, x, budget_id, payload.get("name")))
 
 
 @router.put("/budgets/{budget_id}/lines")
@@ -1323,7 +1479,11 @@ def sage_bill(number: str, request: Request, supplier_id: Optional[str] = None):
 
 @router.get("/sage-history/invoices/{number:path}")
 def sage_invoice(number: str, request: Request):
-    return _run(request, lambda c, x: ledger_reports.sage_invoice(c, x.entity_id, number), "receivables.view")
+    def fn(conn, ctx):
+        out = ledger_reports.sage_invoice(conn, ctx.entity_id, number)
+        out["recalls"] = inventory.recalls_for_invoice(conn, ctx.entity_id, invoice_number=number)
+        return out
+    return _run(request, fn, "receivables.view")
 
 
 @router.post("/migration/products/sync")

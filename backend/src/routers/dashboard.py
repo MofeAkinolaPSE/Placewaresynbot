@@ -57,7 +57,7 @@ def require_executive(request: Request) -> Dict[str, Any]:
 # --- Endpoints ---
 
 @router.get("/finance")
-async def dashboard_finance(response: Response, user: Dict[str, Any] = Depends(require_management)):
+def dashboard_finance(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """Finance specific dashboard data."""
     if "finance" not in user.get("roles", []) and "admin" not in user.get("roles", []) and "management" not in user.get("roles", []):
          raise HTTPException(403, "Role not authorized for Finance view")
@@ -69,25 +69,25 @@ async def dashboard_finance(response: Response, user: Dict[str, Any] = Depends(r
         raise HTTPException(500, "Failed to load finance metrics")
 
 @router.get("/inventory")
-async def dashboard_inventory(response: Response, user: Dict[str, Any] = Depends(require_management)):
+def dashboard_inventory(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """Inventory specific dashboard data."""
     response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_inventory_dashboard()}
 
 @router.get("/workforce")
-async def dashboard_workforce(response: Response, user: Dict[str, Any] = Depends(require_workforce_view)):
+def dashboard_workforce(response: Response, user: Dict[str, Any] = Depends(require_workforce_view)):
     """Workforce specific dashboard data."""
     response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_workforce_dashboard()}
 
 @router.get("/crm")
-async def dashboard_crm(response: Response, user: Dict[str, Any] = Depends(require_management)):
+def dashboard_crm(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """CRM specific dashboard data."""
     response.headers["Cache-Control"] = "no-store, no-cache"
     return {"data": get_crm_stats()}
 
 @router.get("/alerts")
-async def list_alerts(response: Response, user: Dict[str, Any] = Depends(require_management)):
+def list_alerts(response: Response, user: Dict[str, Any] = Depends(require_management)):
     """Active system alerts, filtered to only the categories the caller's
     roles may see (constants.ALERT_CATEGORY_VISIBILITY) -- require_management
     alone lets 'ops' through, but ops must never see finance-category alert
@@ -97,7 +97,7 @@ async def list_alerts(response: Response, user: Dict[str, Any] = Depends(require
     return {"data": visible}
 
 @router.get("/workstation")
-async def dashboard_workstation(response: Response, user: Dict[str, Any] = Depends(verify_jwt)):
+def dashboard_workstation(response: Response, user: Dict[str, Any] = Depends(verify_jwt)):
     """
     ACE Workstation — org-wide cover-page summary. Any authenticated user
     gets a response (unlike every other /dashboard/* endpoint, which is
@@ -124,7 +124,7 @@ def executive_overview(refresh: bool = False, user: Dict[str, Any] = Depends(req
 
 
 @router.get("/executive-briefing")
-async def executive_briefing(response: Response, user: Dict[str, Any] = Depends(require_executive)):
+def executive_briefing(response: Response, user: Dict[str, Any] = Depends(require_executive)):
     """
     High-value unified report.
     Audited access.

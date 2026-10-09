@@ -543,131 +543,266 @@ You only do this once per browser. After that it remembers.
 
 ### Step 10b — Replace the Server's Database with the Latest Dump
 
-> **What this is:** the dev machine's complete, verified database: ACE Books with the Sage history
-> from Jan 2017 to the last roll-forward, open invoices and bills under their real Sage numbers,
-> stock, CRM, HR, the Data issues register and every setting. Loading it **replaces the server's
-> whole database**. Anything entered on the server since the last load is lost, so step 1 saves a
-> copy of it first.
->
-> (This replaces the old partial "Sage tables only" dump, `ace_sage_data_dump_*.sql.gz` +
-> `ace_sage_data_restore_prep.sql`: that one no longer carries ACE Books and must not be used.)
+**What you are doing:** replacing the server's old data with the up-to-date copy from the dev
+laptop, and bringing the server's code up to date so it understands that copy.
 
-**Latest dump** (dev laptop, in the repo folder; `dumps/` is git-ignored, so copy it by hand):
+**At a glance**
 
-| File | Size | SHA-256 |
+| | |
+|---|---|
+| Time needed | About 30 minutes. The app is offline for about 10 of them, so pick a quiet time. |
+| What changes | The server's data is replaced. Anything typed into the server since the last load is overwritten. Step 3 saves a copy first, so you can always go back. |
+| After the load | Log in with the **dev laptop's** usernames and passwords. The dump carries the dev laptop's user accounts. |
+| Where you type | Step A on the **dev laptop**. Everything after that on the **server**, in the Ubuntu terminal. |
+
+**The file** (on the dev laptop, inside the project folder):
+
+| File | Size | Fingerprint (SHA-256) |
 |---|---|---|
-| `data-assimilation\dumps\ace_full_dump_2026-10-07.sql.gz` | 39.3 MB | `1bfb96630368c7e57a27e19d91fb0e30618d0328e38b75db5c321fb3e6fb97eb` |
+| `data-assimilation\dumps\ace_full_dump_2026-10-09.sql.gz` | 39.4 MB | `476431882780edbefc77b480c2e7b464fb9235bba5f5fa0c246d005c303fb96f` |
 
-It holds everything up to **7 Oct 2026** (Sage history to 7 Oct; ACE Books takes over from 8 Oct;
-next invoice number 53543). The licence clock (`license_state`) and the backup file list
-(`system_backups`) are left out on purpose: they belong to each machine.
+It holds:
 
-**Prerequisite: the server must run the latest code first** (it needs migrations up to
-`132_backup_schedule.sql` and the fixed migration runner). On the server:
+- Sage history up to 7 Oct 2026, and ACE Books from 8 Oct.
+- Next invoice number 53543.
+- Every ACE Books change up to 9 Oct: recalls, returns, history on every list, receipts and payments from the document, adding items to invoices, and correcting receipts and vouchers.
+
+Use this file only. The older `ace_full_dump_2026-10-07.sql.gz` and `ace_sage_data_dump_*.sql.gz` files are out of date.
+
+**Tick these off as you go**
+
+- [ ] A. Code pushed from the dev laptop
+- [ ] 1. Server code updated and rebuilt
+- [ ] 2. Dump copied to the server and fingerprint checked
+- [ ] 3. Server's current data saved (your undo button)
+- [ ] 4. App stopped
+- [ ] 5. Old database replaced with an empty one
+- [ ] 6. New data loaded
+- [ ] 7. App started
+- [ ] 8. Numbers checked
+- [ ] 9. Test data removed
+- [ ] 10. Checked in the browser
+- [ ] 11. Tidied up
+
+---
+
+#### How to run the commands
+
+- On the **server**, open the Ubuntu terminal: in the RDP session, open the Start menu, type **Ubuntu** and open it. The prompt looks like `ace@PLACEWARE-AI-SERV:~$`.
+- Copy **one grey box at a time**, paste it with **right-click** (or Ctrl+Shift+V) and press **Enter**.
+- Wait for the prompt to come back. Then compare what you see with **"You should see"** before moving on.
+- Lines starting with `#` are notes. Pasting them is harmless.
+
+---
+
+**Step A — On the dev laptop: send the latest code to GitHub.**
+
+The new data needs the new code, which adds tables (migrations up to 139). In **PowerShell** in the project folder:
+
+```powershell
+git add -A
+git reset -q -- "tsc*.out"
+git commit -m "ACE Books 9 Oct: recalls, returns, history lists, corrections, security headers"
+git push
+```
+
+(The second line leaves out scratch type-check files. Dumps, backups and `.env` files are never
+committed: `.gitignore` excludes them.)
+
+You should see: the push finish with a line like `main -> main`.
+
+> Already pushed everything? Skip this step.
+
+---
+
+**Step 1 — On the server: get the new code and rebuild.**
 
 ```bash
-cd ~/Placewaresynbot && git pull                 # or copy the updated source across
+cd ~/Placewaresynbot && git pull
 cd ~/Placewaresynbot/backend
 docker compose build backend frontend
 docker compose up -d
 ```
 
-If `docker compose up` stops at `123_crm_pipeline.sql: unsafe use of new value "archived"`, the
-server is still on the old `scripts/apply_migrations.py`: pull/copy again and rebuild `backend`.
+You should see: the build finish (5–10 minutes), then lines ending in `Started` or `Running`.
 
-**1. Copy the dump to the server.** In the RDP session, paste
-`ace_full_dump_2026-10-07.sql.gz` into `C:\temp\` (visible in Ubuntu as `/mnt/c/temp/`). Then
-check it arrived intact - the checksum must match the table above exactly:
+- `git pull` says **"Already up to date"** but Step A pushed new code: the server is looking at another branch. Ask for help before going on.
+
+---
+
+**Step 2 — Copy the dump to the server and check it.**
+
+1. On the dev laptop, copy `ace_full_dump_2026-10-09.sql.gz` (right-click › Copy).
+2. In the RDP window, open **File Explorer** on the server and go to **`C:\temp`**. Create the folder if it doesn't exist. Paste the file there.
+3. In the Ubuntu terminal:
 
 ```bash
-sha256sum /mnt/c/temp/ace_full_dump_2026-10-07.sql.gz
+cp /mnt/c/temp/ace_full_dump_2026-10-09.sql.gz ~/
+sha256sum ~/ace_full_dump_2026-10-09.sql.gz
 ```
 
-**2. Save the server's current database** (your way back if anything goes wrong):
+You should see this, followed by the file name:
+
+```
+476431882780edbefc77b480c2e7b464fb9235bba5f5fa0c246d005c303fb96f
+```
+
+**It must match exactly.**
+
+- **Different fingerprint:** the copy was damaged. Copy the file again.
+- **"No such file or directory":** the file isn't in `C:\temp`. Check where you pasted it.
+
+---
+
+**Step 3 — Save a copy of the server's current data** (your undo button).
 
 ```bash
 mkdir -p ~/db-backups
-docker exec backend-db-1 pg_dump -U postgres -d synbot_demo --no-owner --no-acl | gzip > ~/db-backups/server-before-restore-$(date +%F_%H%M).sql.gz
-ls -lh ~/db-backups/          # should be tens of MB, not a few KB
+docker exec backend-db-1 pg_dump -U postgres -d synbot_demo --no-owner --no-acl | gzip > ~/db-backups/server-before-restore.sql.gz
+ls -lh ~/db-backups/
 ```
 
-**3. Stop the app so nothing writes to the database while it is replaced** (the database keeps running):
+You should see: `server-before-restore.sql.gz` with a size in **MB**, for example `38M`.
+
+- **The size is only a few K:** stop here and ask for help. The copy didn't work.
+
+---
+
+**Step 4 — Stop the app**, so nobody changes data while it is being replaced. The database keeps running.
 
 ```bash
 cd ~/Placewaresynbot/backend
 docker compose stop backend frontend
 ```
 
-**4. Remove the old database and create an empty one:**
+You should see: `Stopped` for the backend and the frontend. The website is now offline.
+
+---
+
+**Step 5 — Delete the old database and create an empty one.**
 
 ```bash
 docker exec backend-db-1 psql -U postgres -c "DROP DATABASE synbot_demo WITH (FORCE);"
 docker exec backend-db-1 psql -U postgres -c "CREATE DATABASE synbot_demo;"
 ```
 
-**5. Load the latest dump** (2-5 minutes; it stops at the first error instead of half-loading):
+You should see: `DROP DATABASE`, then `CREATE DATABASE`.
+
+---
+
+**Step 6 — Load the new data.** This takes 2–5 minutes, and the terminal stays quiet while it works.
 
 ```bash
-gunzip -c /mnt/c/temp/ace_full_dump_2026-10-07.sql.gz | docker exec -i backend-db-1 psql -q -v ON_ERROR_STOP=1 -U postgres -d synbot_demo
-echo "exit code: $?"          # must print 0
+gunzip -c ~/ace_full_dump_2026-10-09.sql.gz | docker exec -i backend-db-1 psql -q -v ON_ERROR_STOP=1 -U postgres -d synbot_demo
+echo "exit code: $?"
 ```
 
-If it fails part-way, repeat steps 4 and 5. If it still fails, put the server back as it was:
-repeat step 4, then load your step-2 file the same way
-(`gunzip -c ~/db-backups/server-before-restore-....sql.gz | docker exec -i backend-db-1 psql -q -U postgres -d synbot_demo`).
+You should see: `exit code: 0`. A few `set_config` or blank lines before it are normal.
 
-**6. Start the app again:**
+- **An ERROR line, or an exit code other than 0:** run Step 5 again, then Step 6 again.
+- **It fails a second time:** put the old data back (Step 5, then the box below) and ask for help.
+
+```bash
+gunzip -c ~/db-backups/server-before-restore.sql.gz | docker exec -i backend-db-1 psql -q -U postgres -d synbot_demo
+```
+
+---
+
+**Step 7 — Start the app again.**
 
 ```bash
 docker compose up -d
-docker compose logs -f backend      # wait for "Application startup complete", then Ctrl+C
+docker compose logs -f backend
 ```
 
-The log should show `Skipping already-applied: ...` for every migration up to `132_backup_schedule.sql`.
+You should see: the log scroll by and stop at `Application startup complete`. The migration lines say `Skipping already-applied`.
 
-**7. Check the data landed.** The numbers must match exactly:
+Press **Ctrl+C** to stop watching the log. The app keeps running.
+
+---
+
+**Step 8 — Check the data loaded correctly.**
 
 ```bash
 docker exec backend-db-1 psql -U postgres -d synbot_demo -c "
 SELECT
- (SELECT history_until FROM fin_settings LIMIT 1)                                   AS history_until,
- (SELECT COUNT(*) FROM fin_sage_gl_lines)                                           AS sage_gl_lines,
- (SELECT COUNT(*) FROM fin_sales_invoices WHERE status <> 'VOID')                   AS invoices,
- (SELECT COUNT(*) FROM customers)                                                   AS customers,
- (SELECT COUNT(*) FROM fin_data_exceptions WHERE status = 'OPEN')                   AS open_data_issues,
+ (SELECT history_until FROM fin_settings LIMIT 1)                                     AS history_until,
+ (SELECT COUNT(*) FROM fin_sage_gl_lines)                                             AS sage_gl_lines,
+ (SELECT COUNT(*) FROM fin_sales_invoices WHERE status <> 'VOID')                     AS invoices,
+ (SELECT COUNT(*) FROM customers)                                                     AS customers,
+ (SELECT COUNT(*) FROM fin_data_exceptions WHERE status = 'OPEN')                     AS open_data_issues,
  (SELECT next_value FROM fin_number_sequences WHERE doc_type='SALES_INVOICE' LIMIT 1) AS next_invoice,
- (SELECT COUNT(*) FROM schema_migrations)                                           AS migrations;"
+ (SELECT COUNT(*) FROM schema_migrations)                                             AS migrations;"
 ```
 
-Expected:
+You should see exactly these numbers:
+
 ```
  history_until | sage_gl_lines | invoices | customers | open_data_issues | next_invoice | migrations
 ---------------+---------------+----------+-----------+------------------+--------------+------------
- 2026-10-07    |        409156 |     1134 |      1545 |               17 |        53543 |        125
+ 2026-10-07    |        409156 |     1134 |      1545 |               17 |        53543 |        132
 ```
 
-**8. Check in the browser** - log in (the dump carries the dev machine's user accounts and passwords):
-- [ ] ACE Books › Finance Control Tower shows the "data issues need a decision" banner
-- [ ] ACE Books › Journals & Ledger runs from 2017 to 7 Oct 2026 (try Cash on Hand 10100 for September)
-- [ ] ACE Books › Sales & Receivables › New invoice shows **No. 53543**
-- [ ] Close & Controls › Data issues lists 17 open issues
-- [ ] Settings › Data Backup shows the schedule (weekly, Friday 18:00); click **Back up now** once and
-      **Save to this computer** to prove backups work on the server
+---
 
-**9. Tidy up:** once everything checks out, delete `/mnt/c/temp/ace_full_dump_2026-10-07.sql.gz`
-from the server (it holds every client and financial record). Keep `~/db-backups/` for a week,
-then delete it too.
+**Step 9 — Remove the August test data** from the Operations Queue: test deliveries, test riders and two test recalls. The script saves a backup first.
 
-> **Making the next dump** (on the dev laptop, after new data work; PowerShell in the repo folder):
+```bash
+cd ~/Placewaresynbot/backend
+bash scripts/cleanup_test_logistics.sh
+```
+
+You should see: a `Backup:` line, then a small table showing `deliveries_left 0`, `routes_left 0` and `recall_cases_left 0`, then `Done.`
+
+---
+
+**Step 10 — Check in the browser.** Open ACE and log in with the **dev laptop's** username and password.
+
+- [ ] **Dashboard:** the Operations Queue no longer lists test deliveries.
+- [ ] **ACE Books › Finance Control Tower:** a yellow "data issues need a decision" banner.
+- [ ] **ACE Books › Invoice Register** (in the sidebar): opens the register. **New invoice** says **No. 53543**.
+- [ ] **ACE Books › Sales & Receivables › Receipts:** thousands of receipts, tagged **Sage**.
+- [ ] **ACE Books › Purchases & Payables › Returns / debit notes:** totals at the top. "Credit brought from Sage" shows ₦27,957,713.53.
+- [ ] **ACE Books › Stock › Stock counts:** a table of every item and batch in stock.
+- [ ] **Close & Controls › Data issues:** 17 open issues.
+- [ ] **Settings › Data Backup:** click **Back up now**, then **Save to this computer**. This proves backups work on the server.
+
+All ticked = done.
+
+---
+
+**Step 11 — Tidy up.** The dump holds every client and financial record, so don't leave copies lying around.
+
+```bash
+rm ~/ace_full_dump_2026-10-09.sql.gz
+```
+
+- Delete the file from `C:\temp` too (File Explorer › right-click › Delete).
+- Keep `~/db-backups/` for a week in case anything looks wrong. Then remove it with `rm -r ~/db-backups`.
+
+---
+
+**If something goes wrong**
+
+| What you see | What to do |
+|---|---|
+| `relation ... does not exist` / `table does not exist` | The server's code is older than the dump. Do Step A and Step 1, then repeat from Step 5. |
+| The website shows **502 Bad Gateway** after Step 7 | Wait one minute and refresh. Still there? Run `docker compose restart frontend`. |
+| You can't log in | Use the **dev laptop's** username and password, not the server's old one. |
+| Numbers in Step 8 differ | Stop and ask for help. Don't let staff use it yet. |
+| You want the old data back | Step 5, then the "put the old data back" box in Step 6, then Step 7. |
+
+> **For the developer — making the next dump** (on the dev laptop, PowerShell in the project folder):
 > ```powershell
 > docker exec backend-db-1 sh -c "pg_dump -U postgres -d synbot_demo --no-owner --no-acl --exclude-table-data=license_state --exclude-table-data=system_backups | gzip -9 > /tmp/ace_full_dump.sql.gz"
 > docker cp backend-db-1:/tmp/ace_full_dump.sql.gz "data-assimilation\dumps\ace_full_dump_NEW-DATE.sql.gz"
 > docker exec backend-db-1 rm /tmp/ace_full_dump.sql.gz
 > Get-FileHash "data-assimilation\dumps\ace_full_dump_NEW-DATE.sql.gz" -Algorithm SHA256
 > ```
-> Then update the file name, checksum and expected numbers above, and repeat this step on the server.
+> Then update the file name, size, fingerprint and expected numbers in this step.
 
 ---
+
 
 ### Step 11 — Install the Watchdog (Auto-Recovery Service)
 
@@ -1113,7 +1248,7 @@ Steps for Part 2 are tracked separately. In summary:
 | `docker ps` gives permission denied | `sudo usermod -aG docker $USER` → close and reopen Ubuntu terminal |
 | Pipeline fails at "local registry" | `docker run -d -p 5000:5000 --restart=always --name registry registry:2` |
 | Login fails after deploy | `docker exec $(docker ps -qf name=backend) python seed_admin.py` |
-| Data load fails: "table does not exist" / "relation ... does not exist" | Backend code is older than the dump — `git pull` + redeploy (migrations up to 132 must run), then retry Step 10b from step 4 |
+| Data load fails: "table does not exist" / "relation ... does not exist" | Backend code is older than the dump — push from the dev laptop, `git pull` + redeploy (migrations up to 139 must run), then retry Step 10b from Step 5 |
 | Dashboards still zero after data load | Caches — `docker compose restart backend`, then hard-refresh the browser (Ctrl+Shift+R) |
 | App unreachable from other machines | Rerun the `netsh` firewall commands from Step 5 |
 | Containers keep restarting | `docker service logs placeware_backend --tail 50` — read the error |

@@ -99,7 +99,7 @@ async def create_channel(request: Request, payload: ChannelCreate):
 
 
 @router.get('/threads')
-async def list_threads(request: Request):
+def list_threads(request: Request):
     payload = verify_jwt(request)
     actor = payload.get('sub') or payload.get('user_id')
     roles = set(payload.get('roles') or [])
@@ -131,7 +131,7 @@ async def list_threads(request: Request):
 
 
 @router.get('/threads/channels')
-async def list_channels(request: Request):
+def list_channels(request: Request):
     payload = verify_jwt(request)
     actor = payload.get('sub') or payload.get('user_id')
     roles = set(payload.get('roles') or [])
@@ -201,7 +201,7 @@ async def remove_member(request: Request, thread_id: str, user_id: str):
 
 
 @router.get('/threads/{thread_id}/messages')
-async def list_messages(request: Request, thread_id: str, limit: int = 100, offset: int = 0):
+def list_messages(request: Request, thread_id: str, limit: int = 100, offset: int = 0):
     verify_jwt(request)
     try:
         resp = (
@@ -262,7 +262,7 @@ async def post_message(request: Request, thread_id: str, payload: MessageCreate)
 
 
 @router.post('/threads/{thread_id}/read')
-async def mark_thread_read(request: Request, thread_id: str, payload: dict):
+def mark_thread_read(request: Request, thread_id: str, payload: dict):
     auth = verify_jwt(request)
     user_id = auth.get('sub') or auth.get('user_id')
     now = dt.datetime.utcnow().isoformat() + 'Z'
@@ -280,7 +280,7 @@ async def mark_thread_read(request: Request, thread_id: str, payload: dict):
 
 
 @router.get('/threads/unread/summary')
-async def unread_summary(request: Request):
+def unread_summary(request: Request):
     auth = verify_jwt(request)
     user_id = auth.get('sub') or auth.get('user_id')
 
@@ -351,7 +351,7 @@ async def set_presence(request: Request, thread_id: str, payload: PresenceUpdate
 
 
 @router.get('/threads/{thread_id}/presence')
-async def list_presence(request: Request, thread_id: str):
+def list_presence(request: Request, thread_id: str):
     verify_jwt(request)
     try:
         resp = db.table('thread_presence').select('thread_id,user_id,status,last_seen_at').eq('thread_id', thread_id).order('last_seen_at', desc=True).limit(200).execute()

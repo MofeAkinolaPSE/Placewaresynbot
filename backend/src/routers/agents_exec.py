@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import logging
-from src.middleware import verify_jwt, require_role, rate_limit
+from src.middleware import verify_jwt, require_role, rate_limit, client_ip
 from src.agents.router import route_question, merge_insights
 from src.agent_registry import get_agent, list_agents
 from src.db import db
@@ -577,7 +577,7 @@ class SingleAgentRequest(BaseModel):
 
 
 @router.get("/list")
-async def api_list_agents(user=Depends(verify_jwt)):
+def api_list_agents(user=Depends(verify_jwt)):
     """List all available agents with their metadata."""
     agents = list_agents()
     return {
@@ -593,9 +593,9 @@ async def api_list_agents(user=Depends(verify_jwt)):
 
 
 @router.post("/execute")
-async def api_execute_agents(payload: AgentExecRequest, request: Request, user=Depends(verify_jwt)):
+def api_execute_agents(payload: AgentExecRequest, request: Request, user=Depends(verify_jwt)):
     """Execute agents based on question routing - runs multiple agents and merges insights."""
-    rate_limit(request, key=f"agents:execute:{request.client.host if request.client else 'unknown'}", limit=30)
+    rate_limit(request, key=f"agents:execute:{client_ip(request)}", limit=30)
     user_ctx = getattr(request.state, "user", {}) or {}
     roles = set(user_ctx.get("roles") or [])
     actor_id = user_ctx.get("sub")
@@ -639,7 +639,7 @@ async def api_execute_agents(payload: AgentExecRequest, request: Request, user=D
 
 
 @router.post("/run/{agent_name}")
-async def api_run_single_agent(agent_name: str, request: Request, user=Depends(verify_jwt)):
+def api_run_single_agent(agent_name: str, request: Request, user=Depends(verify_jwt)):
     """Run a specific agent by name."""
     rate_limit(request, key=f"agents:run:{request.client.host if request.client else 'unknown'}", limit=20)
     user_ctx = getattr(request.state, "user", {}) or {}

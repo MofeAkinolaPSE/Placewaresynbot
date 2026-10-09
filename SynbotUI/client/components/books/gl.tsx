@@ -5,7 +5,7 @@
  * Ending Balance. Every line opens what is behind it (the invoice, the receipt, every line of the
  * transaction, the ACE Books journal).
  */
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -41,6 +41,8 @@ export const GL_COLUMNS = [
 export function GlAccountDetail({ code, from, to, compact }: { code: string; from: string; to: string; compact?: boolean }) {
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
+  // search as you type (a short pause, so the ledger isn't re-read on every key)
+  useEffect(() => { const t = setTimeout(() => setQ(search.trim()), 400); return () => clearTimeout(t); }, [search]);
   const { data, isLoading, error } = useBooks<Dict>(["gl-account", code, from, to, q], `/ledger/gl-account/${encodeURIComponent(code)}`,
     { from, to, search: q || undefined });
   if (isLoading) return <Loading />;
@@ -51,7 +53,7 @@ export function GlAccountDetail({ code, from, to, compact }: { code: string; fro
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="relative w-64"><Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input className="h-8 pl-7 text-xs" placeholder="Search reference / description (Enter)" value={search}
+          <Input className="h-8 pl-7 text-xs" placeholder="Search reference, description, customer, item" value={search}
                  onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setQ(search.trim())} /></div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span>{lines.toLocaleString()} line{lines === 1 ? "" : "s"}</span>

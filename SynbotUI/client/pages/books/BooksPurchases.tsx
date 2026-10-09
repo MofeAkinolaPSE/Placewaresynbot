@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { DrillLink } from "@/components/books/kit";
-import { DrillTarget } from "@/components/books/drill-context";
+import { DrillTarget, historyTarget, useDrill } from "@/components/books/drill-context";
+import { PartyBalances, SageTag } from "@/components/books/kit";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,8 @@ import {
   Section, StatusBadge, SupplierPick, useBooks, useLines,
 } from "@/components/books/kit";
 import { books, BooksError, Dict, fmtDate, naira, newIdemKey, num, today, yearStart } from "@/lib/books-api";
+import { askConfirm, askText } from "@/lib/ask";
+import { PaymentWindow } from "@/components/books/payment-window";
 
 export default function BooksPurchases() {
   const [params, setParams] = useSearchParams();
@@ -30,6 +33,8 @@ export default function BooksPurchases() {
                   <Button size="sm" onClick={() => open("new", "bill")}><Plus className="mr-1 h-4 w-4" />Supplier bill</Button>
                   <Button size="sm" variant="outline" onClick={() => open("new", "payment")}>Pay supplier</Button>
                   <Button size="sm" variant="outline" onClick={() => open("new", "debitnote")}>Return to supplier</Button>
+                  <Button size="sm" variant="outline" title="Pay someone who is not a supplier (e.g. Mr X for furniture) and choose the account it goes to"
+                          onClick={() => open("new", "oneoff")}>One-off payment</Button>
                 </>}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
@@ -41,12 +46,12 @@ export default function BooksPurchases() {
         </TabsList>
         <TabsContent value="bills"><BillList onOpen={(id) => open("bill", id)} /></TabsContent>
         <TabsContent value="payments"><PaymentList onOpen={(id) => open("payment", id)} /></TabsContent>
-        <TabsContent value="debit"><DebitNoteList onOpen={(id) => open("debitnote", id)} /></TabsContent>
+        <TabsContent value="debit"><DebitNoteList onOpen={(id) => open("debitnote", id)} onNew={() => open("new", "debitnote")} /></TabsContent>
         <TabsContent value="aging"><AgedPayables /></TabsContent>
         <TabsContent value="statement"><SupplierStatement /></TabsContent>
       </Tabs>
       <BillForm open={params.get("new") === "bill"} onClose={(id) => { open("new", null); if (id) open("bill", id); }} />
-      <PaymentForm open={params.get("new") === "payment"} onClose={() => open("new", null)} />
+      <PaymentWindow open={params.get("new") === "payment" || params.get("new") === "oneoff"} oneOff={params.get("new") === "oneoff"} onClose={() => open("new", null)} />
       <DebitNoteForm open={params.get("new") === "debitnote"} onClose={() => open("new", null)} />
       <DocDetail kind="bill" id={params.get("bill")} onClose={() => open("bill", null)} />
       <DocDetail kind="payment" id={params.get("payment")} onClose={() => open("payment", null)} />
@@ -56,6 +61,7 @@ export default function BooksPurchases() {
 }
 
 function BillList({ onOpen }: { onOpen: (id: string) => void }) {
+  const drill = useDrill();
   const [search, setSearch] = useState("");
   const [openOnly, setOpenOnly] = useState("");
   const [range, setRange] = useState({ from: yearStart(), to: today() });
@@ -73,8 +79,9 @@ function BillList({ onOpen }: { onOpen: (id: string) => void }) {
         <Table>
           <TableHeader><TableRow><TableHead>Bill</TableHead><TableHead>Supplier inv.</TableHead><TableHead>Date</TableHead><TableHead>Supplier</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Balance</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.items.map((b: Dict) => (
-            <TableRow key={b.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(b.id)}>
-              <TableCell className="font-mono text-xs">{b.bill_number}{b.is_opening && <span className="ml-1 text-[10px] text-muted-foreground">opening</span>}</TableCell>
+            <TableRow key={b.id ?? `s:${b.bill_date}:${b.bill_number}:${b.supplier_id}`} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => (b.id ? onOpen(b.id) : drill?.open(historyTarget("bill", b)))}>
+              <TableCell className="font-mono text-xs">{b.bill_number}{b.is_opening && <span className="ml-1 text-[10px] text-muted-foreground">opening</span>}{b.source === "SAGE" && <SageTag />}</TableCell>
               <TableCell className="text-xs">{b.supplier_invoice_number}</TableCell>
               <TableCell className="whitespace-nowrap">{fmtDate(b.bill_date)}</TableCell>
               <TableCell className="max-w-[220px] truncate"><DrillLink to={{ type: "supplier", id: String(b.supplier_id ?? ""), label: b.supplier_name }}>{b.supplier_name}</DrillLink></TableCell>
@@ -91,6 +98,7 @@ function BillList({ onOpen }: { onOpen: (id: string) => void }) {
 }
 
 function PaymentList({ onOpen }: { onOpen: (id: string) => void }) {
+  const drill = useDrill();
   const [search, setSearch] = useState("");
   const [range, setRange] = useState({ from: yearStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["spayments", search, range], "/payables/payments", { search, from: range.from, to: range.to, limit: 300 });
@@ -105,9 +113,10 @@ function PaymentList({ onOpen }: { onOpen: (id: string) => void }) {
         <Table>
           <TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Date</TableHead><TableHead>Supplier</TableHead><TableHead>Method</TableHead><TableHead>From</TableHead><TableHead className="text-right">Paid</TableHead><TableHead className="text-right">WHT</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.items.map((p: Dict) => (
-            <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(p.id)}>
-              <TableCell className="font-mono text-xs">{p.payment_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(p.payment_date)}</TableCell>
-              <TableCell className="max-w-[200px] truncate"><DrillLink to={{ type: "supplier", id: String(p.supplier_id ?? ""), label: p.supplier_name }}>{p.supplier_name}</DrillLink></TableCell><TableCell className="text-xs">{p.method.toLowerCase()} {p.reference}</TableCell>
+            <TableRow key={p.id ?? `s:${p.payment_date}:${p.payment_number}:${p.supplier_id}`} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => (p.id ? onOpen(p.id) : drill?.open(historyTarget("payment", p)))}>
+              <TableCell className="font-mono text-xs">{p.payment_number}{p.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(p.payment_date)}</TableCell>
+              <TableCell className="max-w-[200px] truncate"><DrillLink to={{ type: "supplier", id: String(p.supplier_id ?? ""), label: p.supplier_name }}>{p.supplier_name}</DrillLink></TableCell><TableCell className="text-xs">{p.method ? `${p.method.toLowerCase()} ${p.reference ?? ""}` : p.reference}</TableCell>
               <TableCell className="text-xs">{p.bank_account_name}</TableCell><TableCell className="text-right"><Amount value={p.amount} /></TableCell>
               <TableCell className="text-right"><Amount value={p.wht_amount} blankZero /></TableCell><TableCell><StatusBadge status={p.status} /></TableCell>
             </TableRow>
@@ -118,19 +127,52 @@ function PaymentList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function DebitNoteList({ onOpen }: { onOpen: (id: string) => void }) {
-  const { data, isLoading, error } = useBooks<any>(["debitnotes"], "/payables/debit-notes", { limit: 300 });
+const DN_KIND: Record<string, string> = { RETURN: "Return", BROUGHT_FORWARD: "Credit from Sage", SAGE_CREDIT: "Sage credit memo" };
+
+/** Returns outward (goods back to the supplier: stock out of its batch, what we owe goes down,
+ *  against the supplier invoice they came on) and every supplier credit - with how much of each
+ *  credit is still unused, so it can be applied to their next bill. */
+function DebitNoteList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew: () => void }) {
+  const drill = useDrill();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [supplier, setSupplier] = useState<Dict | null>(null);
+  const [range, setRange] = useState({ from: "2019-01-01", to: today() });
+  const { data, isLoading, error } = useBooks<any>(["debitnotes", search, status, supplier?.id, range], "/payables/debit-notes",
+    { limit: 300, search: search || undefined, status: status || undefined, supplier_id: supplier?.id, from: range.from, to: range.to });
+  const sm = data?.summary ?? {};
   return (
-    <Section title="Returns outward / debit notes">
+    <Section title={`Returns outward & supplier credits${data ? ` (${data.total})` : ""}`}
+             actions={<><Button size="sm" onClick={onNew}><Plus className="mr-1 h-4 w-4" />Return to supplier</Button><CsvButton filename="supplier-returns.csv" rows={data?.items} /></>}>
+      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-5">
+        {[["Returns posted", `${num(sm.returns)} · ${naira(sm.returned_value ?? 0)}`], ["Units returned", num(sm.units_returned)],
+          ["Unused supplier credit", naira(sm.unused_credit ?? 0)], ["Credits not yet used", num(sm.with_unused)], ["Credit brought from Sage", naira(sm.brought_forward ?? 0)]].map(([k, v]) => (
+          <div key={k as string} className="rounded-lg border px-3 py-2"><div className="text-[11px] uppercase text-muted-foreground">{k}</div><div className="text-sm font-semibold">{v}</div></div>))}
+      </div>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Number, supplier, invoice, reason" }}
+          selects={[{ label: "Show", value: status, onChange: setStatus, options: [{ value: "returns", label: "Returns of goods" }, { value: "unused", label: "Credit not yet used" },
+            { value: "used", label: "Fully used" }, { value: "brought_forward", label: "Credits from Sage (brought forward)" }, { value: "sage", label: "Sage credit memos" }] }]} /></div>
+        <div className="w-64"><SupplierPick value={supplier} onChange={setSupplier} /></div>
+        <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
+      </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No supplier returns yet.</Empty> : (
+      {data && (data.items.length === 0 ? <Empty>No supplier returns or credits for this filter. Use "Return to supplier" to send goods back against the invoice they came on.</Empty> : (
         <Table>
-          <TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Date</TableHead><TableHead>Supplier</TableHead><TableHead>Against</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Date</TableHead><TableHead>Supplier</TableHead><TableHead>Kind</TableHead><TableHead>Goods</TableHead>
+            <TableHead>Against invoice</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Credit</TableHead><TableHead className="text-right">Unused</TableHead></TableRow></TableHeader>
           <TableBody>{data.items.map((d: Dict) => (
-            <TableRow key={d.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(d.id)}>
-              <TableCell className="font-mono text-xs">{d.debit_note_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(d.note_date)}</TableCell>
-              <TableCell>{d.supplier_name}</TableCell><TableCell className="font-mono text-xs">{d.bill_number ?? "—"}</TableCell>
-              <TableCell className="max-w-[240px] truncate text-xs">{d.reason}</TableCell><TableCell className="text-right"><Amount value={d.total} /></TableCell>
+            <TableRow key={d.id ?? `s:${d.note_date}:${d.debit_note_number}:${d.supplier_id}`} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => (d.id ? onOpen(d.id) : drill?.open({ type: "sagetxn", id: `${d.note_date}|PJ|${d.debit_note_number}`, label: d.debit_note_number }))}>
+              <TableCell className="max-w-[180px] truncate font-mono text-xs" title={d.debit_note_number}>{d.debit_note_number}{d.source === "SAGE" && <SageTag />}</TableCell>
+              <TableCell className="whitespace-nowrap text-xs">{fmtDate(d.note_date)}</TableCell>
+              <TableCell className="max-w-[180px] truncate"><DrillLink to={d.supplier_id ? { type: "supplier", id: String(d.supplier_id), label: d.supplier_name } : null}>{d.supplier_name}</DrillLink></TableCell>
+              <TableCell className="text-xs">{DN_KIND[d.kind] ?? d.kind}{d.recall_number && <div><DrillLink to={{ type: "recall", id: String(d.recall_id), label: d.recall_number }}>recall {d.recall_number}</DrillLink></div>}</TableCell>
+              <TableCell className="max-w-[160px] truncate text-xs" title={d.skus ?? ""}>{Number(d.units) > 0 ? `${num(d.units)} unit(s) · ${d.skus}` : "—"}</TableCell>
+              <TableCell className="font-mono text-xs">{d.against ? <DrillLink to={d.bill_id ? { type: "bill", id: String(d.bill_id), label: d.against } : { type: "sagebill", id: `${d.against}|${d.supplier_id ?? ""}`, label: d.against }}>{d.against}</DrillLink> : "—"}</TableCell>
+              <TableCell className="max-w-[200px] truncate text-xs" title={d.reason}>{d.reason}</TableCell>
+              <TableCell className="text-right"><Amount value={d.total} /></TableCell>
+              <TableCell className={`text-right ${Number(d.unused) > 0 ? "font-semibold text-emerald-700" : ""}`}><Amount value={d.unused} blankZero /></TableCell>
             </TableRow>
           ))}</TableBody>
         </Table>
@@ -206,69 +248,8 @@ function BillForm({ open, onClose }: { open: boolean; onClose: (id?: string) => 
   );
 }
 
-function PaymentForm({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [supplier, setSupplier] = useState<Dict | null>(null);
-  const [f, setF] = useState({ payment_date: today(), method: "TRANSFER", bank_account_id: "", amount: "", wht_amount: "", reference: "", notes: "" });
-  const [alloc, setAlloc] = useState<Record<string, string>>({});
-  const [dupe, setDupe] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [idem] = useState(newIdemKey);
-  useEffect(() => { if (!open) { setSupplier(null); setAlloc({}); setDupe(null); } }, [open]);
-  const { data: items } = useBooks<Dict[]>(["ap-open", supplier?.id], "/payables/open-items", { supplier_id: supplier?.id }, !!supplier);
-  const bills = useMemo(() => (items ?? []).filter((i) => i.doc_type === "BILL" && Number(i.open_amount) > 0).sort((a, b) => (a.due_date < b.due_date ? -1 : 1)), [items]);
-  const available = Number(f.amount || 0) + Number(f.wht_amount || 0);
-  const allocated = Object.values(alloc).reduce((s, v) => s + Number(v || 0), 0);
-  const submit = async (confirm = false) => {
-    setBusy(true);
-    try {
-      await books.post("/payables/payments", { ...f, supplier_id: supplier?.id, confirm_duplicate: confirm,
-        allocations: Object.entries(alloc).filter(([, v]) => Number(v) > 0).map(([bill_id, amount]) => ({ bill_id, amount })) }, idem + (confirm ? "c" : ""));
-      qc.invalidateQueries({ queryKey: ["books"] });
-      onClose();
-    } catch (e) {
-      const err = e as BooksError;
-      if (err.code === "DUPLICATE_REFERENCE") setDupe(err.message); else act(async () => { throw e; });
-    } finally { setBusy(false); }
-  };
-  return (
-    <DetailSheet open={open} onOpenChange={(o) => !o && onClose()} title="Pay supplier"
-                 description="WHT withheld is owed to FIRS; the supplier's bill is settled for the full amount."
-                 footer={<div className="flex w-full items-center justify-between"><span className="text-xs">Settles {naira(allocated)} of {naira(available)}</span>
-                   <Button disabled={busy || !supplier || !f.bank_account_id || Number(f.amount) <= 0 || allocated > available + 0.001} onClick={() => submit(false)}>{busy ? "Posting…" : "Post payment"}</Button></div>}>
-      <div className="space-y-3">
-        <SupplierPick value={supplier} onChange={(s) => { setSupplier(s); setAlloc({}); }} />
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1"><Label className="text-xs">Date</Label><Input type="date" value={f.payment_date} onChange={(e) => setF({ ...f, payment_date: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">Method</Label><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
-            {["TRANSFER", "CHEQUE", "CASH", "OTHER"].map((m) => <option key={m} value={m}>{m.toLowerCase()}</option>)}</select></div>
-        </div>
-        <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label="Paid from" />
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1"><Label className="text-xs">Amount paid</Label><Input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">WHT withheld</Label><Input type="number" value={f.wht_amount} onChange={(e) => setF({ ...f, wht_amount: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">Cheque / transfer ref</Label><Input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></div>
-        </div>
-        {dupe && (
-          <div className="space-y-2 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:bg-amber-500/10">
-            <div className="flex items-center gap-2 font-medium text-amber-800 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />{dupe}</div>
-            <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setDupe(null)}>Fix the reference</Button><Button size="sm" onClick={() => submit(true)}>It is genuine — post anyway</Button></div>
-          </div>
-        )}
-        {supplier && (bills.length === 0 ? <Empty>No unpaid bills for this supplier.</Empty> : (
-          <Table>
-            <TableHeader><TableRow><TableHead>Bill</TableHead><TableHead>Supplier inv.</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Open</TableHead><TableHead className="w-32">Settle</TableHead></TableRow></TableHeader>
-            <TableBody>{bills.map((b) => (
-              <TableRow key={b.doc_id}><TableCell className="font-mono text-xs">{b.doc_number}</TableCell><TableCell className="text-xs">{b.supplier_ref}</TableCell>
-                <TableCell className="text-xs">{fmtDate(b.due_date)}</TableCell><TableCell className="text-right"><Amount value={b.open_amount} /></TableCell>
-                <TableCell><Input className="h-8" type="number" value={alloc[b.doc_id] ?? ""} onChange={(e) => setAlloc({ ...alloc, [b.doc_id]: e.target.value })} /></TableCell></TableRow>
-            ))}</TableBody>
-          </Table>
-        ))}
-      </div>
-    </DetailSheet>
-  );
-}
+const RETURN_REASONS = ["Expired / short expiry", "Damaged in transit", "Recalled by the manufacturer", "Wrong item delivered", "Excess quantity delivered",
+  "Failed quality check", "Cold chain broken"];
 
 function DebitNoteForm({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
@@ -299,7 +280,7 @@ function DebitNoteForm({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <DetailSheet open={open} onOpenChange={(o) => !o && onClose()} title="Return to supplier (return outward)"
                  description="Choose the supplier invoice the goods came on. The stock leaves its batch, and what you owe the supplier goes down by their credit."
-                 footer={<Button disabled={busy || !supplier || !reason || (bill ? fromBill.length === 0 : false)} onClick={submit}>{busy ? "Posting…" : "Post return"}</Button>}>
+                 footer={<Button disabled={busy || !supplier || !reason.trim() || (bill ? fromBill.length === 0 : false)} onClick={submit}>{busy ? "Posting…" : "Post return"}</Button>}>
       <div className="space-y-3">
         <SupplierPick value={supplier} onChange={(s) => { setSupplier(s); setBill(null); setBack({}); }} />
         {supplier && !bill && (
@@ -333,7 +314,12 @@ function DebitNoteForm({ open, onClose }: { open: boolean; onClose: () => void }
         )}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1"><Label className="text-xs">Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-          <div className="space-y-1"><Label className="text-xs">Reason</Label><Input placeholder="e.g. Short expiry, damaged in transit" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+          <div className="space-y-1"><Label className="text-xs">Reason</Label>
+            <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={RETURN_REASONS.includes(reason) ? reason : reason ? "Other" : ""}
+                    onChange={(e) => setReason(e.target.value === "Other" ? " " : e.target.value)}>
+              <option value="">Choose…</option>{RETURN_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}<option value="Other">Other (type it)</option>
+            </select>
+            {reason && !RETURN_REASONS.includes(reason) && <Input className="mt-1" placeholder="Reason" value={reason.trim()} onChange={(e) => setReason(e.target.value || " ")} />}</div>
         </div>
         {!bill && L.lines.map((l, i) => (
           <div key={i} className="grid grid-cols-[1fr_70px_100px_120px_32px] items-end gap-2">
@@ -356,7 +342,7 @@ function DocDetail({ kind, id, onClose }: { kind: "bill" | "payment" | "debitnot
   const { data: d, refetch } = useBooks<Dict>([kind, id], path, undefined, !!id);
   const [v, setV] = useState(0);
   const voidIt = async () => {
-    const reason = window.prompt(`Why is this ${kind === "bill" ? "bill" : "payment"} being voided?`);
+    const reason = await askText(`Why is this ${kind === "bill" ? "bill" : "payment"} being voided?`);
     if (reason && (await act(() => books.post(`${path}/void`, { reason }), "Voided"))) { refetch(); setV((x) => x + 1); qc.invalidateQueries({ queryKey: ["books"] }); }
   };
   const title = d ? (kind === "bill" ? `Bill ${d.bill_number}` : kind === "payment" ? `Payment ${d.payment_number}` : `Debit note ${d.debit_note_number}`) : "";
@@ -403,7 +389,7 @@ function SupplierStatement() {
     <Section title="Vendor ledger / statement" actions={<CsvButton filename="supplier-statement.csv" rows={data?.rows.map((r: Dict) => ({ Date: r.date, "Trans No": r.trans_no, Type: r.type, Paid: r.paid ?? "", "Debit Amt": Number(r.debit) || "", "Credit Amt": Number(r.credit) || "", Balance: r.balance }))} />}>
       <div className="mb-3 grid gap-3 md:grid-cols-[1fr_auto]"><SupplierPick value={supplier} onChange={setSupplier} />
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} /></div>
-      {!supplier && <Empty>Choose a supplier to reconcile against their statement.</Empty>}
+      {!supplier && <PartyBalances kind="supplier" onPick={setSupplier} />}
       {isLoading && <Loading />}<ErrorNote error={error} />
       {data && (
         <div className="space-y-2 text-sm">

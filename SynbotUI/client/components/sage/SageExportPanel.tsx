@@ -50,6 +50,7 @@ import {
   type SageExportDocInfo,
   type SageExportSettings,
 } from "@/lib/api-client";
+import { askConfirm, askText } from "@/lib/ask";
 
 /**
  * Export to Sage — one card per Sage Import/Export template, mirroring
@@ -290,7 +291,7 @@ export function SageExportPanel() {
 
   const removeBatch = async (id: string) => {
     if (
-      !window.confirm(
+      !await askConfirm(
         "Undo this export?\n\nOnly do this if the file was NOT imported into Sage " +
           "(e.g. the import failed). Its records become exportable again — importing " +
           "them twice would post them twice in Sage.",

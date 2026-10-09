@@ -9,7 +9,8 @@ import time
 
 # Simple in-memory upload token store for short-lived proxy uploads.
 # Token -> {document_id, filename, expires_at}
-UPLOAD_TOKENS: dict = {}
+from src.utils.shared_dict import SharedDict
+UPLOAD_TOKENS = SharedDict("upload_token", 86400)  # shared across workers
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ FILES_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'documen
 
 
 @router.get('/documents')
-async def list_documents(request: Request):
+def list_documents(request: Request):
     verify_jwt(request)
     try:
         resp = db.table('documents').select('*').order('created_at', desc=True).execute()
@@ -33,7 +34,7 @@ async def list_documents(request: Request):
 
 
 @router.post('/documents', status_code=201)
-async def create_document(request: Request, payload: DocumentCreate):
+def create_document(request: Request, payload: DocumentCreate):
     verify_jwt(request, required_role='ops')
     doc = payload.dict()
     doc_record = {**doc, 'created_by': getattr(request.state, 'user', {}).get('sub') if getattr(request.state, 'user', None) else None}
@@ -105,7 +106,7 @@ async def upload_version(request: Request, document_id: str, file: UploadFile = 
 
 
 @router.post('/documents/{document_id}/generate-upload')
-async def generate_upload(request: Request, document_id: str, payload: dict):
+def generate_upload(request: Request, document_id: str, payload: dict):
     """Generate a short-lived proxy upload URL (server will accept the upload and push to Supabase Storage).
 
     This is a lightweight alternative to direct Supabase-signed URLs for environments
@@ -184,7 +185,7 @@ async def proxy_upload(request: Request, token: str, file: UploadFile = File(...
 
 
 @router.post('/documents/{document_id}/attach')
-async def attach_document(request: Request, document_id: str, payload: AttachRequest):
+def attach_document(request: Request, document_id: str, payload: AttachRequest):
     verify_jwt(request)
     attach = payload.dict()
     attach_record = {**attach, 'document_id': document_id, 'attached_by': getattr(request.state, 'user', {}).get('sub') if getattr(request.state, 'user', None) else None, 'attached_at': dt.datetime.utcnow().isoformat() + 'Z'}
@@ -201,7 +202,7 @@ async def attach_document(request: Request, document_id: str, payload: AttachReq
 
 
 @router.post('/documents/{document_id}/approve')
-async def approve_document(request: Request, document_id: str, payload: ApprovalRequest):
+def approve_document(request: Request, document_id: str, payload: ApprovalRequest):
     verify_jwt(request, required_role='admin')
     req = payload.dict()
     now = dt.datetime.utcnow().isoformat() + 'Z'

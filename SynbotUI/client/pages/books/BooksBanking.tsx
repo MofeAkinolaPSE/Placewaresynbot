@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { historyTarget, useDrill } from "@/components/books/drill-context";
+import { DrillLink, SageTag } from "@/components/books/kit";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Plus, Trash2, Upload, Wand2 } from "lucide-react";
@@ -15,7 +17,8 @@ import {
   AccountPick, AccountSheet, act, Amount, BankSelect, CsvButton, DateRange, Empty, ErrorNote, JournalSheet, Loading, Section,
   StatusBadge, useBooks, useLines,
 } from "@/components/books/kit";
-import { books, BooksError, Dict, fmtDate, monthStart, naira, newIdemKey, today, yearStart } from "@/lib/books-api";
+import { books, BooksError, Dict, fmtDate, monthStart, naira, newIdemKey, num, today, yearStart } from "@/lib/books-api";
+import { askConfirm, askText } from "@/lib/ask";
 
 export default function BooksBanking() {
   const [params, setParams] = useSearchParams();
@@ -36,7 +39,7 @@ export default function BooksBanking() {
         </TabsList>
         <TabsContent value="accounts"><Accounts onNew={() => open("new", "account")} /></TabsContent>
         <TabsContent value="vouchers"><VoucherList onOpen={(id) => open("voucher", id)} /></TabsContent>
-        <TabsContent value="reconcile"><StatementList onOpen={(id) => open("statement", id)} /></TabsContent>
+        <TabsContent value="reconcile"><StatementList onOpen={(id) => open("statement", id)} onImport={() => open("new", "statement")} /></TabsContent>
       </Tabs>
       <VoucherForm open={params.get("new") === "voucher"} onClose={(id) => { open("new", null); if (id) open("voucher", id); }} />
       <TransferForm open={params.get("new") === "transfer"} onClose={() => open("new", null)} />
@@ -108,6 +111,7 @@ function AccountForm({ open, onClose }: { open: boolean; onClose: () => void }) 
 }
 
 function VoucherList({ onOpen }: { onOpen: (id: string) => void }) {
+  const drill = useDrill();
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [bank, setBank] = useState("");
@@ -127,8 +131,9 @@ function VoucherList({ onOpen }: { onOpen: (id: string) => void }) {
         <Table>
           <TableHeader><TableRow><TableHead>Voucher</TableHead><TableHead>Date</TableHead><TableHead>Kind</TableHead><TableHead>Account</TableHead><TableHead>Payee / description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.items.map((v: Dict) => (
-            <TableRow key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(v.id)}>
-              <TableCell className="font-mono text-xs">{v.voucher_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(v.voucher_date)}</TableCell>
+            <TableRow key={v.id ?? `s:${v.voucher_date}:${v.voucher_number}:${v.amount}:${v.jrnl}`} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => (v.id ? onOpen(v.id) : drill?.open(historyTarget("voucher", v)))}>
+              <TableCell className="font-mono text-xs">{v.voucher_number}{v.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(v.voucher_date)}</TableCell>
               <TableCell className="text-xs">{v.kind.toLowerCase()}</TableCell>
               <TableCell className="text-xs">{v.bank_account_name}{v.to_bank_account_name ? ` → ${v.to_bank_account_name}` : ""}</TableCell>
               <TableCell className="max-w-[240px] truncate text-xs">{v.payee ?? v.description}{v.reference ? ` · ${v.reference}` : ""}</TableCell>
@@ -172,7 +177,7 @@ function VoucherForm({ open, onClose, preset }: { open: boolean; onClose: (id?: 
         <div className="grid grid-cols-2 gap-3">
           <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label={f.kind === "SPEND" ? "Paid from" : "Paid into"} />
           <div className="space-y-1"><Label className="text-xs">Date</Label><Input type="date" value={f.voucher_date} onChange={(e) => setF({ ...f, voucher_date: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">{f.kind === "SPEND" ? "Payee" : "Received from"}</Label><Input value={f.payee} onChange={(e) => setF({ ...f, payee: e.target.value })} /></div>
+          <div className="space-y-1"><Label className="text-xs">{f.kind === "SPEND" ? "Pay to the order of (anyone - no supplier record needed)" : "Received from"}</Label><Input value={f.payee} onChange={(e) => setF({ ...f, payee: e.target.value })} /></div>
           <div className="space-y-1"><Label className="text-xs">Cheque / reference</Label><Input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></div>
         </div>
         <div className="space-y-1"><Label className="text-xs">Description</Label><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></div>
@@ -220,7 +225,7 @@ function VoucherDetail({ id, onClose }: { id: string | null; onClose: () => void
   const { data: v, refetch } = useBooks<Dict>(["voucher", id], `/banking/vouchers/${id}`, undefined, !!id);
   const [ver, setVer] = useState(0);
   const voidIt = async () => {
-    const reason = window.prompt("Why is this voucher being voided?");
+    const reason = await askText("Why is this voucher being voided?");
     if (reason && (await act(() => books.post(`/banking/vouchers/${id}/void`, { reason }), "Voided"))) { refetch(); setVer((x) => x + 1); qc.invalidateQueries({ queryKey: ["books"] }); }
   };
   return (
@@ -235,12 +240,36 @@ function VoucherDetail({ id, onClose }: { id: string | null; onClose: () => void
 // Reconciliation
 // ---------------------------------------------------------------------------
 
-function StatementList({ onOpen }: { onOpen: (id: string) => void }) {
+/** Where each bank stands (balance in the books, Sage years included; last reconciled; lines not yet
+ *  matched to a statement), then the statements imported so far. */
+function StatementList({ onOpen, onImport }: { onOpen: (id: string) => void; onImport: () => void }) {
   const { data, isLoading, error } = useBooks<Dict[]>(["statements"], "/banking/statements");
+  const { data: banks } = useBooks<Dict[]>(["bank-accounts"], "/banking/accounts");
+  const { data: cash } = useBooks<Dict[]>(["recon-balances"], "/accounts", { account_type: "ASSET", history: true });
+  const bal: Record<string, number> = Object.fromEntries((cash ?? []).map((a) => [a.code, Number(a.balance_as_of || 0)]));
   return (
+    <div className="space-y-4">
+    <Section title="Where each bank stands" actions={<Button size="sm" variant="outline" onClick={onImport}><Upload className="mr-1 h-4 w-4" />Import statement</Button>}>
+      {!banks ? <Loading /> : banks.length === 0 ? <Empty>No bank or cash accounts are set up.</Empty> : (
+        <Table>
+          <TableHeader><TableRow><TableHead>Account</TableHead><TableHead>GL</TableHead><TableHead className="text-right">Balance in the books</TableHead>
+            <TableHead>Last reconciled</TableHead><TableHead className="text-right">Lines not yet matched</TableHead></TableRow></TableHeader>
+          <TableBody>{banks.map((b) => (
+            <TableRow key={b.id}>
+              <TableCell><DrillLink to={{ type: "account", id: String(b.gl_account_id), label: b.gl_code }}>{b.name}</DrillLink><div className="text-[11px] text-muted-foreground">{b.kind?.toLowerCase()}{b.bank_name ? ` · ${b.bank_name}` : ""}{b.account_number ? ` · ${b.account_number}` : ""}</div></TableCell>
+              <TableCell className="font-mono text-xs">{b.gl_code}</TableCell>
+              <TableCell className="text-right"><Amount value={bal[b.gl_code] ?? b.book_balance} /></TableCell>
+              <TableCell className="whitespace-nowrap text-xs">{b.last_reconciled ? fmtDate(b.last_reconciled) : <span className="text-amber-600">never in ACE Books</span>}</TableCell>
+              <TableCell className="text-right">{num(b.uncleared_count)}</TableCell>
+            </TableRow>
+          ))}</TableBody>
+        </Table>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground">To reconcile: export the bank's statement as CSV (Date, Description, Reference, and Amount or Debit/Credit), import it, and ACE Books matches it line by line against the ledger.</p>
+    </Section>
     <Section title="Bank statements">
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.length === 0 ? <Empty>Import a bank statement CSV (Date, Description, Reference, and Amount or Debit/Credit) to reconcile.</Empty> : (
+      {data && (data.length === 0 ? <Empty>No statement imported yet.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Account</TableHead><TableHead>Statement date</TableHead><TableHead className="text-right">Closing balance</TableHead><TableHead className="text-right">Matched</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.map((s) => (
@@ -253,6 +282,7 @@ function StatementList({ onOpen }: { onOpen: (id: string) => void }) {
         </Table>
       ))}
     </Section>
+    </div>
   );
 }
 
@@ -303,7 +333,7 @@ function Reconcile({ id, onClose }: { id: string | null; onClose: () => void }) 
     return c;
   }, [st]);
   const match = async (line: Dict, status: string, journal_line_id?: string) => {
-    const note = status === "MATCHED" ? undefined : window.prompt(status === "IGNORED" ? "Why ignore this line?" : "Describe the exception") ?? undefined;
+    const note = status === "MATCHED" ? undefined : await askText(status === "IGNORED" ? "Why ignore this line?" : "Describe the exception") ?? undefined;
     if (await act(() => books.post(`/banking/statement-lines/${line.id}/match`, { journal_line_id, status, note }))) done();
   };
   const complete = async () => {

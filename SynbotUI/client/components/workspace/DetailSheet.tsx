@@ -22,7 +22,10 @@ export function DetailSheet({
   icon: Icon,
   footer,
   children,
+  size = "wide",
 }: {
+  /** wide (default): more than half the screen so tables show at a glance; narrow: short forms */
+  size?: "wide" | "narrow";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
@@ -33,7 +36,7 @@ export function DetailSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+      <SheetContent className={`w-full overflow-y-auto ${size === "narrow" ? "sm:max-w-xl" : "sm:max-w-[92vw] lg:max-w-[64vw] 2xl:max-w-[1200px]"}`}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {Icon && <Icon className="h-5 w-5 text-primary" />}

@@ -99,7 +99,7 @@ def ar_aging_customers(bucket: str) -> List[Dict[str, Any]]:
     for r in rows:
         r["total_balance"] = round(r["total_balance"], 2)
         r["total_amount"] = round(r["total_amount"], 2)
-    return sorted(rows, key=lambda r: -r["total_balance"])
+    return sorted(rows, key=lambda r: ((r["name"] or "").strip().lower(), str(r["customer_id"])))
 
 
 def kpis() -> Dict[str, Any]:

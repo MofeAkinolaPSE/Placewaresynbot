@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 from src.fin import audit, posting
 from src.fin.db import ZERO, ex, money, q, q1
 from src.fin.errors import FinError, invalid, not_found
+from src.fin import numbering
 from src.fin.numbering import next_number
 from src.fin.sales import bank_account
 
@@ -111,9 +112,11 @@ def create_voucher(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_voucher(conn, entity_id: str, voucher_id: str) -> Dict[str, Any]:
-    v = q1(conn, """SELECT v.*, b.name AS bank_account_name, t.name AS to_bank_account_name, j.journal_number
+    v = q1(conn, """SELECT v.*, b.name AS bank_account_name, t.name AS to_bank_account_name, j.journal_number,
+                           rb.voucher_number AS replaced_by_number, rp.voucher_number AS replaces_number
                     FROM fin_cash_vouchers v JOIN fin_bank_accounts b ON b.id=v.bank_account_id
                     LEFT JOIN fin_bank_accounts t ON t.id=v.to_bank_account_id LEFT JOIN fin_journals j ON j.id=v.journal_id
+                    LEFT JOIN fin_cash_vouchers rb ON rb.id=v.replaced_by_id LEFT JOIN fin_cash_vouchers rp ON rp.id=v.replaces_id
                     WHERE v.id=%s AND v.legal_entity_id=%s""", (voucher_id, entity_id))
     if not v:
         raise not_found("Voucher", voucher_id)
@@ -137,8 +140,29 @@ def void_voucher(conn, ctx, voucher_id: str, reason: str) -> Dict[str, Any]:
     rev = posting.reverse(conn, ctx, str(v["journal_id"]), reversal_date=v["voucher_date"],
                           reason=f"Void {v['voucher_number']}: {reason}", allow_system=True)
     ex(conn, "UPDATE fin_cash_vouchers SET status='VOID', void_journal_id=%s, void_reason=%s WHERE id=%s", (rev["id"], reason, voucher_id))
+    numbering.release_if_last(conn, ctx, "CASH_VOUCHER", v["voucher_number"], "fin_cash_vouchers", "voucher_number", voucher_id)
     audit.record(conn, ctx, "VOUCHER_VOIDED", "cash_voucher", voucher_id, ref=v["voucher_number"], reason=reason)
     return get_voucher(conn, ctx.entity_id, voucher_id)
+
+
+def correct_voucher(conn, ctx, voucher_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """A voucher posted with a mistake (payee, amount, account, bank, date): the wrong one is voided
+    (journal reversed) and the right one posted in the same transaction, each pointing at the other."""
+    ctx.require("banking.voucher.void")
+    reason = (data.get("reason") or "").strip()
+    if not reason:
+        raise invalid("Say what was wrong")
+    old = q1(conn, "SELECT * FROM fin_cash_vouchers WHERE id=%s AND legal_entity_id=%s", (voucher_id, ctx.entity_id))
+    if not old:
+        raise not_found("Voucher", voucher_id)
+    void_voucher(conn, ctx, voucher_id, f"Corrected: {reason}")
+    new = create_voucher(conn, ctx, {**data, "kind": data.get("kind") or old["kind"],
+                                     "description": data.get("description") or old["description"]})
+    ex(conn, "UPDATE fin_cash_vouchers SET replaced_by_id=%s WHERE id=%s", (new["id"], voucher_id))
+    ex(conn, "UPDATE fin_cash_vouchers SET replaces_id=%s WHERE id=%s", (voucher_id, new["id"]))
+    audit.record(conn, ctx, "VOUCHER_CORRECTED", "cash_voucher", new["id"], ref=new["voucher_number"], reason=reason,
+                 metadata={"replaces": old["voucher_number"]})
+    return get_voucher(conn, ctx.entity_id, str(new["id"]))
 
 
 def list_vouchers(conn, entity_id: str, *, kind: Optional[str] = None, bank_account_id: Optional[str] = None,
@@ -160,13 +184,46 @@ def list_vouchers(conn, entity_id: str, *, kind: Optional[str] = None, bank_acco
         where.append("(v.voucher_number ILIKE %s OR v.payee ILIKE %s OR v.description ILIKE %s OR v.reference ILIKE %s)")
         params += [f"%{search}%"] * 4
     w = " AND ".join(where)
-    total = q1(conn, f"SELECT COUNT(*) n FROM fin_cash_vouchers v WHERE {w}", params)["n"]
-    rows = q(conn, f"""SELECT v.id, v.voucher_number, v.kind, v.voucher_date, b.name AS bank_account_name,
-                              t.name AS to_bank_account_name, v.payee, v.reference, v.description, v.amount, v.status
-                       FROM fin_cash_vouchers v JOIN fin_bank_accounts b ON b.id=v.bank_account_id
-                       LEFT JOIN fin_bank_accounts t ON t.id=v.to_bank_account_id
-                       WHERE {w} ORDER BY v.voucher_date DESC, v.voucher_number DESC LIMIT %s OFFSET %s""",
-             params + [limit, offset])
+    union = f"""SELECT v.id::text AS id, v.voucher_number, v.kind, v.voucher_date, b.name AS bank_account_name,
+                       t.name AS to_bank_account_name, v.payee, v.reference, v.description, v.amount, v.status, 'ACE' AS source,
+                       NULL::text AS jrnl
+                FROM fin_cash_vouchers v JOIN fin_bank_accounts b ON b.id=v.bank_account_id
+                LEFT JOIN fin_bank_accounts t ON t.id=v.to_bank_account_id WHERE {w}"""
+    sp: List[Any] = []
+    if bank_account_id:
+        # Money in and out of this bank in Sage that was not a customer receipt or a supplier
+        # payment: spends, bank charges, transfers - what ACE Books records as vouchers.
+        sw = ["l.legal_entity_id=%s", "a.id=(SELECT gl_account_id FROM fin_bank_accounts WHERE id=%s)",
+              "l.jrnl IN ('CDJ','CRJ','GENJ')", "(l.debit <> 0 OR l.credit <> 0)",
+              """NOT EXISTS (SELECT 1 FROM fin_sage_party_ledger p WHERE p.legal_entity_id=l.legal_entity_id
+                             AND p.trans_no=l.reference AND p.txn_date=l.txn_date)"""]
+        sp = [entity_id, bank_account_id]
+        k = (kind or "").upper()
+        if k == "SPEND":
+            sw.append("l.credit > 0")
+        elif k == "RECEIVE":
+            sw.append("l.debit > 0")
+        elif k == "TRANSFER":
+            sw.append("FALSE")
+        if date_from:
+            sw.append("l.txn_date >= %s")
+            sp.append(date_from)
+        if date_to:
+            sw.append("l.txn_date <= %s")
+            sp.append(date_to)
+        if search:
+            sw.append("(l.reference ILIKE %s OR l.description ILIKE %s)")
+            sp += [f"%{search}%"] * 2
+        union += f"""
+                UNION ALL
+                SELECT NULL, l.reference, CASE WHEN l.credit > 0 THEN 'SPEND' ELSE 'RECEIVE' END, l.txn_date, a.name, NULL,
+                       l.description, l.reference, l.description, CASE WHEN l.credit > 0 THEN l.credit ELSE l.debit END,
+                       'POSTED', 'SAGE', l.jrnl
+                FROM fin_sage_gl_lines l JOIN fin_accounts a ON a.legal_entity_id=l.legal_entity_id AND a.code=l.account_code
+                WHERE {' AND '.join(sw)}"""
+    total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params + sp)["n"]
+    rows = q(conn, f"SELECT * FROM ({union}) u ORDER BY voucher_date DESC, voucher_number DESC LIMIT %s OFFSET %s",
+             params + sp + [limit, offset])
     return {"items": rows, "total": total}
 
 

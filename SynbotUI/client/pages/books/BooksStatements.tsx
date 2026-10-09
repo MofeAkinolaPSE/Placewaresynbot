@@ -243,7 +243,7 @@ const JOURNAL_KINDS = [
 ];
 
 /** The Sage journals in Sage's own column layout (each journal has its own columns), any period. */
-function JournalReports() {
+export function JournalReports() {
   const [sp] = useSearchParams();
   const [kind, setKind] = useState(sp.get("kind") ?? "sales");
   const [range, setRange] = useState({ from: monthStart(), to: today() });

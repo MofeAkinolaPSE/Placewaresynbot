@@ -68,7 +68,8 @@ def accumulated(conn, asset_id: str) -> Decimal:
 def register_asset(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
     """Add an asset to the register. `funding` says how it was paid:
        BANK (bank_account_id), CLEARING (an account, e.g. from a supplier bill line),
-       or OPENING (already in the migrated balances - register only, no journal)."""
+       OPENING (already in the migrated balances - register only, no journal) or
+       POSTED (already posted to the asset account by a payment / voucher - register only)."""
     ctx.require("assets.asset.create")
     cat = _category(conn, ctx.entity_id, data["category_id"])
     cost = money(data.get("cost"))
@@ -81,16 +82,19 @@ def register_asset(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
     acquired = data["acquisition_date"]
     dep_start = data.get("depreciation_start") or acquired.replace(day=1)
     funding = str(data.get("funding") or "BANK").upper()
-    opening_acc = money(data.get("opening_accumulated_depreciation")) if funding == "OPENING" else ZERO
+    opening_acc = money(data.get("opening_accumulated_depreciation")) if funding in ("OPENING", "POSTED") else ZERO
+    if data.get("source_line") and q1(conn, "SELECT 1 FROM fin_fixed_assets WHERE legal_entity_id=%s AND source_line=%s",
+                                      (ctx.entity_id, data["source_line"])):
+        raise FinError("DUPLICATE_RESOURCE", "That purchase is already in the asset register")
     number = data.get("asset_code") or next_number(conn, ctx.entity_id, "ASSET")
     a = q1(conn, """INSERT INTO fin_fixed_assets (legal_entity_id, asset_code, name, category_id, serial_number, location,
                     department_id, acquisition_date, depreciation_start, cost, residual_value, useful_life_months,
-                    opening_accumulated_depreciation, is_opening, notes, created_by)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                    opening_accumulated_depreciation, is_opening, notes, created_by, source_line)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
            (ctx.entity_id, number, data["name"], cat["id"], data.get("serial_number"), data.get("location"),
             data.get("department_id"), acquired, dep_start, cost, residual, life, opening_acc, funding == "OPENING",
-            data.get("notes"), ctx.actor_id))
-    if funding != "OPENING":
+            data.get("notes"), ctx.actor_id, data.get("source_line")))
+    if funding not in ("OPENING", "POSTED"):
         if funding == "BANK":
             credit_acct = bank_account(conn, ctx.entity_id, data["bank_account_id"])["gl_account_id"]
         elif funding == "CLEARING":
@@ -219,3 +223,66 @@ def dispose_asset(conn, ctx, asset_id: str, data: Dict[str, Any]) -> Dict[str, A
     audit.record(conn, ctx, "ASSET_DISPOSED", "fixed_asset", asset_id, ref=a["asset_code"],
                  metadata={"proceeds": str(proceeds), "nbv": str(nbv), "gain_loss": str(gain)})
     return get_asset(conn, ctx.entity_id, asset_id)
+
+
+# ---------------------------------------------------------------------------
+# Assets in the books (client meeting 7 Oct: "when did we buy it, what do we have")
+# ---------------------------------------------------------------------------
+
+def asset_history(conn, entity_id: str, as_of: dt.date) -> Dict[str, Any]:
+    """Every fixed-asset account as the ledger has it (the Sage years and ACE Books): cost,
+    accumulated depreciation and net book value at `as_of`, and every purchase, disposal and
+    depreciation charge with its date, supplier and description. Purchases show whether they are
+    in the depreciation register yet."""
+    from src.fin import books_ledger
+    e = entity_id
+    start = books_ledger.history_start(conn, e) or dt.date(2017, 1, 1)
+    bal = books_ledger.balances(conn, e, as_of)
+    cats = {str(c["asset_account_id"]): c for c in q(conn, """SELECT c.*, d.code AS accum_code FROM fin_asset_categories c
+                                                              LEFT JOIN fin_accounts d ON d.id=c.accum_dep_account_id
+                                                              WHERE c.legal_entity_id=%s AND c.status='ACTIVE'""", (e,))}
+    registered = {r["source_line"]: r for r in q(conn, """SELECT id::text AS id, asset_code, source_line FROM fin_fixed_assets
+                                                         WHERE legal_entity_id=%s AND source_line IS NOT NULL""", (e,))}
+    out = []
+    for a in q(conn, """SELECT id::text AS id, code, name FROM fin_accounts WHERE legal_entity_id=%s AND subtype='FIXED_ASSET'
+                        ORDER BY code""", (e,)):
+        cat = cats.get(a["id"])
+        lines = [l for l in books_ledger.lines(conn, e, a["code"], start, as_of) if money(l["debit"]) or money(l["credit"])]
+        cost = bal.get(a["code"], ZERO)
+        if not lines and not cost:
+            continue
+        acc_lines, accum = [], ZERO
+        if cat and cat.get("accum_code"):
+            accum = -bal.get(cat["accum_code"], ZERO)
+            acc_lines = [l for l in books_ledger.lines(conn, e, cat["accum_code"], start, as_of) if money(l["debit"]) or money(l["credit"])]
+        purchases, disposals = [], []
+        for l in lines:
+            key = f"sage:{l['sage_line_id']}" if l["source"] == "sage" else f"ace:{l.get('line_id')}"
+            desc = (l["description"] or "").strip()
+            row = {"date": l["date"], "reference": l["reference"], "jrnl": l["jrnl"], "description": desc,
+                   "amount": money(l["debit"]) - money(l["credit"]), "source": l["source"], "source_line": key,
+                   "journal_id": l.get("journal_id"),
+                   "brought_forward": "closing" in desc.lower() and "trial balance" in desc.lower()}
+            if money(l["debit"]) > 0:
+                reg = registered.get(key)
+                row["registered"] = {"id": reg["id"], "asset_code": reg["asset_code"]} if reg else None
+                purchases.append(row)
+            else:
+                disposals.append(row)
+        out.append({"account_id": a["id"], "code": a["code"], "name": a["name"], "category_id": str(cat["id"]) if cat else None,
+                    "category": cat["name"] if cat else None, "depreciable": bool(cat and cat["depreciable"]),
+                    "default_life_months": cat["default_life_months"] if cat else None,
+                    "cost": cost, "accumulated_depreciation": accum, "net_book_value": cost - accum,
+                    "purchases": sorted(purchases, key=lambda r: r["date"], reverse=True),
+                    "disposals": sorted(disposals, key=lambda r: r["date"], reverse=True),
+                    "depreciation": [{"date": l["date"], "description": l["description"], "reference": l["reference"],
+                                      "amount": money(l["credit"]) - money(l["debit"]), "source": l["source"],
+                                      "journal_id": l.get("journal_id"), "jrnl": l["jrnl"]}
+                                     for l in sorted(acc_lines, key=lambda r: r["date"], reverse=True)]})
+
+    def tot(k):
+        return sum((money(x[k]) for x in out), ZERO)
+
+    return {"as_of": as_of, "accounts": out, "cost": tot("cost"), "accumulated_depreciation": tot("accumulated_depreciation"),
+            "net_book_value": tot("net_book_value"),
+            "register_count": q1(conn, "SELECT COUNT(*) n FROM fin_fixed_assets WHERE legal_entity_id=%s", (e,))["n"]}

@@ -85,8 +85,8 @@ def plan(conn, ctx, as_of: dt.date, folder: str) -> Dict[str, Any]:
     cov = q1(conn, "SELECT MAX(date_to) d FROM fin_sage_loads WHERE legal_entity_id=%s AND kind='GENERAL_LEDGER'", (e,))
     if not cov or not cov["d"] or cov["d"] < as_of:
         raise invalid(f"Load the General Ledger up to {as_of} first (Sage history ends {cov['d'] if cov else 'nowhere'})")
-    hist = books_ledger._hist_balances(conn, e, as_of)
-    jan = books_ledger._hist_balances(conn, e, dt.date(as_of.year, 1, 1), start_of_day=True)
+    hist = books_ledger._hist_balances_uncached(conn, e, as_of)
+    jan = books_ledger._hist_balances_uncached(conn, e, dt.date(as_of.year, 1, 1), start_of_day=True)
     acc = books_ledger.accounts(conn, e)
     tb_diff = []
     for r in snaps["TRIAL_BALANCE"]["parsed"]["rows"]:
@@ -126,7 +126,7 @@ def plan(conn, ctx, as_of: dt.date, folder: str) -> Dict[str, Any]:
 def _post_to_target(conn, ctx, on: dt.date, label: str) -> Optional[Dict[str, Any]]:
     """Bring every account's ACE Books balance at `on` to Sage's General Ledger balance."""
     e = ctx.entity_id
-    hist = books_ledger._hist_balances(conn, e, on)
+    hist = books_ledger._hist_balances_uncached(conn, e, on)
     ace = books_ledger._ace_balances(conn, e, on)
     acc = books_ledger.accounts(conn, e)
     lines = []
@@ -317,7 +317,7 @@ def run(conn, ctx, as_of: dt.date, folder: str, *, void_test_invoices: bool = Fa
         if r:
             journals.append(r)
     # Every account now equals Sage's General Ledger at the hand-over date.
-    hist = books_ledger._hist_balances(conn, e, as_of)
+    hist = books_ledger._hist_balances_uncached(conn, e, as_of)
     ace = books_ledger._ace_balances(conn, e, as_of)
     off = {c: str(hist.get(c, ZERO) - ace.get(c, ZERO)) for c in set(hist) | set(ace) if hist.get(c, ZERO) != ace.get(c, ZERO)}
     if off:

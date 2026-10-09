@@ -107,7 +107,7 @@ def _compute_ar_aging_data(bucket: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/ar/aging")
-async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
+def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
     """
     Return AR aging summary (buckets) plus per-customer rows.
 
@@ -190,7 +190,7 @@ async def ar_aging(request: Request, bucket: Optional[str] = Query(None)):
 # AR AGING PDF  —  GET /finance/ar/aging/pdf
 # ---------------------------------------------------------------------------
 @router.get("/ar/aging/pdf")
-async def get_ar_aging_pdf(request: Request, bucket: Optional[str] = Query(None)):
+def get_ar_aging_pdf(request: Request, bucket: Optional[str] = Query(None)):
     """
     Return AR aging (buckets + per-customer) as an audit-stamped PDF, for
     collections meetings. Mirrors get_pl_pdf()'s structure/audit pattern.
@@ -314,7 +314,7 @@ async def get_ar_aging_pdf(request: Request, bucket: Optional[str] = Query(None)
 # AR ALERTS — CRUD
 # ---------------------------------------------------------------------------
 @router.get("/ar/alerts")
-async def list_ar_alerts(request: Request):
+def list_ar_alerts(request: Request):
     """List all active alert rules and unacknowledged alert events."""
     _require_finance(request)
     try:
@@ -344,7 +344,7 @@ async def list_ar_alerts(request: Request):
 
 
 @router.post("/ar/alerts", status_code=201)
-async def create_ar_alert(request: Request, body: AlertRuleIn):
+def create_ar_alert(request: Request, body: AlertRuleIn):
     """Create a new AR threshold alert rule."""
     user = _require_finance(request)
     try:
@@ -371,7 +371,7 @@ async def create_ar_alert(request: Request, body: AlertRuleIn):
 
 
 @router.delete("/ar/alerts/{rule_id}", status_code=200)
-async def delete_ar_alert(request: Request, rule_id: str):
+def delete_ar_alert(request: Request, rule_id: str):
     """Deactivate (soft-delete) an alert rule."""
     user = _require_finance(request)
     try:
@@ -398,7 +398,7 @@ async def delete_ar_alert(request: Request, rule_id: str):
 
 
 @router.post("/ar/alerts/{event_id}/ack", status_code=200)
-async def ack_alert_event(request: Request, event_id: str):
+def ack_alert_event(request: Request, event_id: str):
     """Acknowledge a triggered alert event (dismiss from dashboard)."""
     user = _require_finance(request)
     try:
@@ -428,7 +428,7 @@ async def ack_alert_event(request: Request, event_id: str):
 # INVOICE MATCHING  —  POST /finance/ar/match
 # ---------------------------------------------------------------------------
 @router.post("/ar/match")
-async def match_invoices(request: Request, body: MatchRequest):
+def match_invoices(request: Request, body: MatchRequest):
     """
     Scan AR snapshot and GL payments to flag unmatched invoices.
 
@@ -599,7 +599,7 @@ def _compute_pl(period: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/reports/pl")
-async def get_pl_report(request: Request, period: Optional[str] = Query(None)):
+def get_pl_report(request: Request, period: Optional[str] = Query(None)):
     """
     Return P&L statement computed from GL journal entries.
     Optional ?period=YYYY-MM to filter to a single month.
@@ -617,7 +617,7 @@ async def get_pl_report(request: Request, period: Optional[str] = Query(None)):
 # P&L PDF  —  GET /finance/reports/pl/pdf
 # ---------------------------------------------------------------------------
 @router.get("/reports/pl/pdf")
-async def get_pl_pdf(request: Request, period: Optional[str] = Query(None)):
+def get_pl_pdf(request: Request, period: Optional[str] = Query(None)):
     """
     Return P&L statement as an audit-stamped PDF.
     Writes a row to fin_audit_export_log.
@@ -743,7 +743,7 @@ async def get_pl_pdf(request: Request, period: Optional[str] = Query(None)):
 # AUDIT EXPORT LOG  —  GET /finance/exports/log
 # ---------------------------------------------------------------------------
 @router.get("/exports/log")
-async def list_export_log(request: Request, limit: int = Query(50, le=200)):
+def list_export_log(request: Request, limit: int = Query(50, le=200)):
     """Return audit trail of all financial report exports."""
     _require_finance(request)
     try:
@@ -767,7 +767,7 @@ async def list_export_log(request: Request, limit: int = Query(50, le=200)):
 # ===========================================================================
 
 @router.get("/forecast/cashflow")
-async def cashflow_forecast(
+def cashflow_forecast(
     request: Request,
     weeks: int = Query(12, ge=4, le=52),
 ):
@@ -1085,7 +1085,7 @@ def _compute_payroll(period: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/payroll/summary")
-async def payroll_summary(request: Request, period: Optional[str] = Query(None)):
+def payroll_summary(request: Request, period: Optional[str] = Query(None)):
     """
     Return payroll summary: per-employee rows, department totals, and
     period-over-period variance (current vs prior import batch).
@@ -1100,7 +1100,7 @@ async def payroll_summary(request: Request, period: Optional[str] = Query(None))
 
 
 @router.get("/payroll/pdf")
-async def payroll_pdf(request: Request, period: Optional[str] = Query(None)):
+def payroll_pdf(request: Request, period: Optional[str] = Query(None)):
     """
     Return payroll summary as an audit-stamped PDF.
     Writes a row to fin_audit_export_log.
@@ -1288,7 +1288,7 @@ _VALID_TRANSITIONS: Dict[str, List[str]] = {
 
 
 @router.get("/vendor/payments")
-async def list_vendor_payments(
+def list_vendor_payments(
     request: Request,
     status: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
@@ -1311,7 +1311,7 @@ async def list_vendor_payments(
 
 
 @router.post("/vendor/payments", status_code=201)
-async def create_vendor_payment(request: Request, body: VendorPaymentIn):
+def create_vendor_payment(request: Request, body: VendorPaymentIn):
     """
     Create a new vendor payment request (status = pending).
     Any finance/admin user can raise a request.
@@ -1512,7 +1512,7 @@ def _score_customer(
 
 
 @router.get("/credit/risk")
-async def credit_risk_scores(request: Request):
+def credit_risk_scores(request: Request):
     """
     Compute a credit risk score (0–100) and tier (Low/Medium/High/Critical)
     for every customer in the AR snapshot.
@@ -1655,7 +1655,7 @@ class BudgetTargetIn(BaseModel):
 
 
 @router.get("/budget/targets")
-async def list_budget_targets(
+def list_budget_targets(
     request: Request,
     period: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
@@ -1676,7 +1676,7 @@ async def list_budget_targets(
 
 
 @router.post("/budget/targets", status_code=201)
-async def upsert_budget_target(request: Request, body: BudgetTargetIn):
+def upsert_budget_target(request: Request, body: BudgetTargetIn):
     """
     Create or update a budget target for a department/category/period.
     Uses ON CONFLICT DO UPDATE via upsert.
@@ -1705,7 +1705,7 @@ async def upsert_budget_target(request: Request, body: BudgetTargetIn):
 
 
 @router.delete("/budget/targets/{target_id}")
-async def delete_budget_target(request: Request, target_id: str):
+def delete_budget_target(request: Request, target_id: str):
     """Delete a budget target by ID."""
     user = _require_finance(request)
     roles = {str(r).lower() for r in user.get("roles", [])}
@@ -1720,7 +1720,7 @@ async def delete_budget_target(request: Request, target_id: str):
 
 
 @router.get("/budget/variance")
-async def budget_variance(
+def budget_variance(
     request: Request,
     period: Optional[str] = Query(None, description="YYYY-MM — defaults to current month"),
 ):
@@ -1851,7 +1851,7 @@ def _next_month_str(period: str) -> str:
 # CHART OF ACCOUNTS  —  GET /finance/coa
 # ---------------------------------------------------------------------------
 @router.get("/coa")
-async def get_chart_of_accounts(request: Request, limit: int = Query(500, le=1000)):
+def get_chart_of_accounts(request: Request, limit: int = Query(500, le=1000)):
     """Return chart of accounts from Sage 50 snapshot."""
     _require_finance(request)
     try:
@@ -1873,7 +1873,7 @@ async def get_chart_of_accounts(request: Request, limit: int = Query(500, le=100
 # INVOICES  —  GET /finance/invoices  &  GET /finance/invoices/{invoice_id}
 # ---------------------------------------------------------------------------
 @router.get("/invoices")
-async def list_invoices(
+def list_invoices(
     request: Request,
     limit: int = Query(200, le=500),
     status: str = Query(None, description="Filter by status: open, paid, overdue"),
@@ -1907,7 +1907,7 @@ async def list_invoices(
 
 
 @router.get("/invoices/{invoice_id}")
-async def get_invoice_detail(request: Request, invoice_id: str):
+def get_invoice_detail(request: Request, invoice_id: str):
     """Return a single invoice with its line items."""
     _require_finance(request)
     try:
@@ -1979,7 +1979,7 @@ class ReconciliationLogIn(BaseModel):
 
 
 @router.get("/reconciliation/status")
-async def get_reconciliation_status(request: Request):
+def get_reconciliation_status(request: Request):
     """
     Return the freshness status of all reconciliation snapshot types.
     For each known row, compute days_since_update and a staleness flag.
@@ -2032,7 +2032,7 @@ async def get_reconciliation_status(request: Request):
 
 
 @router.post("/reconciliation/log", status_code=201)
-async def log_reconciliation(request: Request, body: ReconciliationLogIn):
+def log_reconciliation(request: Request, body: ReconciliationLogIn):
     """
     Upsert a reconciliation tracking row — either from a Sage export ingestion
     or manually entered by finance staff via the Placeware UI.

@@ -195,7 +195,8 @@ async def update_order_status(request: Request, order_id: str, payload: OrderSta
     )
     return {"order_id": order_id, "from": current_status, "to": new_status, "status": "updated"}
 from src.llm_client import LLMClient  # new microservice-based LLM abstraction (to be added)
-from src.middleware import verify_jwt, rate_limit, RequestTimingMiddleware
+from src.middleware import verify_jwt, rate_limit, client_ip, RequestTimingMiddleware, DataVersionMiddleware
+from src.services.leader import is_leader
 from src.licensing.license_guard import LicenseGuardMiddleware, router as license_router
 from src.prompt_security import sanitize_user_input, wrap_user_content
 from src.db import (
@@ -355,14 +356,15 @@ _Instrumentator().instrument(app).expose(app, include_in_schema=False)
 # ── Pending email draft store (confirmation-before-send flow) ─────────────────
 # Keyed by user_id (or IP fallback). Draft expires after 10 minutes.
 # Structure: { user_key → {subject, body, to_email, department, original_request, expires_at} }
-_PENDING_EMAIL_DRAFTS: dict = {}
+from src.utils.shared_dict import SharedDict
+_PENDING_EMAIL_DRAFTS = SharedDict("email_draft", 600)  # shared across workers
 _EMAIL_DRAFT_TTL_SECONDS = 600  # 10 minutes
 
 # Bulk SMS/email broadcast drafts -- kept in a separate dict from
 # _PENDING_EMAIL_DRAFTS (not reused/overloaded) so confirming one never
 # accidentally fires the other. Same 10-minute TTL/key scheme.
 # Structure: { user_key → {channel, message_text, subject, recipient_filter, recipient_count, expires_at} }
-_PENDING_BULK_DRAFTS: dict = {}
+_PENDING_BULK_DRAFTS = SharedDict("bulk_draft", 600)  # shared across workers
 _BULK_DRAFT_TTL_SECONDS = 600  # 10 minutes
 
 
@@ -541,6 +543,8 @@ async def _log_license_state():
 
 @app.on_event("startup")
 async def _start_weekly_report_scheduler():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         from src.services.scheduler import start_scheduler
         start_scheduler()
@@ -550,6 +554,8 @@ async def _start_weekly_report_scheduler():
 
 @app.on_event("startup")
 async def _start_kpi_watchdog():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     import os
     import asyncio
     if os.getenv("KPI_WATCHDOG_ENABLED", "1") not in ("0", "false", "False"):
@@ -563,6 +569,8 @@ async def _start_kpi_watchdog():
 
 @app.on_event("startup")
 async def _start_workflow_processor():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.workflow.engine import engine
@@ -578,6 +586,8 @@ async def _start_workflow_processor():
 async def _start_backup_schedule():
     """Scheduled data backups (Settings > Data Backup): prepared on the server when due, then
     downloaded by an administrator. A pg advisory lock keeps it to one run across workers."""
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.routers.backup import tick as backup_tick
@@ -600,6 +610,8 @@ async def _start_backup_schedule():
 async def _start_workspace_escalations():
     """Staff Workspace: fire reminders and escalation chains every 5 minutes. Each step is
     claimed with a conditional update, so running in several workers never double-notifies."""
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.services.workspace_automation import run_escalations
@@ -623,6 +635,8 @@ async def _start_workspace_escalations():
 
 @app.on_event("startup")
 async def _start_supplier_intel():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.services.supplier_intel import compute_supplier_metrics
@@ -643,6 +657,8 @@ async def _start_supplier_intel():
 
 @app.on_event("startup")
 async def _start_agent_subscriptions():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.services.agent_subscriptions import start_processor
@@ -655,6 +671,8 @@ async def _start_agent_subscriptions():
 
 @app.on_event("startup")
 async def _start_maintenance_monitor():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.services.maintenance_service import MaintenanceMonitor
@@ -667,6 +685,8 @@ async def _start_maintenance_monitor():
 
 @app.on_event("startup")
 async def _start_digital_twin_engine():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.services.digital_twin_service import DigitalTwinEngine
@@ -679,6 +699,8 @@ async def _start_digital_twin_engine():
 
 @app.on_event("startup")
 async def _start_capability_discovery_engine():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import asyncio
         from src.services.capability_engine import CapabilityDiscoveryEngine
@@ -692,6 +714,8 @@ async def _start_capability_discovery_engine():
 @app.on_event("startup")
 async def _start_crm_and_metrics_agents():
     """Start lightweight CRM and Metrics agents in background threads if available."""
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         import threading
         from src.agents.crm_agents import CRMEventAgent
@@ -783,6 +807,8 @@ async def _seed_superadmin():
 @app.on_event("startup")
 async def _start_workflow_automation():
     """Start the workflow automation scheduler for low-stock, expiry, and credit risk checks."""
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     try:
         from src.workflow.automation import start_workflow_automation
         await start_workflow_automation()
@@ -792,6 +818,7 @@ async def _start_workflow_automation():
 
 
 app.add_middleware(RequestTimingMiddleware)
+app.add_middleware(DataVersionMiddleware)  # any save makes cached reports stale (src/utils/shared_response.py)
 # Licence lock sits inside CORS so its 403s still carry CORS headers (src/licensing).
 app.add_middleware(LicenseGuardMiddleware)
 allow_credentials = CORS_ALLOW_ORIGINS != ["*"]
@@ -3672,6 +3699,8 @@ def _replay_or_busy_response(existing_job: dict, imported_default: str):
 
 @app.on_event("startup")
 async def _start_background_monitors():
+    if not is_leader():  # one worker runs background jobs (src/services/leader.py)
+        return
     enabled = os.getenv("ENABLE_EXPIRY_MONITOR", "0") in ("1", "true", "True")
     if not enabled:
         logging.info("Expiry monitor disabled (set ENABLE_EXPIRY_MONITOR=1 to enable).")
@@ -4057,7 +4086,7 @@ class DemandForecastPredictRequest(BaseModel):
 
 
 @app.get("/ai/tools", response_model=ToolCatalogResponse)
-async def ai_tools_catalog(request: Request, mode: str | None = None):
+def ai_tools_catalog(request: Request, mode: str | None = None):
     rate_limit(request)
     payload: dict[str, Any] = {}
     auth_header = request.headers.get("Authorization", "").strip()
@@ -4108,15 +4137,15 @@ def health_check():
             if batch_id:
                 import_row = (
                     _db.table("placeware_import_jobs")
-                    .select("completed_at")
+                    .select("finished_at")
                     .eq("batch_id", batch_id)
-                    .order("completed_at", desc=True)
+                    .order("finished_at", desc=True)
                     .limit(1)
                     .execute()
                     .data
                 )
                 if import_row:
-                    last_sage_import = import_row[0].get("completed_at")
+                    last_sage_import = import_row[0].get("finished_at")
         except Exception:
             pass
 
@@ -4741,7 +4770,7 @@ async def chat(request: Request):  # RAG + LLM answer with disclaimer
 
 
 @app.get("/chat/history")
-async def chat_history(request: Request, limit: int = 30):
+def chat_history(request: Request, limit: int = 30):
     rate_limit(request)
     payload = verify_jwt(request)
     user_id = payload.get("sub") or payload.get("id")
@@ -4752,7 +4781,7 @@ async def chat_history(request: Request, limit: int = 30):
     return {"history": rows, "count": len(rows)}
 
 @app.post("/submit_lead")
-async def submit_lead(lead: Lead):
+def submit_lead(lead: Lead):
     # Public form; consider separate rate limit bucket
     lead_id = store_lead(lead.model_dump(exclude_none=True))
     return {"success": True, "lead_id": lead_id}
@@ -4761,7 +4790,7 @@ async def submit_lead(lead: Lead):
 # ---- New Endpoint Scaffolds -------------------------------------------------
 
 @app.get("/stock")
-async def stock_list(request: Request):
+def stock_list(request: Request):
     rate_limit(request)
     """Return latest inventory snapshot (read-only) via GET."""
     try:
@@ -4773,7 +4802,7 @@ async def stock_list(request: Request):
 
 
 @app.post("/stock")
-async def stock(request: Request, query: StockQuery):
+def stock(request: Request, query: StockQuery):
     rate_limit(request)
     """Return latest inventory snapshot or selected SKUs (read-only)."""
     try:
@@ -4788,7 +4817,7 @@ async def stock(request: Request, query: StockQuery):
 
 
 @app.get("/inventory/expiring")
-async def inventory_expiring(request: Request, thresholds: Optional[str] = None):
+def inventory_expiring(request: Request, thresholds: Optional[str] = None):
     """Return expiring inventory tiers from the latest snapshot batch.
 
     thresholds: comma-separated days (e.g., "90,60,30"). Default [90,60,30].
@@ -4807,7 +4836,7 @@ async def inventory_expiring(request: Request, thresholds: Optional[str] = None)
 
 
 @app.get("/debug/sage-counts")
-async def debug_sage_counts(request: Request):
+def debug_sage_counts(request: Request):
     """Admin-only: return row counts and latest import timestamps for all snapshot tables."""
     require_roles(request, ["admin"])
     tables = [
@@ -4829,7 +4858,7 @@ async def debug_sage_counts(request: Request):
 
 
 @app.post("/cache/clear")
-async def admin_clear_cache(request: Request):
+def admin_clear_cache(request: Request):
     """Admin-only: flush all in-process TTL cache entries."""
     require_roles(request, ["admin"])
     from src.cache import clear_cache
@@ -4838,7 +4867,7 @@ async def admin_clear_cache(request: Request):
 
 
 @app.get("/analytics/ar_trends")
-async def analytics_ar_trends(request: Request, periods: int = 3):
+def analytics_ar_trends(request: Request, periods: int = 3):
     require_roles(request, ["admin", "finance", "management", "ops"])
     if periods < 1:
         periods = 1
@@ -4857,7 +4886,7 @@ async def analytics_ar_trends(request: Request, periods: int = 3):
 
 
 @app.get("/analytics/kpis")
-async def analytics_kpis(request: Request):
+def analytics_kpis(request: Request):
     require_role(request, "admin")
     try:
         base = kpis()
@@ -4877,7 +4906,7 @@ async def analytics_kpis(request: Request):
 
 
 @app.get("/reports/ar_aging")
-async def reports_ar_aging(request: Request, format: str | None = None):
+def reports_ar_aging(request: Request, format: str | None = None):
     require_role(request, "admin")
     try:
         data = ar_aging_buckets()
@@ -4896,7 +4925,7 @@ async def reports_ar_aging(request: Request, format: str | None = None):
 
 
 @app.get("/reports/ar_aging/customers")
-async def reports_ar_aging_customers(request: Request, bucket: str):
+def reports_ar_aging_customers(request: Request, bucket: str):
     """Detailed AR aging by customer for a given bucket.
 
     Roles: admin only.
@@ -4911,7 +4940,7 @@ async def reports_ar_aging_customers(request: Request, bucket: str):
 
 
 @app.get("/analytics/forecast/ar_balance")
-async def analytics_forecast_ar_balance(request: Request, window: int = 3, horizon: int = 3):
+def analytics_forecast_ar_balance(request: Request, window: int = 3, horizon: int = 3):
     require_role(request, "admin")
     if window < 1:
         window = 1
@@ -4927,7 +4956,7 @@ async def analytics_forecast_ar_balance(request: Request, window: int = 3, horiz
 # ---- Workflow Orchestration -------------------------------------------------
 
 @app.post("/workflow/intent")
-async def workflow_intent(request: Request, intent: IntentRequest):
+def workflow_intent(request: Request, intent: IntentRequest):
     require_role(request, "admin")
     import uuid, datetime
     intent_id = str(uuid.uuid4())
@@ -4957,7 +4986,7 @@ async def workflow_intent(request: Request, intent: IntentRequest):
 
 
 @app.post("/workflow/approve")
-async def workflow_approve(request: Request, approval: ApprovalRequest):
+def workflow_approve(request: Request, approval: ApprovalRequest):
     require_role(request, "admin")
     import datetime
     audit_event(
@@ -4985,14 +5014,14 @@ async def workflow_approve(request: Request, approval: ApprovalRequest):
 
 
 @app.get("/workflow/pending")
-async def workflow_pending(request: Request, limit: int = 50):
+def workflow_pending(request: Request, limit: int = 50):
     require_role(request, "admin")
     rows = list_pending_intents(limit=limit)
     return {"data": rows}
 
 
 @app.post("/controls/projects")
-async def controls_create_project(request: Request, payload: ProjectCreate):
+def controls_create_project(request: Request, payload: ProjectCreate):
     require_roles(request, ["admin", "ops", "management"])
     if payload.status not in PROJECT_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid project status")
@@ -5027,7 +5056,7 @@ async def controls_create_project(request: Request, payload: ProjectCreate):
 
 
 @app.get("/controls/projects")
-async def controls_list_projects(request: Request, limit: int = 50, status: str | None = None):
+def controls_list_projects(request: Request, limit: int = 50, status: str | None = None):
     require_roles(request, ["admin", "ops", "operations", "procurement", "management"])
     rows = list_projects(limit=max(1, min(limit, 200)), status=status)
     # Show people, not user ids: owner (who created it / is in charge), staff in charge, QC reviewer.
@@ -5040,7 +5069,7 @@ async def controls_list_projects(request: Request, limit: int = 50, status: str 
 
 
 @app.get("/controls/projects/{project_id}/history")
-async def controls_project_history(request: Request, project_id: str):
+def controls_project_history(request: Request, project_id: str):
     """Who created the project and moved it through each stage, from the audit log."""
     require_roles(request, ["admin", "ops", "management"])
     from src.fin.db import q, tx
@@ -5056,7 +5085,7 @@ async def controls_project_history(request: Request, project_id: str):
 
 
 @app.get("/controls/readiness")
-async def controls_readiness(request: Request):
+def controls_readiness(request: Request):
     require_roles(request, ["admin", "ops", "management"])
     checks: dict[str, bool] = {
         "table_placeware_projects": False,
@@ -5109,7 +5138,7 @@ async def controls_readiness(request: Request):
 
 
 @app.post("/controls/projects/{project_id}/stage")
-async def controls_update_project_stage(request: Request, project_id: str, payload: ProjectStageUpdateRequest):
+def controls_update_project_stage(request: Request, project_id: str, payload: ProjectStageUpdateRequest):
     require_roles(request, ["admin", "ops", "management"])
 
     current = get_project(project_id)
@@ -5201,7 +5230,7 @@ async def controls_update_project_stage(request: Request, project_id: str, paylo
 
 
 @app.post("/controls/scope")
-async def controls_create_scope_item(request: Request, payload: ScopeItemCreate):
+def controls_create_scope_item(request: Request, payload: ScopeItemCreate):
     require_role(request, "admin")
     if payload.status not in SCOPE_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid scope status")
@@ -5229,13 +5258,13 @@ async def controls_create_scope_item(request: Request, payload: ScopeItemCreate)
 
 
 @app.get("/controls/scope")
-async def controls_list_scope_items(request: Request, project_id: str, limit: int = 100):
+def controls_list_scope_items(request: Request, project_id: str, limit: int = 100):
     require_role(request, "admin")
     return {"data": list_scope_items(project_id=project_id, limit=max(1, min(limit, 500)))}
 
 
 @app.post("/controls/scope/{scope_item_id}/status")
-async def controls_update_scope_status(request: Request, scope_item_id: str, payload: StatusUpdateRequest):
+def controls_update_scope_status(request: Request, scope_item_id: str, payload: StatusUpdateRequest):
     require_role(request, "admin")
     if payload.status not in SCOPE_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid scope status")
@@ -5278,7 +5307,7 @@ async def controls_update_scope_status(request: Request, scope_item_id: str, pay
 
 
 @app.post("/controls/cost")
-async def controls_create_cost_item(request: Request, payload: CostItemCreate):
+def controls_create_cost_item(request: Request, payload: CostItemCreate):
     require_role(request, "admin")
     if payload.amount < 0:
         raise HTTPException(status_code=400, detail="amount must be non-negative")
@@ -5309,13 +5338,13 @@ async def controls_create_cost_item(request: Request, payload: CostItemCreate):
 
 
 @app.get("/controls/cost")
-async def controls_list_cost_items(request: Request, project_id: str, limit: int = 100):
+def controls_list_cost_items(request: Request, project_id: str, limit: int = 100):
     require_role(request, "admin")
     return {"data": list_cost_items(project_id=project_id, limit=max(1, min(limit, 500)))}
 
 
 @app.post("/controls/cost/{cost_item_id}/status")
-async def controls_update_cost_status(request: Request, cost_item_id: str, payload: StatusUpdateRequest):
+def controls_update_cost_status(request: Request, cost_item_id: str, payload: StatusUpdateRequest):
     require_role(request, "admin")
     if payload.status not in COST_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid cost status")
@@ -5358,7 +5387,7 @@ async def controls_update_cost_status(request: Request, cost_item_id: str, paylo
 
 
 @app.post("/controls/risk")
-async def controls_create_risk_item(request: Request, payload: RiskItemCreate):
+def controls_create_risk_item(request: Request, payload: RiskItemCreate):
     require_role(request, "admin")
     if payload.probability < 1 or payload.probability > 5 or payload.impact < 1 or payload.impact > 5:
         raise HTTPException(status_code=400, detail="probability and impact must be between 1 and 5")
@@ -5398,13 +5427,13 @@ async def controls_create_risk_item(request: Request, payload: RiskItemCreate):
 
 
 @app.get("/controls/risk")
-async def controls_list_risk_items(request: Request, project_id: str, limit: int = 100):
+def controls_list_risk_items(request: Request, project_id: str, limit: int = 100):
     require_role(request, "admin")
     return {"data": list_risk_items(project_id=project_id, limit=max(1, min(limit, 500)))}
 
 
 @app.post("/controls/risk/{risk_id}/status")
-async def controls_update_risk_status(request: Request, risk_id: str, payload: StatusUpdateRequest):
+def controls_update_risk_status(request: Request, risk_id: str, payload: StatusUpdateRequest):
     require_role(request, "admin")
     if payload.status not in RISK_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid risk status")
@@ -5473,7 +5502,7 @@ async def controls_update_risk_status(request: Request, risk_id: str, payload: S
 
 
 @app.post("/controls/change")
-async def controls_create_change_request(request: Request, payload: ChangeRequestCreate):
+def controls_create_change_request(request: Request, payload: ChangeRequestCreate):
     require_role(request, "admin")
     if payload.impact_cost is not None and payload.impact_cost < 0:
         raise HTTPException(status_code=400, detail="impact_cost must be non-negative")
@@ -5505,20 +5534,20 @@ async def controls_create_change_request(request: Request, payload: ChangeReques
 
 
 @app.get("/controls/change")
-async def controls_list_change_requests(request: Request, project_id: str, limit: int = 100):
+def controls_list_change_requests(request: Request, project_id: str, limit: int = 100):
     require_role(request, "admin")
     return {"data": list_change_requests(project_id=project_id, limit=max(1, min(limit, 500)))}
 
 
 @app.get("/controls/rollup")
-async def controls_rollup(request: Request, project_id: str | None = None):
+def controls_rollup(request: Request, project_id: str | None = None):
     require_role(request, "admin")
     data = get_controls_rollup(project_id=project_id)
     return {"data": data}
 
 
 @app.get("/controls/audit/export")
-async def controls_audit_export(
+def controls_audit_export(
     request: Request,
     format: str = "json",
     start_at: str | None = None,
@@ -5635,7 +5664,7 @@ async def controls_audit_export(
 
 
 @app.post("/controls/change/{change_id}/decision")
-async def controls_decide_change_request(request: Request, change_id: str, payload: ChangeDecisionRequest):
+def controls_decide_change_request(request: Request, change_id: str, payload: ChangeDecisionRequest):
     require_role(request, "admin")
     if payload.status not in CHANGE_STATUS_ALLOWED:
         raise HTTPException(status_code=400, detail="Invalid status")
@@ -5704,7 +5733,7 @@ async def controls_decide_change_request(request: Request, change_id: str, paylo
 
 
 @app.get("/audit/logs")
-async def audit_logs_endpoint(request: Request, limit: int = 50):
+def audit_logs_endpoint(request: Request, limit: int = 50):
     """Expose recent audit logs for workflow/intelligence views."""
     require_role(request, "admin")
     logs = get_audit_logs(limit=limit)
@@ -5714,8 +5743,8 @@ async def audit_logs_endpoint(request: Request, limit: int = 50):
 # ---- Dev Token Issuance (for local/testing only) ----------------------------
 
 @app.post("/auth/dev_token")
-async def auth_dev_token(request: Request, roles: list[str] = ["admin"]):
-    rate_limit(request, key=f"dev_token:{request.client.host if request.client else 'unknown'}", limit=3)
+def auth_dev_token(request: Request, roles: list[str] = ["admin"]):
+    rate_limit(request, key=f"dev_token:{client_ip(request)}", limit=3)
     if not DEV_TOKEN_ENABLED:
         raise HTTPException(status_code=403, detail="Dev token issuance disabled")
     # This issues a JWT for local testing of admin endpoints
@@ -5741,7 +5770,7 @@ async def auth_dev_token(request: Request, roles: list[str] = ["admin"]):
 # ---- Auth (Password Flow + Refresh Rotation) -------------------------------
 
 @app.post("/token", response_model=TokenResponse)
-async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     username = normalize_email(form_data.username)
     rate_limit(request, key=f"auth:{username}")
     user = get_user_by_email(username)
@@ -5786,8 +5815,8 @@ async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 
 
 @app.post("/refresh", response_model=TokenResponse)
-async def refresh_token(request: Request, payload: RefreshRequest):
-    source_ip = request.client.host if request.client else "unknown"
+def refresh_token(request: Request, payload: RefreshRequest):
+    source_ip = client_ip(request)
     rate_limit(request, key=f"auth:refresh:{source_ip}")
     if not payload.refresh_token:
         raise HTTPException(status_code=400, detail="Missing refresh token")
@@ -5860,8 +5889,8 @@ async def refresh_token(request: Request, payload: RefreshRequest):
 
 
 @app.post("/logout")
-async def logout(request: Request, payload: LogoutRequest):
-    source_ip = request.client.host if request.client else "unknown"
+def logout(request: Request, payload: LogoutRequest):
+    source_ip = client_ip(request)
     rate_limit(request, key=f"auth:logout:{source_ip}")
     if payload.refresh_token:
         token_hash = hash_refresh_token(payload.refresh_token)
@@ -5876,7 +5905,7 @@ async def logout(request: Request, payload: LogoutRequest):
 
 
 @app.post("/submit_order")
-async def submit_order(order: SubmitOrder):
+def submit_order(order: SubmitOrder):
     """Validate, persist, and accept an order."""
     source = str(order.source or "direct").strip().lower()
     normalized_source = source.replace("-", "_")
@@ -5914,7 +5943,7 @@ async def submit_order(order: SubmitOrder):
 
 
 @app.get("/track/{tracking_id}", response_model=TrackingResponse)
-async def track_order(tracking_id: str):
+def track_order(tracking_id: str):
     """Return persisted tracking information for an order."""
     row = get_tracking(tracking_id)
     if not row:
@@ -5958,14 +5987,14 @@ class UserStatusUpdate(BaseModel):
 
 
 @app.get("/users")
-async def list_all_users(request: Request, limit: int = 50):
+def list_all_users(request: Request, limit: int = 50):
     """List users for admin management."""
     require_role(request, "admin")
     return {"users": list_users(limit=limit)}
 
 
 @app.get("/users/directory")
-async def get_user_directory(request: Request):
+def get_user_directory(request: Request):
     """
     Return a lightweight user list for task/project assignment dropdowns.
     Accessible by admin, management, manager, hr, and finance roles.
@@ -5990,7 +6019,7 @@ async def get_user_directory(request: Request):
 
 
 @app.post("/users")
-async def create_new_user(request: Request, payload: UserCreate):
+def create_new_user(request: Request, payload: UserCreate):
     """Create a new staff user."""
     require_role(request, "admin")
     email = normalize_email(payload.email)
@@ -6054,7 +6083,7 @@ async def create_new_user(request: Request, payload: UserCreate):
 
 
 @app.get("/users/roles")
-async def list_access_roles(request: Request):
+def list_access_roles(request: Request):
     """The roles User Access can assign, what each is for, and the HR department it starts in."""
     require_role(request, "admin")
     from src.services.staff_workspace import DEPARTMENTS
@@ -6067,7 +6096,7 @@ class UserRolesUpdate(BaseModel):
 
 
 @app.put("/users/{user_id}/roles")
-async def update_user_roles(request: Request, user_id: str, payload: UserRolesUpdate):
+def update_user_roles(request: Request, user_id: str, payload: UserRolesUpdate):
     """Change what someone can open. Takes effect when their session next refreshes (or next sign-in)."""
     require_role(request, "admin")
     roles = normalize_roles(payload.roles)
@@ -6093,7 +6122,7 @@ async def update_user_roles(request: Request, user_id: str, payload: UserRolesUp
 
 
 @app.put("/users/{user_id}/password")
-async def reset_user_password(request: Request, user_id: str, payload: UserPasswordUpdate):
+def reset_user_password(request: Request, user_id: str, payload: UserPasswordUpdate):
     """Reset a user's password."""
     require_role(request, "admin")
     validate_password_strength(payload.password)
@@ -6122,7 +6151,7 @@ async def reset_user_password(request: Request, user_id: str, payload: UserPassw
 
 
 @app.patch("/users/{user_id}/status")
-async def update_user_status(request: Request, user_id: str, payload: UserStatusUpdate):
+def update_user_status(request: Request, user_id: str, payload: UserStatusUpdate):
     """Activate or deactivate a user."""
     require_role(request, "admin")
     # prevent self-lockout
@@ -6410,7 +6439,7 @@ async def import_inventory(
 
 
 @app.get("/sage/history")
-async def sage_import_history(
+def sage_import_history(
     request: Request,
     limit: int = 50,
 ):
@@ -6467,7 +6496,7 @@ async def sage_import_history(
 
 
 @app.get("/imports/jobs")
-async def import_jobs_history(
+def import_jobs_history(
     request: Request,
     limit: int = 50,
     domain: str | None = None,
@@ -6480,7 +6509,7 @@ async def import_jobs_history(
 
 
 @app.get("/imports/jobs/{job_id}")
-async def import_job_detail(request: Request, job_id: str):
+def import_job_detail(request: Request, job_id: str):
     """Admin view of one import pipeline job record."""
     require_role(request, "admin")
     job = get_import_job(job_id)
@@ -6500,7 +6529,7 @@ async def import_job_detail(request: Request, job_id: str):
 
 
 @app.post("/imports/policy/preview")
-async def import_policy_preview(request: Request, payload: ImportPolicyPreviewRequest):
+def import_policy_preview(request: Request, payload: ImportPolicyPreviewRequest):
     """Admin what-if scoring endpoint for policy calibration before activation."""
     require_role(request, "admin")
     domain = (payload.domain or "").strip().lower()
@@ -6545,7 +6574,7 @@ async def import_policy_preview(request: Request, payload: ImportPolicyPreviewRe
 
 
 @app.post("/imports/policy/activate")
-async def import_policy_activate(request: Request, payload: ImportPolicyActivateRequest):
+def import_policy_activate(request: Request, payload: ImportPolicyActivateRequest):
     """Admin endpoint to promote a controls policy version with signed attestation."""
     require_role(request, "admin")
     domain = (payload.domain or "").strip().lower()
@@ -6614,7 +6643,7 @@ async def import_policy_activate(request: Request, payload: ImportPolicyActivate
 
 
 @app.get("/imports/policy/history")
-async def import_policy_history(request: Request, domain: str, limit: int = 20):
+def import_policy_history(request: Request, domain: str, limit: int = 20):
     """Admin endpoint to review policy version history for a domain."""
     require_role(request, "admin")
     normalized_domain = (domain or "").strip().lower()
@@ -6625,7 +6654,7 @@ async def import_policy_history(request: Request, domain: str, limit: int = 20):
 
 
 @app.post("/imports/policy/rollback")
-async def import_policy_rollback(request: Request, payload: ImportPolicyRollbackRequest):
+def import_policy_rollback(request: Request, payload: ImportPolicyRollbackRequest):
     """Admin endpoint to rollback active controls policy to a previous version with signed approval."""
     require_role(request, "admin")
     domain = (payload.domain or "").strip().lower()
@@ -6701,7 +6730,7 @@ async def import_policy_rollback(request: Request, payload: ImportPolicyRollback
 
 
 @app.get("/ml/features/export")
-async def ml_features_export(
+def ml_features_export(
     request: Request,
     domain: str = "sage",
     format: str = "json",
@@ -6791,7 +6820,7 @@ async def ml_features_export(
 
 
 @app.get("/ml/features/drift/summary")
-async def ml_features_drift_summary(
+def ml_features_drift_summary(
     request: Request,
     domain: str = "sage",
     row_limit: int = 50000,
@@ -6896,7 +6925,7 @@ async def ml_features_drift_summary(
 
 
 @app.get("/ml/features/drift/history")
-async def ml_features_drift_history(
+def ml_features_drift_history(
     request: Request,
     domain: str = "sage",
     limit: int | None = None,
@@ -6968,7 +6997,7 @@ async def ml_features_drift_history(
 
 
 @app.post("/ml/features/drift/acknowledge")
-async def ml_features_drift_acknowledge(request: Request, payload: DriftAcknowledgeRequest):
+def ml_features_drift_acknowledge(request: Request, payload: DriftAcknowledgeRequest):
     """Admin drift triage workflow with owner/status/remediation evidence."""
     require_role(request, "admin")
     domain = (payload.domain or "").strip().lower()
@@ -7058,7 +7087,7 @@ async def ml_features_drift_acknowledge(request: Request, payload: DriftAcknowle
 
 
 @app.get("/ml/features/drift/remediation/export")
-async def ml_features_drift_remediation_export(
+def ml_features_drift_remediation_export(
     request: Request,
     domain: str = "sage",
     format: str = "json",
@@ -7182,7 +7211,7 @@ async def ml_features_drift_remediation_export(
 
 
 @app.get("/ml/features/drift/scorecard")
-async def ml_features_drift_scorecard(
+def ml_features_drift_scorecard(
     request: Request,
     domain: str = "sage",
     limit: int = 50,
@@ -7237,7 +7266,7 @@ async def ml_features_drift_scorecard(
 
 
 @app.get("/ml/features/drift/escalations")
-async def ml_features_drift_escalations(
+def ml_features_drift_escalations(
     request: Request,
     domain: str = "sage",
     limit: int = 50,
@@ -7292,7 +7321,7 @@ async def ml_features_drift_escalations(
 
 
 @app.post("/ml/features/drift/reminders/preview")
-async def ml_features_drift_reminders_preview(request: Request, payload: DriftReminderPreviewRequest):
+def ml_features_drift_reminders_preview(request: Request, payload: DriftReminderPreviewRequest):
     """Admin preview hook for reminder scheduling on unresolved drift issues."""
     require_role(request, "admin")
     normalized_domain = (payload.domain or "").strip().lower()
@@ -7347,7 +7376,7 @@ async def ml_features_drift_reminders_preview(request: Request, payload: DriftRe
 
 
 @app.post("/ml/models/demand-forecast/train")
-async def ml_train_demand_forecast_model(request: Request, payload: DemandForecastTrainRequest):
+def ml_train_demand_forecast_model(request: Request, payload: DemandForecastTrainRequest):
     """Train and register a demand forecast model manifest (registry-lite)."""
     require_role(request, "admin")
     domain = (payload.domain or "").strip().lower()
@@ -7430,7 +7459,7 @@ async def ml_train_demand_forecast_model(request: Request, payload: DemandForeca
 
 
 @app.post("/ml/models/demand-forecast/predict")
-async def ml_predict_demand_forecast(request: Request, payload: DemandForecastPredictRequest):
+def ml_predict_demand_forecast(request: Request, payload: DemandForecastPredictRequest):
     """Run demand forecast inference from latest (or selected) registered model manifest."""
     require_role(request, "admin")
     domain = (payload.domain or "").strip().lower()
@@ -7504,7 +7533,7 @@ async def ml_predict_demand_forecast(request: Request, payload: DemandForecastPr
 
 
 @app.get("/ml/models/demand-forecast/manifests")
-async def ml_list_demand_forecast_manifests(request: Request, domain: str = "ops", limit: int = 20):
+def ml_list_demand_forecast_manifests(request: Request, domain: str = "ops", limit: int = 20):
     """List registered demand forecast model manifests (registry-lite)."""
     require_role(request, "admin")
     normalized_domain = (domain or "").strip().lower()
@@ -7581,7 +7610,7 @@ async def hr_import(
 
 
 @app.get("/hr/analytics/summary")
-async def hr_analytics_summary(request: Request, periods: int = 3):
+def hr_analytics_summary(request: Request, periods: int = 3):
     require_roles(request, ["hr", "admin", "management", "finance"])
     res = payroll_and_absence_summary(periods=periods)
     abs_trend = res.get("absenteeism_trend", [])
@@ -7656,7 +7685,7 @@ async def ops_import(
 
 
 @app.get("/ops/overview")
-async def ops_overview_endpoint(request: Request, months: int = 12):
+def ops_overview_endpoint(request: Request, months: int = 12):
     """Operations overview: Frontdesk order -> dispatch timings, deliveries and ACE Books stock economics."""
     require_roles(request, ["ops", "operations", "admin", "management", "finance", "procurement"])
     from src.services.ops import logistics_overview
@@ -7664,7 +7693,7 @@ async def ops_overview_endpoint(request: Request, months: int = 12):
 
 
 @app.get("/ops/kpis")
-async def ops_kpis_endpoint(request: Request):
+def ops_kpis_endpoint(request: Request):
     require_roles(request, ["ops", "admin", "management", "finance"])
     res = ops_kpis()
     series = stock_turnover_series(periods=6).get("series", [])
@@ -7681,7 +7710,7 @@ async def ops_kpis_endpoint(request: Request):
 
 
 @app.get("/intelligence/executive_summary")
-async def intelligence_executive_summary(request: Request):
+def intelligence_executive_summary(request: Request):
     """Executive business health summary.
 
     Roles: admin only.
@@ -7700,7 +7729,7 @@ async def intelligence_executive_summary(request: Request):
 
 
 @app.get("/intelligence/risk_signals")
-async def intelligence_risk_signals(request: Request):
+def intelligence_risk_signals(request: Request):
     """Unified risk signals across Finance, CRM, Inventory, Ops, and HR.
 
     Roles: admin only.
@@ -7716,7 +7745,7 @@ async def intelligence_risk_signals(request: Request):
 
 
 @app.get("/intelligence/recommendations")
-async def intelligence_recommendations(request: Request):
+def intelligence_recommendations(request: Request):
     """Explainable, rule-based recommendations.
 
     Roles: admin only.
@@ -7730,7 +7759,7 @@ async def intelligence_recommendations(request: Request):
 
 
 @app.get("/intelligence/anomalies")
-async def intelligence_anomalies(request: Request):
+def intelligence_anomalies(request: Request):
     """Optional lightweight anomaly detection (z-score based)."""
     require_roles(request, ["admin", "management", "finance", "ops"])
     try:
@@ -7741,7 +7770,7 @@ async def intelligence_anomalies(request: Request):
 
 
 @app.get("/ops/forecast/stock_turnover")
-async def ops_forecast_stock_turnover(request: Request, window: int = 3, horizon: int = 3):
+def ops_forecast_stock_turnover(request: Request, window: int = 3, horizon: int = 3):
     # Was ["ops","admin"] only -- management already has /executive access
     # today and silently 403'd on this one card; finance gains access as
     # part of this round's /executive widening. Fixed alongside, not caused
@@ -7809,7 +7838,7 @@ async def crm_import(
 
 
 @app.get("/crm/risk_scores")
-async def crm_risk_scores_endpoint(request: Request):
+def crm_risk_scores_endpoint(request: Request):
     require_roles(request, ["sales", "admin"])
     res = crm_risk_scores()
     audit_event("crm_risk_scores", {"user": getattr(request.state, "user", None)})
@@ -7817,7 +7846,7 @@ async def crm_risk_scores_endpoint(request: Request):
 
 
 @app.get("/admin/leads-to-orders")
-async def leads_to_orders(request: Request, days: int = 30):
+def leads_to_orders(request: Request, days: int = 30):
     require_role(request, "admin")
     from src.db_helpers import get_lead_order_conversion
     return {"data": get_lead_order_conversion(days=days)}
@@ -7829,7 +7858,7 @@ if __name__ == "__main__":
 
 
 @app.get("/admin/leads")
-async def admin_leads(request: Request, limit: int = 50, offset: int = 0):
+def admin_leads(request: Request, limit: int = 50, offset: int = 0):
     """Admin endpoint: return recent leads with pagination (admin only)."""
     require_role(request, "admin")
     from src.db import db, audit_event

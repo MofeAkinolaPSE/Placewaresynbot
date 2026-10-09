@@ -112,17 +112,51 @@ def require_any_role(*roles: str):
     return _dep
 
 
-def rate_limit(request: Request, key: str | None = None, limit: int | None = None) -> None:
-    """Simple in-memory per-minute rate limiting keyed by IP or custom key.
+def client_ip(request: Request) -> str:
+    """The laptop's address. Behind nginx request.client is nginx itself (the same for every
+    user), so use the X-Real-IP nginx sets; fall back to the direct peer."""
+    real = request.headers.get("x-real-ip")
+    if real:
+        return real.strip()
+    return request.client.host if request.client else "unknown"
 
-    For MVP only. Replace with Redis or a gateway policy later.
-    """
+
+_rl_redis = None
+_rl_down_until = 0.0
+
+
+def _rate_count(bucket_key: str) -> int | None:
+    """Count this request in Redis so all workers share one limit; None if Redis is unavailable."""
+    global _rl_redis, _rl_down_until
+    if time.time() < _rl_down_until:
+        return None
+    try:
+        if _rl_redis is None:
+            import redis
+            from .constants import REDIS_URL
+            _rl_redis = redis.Redis.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+        pipe = _rl_redis.pipeline()
+        pipe.incr(f"pw:rl:{bucket_key}")
+        pipe.expire(f"pw:rl:{bucket_key}", 120)
+        return int(pipe.execute()[0])
+    except Exception:
+        _rl_down_until = time.time() + 5
+        return None
+
+
+def rate_limit(request: Request, key: str | None = None, limit: int | None = None) -> None:
+    """Per-minute rate limit keyed by the laptop's IP or a custom key, shared by all workers
+    through Redis (in-process if Redis is down)."""
     limit = limit or RATE_LIMIT
     now = int(time.time())
     minute = now // 60
-    ip = request.client.host if request.client else "unknown"
-    k = key or ip
+    k = key or client_ip(request)
     bucket_key = f"{k}:{minute}"
+    shared = _rate_count(bucket_key)
+    if shared is not None:
+        if shared > limit:
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        return
     bucket = _rate_store.setdefault(bucket_key, [])
     bucket.append(now)
     # prune old buckets
@@ -144,3 +178,35 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
             path = request.url.path
             method = request.method
             logging.info(f"{method} {path} handled in {dur_ms:.1f} ms")
+
+
+# Writes that never change what a cached report shows (and some run every few seconds per
+# laptop), so they must not invalidate the shared response cache.
+_NO_DATA_CHANGE = ("/presence/", "/refresh", "/token", "/logout", "/auth/", "/realtime/", "/workspace/inbox/read")
+
+
+class DataVersionMiddleware:
+    """After every successful write request, advance the data version so cached reads
+    (src/utils/shared_response.py) are rebuilt. Pure ASGI: it only watches the status code."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in ("GET", "HEAD", "OPTIONS") \
+                or scope["path"].startswith(_NO_DATA_CHANGE):
+            return await self.app(scope, receive, send)
+        status = {"code": 500}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            if status["code"] < 400:
+                from anyio import to_thread
+                from src.utils.shared_response import bump_data_version
+                await to_thread.run_sync(bump_data_version)

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useDrill } from "@/components/books/drill-context";
+import { historyTarget, useDrill } from "@/components/books/drill-context";
 import { DrillLink } from "@/components/books/kit";
+import { RecallBody } from "@/components/books/recall-panel";
+import { SageTag } from "@/components/books/kit";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +19,7 @@ import {
   StatusBadge, useBooks, useLines,
 } from "@/components/books/kit";
 import { books, Dict, fmtDate, monthStart, naira, num, today } from "@/lib/books-api";
+import { askConfirm, askText } from "@/lib/ask";
 
 const REASONS = ["DAMAGE", "EXPIRY", "SHORTAGE", "EXCESS", "COUNT_CORRECTION", "DATA_CORRECTION", "OTHER"];
 
@@ -231,6 +234,7 @@ function ItemMovements({ sku, onClose }: { sku: string | null; onClose: () => vo
 // ---------------------------------------------------------------------------
 
 function AdjustmentList({ onOpen }: { onOpen: (id: string) => void }) {
+  const drill = useDrill();
   const { data, isLoading, error } = useBooks<Dict[]>(["adjustments"], "/inventory/adjustments", { limit: 200 });
   return (
     <Section title="Stock adjustments">
@@ -239,9 +243,10 @@ function AdjustmentList({ onOpen }: { onOpen: (id: string) => void }) {
         <Table>
           <TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Date</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Lines</TableHead><TableHead className="text-right">Value</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.map((a) => (
-            <TableRow key={a.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(a.id)}>
-              <TableCell className="font-mono text-xs">{a.adjustment_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(a.adjustment_date)}</TableCell>
-              <TableCell className="text-xs">{a.reason_code.replace(/_/g, " ").toLowerCase()}</TableCell><TableCell className="text-right">{a.lines}</TableCell>
+            <TableRow key={a.id ?? `s:${a.adjustment_date}:${a.reference}`} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => (a.id ? onOpen(a.id) : drill?.open(historyTarget("adjustment", a)))}>
+              <TableCell className="font-mono text-xs">{a.adjustment_number}{a.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(a.adjustment_date)}</TableCell>
+              <TableCell className="text-xs">{a.source === "SAGE" ? (a.notes || "inventory adjustment (Sage)") : a.reason_code.replace(/_/g, " ").toLowerCase()}</TableCell><TableCell className="text-right">{a.lines}</TableCell>
               <TableCell className="text-right"><Amount value={a.total_value} blankZero /></TableCell><TableCell><StatusBadge status={a.status} /></TableCell>
             </TableRow>
           ))}</TableBody>
@@ -336,23 +341,95 @@ function AdjustmentDetail({ id, onClose }: { id: string | null; onClose: () => v
 // Stock counts
 // ---------------------------------------------------------------------------
 
+/** The book stock a count covers (every item and batch, value, expiry, status, last counted),
+ *  the lots the books show as short, and the counts taken so far. Pick lines and count them. */
 function CountList({ onOpen }: { onOpen: (id: string) => void }) {
-  const { data, isLoading, error } = useBooks<Dict[]>(["counts"], "/inventory/counts");
+  const qc = useQueryClient();
+  const { data: ov, isLoading, error } = useBooks<Dict>(["count-overview"], "/inventory/counts/overview");
+  const { data: counts } = useBooks<Dict[]>(["counts"], "/inventory/counts");
+  const [view, setView] = useState("all");
+  const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const lines: Dict[] = (ov?.lines ?? []).filter((l: Dict) =>
+    (view === "all" || (view === "attention" && (l.expired || l.batch_status !== "AVAILABLE" || Number(l.book_qty) < 0)) || (view === "never" && !l.last_counted))
+    && (!search || `${l.sku} ${l.product_name ?? ""} ${l.batch_number ?? ""} ${l.pack_batch_number ?? ""}`.toLowerCase().includes(search.toLowerCase())));
+  const toggle = (sku: string) => setPicked((s) => { const n = new Set(s); n.has(sku) ? n.delete(sku) : n.add(sku); return n; });
+  const start = async (skus?: string[]) => {
+    setBusy(true);
+    const c = await act(() => books.post("/inventory/counts", { count_date: today(), skus }), "Count sheet created");
+    setBusy(false);
+    if (c) { setPicked(new Set()); qc.invalidateQueries({ queryKey: ["books"] }); onOpen(c.id); }
+  };
+  const sm = ov?.summary ?? {};
   return (
-    <Section title="Stock counts">
-      {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.length === 0 ? <Empty>No stock counts yet. A count corrects negative or drifting stock and posts the difference.</Empty> : (
-        <Table>
-          <TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Lines</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{data.map((c) => (
-            <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(c.id)}>
-              <TableCell className="font-mono text-xs">{c.count_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(c.count_date)}</TableCell>
-              <TableCell className="text-right">{c.lines}</TableCell><TableCell><StatusBadge status={c.status} /></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table>
-      ))}
-    </Section>
+    <div className="space-y-4">
+      <Section title="What a count covers (book stock now)"
+               actions={<div className="flex flex-wrap gap-2">
+                 <Button size="sm" variant="outline" disabled={busy || !picked.size} onClick={() => start([...picked])}>Count selected ({picked.size} item{picked.size === 1 ? "" : "s"})</Button>
+                 <Button size="sm" disabled={busy || !ov?.lines?.length} onClick={() => start()}>Count everything</Button>
+                 <CsvButton filename={`stock-to-count-${today()}.csv`} rows={lines} />
+               </div>}>
+        {isLoading && <Loading />}<ErrorNote error={error} />
+        {ov && (
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
+              {[["Items in stock", num(sm.items)], ["Item / batch lines", num(sm.lines)], ["Book value", naira(sm.book_value ?? 0)],
+                ["Never counted", num(sm.never_counted)], ["Expired or blocked lines", num(Number(sm.expired_lines || 0) + Number(sm.blocked_lines || 0))],
+                ["Short lots (Sage)", num(sm.short_lots)]].map(([k, v]) => (
+                <div key={k as string} className="rounded-lg border px-3 py-2"><div className="text-[11px] uppercase text-muted-foreground">{k}</div><div className="text-base font-semibold">{v}</div></div>))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {[["all", "All stock"], ["attention", "Expired / blocked / negative"], ["never", "Never counted"]].map(([v, l]) => (
+                <Button key={v} size="sm" variant={view === v ? "default" : "outline"} className="h-8" onClick={() => setView(v)}>{l}</Button>))}
+              <Input className="h-8 w-64" placeholder="Search item or batch" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            {lines.length === 0 ? <Empty>Nothing to show for this filter.</Empty> : (
+              <Table>
+                <TableHeader><TableRow><TableHead className="w-8" /><TableHead>Item</TableHead><TableHead>Batch</TableHead><TableHead>Expiry</TableHead><TableHead>Status</TableHead>
+                  <TableHead className="text-right">Book qty</TableHead><TableHead className="text-right">Value</TableHead><TableHead>Last counted</TableHead></TableRow></TableHeader>
+                <TableBody>{lines.map((l: Dict) => (
+                  <TableRow key={`${l.sku}|${l.batch_id ?? ""}`}>
+                    <TableCell><input type="checkbox" checked={picked.has(l.sku)} onChange={() => toggle(l.sku)} title="Count this item" /></TableCell>
+                    <TableCell className="max-w-[260px]"><DrillLink to={{ type: "product", id: l.sku, label: l.sku }}>{l.product_name ?? l.sku}</DrillLink><div className="font-mono text-[11px] text-muted-foreground">{l.sku}</div></TableCell>
+                    <TableCell className="font-mono text-xs">{l.batch_id ? <DrillLink to={{ type: "batch", id: String(l.batch_id), label: l.batch_number }}>{l.pack_batch_number || l.batch_number}</DrillLink> : "—"}</TableCell>
+                    <TableCell className={`whitespace-nowrap text-xs ${l.expired ? "text-red-600" : ""}`}>{fmtDate(l.expiry_date)}{l.expired ? " · expired" : ""}</TableCell>
+                    <TableCell><StatusBadge status={l.batch_status} /></TableCell>
+                    <TableCell className={`text-right ${Number(l.book_qty) < 0 ? "text-red-600" : ""}`}>{num(l.book_qty)}</TableCell>
+                    <TableCell className="text-right"><Amount value={l.book_value} /></TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{l.last_counted ? fmtDate(l.last_counted) : <span className="text-amber-600">never</span>}</TableCell>
+                  </TableRow>
+                ))}</TableBody>
+              </Table>
+            )}
+            {(ov.short_lots ?? []).length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:bg-amber-500/10">
+                <div className="mb-1 font-semibold">Short lots: sold below zero in Sage, not in stock here. A count of the item corrects them.</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">{ov.short_lots.map((x: Dict) => (
+                  <DrillLink key={x.id} to={{ type: "dataissue", id: x.id, label: x.sku }}>{x.sku} ({num(x.quantity)})</DrillLink>))}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </Section>
+      <Section title="Counts taken">
+        {!counts ? <Loading /> : counts.length === 0 ? <Empty>No stock counts yet. Pick items above (or count everything): the sheet lists each batch with its book quantity, someone enters what is on the shelf, and a second person posts the differences.</Empty> : (
+          <Table>
+            <TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Lines</TableHead><TableHead className="text-right">Counted</TableHead>
+              <TableHead className="text-right">Lines with a difference</TableHead><TableHead className="text-right">Net difference</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+            <TableBody>{counts.map((c) => (
+              <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(c.id)}>
+                <TableCell className="font-mono text-xs">{c.count_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(c.count_date)}</TableCell>
+                <TableCell className="text-right">{num(c.lines)}</TableCell><TableCell className="text-right">{num(c.counted)}</TableCell>
+                <TableCell className="text-right">{num(c.variance_lines)}</TableCell>
+                <TableCell className={`text-right ${Number(c.variance_qty) < 0 ? "text-red-600" : Number(c.variance_qty) > 0 ? "text-emerald-600" : ""}`}>{num(c.variance_qty)}</TableCell>
+                <TableCell><StatusBadge status={c.status} /></TableCell>
+              </TableRow>
+            ))}</TableBody>
+          </Table>
+        )}
+      </Section>
+    </div>
   );
 }
 
@@ -504,7 +581,7 @@ function LoanDetail({ id, onClose }: { id: string | null; onClose: () => void })
     }
   };
   const writeOff = async () => {
-    const reason = window.prompt("Why is the outstanding stock being written off?");
+    const reason = await askText("Why is the outstanding stock being written off?");
     if (reason && (await act(() => books.post(`/inventory/loans/${id}/write-off`, { reason, on: today() }), "Written off"))) done();
   };
   const outstanding = l && ["OPEN", "PARTIALLY_RETURNED"].includes(l.status);
@@ -549,7 +626,7 @@ function BatchTrace({ id, onClose, onRecall }: { id: string | null; onClose: () 
   const { data, isLoading, error, refetch } = useBooks<Dict>(["trace", id], `/inventory/batches/${id}/trace`, undefined, !!id);
   const b = data?.batch;
   const setStatus = async (status: string) => {
-    const reason = window.prompt(`Reason for marking this batch ${status.toLowerCase()}?`);
+    const reason = await askText(`Reason for marking this batch ${status.toLowerCase()}?`);
     if (reason && (await act(() => books.post(`/inventory/batches/${id}/status`, { status, reason }), "Batch updated"))) { refetch(); qc.invalidateQueries({ queryKey: ["books"] }); }
   };
   return (
@@ -593,12 +670,12 @@ function RecallList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew: ()
       {isLoading && <Loading />}<ErrorNote error={error} />
       {data && (data.length === 0 ? <Empty>No recalls.</Empty> : (
         <Table>
-          <TableHeader><TableRow><TableHead>Recall</TableHead><TableHead>Opened</TableHead><TableHead>Item / batch</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Customers</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Recall</TableHead><TableHead>Opened</TableHead><TableHead>Item / batch</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Invoices</TableHead><TableHead className="text-right">Returned</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>{data.map((r) => (
             <TableRow key={r.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(r.id)}>
               <TableCell className="font-mono text-xs">{r.recall_number}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(r.opened_at)}</TableCell>
               <TableCell className="font-mono text-xs">{r.sku} · {r.batch_number}</TableCell><TableCell className="max-w-[220px] truncate text-xs">{r.reason}</TableCell>
-              <TableCell className="text-right">{r.customers}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell>
+              <TableCell className="text-right">{r.customers}</TableCell><TableCell className="text-right">{num(r.units_returned)} / {num(r.units_out)}</TableCell><TableCell><StatusBadge status={r.status} /></TableCell>
             </TableRow>
           ))}</TableBody>
         </Table>
@@ -621,7 +698,7 @@ function RecallForm({ open, onClose }: { open: boolean; onClose: (id?: string) =
   };
   return (
     <DetailSheet open={open} onOpenChange={(o) => !o && onClose()} title="Open a recall"
-                 description="Freezes the batch (it can no longer be sold) and lists every customer who received it."
+                 description="Freezes the batch (it can no longer be sold), lists every invoice that took it out and opens the case in Quality Control."
                  footer={<Button variant="destructive" disabled={busy || !batch || !reason.trim()} onClick={submit}>{busy ? "Opening…" : "Open recall"}</Button>}>
       <div className="space-y-3">
         <BatchPick value={batch} onChange={setBatch} />
@@ -631,40 +708,12 @@ function RecallForm({ open, onClose }: { open: boolean; onClose: (id?: string) =
   );
 }
 
+/** The same recall panel Quality Control shows (components/books/recall-panel). */
 function RecallDetail({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { data: r, isLoading, error, refetch } = useBooks<Dict>(["recall", id], `/inventory/recalls/${id}`, undefined, !!id);
-  const update = async (item: Dict, patch: Dict) => { if (await act(() => books.patch(`/inventory/recalls/${id}/items/${item.id}`, patch))) refetch(); };
-  const close = async () => {
-    const notes = window.prompt("Closing notes (optional)") ?? undefined;
-    if (await act(() => books.post(`/inventory/recalls/${id}/close`, { notes }), "Recall closed")) refetch();
-  };
-  const isOpen = r?.status === "OPEN";
   return (
-    <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={r ? `Recall ${r.recall_number}` : ""} description={r ? `${r.sku} ${r.product_name ?? ""} · batch ${r.batch_number}` : ""}
-                 footer={isOpen ? <Button variant="outline" onClick={close}>Close recall</Button> : undefined}>
-      {isLoading && <Loading />}<ErrorNote error={error} />
-      {r && (
-        <div className="space-y-3 text-sm">
-          <div className="flex items-center gap-2"><StatusBadge status={r.status} /><span className="text-muted-foreground">{r.reason} · still in stock {num(r.on_hand?.quantity)}</span></div>
-          <CsvButton filename={`recall-${r.recall_number}.csv`} rows={r.items} />
-          {r.items.length === 0 ? <Empty>No customer received this batch.</Empty> : (
-            <Table>
-              <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Supplied</TableHead><TableHead className="w-20">Returned</TableHead><TableHead>Contact</TableHead></TableRow></TableHeader>
-              <TableBody>{r.items.map((i: Dict) => (
-                <TableRow key={i.id}>
-                  <TableCell><div><DrillLink to={{ type: "customer", id: String(i.customer_id ?? ""), label: i.customer_name }}>{i.customer_name}</DrillLink></div><div className="max-w-[180px] truncate font-mono text-[11px] text-muted-foreground">{i.invoice_number}</div></TableCell>
-                  <TableCell className="text-right">{num(i.quantity_sold)}</TableCell>
-                  <TableCell>{isOpen ? <Input className="h-8" type="number" defaultValue={i.quantity_returned} onBlur={(e) => e.target.value !== String(i.quantity_returned) && update(i, { quantity_returned: e.target.value })} /> : num(i.quantity_returned)}</TableCell>
-                  <TableCell>{isOpen ? (
-                    <select className="h-8 rounded-md border bg-background px-1 text-xs" value={i.contact_status} onChange={(e) => update(i, { contact_status: e.target.value })}>
-                      {["PENDING", "CONTACTED", "RETURNED", "NOT_RETURNED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ").toLowerCase()}</option>)}
-                    </select>) : <StatusBadge status={i.contact_status} />}</TableCell>
-                </TableRow>
-              ))}</TableBody>
-            </Table>
-          )}
-        </div>
-      )}
+    <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title="Recall"
+                 description="Invoices affected, customer returns (credit notes), stock back to the supplier (debit notes).">
+      {id && <RecallBody id={id} />}
     </DetailSheet>
   );
 }

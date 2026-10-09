@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { DrillLink } from "@/components/books/kit";
-import { DrillTarget } from "@/components/books/drill-context";
+import { DrillTarget, historyTarget, useDrill } from "@/components/books/drill-context";
+import { PartyBalances, SageTag } from "@/components/books/kit";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,12 +20,18 @@ import {
   act, Amount, BankSelect, CsvButton, CustomerPick, DateRange, Empty, ErrorNote, JournalSheet, Loading, ProductPick,
   Section, StatusBadge, useBooks, useLines,
 } from "@/components/books/kit";
-import { books, BooksError, Dict, fmtDate, naira, newIdemKey, num, today, yearStart } from "@/lib/books-api";
+import { books, BooksError, Dict, fmtDate, naira, newIdemKey, num, packBatch, today, yearStart } from "@/lib/books-api";
 import { PendingReceiptNote } from "@/components/books/data-issues";
+import { askConfirm, askText } from "@/lib/ask";
 
 export default function BooksSales() {
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState(params.get("tab") ?? "invoices");
+  // The invoice register is the one invoice list (ACE Books and Sage, drafts to void); old links to the
+  // "invoices" tab land on it.
+  const tabOf = (t: string | null) => (!t || t === "invoices" ? "register" : t);
+  const [tab, setTab] = useState(tabOf(params.get("tab")));
+  // follow the link's tab (sidebar "Invoice Register" while already on this page)
+  useEffect(() => { const t = params.get("tab"); if (t) setTab(tabOf(t)); }, [params.get("tab")]);
   const open = (k: string, v: string | null) => { const p = new URLSearchParams(params); v ? p.set(k, v) : p.delete(k); setParams(p, { replace: true }); };
   return (
     <BooksShell title="Sales & Receivables"
@@ -35,20 +42,20 @@ export default function BooksSales() {
                 </>}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
+          <TabsTrigger value="register">Invoice register</TabsTrigger>
           <TabsTrigger value="receipts">Receipts</TabsTrigger>
           <TabsTrigger value="credit">Credit notes</TabsTrigger>
           <TabsTrigger value="aging">Aged receivables</TabsTrigger>
           <TabsTrigger value="statement">Customer statement</TabsTrigger>
         </TabsList>
-        <TabsContent value="invoices"><InvoiceList onOpen={(id) => open("invoice", id)} /></TabsContent>
+        <TabsContent value="register"><InvoiceRegister /></TabsContent>
         <TabsContent value="receipts"><ReceiptList onOpen={(id) => open("receipt", id)} /></TabsContent>
         <TabsContent value="credit"><CreditNoteList onOpen={(id) => open("creditnote", id)} /></TabsContent>
         <TabsContent value="aging"><AgedReceivables /></TabsContent>
         <TabsContent value="statement"><CustomerStatement /></TabsContent>
       </Tabs>
       <InvoiceForm open={params.get("new") === "invoice"} onClose={(id) => { open("new", null); if (id) open("invoice", id); }} />
-      <ReceiptForm open={params.get("new") === "receipt"} onClose={() => open("new", null)} />
+      <ReceiptForm open={params.get("new") === "receipt"} onClose={() => { const p = new URLSearchParams(params); ["new", "customer", "apply"].forEach((k) => p.delete(k)); setParams(p, { replace: true }); }} />
       <CreditNoteForm open={params.get("new") === "creditnote"} onClose={() => open("new", null)} />
       <InvoiceDetail id={params.get("invoice")} onClose={() => open("invoice", null)} />
       <ReceiptDetail id={params.get("receipt")} onClose={() => open("receipt", null)} />
@@ -61,33 +68,49 @@ export default function BooksSales() {
 // Lists
 // ---------------------------------------------------------------------------
 
-function InvoiceList({ onOpen }: { onOpen: (id: string) => void }) {
+/** Every invoice raised - Sage's (including those paid before ACE Books took over) and ACE Books' -
+ *  newest first, with what is still open; each opens its lineage (lines, batches, payments, journal). */
+function InvoiceRegister() {
+  const drill = useDrill();
   const [search, setSearch] = useState("");
+  const [range, setRange] = useState({ from: monthStartOf(), to: today() });
+  const { data, isLoading, error } = useBooks<Dict>(["invoice-register", range, search], "/sales/invoice-register",
+    { from: range.from, to: range.to, search: search || undefined });
   const [status, setStatus] = useState("");
-  const [range, setRange] = useState({ from: yearStart(), to: today() });
-  const { data, isLoading, error } = useBooks<any>(["invoices", search, status, range], "/sales/invoices",
-    { search, status, from: range.from, to: range.to, limit: 300 });
+  const STATUS: Record<string, string[]> = { open: ["OPEN", "POSTED", "PARTIALLY_PAID"], paid: ["PAID"], void: ["VOID"], draft: ["DRAFT"], credit: ["CREDIT"] };
+  const rows: Dict[] = (data?.rows ?? []).filter((r: Dict) => !status || (STATUS[status] ?? []).includes(String(r.status).toUpperCase()));
+  const openRow = (r: Dict) => drill?.open(r.invoice_id ? { type: "invoice", id: r.invoice_id, label: r.number } : { type: "sageinvoice", id: r.number, label: r.number });
   return (
-    <Section title={`Invoices${data ? ` (${data.total})` : ""}`} actions={<CsvButton filename="invoices.csv" rows={data?.items} />}>
+    <Section title={`Invoice register${data ? ` (${data.count})` : ""}`} actions={<CsvButton filename={`invoice-register-${range.from}-to-${range.to}.csv`} rows={data?.rows} />}>
+      {data && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+          {data.last_invoice && <span>Last invoice raised: <strong className="font-mono">{data.last_invoice.number}</strong> on {fmtDate(data.last_invoice.date)}{data.last_invoice.customer ? ` · ${data.last_invoice.customer}` : ""}</span>}
+          <span>Next invoice: <strong className="font-mono">{data.next_invoice_number}</strong></span>
+          <span className="ml-auto">Invoiced <strong>{naira(data.total)}</strong> · still open <strong>{naira(data.open)}</strong></span>
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap items-end gap-3">
-        <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Invoice no., customer, PO" }}
-          selects={[{ label: "Status", value: status, onChange: setStatus, options: ["DRAFT", "POSTED", "PARTIALLY_PAID", "PAID", "VOID"].map((s) => ({ value: s, label: s.replace("_", " ").toLowerCase() })) }]} /></div>
+        <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Invoice no. or customer" }}
+          selects={[{ label: "Status", value: status, onChange: setStatus, options: [{ value: "open", label: "Open (owing)" }, { value: "paid", label: "Paid" },
+            { value: "credit", label: "Credit memos" }, { value: "void", label: "Void" }, { value: "draft", label: "Draft" }] }]} /></div>
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No invoices in this period.</Empty> : (
+      {data && (rows.length === 0 ? <Empty>No invoices in this period{status ? " with this status" : ""}.</Empty> : (
         <Table>
-          <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Date</TableHead><TableHead>Customer</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Balance</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Date</TableHead><TableHead>Customer</TableHead><TableHead className="text-right">Amount</TableHead>
+            <TableHead className="text-right">Paid / credited</TableHead><TableHead className="text-right">Balance</TableHead><TableHead>Status</TableHead><TableHead>Raised in</TableHead></TableRow></TableHeader>
           <TableBody>
-            {data.items.map((i: Dict) => (
-              <TableRow key={i.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(i.id)}>
-                <TableCell className="font-mono text-xs">{i.invoice_number}{i.source_type === "FRONTDESK" && <span className="ml-1 text-[10px] text-muted-foreground">frontdesk</span>}</TableCell>
-                <TableCell className="whitespace-nowrap">{fmtDate(i.invoice_date)}</TableCell>
-                <TableCell className="max-w-[240px] truncate"><DrillLink to={{ type: "customer", id: String(i.customer_id ?? ""), label: i.customer_name }}>{i.customer_name}</DrillLink></TableCell>
-                <TableCell className={i.due_date < today() && Number(i.balance_due) > 0 ? "text-red-600" : ""}>{fmtDate(i.due_date)}</TableCell>
-                <TableCell className="text-right"><Amount value={i.total} /></TableCell>
-                <TableCell className="text-right"><Amount value={i.balance_due} /></TableCell>
-                <TableCell><StatusBadge status={i.status} /></TableCell>
+            {rows.map((r: Dict) => (
+              <TableRow key={`${r.source}:${r.number}:${r.invoice_id ?? ""}`} className="cursor-pointer hover:bg-muted/50" onClick={() => openRow(r)}>
+                <TableCell className="font-mono text-xs">{r.number}{r.kind === "credit memo" && <span className="ml-1 text-[10px] text-muted-foreground">credit memo</span>}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{fmtDate(r.date)}</TableCell>
+                <TableCell className="max-w-[260px] truncate">{r.customer_id ? <DrillLink to={{ type: "customer", id: String(r.customer_id), label: r.customer }}>{r.customer}</DrillLink> : r.customer}</TableCell>
+                <TableCell className="text-right"><Amount value={r.amount} /></TableCell>
+                <TableCell className="text-right"><Amount value={r.paid} blankZero /></TableCell>
+                <TableCell className="text-right"><Amount value={r.balance} blankZero /></TableCell>
+                <TableCell><StatusBadge status={r.status} /></TableCell>
+                <TableCell className="text-xs text-muted-foreground">{r.source === "sage" ? "Sage" : r.source === "frontdesk" ? "Frontdesk" : "ACE Books"}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -97,7 +120,10 @@ function InvoiceList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
+const monthStartOf = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+
 function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
+  const drill = useDrill();
   const [search, setSearch] = useState("");
   const [range, setRange] = useState({ from: yearStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["receipts", search, range], "/receivables/receipts", { search, from: range.from, to: range.to, limit: 300 });
@@ -113,11 +139,12 @@ function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
           <TableHeader><TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead>Customer</TableHead><TableHead>Method</TableHead><TableHead>Into</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Unapplied</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>
             {data.items.map((r: Dict) => (
-              <TableRow key={r.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(r.id)}>
-                <TableCell className="font-mono text-xs">{r.receipt_number}</TableCell>
+              <TableRow key={r.id ?? `s:${r.receipt_date}:${r.receipt_number}:${r.customer_id}`} className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => (r.id ? onOpen(r.id) : drill?.open(historyTarget("receipt", r)))}>
+                <TableCell className="font-mono text-xs">{r.receipt_number}{r.source === "SAGE" && <SageTag />}</TableCell>
                 <TableCell className="whitespace-nowrap">{fmtDate(r.receipt_date)}</TableCell>
                 <TableCell className="max-w-[220px] truncate"><DrillLink to={{ type: "customer", id: String(r.customer_id ?? ""), label: r.customer_name }}>{r.customer_name}</DrillLink></TableCell>
-                <TableCell className="text-xs">{r.method.toLowerCase()} {r.reference}</TableCell>
+                <TableCell className="text-xs">{r.method ? `${r.method.toLowerCase()} ${r.reference ?? ""}` : r.reference}</TableCell>
                 <TableCell className="text-xs">{r.bank_account_name}</TableCell>
                 <TableCell className="text-right"><Amount value={Number(r.amount) + Number(r.wht_amount)} /></TableCell>
                 <TableCell className="text-right"><Amount value={r.unapplied} blankZero /></TableCell>
@@ -163,7 +190,9 @@ function CreditNoteList({ onOpen }: { onOpen: (id: string) => void }) {
 // ---------------------------------------------------------------------------
 
 type Line = { line_type: string; product: Dict | null; description: string; quantity: string; unit_price: string; discount_amount: string; batch_number: string;
-  expiry?: string; batch_id?: string; unit_cost?: string };
+  expiry?: string; batch_id?: string; unit_cost?: string;
+  /** the batch number on the pack and its manufacture date - typed once, kept on the batch */
+  pack_batch_number?: string; manufacture_date?: string };
 const blankLine = (): Line => ({ line_type: "ITEM", product: null, description: "", quantity: "1", unit_price: "", discount_amount: "", batch_number: "" });
 
 /** Sellable batches of the chosen product: batch number, man. date, expiry, quantity, unit cost. */
@@ -178,7 +207,7 @@ function BatchSelect({ product, value, onChange }: { product: Dict | null; value
         <option value="">Batch: first to expire (automatic)</option>
         {batches.map((b) => (
           <option key={b.id} value={b.id}>
-            {b.batch_number} · exp {fmtDate(b.expiry_date)}{b.manufacture_date ? ` · mfd ${fmtDate(b.manufacture_date)}` : ""} · {num(b.available)} available
+            {packBatch(b) ? `${packBatch(b)} (lot ${b.lot_code ?? b.batch_number})` : `lot ${b.batch_number}`} · exp {fmtDate(b.expiry_date)}{b.manufacture_date ? ` · mfd ${fmtDate(b.manufacture_date)}` : ""} · {num(b.available)} available
           </option>
         ))}
       </select>
@@ -244,7 +273,9 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
       line_type: l.line_type, sku: l.product?.sku, description: l.description || undefined,
       quantity: l.line_type === "CHARGE" || l.line_type === "DISCOUNT" ? 1 : l.quantity,
       unit_price: l.unit_price || 0, discount_amount: l.discount_amount || 0,
-      batch_id: l.batch_id || undefined, batch_number: l.batch_id ? undefined : l.batch_number || undefined,
+      batch_id: l.batch_id || ((l.pack_batch_number || l.manufacture_date) ? (l.product?.batches ?? []).find((x: Dict) => x.sellable)?.id : undefined) || undefined,
+      batch_number: l.batch_id ? undefined : l.batch_number || undefined,
+      pack_batch_number: l.pack_batch_number?.trim() || undefined, manufacture_date: l.manufacture_date || undefined,
     })),
   });
   const submit = async (post: boolean) => {
@@ -293,16 +324,16 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
                 <div className="flex-1">{l.line_type === "ITEM"
                   ? <ProductPick value={l.product} customerId={customer?.id} forSale
                                  onChange={(p) => L.update(i, { product: p, unit_price: p?.suggested_price ? String(p.suggested_price) : l.unit_price,
-                                                                batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined })} />
+                                                                batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined, pack_batch_number: undefined, manufacture_date: undefined })} />
                   : <Input className="h-8" placeholder={l.line_type === "CHARGE" ? "e.g. Delivery charge" : "Description"} value={l.description} onChange={(e) => L.update(i, { description: e.target.value })} />}</div>
                 <Button size="icon" variant="ghost" onClick={() => L.remove(i)}><Trash2 className="h-4 w-4" /></Button>
               </div>
               {l.line_type === "ITEM" && l.product && (
-                <PendingReceiptNote product={l.product} onReload={(p) => L.update(i, { product: p, batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined })} />
+                <PendingReceiptNote product={l.product} onReload={(p) => L.update(i, { product: p, batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined, pack_batch_number: undefined, manufacture_date: undefined })} />
               )}
               {l.line_type === "ITEM" && l.product && (
                 <BatchSelect product={l.product} value={l.batch_id}
-                             onChange={(bb) => L.update(i, { batch_id: bb?.id, batch_number: bb?.batch_number ?? l.product?.next_batch ?? "", expiry: bb?.expiry_date ?? l.product?.next_expiry })} />
+                             onChange={(bb) => L.update(i, { batch_id: bb?.id, batch_number: bb?.batch_number ?? l.product?.next_batch ?? "", expiry: bb?.expiry_date ?? l.product?.next_expiry, pack_batch_number: undefined, manufacture_date: undefined })} />
               )}
               <div className="grid grid-cols-3 gap-2">
                 {(l.line_type === "ITEM" || l.line_type === "SERVICE") && <div><Label className="text-[11px]">Qty</Label><Input className="h-8" type="number" value={l.quantity} onChange={(e) => L.update(i, { quantity: e.target.value })} /></div>}
@@ -310,15 +341,22 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
                   <Input className="h-8" type="number" value={l.unit_price} onChange={(e) => L.update(i, { unit_price: e.target.value })} /></div>
                 {(l.line_type === "ITEM" || l.line_type === "SERVICE") && <div><Label className="text-[11px]">Discount ₦</Label><Input className="h-8" type="number" value={l.discount_amount} onChange={(e) => L.update(i, { discount_amount: e.target.value })} /></div>}
               </div>
-              {l.line_type === "ITEM" && l.product && (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 rounded bg-muted/40 px-2 py-1 text-[11px] sm:grid-cols-5">
-                  <span>Batch <strong>{b?.batch_number ?? l.batch_number ?? "—"}</strong></span>
-                  <span>Man. date <strong>{b?.manufacture_date ? fmtDate(b.manufacture_date) : "—"}</strong></span>
+              {l.line_type === "ITEM" && l.product && (<>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-[11px]">Batch no. on the pack (printed on the invoice)</Label>
+                    <Input className={`h-8 ${!(l.pack_batch_number ?? packBatch(b)) ? "border-amber-400" : ""}`} placeholder="e.g. 51B25028A"
+                           value={l.pack_batch_number ?? packBatch(b)} onChange={(e) => L.update(i, { pack_batch_number: e.target.value })} /></div>
+                  <div><Label className="text-[11px]">Man. date (month)</Label>
+                    <Input className="h-8" type="month" value={(l.manufacture_date ?? b?.manufacture_date ?? "").slice(0, 7)}
+                           onChange={(e) => L.update(i, { manufacture_date: e.target.value ? `${e.target.value}-01` : "" })} /></div>
+                </div>
+                <div className="grid grid-cols-2 items-center gap-x-4 gap-y-1 rounded bg-muted/40 px-2 py-1 text-[11px] sm:grid-cols-4">
+                  <span>Lot <strong>{b?.lot_code ?? b?.batch_number ?? l.batch_number ?? "—"}</strong></span>
                   <span>Exp. date <strong>{fmtDate(b?.expiry_date ?? l.expiry) || "—"}</strong></span>
                   <span>Unit cost <strong>{b?.unit_cost ? naira(b.unit_cost) : "—"}</strong></span>
                   <span className={Number(l.quantity) > Number(l.product.sellable_qty ?? l.product.on_hand) ? "text-red-600" : ""}>Can sell <strong>{num(l.product.sellable_qty ?? l.product.on_hand)}</strong></span>
                 </div>
-              )}
+              </>)}
               <div className="flex justify-end text-xs text-muted-foreground"><span>Line {naira(lineTotal(l))}</span></div>
             </div>
             );
@@ -356,7 +394,7 @@ function InvoiceDetail({ id, onClose }: { id: string | null; onClose: () => void
     }
   };
   const voidIt = async () => {
-    const reason = window.prompt("Why is this invoice being voided? (stock and all postings will be reversed)");
+    const reason = await askText("Why is this invoice being voided? (stock and all postings will be reversed)");
     if (reason && (await act(() => books.post(`/sales/invoices/${id}/void`, { reason }), "Invoice voided"))) refresh();
   };
   const canVoid = inv && ["DRAFT", "POSTED"].includes(inv.status) && !inv.is_opening && Number(inv.amount_settled) === 0;
@@ -389,9 +427,33 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
   const [dupe, setDupe] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [idem] = useState(newIdemKey);
-  useEffect(() => { if (!open) { setCustomer(null); setAlloc({}); setDupe(null); setF({ ...f, amount: "", wht_amount: "", reference: "", notes: "" }); } }, [open]);
+  // Opened from an invoice ("Record receipt"): ?customer=<id>&apply=<invoice id> - the customer is
+  // chosen and that invoice's balance applied.
+  const [sp] = useSearchParams();
+  const fromInvoice = open ? sp.get("apply") : null;
+  const fromCustomer = open ? sp.get("customer") : null;
+  const { data: preCust } = useBooks<Dict>(["receipt-cust", fromCustomer], `/customers/${fromCustomer}/overview`, undefined, !!fromCustomer && !customer);
+  useEffect(() => { if (preCust?.customer && !customer) setCustomer(preCust.customer); }, [preCust]);
+  useEffect(() => { if (!open) { setCustomer(null); setAlloc({}); setDupe(null); setAmountTyped(false); setInvSearch(""); setF({ ...f, amount: "", wht_amount: "", reference: "", notes: "" }); } }, [open]);
   const { data: items } = useBooks<Dict[]>(["openitems", customer?.id], "/receivables/open-items", { customer_id: customer?.id }, !!customer);
-  const invoices = useMemo(() => (items ?? []).filter((i) => i.doc_type === "INVOICE" && Number(i.open_amount) > 0).sort((a, b) => (a.due_date < b.due_date ? -1 : 1)), [items]);
+  // newest first: the one just paid is usually at the top
+  const invoices = useMemo(() => (items ?? []).filter((i) => i.doc_type === "INVOICE" && Number(i.open_amount) > 0).sort((a, b) => (a.doc_date > b.doc_date ? -1 : 1)), [items]);
+  const [amountTyped, setAmountTyped] = useState(false);
+  const [invSearch, setInvSearch] = useState("");
+  // ticking an invoice applies its open amount; the amount received follows the ticks until typed by hand
+  const tick = (i: Dict, on: boolean) => {
+    const next = { ...alloc };
+    if (on) next[i.doc_id] = Number(i.open_amount).toFixed(2); else delete next[i.doc_id];
+    setAlloc(next);
+    if (!amountTyped) setF((v) => ({ ...v, amount: Object.values(next).reduce((s, x) => s + Number(x || 0), 0).toFixed(2) }));
+  };
+  useEffect(() => {
+    const inv = fromInvoice ? invoices.find((i) => String(i.doc_id) === fromInvoice) : null;
+    if (inv && !Object.keys(alloc).length) {
+      setAlloc({ [inv.doc_id]: Number(inv.open_amount).toFixed(2) });
+      setF((v) => ({ ...v, amount: v.amount || Number(inv.open_amount).toFixed(2) }));
+    }
+  }, [invoices, fromInvoice]);
   const available = Number(f.amount || 0) + Number(f.wht_amount || 0);
   const allocated = Object.values(alloc).reduce((s, v) => s + Number(v || 0), 0);
   const autoAllocate = () => {
@@ -421,7 +483,7 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
                  footer={<div className="flex w-full items-center justify-between"><span className="text-xs">Applied {naira(allocated)} of {naira(available)}{available - allocated > 0 ? ` · ${naira(available - allocated)} on account` : ""}</span>
                    <Button disabled={busy || !customer || !f.bank_account_id || Number(f.amount) <= 0 || allocated > available + 0.001} onClick={() => submit(false)}>{busy ? "Posting…" : "Post receipt"}</Button></div>}>
       <div className="space-y-3">
-        <CustomerPick value={customer} onChange={(c) => { setCustomer(c); setAlloc({}); }} />
+        <CustomerPick value={customer} onChange={(c) => { setCustomer(c); setAlloc({}); setAmountTyped(false); setF((v) => ({ ...v, amount: "" })); }} />
         <CustomerPanel customer={customer} />
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1"><Label className="text-xs">Date</Label><Input type="date" value={f.receipt_date} onChange={(e) => setF({ ...f, receipt_date: e.target.value })} /></div>
@@ -432,7 +494,7 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
         </div>
         <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label="Received into" />
         <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1"><Label className="text-xs">Amount received</Label><Input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
+          <div className="space-y-1"><Label className="text-xs">Amount received</Label><Input type="number" value={f.amount} placeholder="tick the invoice(s) paid below" onChange={(e) => { setAmountTyped(true); setF({ ...f, amount: e.target.value }); }} /></div>
           <div className="space-y-1"><Label className="text-xs">WHT deducted</Label><Input type="number" value={f.wht_amount} onChange={(e) => setF({ ...f, wht_amount: e.target.value })} /></div>
           <div className="space-y-1"><Label className="text-xs">Cheque / transfer ref</Label><Input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></div>
         </div>
@@ -444,14 +506,22 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
         )}
         {customer && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between"><Label className="text-xs">Apply to invoices (oldest due first)</Label><Button size="sm" variant="outline" onClick={autoAllocate} disabled={!available}>Auto-apply</Button></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><Label className="text-xs">Open invoices (newest first) - tick the one(s) this payment is for</Label>
+              <div className="flex gap-2"><Input className="h-8 w-40" placeholder="Find invoice" value={invSearch} onChange={(e) => setInvSearch(e.target.value)} />
+                <Button size="sm" variant="outline" onClick={autoAllocate} disabled={!available}>Auto-apply (oldest first)</Button></div></div>
             {invoices.length === 0 ? <Empty>No open invoices — the receipt will sit on the customer's account.</Empty> : (
               <Table>
-                <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Open</TableHead><TableHead className="w-32">Apply</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="w-10">Paid</TableHead><TableHead>Invoice · what was sold</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Open</TableHead><TableHead className="w-32">Apply</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {invoices.map((i) => (
-                    <TableRow key={i.doc_id}>
-                      <TableCell className="font-mono text-xs">{i.doc_number}</TableCell>
+                  {invoices.filter((i) => !invSearch || `${i.doc_number} ${i.items ?? ""}`.toLowerCase().includes(invSearch.toLowerCase())).map((i) => (
+                    <TableRow key={i.doc_id} className={`cursor-pointer ${Number(alloc[i.doc_id]) > 0 || String(i.doc_id) === fromInvoice ? "bg-primary/5" : ""}`}
+                              onClick={(e) => { if ((e.target as HTMLElement).closest("input,a")) return; tick(i, !(Number(alloc[i.doc_id]) > 0)); }}>
+                      <TableCell><input type="checkbox" checked={Number(alloc[i.doc_id]) > 0} onChange={(e) => tick(i, e.target.checked)} /></TableCell>
+                      <TableCell className="text-xs">
+                        <DrillLink to={{ type: "invoice", id: String(i.doc_id), label: i.doc_number }}><span className="font-mono">{i.doc_number}</span></DrillLink>
+                        <span className="text-muted-foreground"> · {fmtDate(i.doc_date)}{i.invoice_total && Number(i.invoice_total) !== Number(i.open_amount) ? ` · of ${naira(i.invoice_total)}` : ""}</span>
+                        {i.items && <div className="max-w-xs truncate text-[11px] text-muted-foreground" title={i.items}>{i.items}</div>}
+                      </TableCell>
                       <TableCell className="text-xs">{fmtDate(i.due_date)}</TableCell>
                       <TableCell className="text-right"><Amount value={i.open_amount} /></TableCell>
                       <TableCell><Input className="h-8" type="number" value={alloc[i.doc_id] ?? ""} onChange={(e) => setAlloc({ ...alloc, [i.doc_id]: e.target.value })} /></TableCell>
@@ -473,7 +543,7 @@ function ReceiptDetail({ id, onClose }: { id: string | null; onClose: () => void
   const { data: r, refetch } = useBooks<Dict>(["receipt", id], `/receivables/receipts/${id}`, undefined, !!id);
   const [v, setV] = useState(0);
   const voidIt = async () => {
-    const reason = window.prompt("Why is this receipt being voided? (e.g. cheque bounced)");
+    const reason = await askText("Why is this receipt being voided? (e.g. cheque bounced)");
     if (reason && (await act(() => books.post(`/receivables/receipts/${id}/void`, { reason }), "Receipt voided"))) { refetch(); setV((x) => x + 1); qc.invalidateQueries({ queryKey: ["books"] }); }
   };
   return (
@@ -674,7 +744,7 @@ function CustomerStatement() {
         <CustomerPick value={customer} onChange={setCustomer} />
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
-      {!customer && <Empty>Choose a customer to see every invoice and payment, as far back as the records go.</Empty>}
+      {!customer && <PartyBalances kind="customer" onPick={setCustomer} />}
       {isLoading && <Loading />}<ErrorNote error={error} />
       {data && (
         <div className="space-y-3 text-sm">

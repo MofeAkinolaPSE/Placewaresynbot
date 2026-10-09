@@ -25,9 +25,11 @@ import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
 import { InvoiceDetailBody } from "@/components/workspace/InvoiceDetailBody";
 import { DrillLink } from "@/components/books/kit";
 import { Facts } from "@/components/books/lineage";
+import { RecallBody } from "@/components/books/recall-panel";
 import { api } from "@/lib/api-client";
 import { books, Dict, fmtDate, naira, num } from "@/lib/books-api";
 import { CapaEditor, useIsQa, useQualityActions, useQualityRefresh } from "./actions";
+import { askText } from "@/lib/ask";
 
 export function Tone({ tone, children }: { tone: "red" | "amber" | "sky" | "green" | "slate" | "violet"; children: ReactNode }) {
   const cls = {
@@ -274,6 +276,7 @@ export function ExpiryByProduct() {
 
 const RSTATUS: Record<string, [string, "red" | "amber" | "green" | "slate"]> = {
   initiated: ["Initiated", "red"], in_progress: ["In progress", "amber"], completed: ["Completed", "green"], closed: ["Closed", "slate"],
+  voided: ["Void", "slate"],
 };
 
 export function RecallsPanel() {
@@ -375,13 +378,7 @@ function RecallSheet({ id, onClose }: { id: string | null; onClose: () => void }
   const refresh = useQualityRefresh();
   const { data: r, refetch } = useQuery({ queryKey: ["quality", "recall", id], queryFn: () => api.quality.recall(id!), enabled: !!id });
   const [due, setDue] = useState("");
-  const [returning, setReturning] = useState<Dict | null>(null);
-  const [otherCustomer, setOtherCustomer] = useState<Dict | null>(null);
-  const b = r?.books;
   const update = async (payload: Dict, ok: string) => { if (await act(() => api.quality.updateRecall(id!, payload), ok, refresh)) refetch(); };
-  const item = async (itemId: string, payload: Dict) => {
-    if (await act(() => books.patch(`/inventory/recalls/${r.fin_recall_id}/items/${itemId}`, payload), "Updated", refresh)) refetch();
-  };
   return (
     <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={r ? `${r.recall_id} · ${r.product_name}` : "Recall"} icon={PackageX}
                  description={r ? `Batch ${r.batch_number} · ${r.recall_reason}` : undefined}>
@@ -402,49 +399,14 @@ function RecallSheet({ id, onClose }: { id: string | null; onClose: () => void }
               </div>
             </div>
           )}
-          {b && (
-            <div>
-              <div className="mb-1 flex items-center justify-between"><span className="text-xs font-semibold uppercase text-muted-foreground">Customers who bought the batch (ACE Books)</span>
-                <Link to="/finance/books/stock?tab=recalls" className="inline-flex items-center text-xs text-primary hover:underline">ACE Books <ArrowUpRight className="h-3 w-3" /></Link></div>
-              {b.items.length === 0 ? <p className="text-xs text-muted-foreground">No sales of this batch were found: all of it is still in stock (frozen).</p> : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Sold</TableHead><TableHead>Contact</TableHead><TableHead className="text-right">Returned</TableHead><TableHead /></TableRow></TableHeader>
-                  <TableBody>{b.items.map((i: Dict) => (
-                    <Fragment key={i.id}>
-                    <TableRow>
-                      <TableCell className="max-w-[180px]"><DrillLink to={i.customer_id ? { type: "customer", id: String(i.customer_id), label: i.customer_name } : null}>{i.customer_name ?? "—"}</DrillLink>
-                        <div className="truncate text-[11px] text-muted-foreground" title={i.invoice_number}>{i.invoice_number}</div>
-                        {i.credit_note_number && <div className="text-[11px] text-emerald-700">credit {i.credit_note_number} · ₦{Number(i.credit_total ?? 0).toLocaleString()}</div>}</TableCell>
-                      <TableCell className="text-right">{num(i.quantity_sold)}</TableCell>
-                      <TableCell>{isQa && b.status === "OPEN" ? (
-                        <Select value={i.contact_status} onValueChange={(v) => item(i.id, { contact_status: v })}>
-                          <SelectTrigger className="h-8 w-[130px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>{[["PENDING", "Not contacted"], ["CONTACTED", "Contacted"], ["RETURNED", "Returned"], ["NOT_RETURNED", "Will not return"]].map(([v, l]) =>
-                            <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
-                        </Select>) : i.contact_status?.toLowerCase().replace("_", " ")}</TableCell>
-                      <TableCell className="text-right">{num(i.quantity_returned)}</TableCell>
-                      <TableCell>{b.status === "OPEN" && i.customer_id && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setReturning(i)}>Record return</Button>}</TableCell>
-                    </TableRow>
-                    {returning?.id === i.id && (
-                      <TableRow className="hover:bg-transparent"><TableCell colSpan={5}>
-                        <RecallReturnForm recallId={r.id ?? id!} sku={b.sku} batchId={b.batch_id} itemId={i.id} customer={{ id: i.customer_id, name: i.customer_name }}
-                                          onDone={() => { setReturning(null); refetch(); refresh(); }} />
-                      </TableCell></TableRow>
-                    )}
-                    </Fragment>))}</TableBody>
-                </Table>
-              )}
-              {b.status === "OPEN" && (
-                <div className="mt-2 space-y-2">
-                  {!otherCustomer ? (
-                    <div className="flex items-end gap-2"><div className="w-72"><CustomerPick label="Another customer returning it" value={null} onChange={setOtherCustomer} /></div></div>
-                  ) : (
-                    <RecallReturnForm recallId={r.id ?? id!} sku={b.sku} batchId={b.batch_id} customer={{ id: otherCustomer.id, name: otherCustomer.name }}
-                                      onDone={() => { setOtherCustomer(null); refetch(); refresh(); }} />
-                  )}
-                </div>
-              )}
-              <p className="mt-2 text-xs text-muted-foreground">Recording a return raises a credit note on the customer's invoice (their balance goes down) and brings the units back into the recalled batch, which stays frozen.</p>
+          {r.fin_recall_id && <RecallBody id={r.fin_recall_id} onChanged={() => { refetch(); refresh(); }} />}
+          {!r.fin_recall_id && isQa && (
+            <div className="flex items-center justify-between rounded-md border border-dashed p-3 text-xs">
+              <span className="text-muted-foreground">Not linked to an ACE Books batch: nothing was frozen or posted.</span>
+              <Button size="sm" variant="ghost" className="text-red-600" onClick={async () => {
+                const reason = await askText(`Delete ${r.recall_id}? Why?`);
+                if (reason && (await act(() => api.quality.voidRecall(id!, reason), "Recall deleted", refresh))) onClose();
+              }}>Delete recall</Button>
             </div>
           )}
         </div>

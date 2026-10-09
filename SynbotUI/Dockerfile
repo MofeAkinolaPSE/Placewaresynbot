@@ -58,6 +58,7 @@ RUN apk add --no-cache curl
 # (/etc/ssl/placeware/cert.pem and key.pem) are mounted as a runtime volume
 # and do not exist inside the image layer. Config syntax is validated on startup.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 # Remove the base image's IPv6 auto-config entrypoint script.
 #

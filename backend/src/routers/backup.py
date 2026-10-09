@@ -343,13 +343,13 @@ def _actor(user: Any) -> Optional[str]:
 
 
 @router.get("/schedule")
-async def backup_schedule(_u=Depends(_require_admin)):
+def backup_schedule(_u=Depends(_require_admin)):
     with _Conn() as c, c.cursor() as cur:
         return _summary(cur)
 
 
 @router.put("/schedule")
-async def save_backup_schedule(payload: Dict[str, Any], user: Dict[str, Any] = Depends(_require_admin)):
+def save_backup_schedule(payload: Dict[str, Any], user: Dict[str, Any] = Depends(_require_admin)):
     f = str(payload.get("frequency") or "").lower()
     if f not in ("off", "daily", "weekly", "monthly"):
         raise HTTPException(422, detail="Choose daily, weekly, monthly or off")
@@ -382,7 +382,7 @@ async def run_backup_now(user: Dict[str, Any] = Depends(_require_admin)):
 
 
 @router.get("/files/{backup_id}/download")
-async def download_prepared_backup(backup_id: str, user: Dict[str, Any] = Depends(_require_admin)):
+def download_prepared_backup(backup_id: str, user: Dict[str, Any] = Depends(_require_admin)):
     from fastapi.responses import FileResponse
     actor = _actor(user)
     with _Conn() as c, c.cursor() as cur:
@@ -406,7 +406,7 @@ async def download_prepared_backup(backup_id: str, user: Dict[str, Any] = Depend
 
 
 @router.get("/info")
-async def backup_info(_u=Depends(_require_admin)):
+def backup_info(_u=Depends(_require_admin)):
     """What a download would produce, so the UI can set expectations before
     the user commits to a large transfer."""
     try:
@@ -442,7 +442,7 @@ async def backup_info(_u=Depends(_require_admin)):
 
 
 @router.get("/download")
-async def download_backup(
+def download_backup(
     fmt: str = Query("auto", pattern="^(auto|csv)$"),
     user: Dict[str, Any] = Depends(_require_admin),
 ):

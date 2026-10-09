@@ -105,6 +105,12 @@ def customer_invoices(customer_id: int, batch_id: Optional[str] = None, sku: Opt
     return {"invoices": _call(qh.customer_invoices_for_batch, customer_id, batch_id, sku)}
 
 
+@router.post("/recalls/{recall_id}/void")
+def void_recall(recall_id: str, payload: Dict[str, Any] = Body(...), user=Depends(_need(QA_ROLES | {"finance", "management"}))):
+    """Opened by mistake: void it (and the ACE Books recall - batch released); an unlinked case is deleted."""
+    return _call(qh.void_recall, user, recall_id, payload.get("reason") or "")
+
+
 @router.patch("/recalls/{recall_id}")
 def update_recall(recall_id: str, payload: Dict[str, Any] = Body(...), user=Depends(_need(QA_ROLES))):
     return _call(qh.update_recall, user, recall_id, payload)

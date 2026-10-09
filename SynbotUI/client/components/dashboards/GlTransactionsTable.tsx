@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -37,11 +37,12 @@ export function GlTransactionsTable() {
       account_code: acctFilter || undefined,
       journal_type: jtFilter   || undefined,
     }),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,  // keep the current page on screen while the next loads
   });
 
-  const rows: any[]  = data?.data || [];
-  const count: number = data?.count ?? 0;
+  const page_ = data as { data?: any[]; count?: number } | undefined;
+  const rows: any[]  = page_?.data || [];
+  const count: number = page_?.count ?? 0;
   const hasPrev = page > 0;
   const hasNext = count === PAGE_SIZE;
 

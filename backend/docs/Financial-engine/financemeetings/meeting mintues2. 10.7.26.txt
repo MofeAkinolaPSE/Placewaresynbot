@@ -1,0 +1,289 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Invoice register, okay. Invoice register. We show you the last invoice that there are.
+
+This one. Okay. We want to know what are those invoices that there is today.
+
+I understand. Today is 7th of. Let's see from yesterday to today.
+
+I want to know which invoice did we raise last. So I will continue with it. Because we want to start another transaction for today for example.
+
+Okay, okay. So, let's see. See, here is invoice register. 
+
+We give you 5, 6, 5, 6. So, this is today's one. I mean, this is the last invoice that you raised now. Today. 
+
+Tomorrow morning, if there are two starts, the new invoice, then we check. Okay, this is the last one that they raised to yesterday. Invoice register. 
+
+Invoice register. So, you see what is there? So, we show us where to start the invoicing today. Okay.
+
+So, you understand that. Okay. So, you can even click it.
+
+So, you see, this is the last one. You are going to start from 53, 5, 4, 6 today. You see, new. 
+
+Then you start with that one and that one will be. Okay. So, are you writing the invoice numbers yourself currently? Automatically? No, you will start for a day. 
+
+But once you close for the day, you back up. Tomorrow, we check where you ended before you. But when you are raising it today, throughout today, it will be following itself.
+
+Automatically. Okay, okay. So, you just start this new one.
+
+Yeah, yeah, yeah. Because you might not remember which one did we raise last. But you can check it. 
+
+When you now check it, you know the one to start with today. So, when you start today, throughout today, whatever it is. But once you close, you back up. 
+
+So, until you check it next day to know which one did you raise last. Okay, no problem. So, that one just occurred to me. 
+
+You know I told you. Yeah, no problem. So, that's that. 
+
+Then, okay, this one to a lot of that. Oh, this one, they are huge. Yeah.
+
+True receivables, we used to receive this anyway. Yeah, so, yeah. So, receivables.
+
+Yeah, so. Credit note, age receivables. This is age receivable? Yeah.
+
+Okay. As of today. So, I wrote it 13, 31 to 16.
+
+You can see the documents, all the invoices. This is the actual, this is the invoice. Go back to that receivable. 
+
+I want to check something. Okay, it's not, it's not alphabetically. No, he wants it alphabetically.
+
+That's how it's supposed to be. Okay. That's how it's supposed to be.
+
+It's because I think it's the highest one first. So, age receivable has to be alphabetically. And everyone.
+
+Even payable. Everybody is alphabetically. Yes, alphabetically.
+
+It will be very easy. You want to trace one account, you want to check one account. You will know that first.
+
+V is that. But if it is according to, you don't know what each and every one of them owe. So, you can easily trace.
+
+Like this. No problem. So, you understand that.
+
+This one is according to the age of the debt. Debt, yeah. But you might not know what it is.
+
+So, you now begin to look, look, look. It needs to be straightforward, basically. Straightforward, yes.
+
+Okay. So, you understand that. No problem.
+
+What is that I want to know? You know, as we are doing, we are bringing some other things that we need to know. So, this is payables and purchases. Okay.
+
+Which one is this document? Supplier's statement. Yeah. Okay.
+
+Supplier's statement. Okay. Supplier's statement.
+
+That's the payable. Yeah. It's payable.
+
+Fender's ledger. Yeah, Fender's ledger. No, this is ledger.
+
+I don't understand. Where is payable? This is payable. Let us see the payable.
+
+The payable is supposed to be like that saying HP. This is payable. This is payable, okay.
+
+Yeah. Okay, okay. Now, when we click on any one of these, can it take us to the detail of that payable? Oh, this is what it shows.
+
+Is this okay? It shows you the bills. Okay, okay, okay. Yeah, it shows you what you pay, what you buy.
+
+Okay. And the supplier, supplier's ID, what we owe them, how much they owe to you. And your report center will show you all the various reports that you can get at once.
+
+The report center will show you all the different reports like balance sheets. So, because I just reloaded it, it will take some time. So, once the system starts, it will stop loading like this.
+
+Okay. So, this is your balance sheet now. So, when we post something now, it increases.
+
+For example, what can I post now to know whether it reflects on, okay, we just bought a new asset now. How? Okay. For example, we just bought a new asset now.
+
+We want to post. Did you do the journal that we sent? Yeah, the journal. Maybe I want to post the new journal.
+
+How? Not journal. What is that? I want to post a new journal. I want to journalize now.
+
+Okay, so you want to add a new journal entry. So, the date, the narration, the account name. Can we test from something? Can we delete it back? We should be able to delete it.
+
+Because we just want to test from something. Okay, so what would it be? I can try and delete the... So, we'll add a feature to delete your new entries as well. Please add it so that when they make a mistake of raising their voice, when they raise their voice and want to cancel it, we'll delete it and make provision for others.
+
+I want to post something. Our motto is fake. Let us go back to balance sheet.
+
+I want to post something to see the effect on the account. If it enters, it will go. Let us post something.
+
+Let us go to balance sheet. This is balance sheet. Assets.
+
+Motto fake. Under the assets. Down, down, down.
+
+Down, down. Yes, assets. Okay.
+
+Not correct assets. Furnishers and fittings. If you've got furnishers and fittings, it's what? One million.
+
+It's total current assets. Furnishers and fittings. Okay, it's two.
+
+Two million. Sorry. No problem.
+
+Two million. Five hundred thousand. And what? Zero fifty nine.
+
+Zero five zero. So, now, let us see. We bought a new F&F.
+
+What? Two hundred thousand. So, today. Okay.
+
+So, let us post it and see the effect. Whether it will change. Effect the balance sheet.
+
+Yes. Okay. So, we have to go to your... Journal.
+
+Journal. Or we can use payment. And add a new entry.
+
+Or let us go to the payment. Payment. Use payment.
+
+Where is payment? If you want to pay for expenses. Where is the payment? Okay, it's payment. Okay.
+
+Okay, so you can supply bill. Okay, we can't. Do you want to add a new payment? It has a new feature then.
+
+No, no, no. Okay. Then we want to purchase this.
+
+Okay, because we pay suppliers. But we don't have the suppliers. Unless it's already a supplier.
+
+This is for just vaccine. You know. One of.
+
+Okay. One of supplier. We don't need that.
+
+Okay. It's one of. Somebody is just like off-shape something.
+
+Okay. Come and look at this. So this is what I want.
+
+So that's. You see, this is payment. Now.
+
+If you have to pay. One of the suppliers. As you have it there now.
+
+Yeah. So I will. I will come here.
+
+Are you getting me? Yeah. Then when I click here. For example.
+
+I want to pay us an elaborate. Everything. We are winners and elaborates.
+
+We come up. Yeah. We come up.
+
+So check number. Or to transfer. To the bank.
+
+That we are making the payment. For example. Send it bank.
+
+Either to transfer or check number. To this. It is here.
+
+This is transfer. This is the make payment. Yes.
+
+To make payment. So. So.
+
+You know. What we are paying. Yes.
+
+Yeah. Are you getting me? Yeah. For example.
+
+We want to clear this 1.1. Okay. So. We just come here.
+
+Today. Today's date. It's as an elaborate.
+
+Everything. So. See.
+
+Ah. So you can just click on the. Click on what you want to pay.
+
+Okay. Then save it. Okay.
+
+Do you understand? Okay. So to register in your system that you have paid. We are paid.
+
+We won't save this invoice again. Okay. To go to register that we are paid.
+
+Are you getting me? Okay. So now. If it is one of.
+
+Customer. Like. We just.
+
+We go out. Ah. We need this and share.
+
+Share. Or the television. Just buy it from Mufe's company.
+
+Not that we are coming there tomorrow. Okay. So we come and supply out this and income.
+
+One. It's one of thing. So you understand.
+
+I might not need to maintain for this name. Name now. So instead of that.
+
+Pay to the order of. Thank you. Yeah.
+
+Mr. Mufe. Mr. Mufe. So you understand.
+
+Okay. So. How do you.
+
+What is the mode of payment? Through transfer. Transfer. So.
+
+You just say. Mr. Mufe. Could there be.
+
+Furniture and fittings. Furniture. You can just say.
+
+Furniture. So you understand. Furniture.
+
+So yeah. Yeah. Payment.
+
+Payment. I'm sorry. Payment.
+
+For. The. Purchase.
+
+Purchase. Of. Two.
+
+Shares. Two. Two.
+
+Shares. Of his. Is that a description? Description.
+
+Of his. Shares. You understand that? Shares.
+
+So we make a. Opportunity. So. In of payment.
+
+Yeah. The. General ledger.
+
+You know I said. General ledger. General ledger.
+
+All the general ledger. They have code. Yeah.
+
+Are you getting it? Yeah. So. You have to.
+
+You see. This thing is. Transportation.
+
+But it's. Furniture. That you bought.
+
+You have to take to that asset. Furniture. Okay.
+
+So. F and F. F and F. So go to asset. Fix asset.
+
+His current liability. This asset. Yes.
+
+Another asset. Fix asset. You see.
+
+Okay. Office furniture. Furniture.
+
+You see. Furniture. So.
+
+If you mistakenly use. You take it to another code. It will go to another account.
+
+Okay. But this is office furnitures. Okay.
+
+So. What is the amount? 200,000. 300,000.
+
+So naturally. So you understand. It will reflect.
+
+It will. Save it. I will delete it too.
+
+Okay. Save it. Save it.
+
+When you get to balance sheet now. When you get to balance sheet. This balance sheet.
+
+What we just posted now. When you get to balance sheet. And this is in October.
+
+October. You know. I will pick.
+
+Last SF. So that you will see. The analysis.
+
+See. See. But it has already sent.
+
+Congregated to General Ledger. To Connected ... Connected to General Ledger to balance sheet. To this ... So now.
+
+Double click it. You will see. This is where we posted it.
+
+In the invoice right? Ya. Ok. All the sources.
+
+It's a financial linkage. Yes. So linkage.
+
+So ... Mhmm. There were examples you want to know. Ah.
+
+Since 2014. Oh we was ... This cabinet is part of the fittings and furnishings So you can add a search feature to it, so you can search for the items So you see, that means we didn't buy any, in 2024 we bought furniture or whatever last Do you understand? And if you want to check what we bought then You see the purchase of two-faceted toaster, I see, for empty, that's a gas office, but then we change Do you understand? So, now, so this is the one we just bought, I'm going to delete it So, I'm going to delete it, so that's why I said, if we didn't need anything, I'm going to delete it You can delete it So, do you understand? And it reflects back in all the documents Of course, back to your figure, and when you get to your balance sheet, back to your 2.5 You see, like motor vehicles now, the worth of motor vehicles you have is 102 million The worth of gas vehicles, and this, for example, a guy was giving me a bottle of sherry When did you buy the sherry? I just come here, do you understand? Okay I just come here, and I check I remember we bought it 52 million, so, Nigeria Limited, we bought it from there Okay So, see So, one of them Purchase of any of these official cars, Chattanooga Okay So, you understand, 52 million So, and all these we do depreciation and accumulated depreciation Okay Any depreciation that I do, do you understand? And these are the features for depreciation and accumulated depreciation Yes And accumulated depreciation Yeah, I have already told you that, maybe you forgot Yeah, it's there, it's just so that you can see it And it tends to be, do you understand? Yeah, I think it is, I will expose the pages for depreciation and Yeah So, what else, what else, what else, what else? And, if we have current accounts You see, there is room There is room for maintaining things, chart of accounts You see, all these accounts Sage, my Sage is very good at that If you are running a bakery, when you are maintaining that account He will tell you the type of business So that, it's that chart of account that Sage will bring All the chart of account there, but different I mean, different companies, different businesses Are you getting me? But still, you might need to add So, either expenses or whatever Okay They might not have, they might not put under their list of expenses Yes, that you can maintain For example, wristwatch, we don't sell wristwatch, it's not part of our business It's not unicorn, unicorn We want to maintain it now There should be a room to maintain for it Are you getting me? So, to add To add whatever we want To add whatever you want to compute for different chart of accounts Different chart of accounts Okay, no problem It might be assets, it might be liabilities It might be expenses Are you getting me? No problem, sir
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

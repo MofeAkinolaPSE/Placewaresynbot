@@ -62,7 +62,7 @@ class ProposalStatusUpdate(BaseModel):
 
 
 @router.get("/proposals")
-async def api_list_proposals(
+def api_list_proposals(
     limit: int = Query(50, ge=1, le=200),
     user_ctx=Depends(_require_ops_access),
 ):
@@ -72,7 +72,7 @@ async def api_list_proposals(
 
 
 @router.get("/signals")
-async def api_list_signals(
+def api_list_signals(
     limit: int = Query(100, ge=1, le=500),
     user_ctx=Depends(_require_ops_access),
 ):
@@ -82,7 +82,7 @@ async def api_list_signals(
 
 
 @router.post("/signals")
-async def api_record_signal(
+def api_record_signal(
     payload: SignalRequest,
     request: Request,
     user_ctx=Depends(_require_ops_access),
@@ -99,7 +99,7 @@ async def api_record_signal(
 
 
 @router.post("/discover")
-async def api_run_discovery(
+def api_run_discovery(
     request: Request,
     user_ctx=Depends(_require_ops_access),
 ):
@@ -119,7 +119,7 @@ async def api_run_discovery(
 
 
 @router.patch("/proposals/{proposal_id}/status")
-async def api_update_proposal_status(
+def api_update_proposal_status(
     proposal_id: str,
     payload: ProposalStatusUpdate,
     request: Request,

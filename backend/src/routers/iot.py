@@ -16,7 +16,7 @@ class SensorEvent(BaseModel):
 
 
 @router.post("/ingest")
-async def api_ingest_event(evt: SensorEvent, request: Request):
+def api_ingest_event(evt: SensorEvent, request: Request):
     """Accept sensor events authenticated by either a user JWT or an X-Device-Key header.
 
     Priority: JWT (user context) if present and valid. Otherwise validate `X-Device-Key` header.

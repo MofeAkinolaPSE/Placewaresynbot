@@ -69,7 +69,7 @@ async def api_unlock_batch(req: UnlockRequest, request: Request, _u=Depends(requ
 
 
 @router.get("/batch_locked/{batch_id}")
-async def api_is_locked(batch_id: str, _u=Depends(verify_jwt)):
+def api_is_locked(batch_id: str, _u=Depends(verify_jwt)):
     return {"locked": is_batch_locked(batch_id)}
 
 
@@ -104,7 +104,7 @@ async def api_batch_approve(batch_id: str, request: Request, _u=Depends(require_
 
 
 @router.get("/compliance/export")
-async def api_compliance_export(limit: int = 500, _u=Depends(require_role("compliance"))):
+def api_compliance_export(limit: int = 500, _u=Depends(require_role("compliance"))):
     safe_limit = max(1, min(limit, 2000))
 
     locks_resp = db.table("batch_status_locks").select("batch_id,locked,lock_reason,created_at,created_by").order("created_at", desc=True).limit(safe_limit).execute()

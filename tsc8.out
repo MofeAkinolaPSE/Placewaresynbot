@@ -1,0 +1,15 @@
+client/components/dashboards/GlTransactionsTable.tsx(40,5): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(options: DefinedInitialDataOptions<unknown, Error, unknown, (string | number)[]>, queryClient?: QueryClient): DefinedUseQueryResult<unknown, Error>', gave the following error.
+    Object literal may only specify known properties, and 'keepPreviousData' does not exist in type 'DefinedInitialDataOptions<unknown, Error, unknown, (string | number)[]>'.
+  Overload 2 of 3, '(options: UndefinedInitialDataOptions<any, Error, any, (string | number)[]>, queryClient?: QueryClient): UseQueryResult<any, Error>', gave the following error.
+    Object literal may only specify known properties, and 'keepPreviousData' does not exist in type 'UndefinedInitialDataOptions<any, Error, any, (string | number)[]>'.
+  Overload 3 of 3, '(options: UseQueryOptions<any, Error, any, (string | number)[]>, queryClient?: QueryClient): UseQueryResult<any, Error>', gave the following error.
+    Object literal may only specify known properties, and 'keepPreviousData' does not exist in type 'UseQueryOptions<any, Error, any, (string | number)[]>'.
+client/components/dashboards/GlTransactionsTable.tsx(43,30): error TS2339: Property 'data' does not exist on type 'unknown'.
+client/components/dashboards/GlTransactionsTable.tsx(44,31): error TS2339: Property 'count' does not exist on type 'unknown'.
+client/lib/books-api.ts(17,3): error TS2612: Property 'code' will overwrite the base property in 'ApiError'. If this is intentional, add an initializer. Otherwise, add a 'declare' modifier or remove the redundant declaration.
+client/pages/books/BooksBanking.tsx(79,21): error TS2741: Property 'id' is missing in type 'Dict' but required in type '{ id: string; code?: string; name?: string; }'.
+client/pages/books/BooksLedger.tsx(241,21): error TS2741: Property 'id' is missing in type 'Dict' but required in type '{ id: string; code?: string; name?: string; }'.
+client/pages/books/BooksLedger.tsx(277,21): error TS2741: Property 'id' is missing in type 'Dict' but required in type '{ id: string; code?: string; name?: string; }'.
+client/pages/books/BooksSetup.tsx(99,21): error TS2741: Property 'id' is missing in type 'Dict' but required in type '{ id: string; code?: string; name?: string; }'.
+client/pages/books/BooksStatements.tsx(38,21): error TS2741: Property 'id' is missing in type 'Dict' but required in type '{ id: string; code?: string; name?: string; }'.

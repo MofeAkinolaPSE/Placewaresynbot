@@ -14,7 +14,7 @@ class PromotionRequest(BaseModel):
 
 
 @router.post("/create")
-async def api_create_promotion(req: PromotionRequest, request: Request, _u=Depends(verify_jwt)):
+def api_create_promotion(req: PromotionRequest, request: Request, _u=Depends(verify_jwt)):
     # allow only sales or procurement roles to create promotions
     roles = set(getattr(request.state, "user", {}).get("roles") or [])
     if not roles.intersection({"sales", "procurement", "marketing"}):
@@ -24,5 +24,5 @@ async def api_create_promotion(req: PromotionRequest, request: Request, _u=Depen
 
 
 @router.get("/list")
-async def api_list_promotions(_u=Depends(verify_jwt)):
+def api_list_promotions(_u=Depends(verify_jwt)):
     return list_promotions()

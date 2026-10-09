@@ -31,7 +31,7 @@ async def ingest_event(request: Request, payload: EventPayload):
 
 
 @router.get("/events/{event_id}/trace")
-async def event_trace(request: Request, event_id: str):
+def event_trace(request: Request, event_id: str):
     payload_auth = verify_jwt(request)
     roles = set(payload_auth.get("roles") or [])
     if not roles.intersection({"admin", "management", "ops", "finance", "crm", "compliance", "staff"}):

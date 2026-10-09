@@ -15,7 +15,7 @@ class InvoiceCreate(BaseModel):
 
 
 @router.post("/create_invoice")
-async def api_create_invoice(payload: InvoiceCreate, request: Request, user=Depends(verify_jwt)):
+def api_create_invoice(payload: InvoiceCreate, request: Request, user=Depends(verify_jwt)):
     # Compliance lock enforcement
     enforce_no_locked_batches(payload.batch_ids)
 

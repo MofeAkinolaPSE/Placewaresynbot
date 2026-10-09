@@ -18,17 +18,12 @@ import datetime as dt
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from src.fin import journal_map
 from src.fin.db import ZERO, money, q, q1
 
 ONE = dt.timedelta(days=1)
 
 # ACE posting source -> the Sage journal code it corresponds to (shown in the Jrnl column)
-SOURCE_JRNL = {
-    "SALES_INVOICE": "SJ", "CREDIT_NOTE": "SJ", "FRONTDESK": "SJ", "CUSTOMER_RECEIPT": "CRJ",
-    "SUPPLIER_BILL": "PJ", "DEBIT_NOTE": "PJ", "SUPPLIER_PAYMENT": "CDJ", "CASH_VOUCHER": "CDJ",
-    "MANUAL_JOURNAL": "GENJ", "STOCK_ADJUSTMENT": "INAJ", "STOCK_COUNT": "INAJ", "STOCK_LOAN": "INAJ",
-    "STOCK_LOAN_RETURN": "INAJ", "STOCK_LOAN_WRITEOFF": "INAJ", "BANK_TRANSFER": "GENJ", "DATA_CORRECTION": "ADJ",
-}
 PL_TYPES = ("REVENUE", "EXPENSE")
 
 
@@ -59,7 +54,17 @@ def _hist_balances(conn, entity_id: str, d: dt.date, codes: Optional[List[str]] 
                    start_of_day: bool = False) -> Dict[str, Decimal]:
     """Sage balance (debit positive) of every account at the end of day d (or its start).
     Sage's own Beginning Balance for d's month is the anchor, so anything Sage changed in
-    earlier months - and its year-end closing of income and expense - is always included."""
+    earlier months - and its year-end closing of income and expense - is always included.
+
+    Shared across workers: one report makes several of these calls and every Books screen
+    repeats them; the cache is dropped on any save (src/utils/shared_response.py)."""
+    from src.utils.shared_response import shared_response
+    key = f"fin:hist_bal:{entity_id}:{d}:{int(start_of_day)}:{','.join(sorted(codes)) if codes else '*'}"
+    return shared_response(key, 300, lambda: _hist_balances_uncached(conn, entity_id, d, codes, start_of_day))
+
+
+def _hist_balances_uncached(conn, entity_id: str, d: dt.date, codes: Optional[List[str]] = None,
+                            start_of_day: bool = False) -> Dict[str, Decimal]:
     cf = " AND account_code = ANY(%s)" if codes else ""
     p: List[Any] = [entity_id, d] + ([codes] if codes else [])
     op = "<" if start_of_day else "<="
@@ -99,11 +104,13 @@ def _ace_balances(conn, entity_id: str, d: dt.date, codes: Optional[List[str]] =
         WHERE legal_entity_id=%s AND journal_date <= %s {cf} GROUP BY account_code""", p)}
 
 
-def balances(conn, entity_id: str, d: dt.date, codes: Optional[List[str]] = None) -> Dict[str, Decimal]:
-    """Balance at the end of day d."""
+def balances(conn, entity_id: str, d: dt.date, codes: Optional[List[str]] = None,
+             fresh: bool = False) -> Dict[str, Decimal]:
+    """Balance at the end of day d. fresh=True skips the shared cache (for code that posts
+    journals from the figure, so it always sees this transaction's own data)."""
     h = history_until(conn, entity_id)
     if h and d <= h:
-        return _hist_balances(conn, entity_id, d, codes)
+        return (_hist_balances_uncached if fresh else _hist_balances)(conn, entity_id, d, codes)
     return _ace_balances(conn, entity_id, d, codes)
 
 
@@ -181,11 +188,16 @@ def lines(conn, entity_id: str, code: str, f: dt.date, t: dt.date, search: Optio
         p = [entity_id, code, a_from, t] + ([f"%{search}%"] * 3 if search else []) + [limit]
         for r in q(conn, f"""SELECT g.line_id, g.journal_id, g.journal_number, g.journal_date, g.journal_type, g.source_type,
                                     g.source_id, g.source_ref, COALESCE(g.description, g.journal_description) AS description,
-                                    g.debit, g.credit, g.customer_id, g.supplier_id, g.product_sku
+                                    g.debit, g.credit, g.customer_id, g.supplier_id, g.product_sku, {journal_map.code_sql()} AS jrnl
                              FROM fin_v_general_ledger g WHERE g.legal_entity_id=%s AND g.account_code=%s
-                             AND g.journal_date BETWEEN %s AND %s {sf_a} ORDER BY g.journal_date, g.journal_number, g.line_no LIMIT %s""", p):
+                             AND g.journal_date BETWEEN %s AND %s {sf_a}
+                             -- an entry deleted the same day (posted, then reversed on its own date) nets to nothing:
+                             -- neither it nor its reversal is listed; both stay in Journals and the audit trail
+                             AND NOT EXISTS (SELECT 1 FROM fin_journals jx JOIN fin_journals jy ON jy.id = COALESCE(jx.reversed_by_id, jx.reversal_of_id)
+                                             WHERE jx.id = g.journal_id AND jy.journal_date = jx.journal_date)
+                             ORDER BY g.journal_date, g.journal_number, g.line_no LIMIT %s""", p):
             out.append({"date": r["journal_date"], "reference": r["source_ref"] or r["journal_number"],
-                        "jrnl": SOURCE_JRNL.get(r["source_type"] or "", "GENJ"), "description": r["description"],
+                        "jrnl": r["jrnl"], "description": r["description"],
                         "debit": r["debit"], "credit": r["credit"], "source": "ace", "journal_id": r["journal_id"],
                         "journal_number": r["journal_number"], "source_type": r["source_type"], "source_id": r["source_id"],
                         "line_id": r["line_id"]})

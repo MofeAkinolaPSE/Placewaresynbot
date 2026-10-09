@@ -116,6 +116,9 @@ def set_budget_lines(conn, ctx, budget_id: str, lines: List[Dict[str, Any]]) -> 
         acct = q1(conn, "SELECT id, account_type FROM fin_accounts WHERE id=%s AND legal_entity_id=%s", (l["account_id"], ctx.entity_id))
         if not acct:
             raise not_found("Account", l["account_id"])
+        if l.get("remove"):
+            ex(conn, "DELETE FROM fin_budget_lines WHERE budget_id=%s AND account_id=%s", (budget_id, acct["id"]))
+            continue
         amounts = l.get("amounts") or {}
         if l.get("annual") not in (None, ""):
             annual = money(l["annual"])
@@ -131,6 +134,42 @@ def set_budget_lines(conn, ctx, budget_id: str, lines: List[Dict[str, Any]]) -> 
                    (budget_id, acct["id"], pid, money(amt)))
     audit.record(conn, ctx, "BUDGET_UPDATED", "budget", budget_id, ref=b["name"], metadata={"accounts": len(lines)})
     return get_budget(conn, ctx.entity_id, budget_id)
+
+
+def update_budget(conn, ctx, budget_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Rename a budget, or reopen an approved one to draft so it can be edited again."""
+    ctx.require("budget.edit")
+    b = get_budget(conn, ctx.entity_id, budget_id)
+    if data.get("name") and data["name"].strip() != b["name"]:
+        ex(conn, "UPDATE fin_budgets SET name=%s WHERE id=%s", (data["name"].strip(), budget_id))
+    if data.get("status") == "DRAFT" and b["status"] == "APPROVED":
+        ctx.require("budget.approve")
+        ex(conn, "UPDATE fin_budgets SET status='DRAFT', approved_by=NULL, approved_at=NULL WHERE id=%s", (budget_id,))
+    audit.record(conn, ctx, "BUDGET_UPDATED", "budget", budget_id, ref=b["name"], after={k: v for k, v in data.items() if k in ("name", "status")})
+    return get_budget(conn, ctx.entity_id, budget_id)
+
+
+def delete_budget(conn, ctx, budget_id: str) -> Dict[str, Any]:
+    """A budget is a plan, not a posting: it can be deleted (lines go with it); kept in the audit trail."""
+    ctx.require("budget.edit")
+    b = get_budget(conn, ctx.entity_id, budget_id)
+    if b["status"] == "APPROVED":
+        ctx.require("budget.approve")
+    ex(conn, "DELETE FROM fin_budgets WHERE id=%s", (budget_id,))
+    audit.record(conn, ctx, "BUDGET_DELETED", "budget", budget_id, ref=b["name"],
+                 metadata={"fiscal_year": b["fiscal_year"], "status": b["status"]})
+    return {"deleted": budget_id}
+
+
+def copy_budget(conn, ctx, budget_id: str, name: Optional[str] = None) -> Dict[str, Any]:
+    ctx.require("budget.edit")
+    b = get_budget(conn, ctx.entity_id, budget_id)
+    n = q1(conn, "INSERT INTO fin_budgets (legal_entity_id, fiscal_year_id, name, created_by) VALUES (%s,%s,%s,%s) RETURNING id",
+           (ctx.entity_id, b["fiscal_year_id"], (name or f"{b['name']} (copy)").strip(), ctx.actor_id))
+    ex(conn, """INSERT INTO fin_budget_lines (budget_id, account_id, period_id, amount)
+                SELECT %s, account_id, period_id, amount FROM fin_budget_lines WHERE budget_id=%s""", (n["id"], budget_id))
+    audit.record(conn, ctx, "BUDGET_COPIED", "budget", n["id"], ref=name, metadata={"from": b["name"]})
+    return get_budget(conn, ctx.entity_id, n["id"])
 
 
 def approve_budget(conn, ctx, budget_id: str) -> Dict[str, Any]:

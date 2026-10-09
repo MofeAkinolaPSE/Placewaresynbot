@@ -51,7 +51,7 @@ class ResolveIncidentPayload(BaseModel):
 
 
 @router.get("/incidents/open")
-async def list_open_incidents(
+def list_open_incidents(
     limit: int = 50,
     user: Dict[str, Any] = Depends(_require_ops_access),
 ):
@@ -59,7 +59,7 @@ async def list_open_incidents(
 
 
 @router.get("/tasks/overdue")
-async def list_overdue_tasks(
+def list_overdue_tasks(
     limit: int = 100,
     user: Dict[str, Any] = Depends(_require_ops_access),
 ):
@@ -67,7 +67,7 @@ async def list_overdue_tasks(
 
 
 @router.get("/diagnostics/finance-dashboard")
-async def finance_dashboard_diagnostics(
+def finance_dashboard_diagnostics(
     user: Dict[str, Any] = Depends(_require_ops_access),
 ):
     diagnostics = detect_finance_blank_dashboard()
@@ -75,7 +75,7 @@ async def finance_dashboard_diagnostics(
 
 
 @router.post("/incidents/finance-dashboard")
-async def open_finance_dashboard_incident(
+def open_finance_dashboard_incident(
     user: Dict[str, Any] = Depends(_require_ops_access),
 ):
     diagnostics = detect_finance_blank_dashboard()
@@ -89,7 +89,7 @@ async def open_finance_dashboard_incident(
 
 
 @router.post("/incidents/{incident_id}/run-playbook")
-async def run_incident_playbook(
+def run_incident_playbook(
     incident_id: str,
     user: Dict[str, Any] = Depends(_require_ops_access),
 ):
@@ -98,7 +98,7 @@ async def run_incident_playbook(
 
 
 @router.post("/incidents/{incident_id}/resolve")
-async def resolve_open_incident(
+def resolve_open_incident(
     incident_id: str,
     payload: ResolveIncidentPayload,
     user: Dict[str, Any] = Depends(_require_ops_access),
@@ -111,7 +111,7 @@ async def resolve_open_incident(
 
 
 @router.post("/tasks")
-async def create_maintenance_task(
+def create_maintenance_task(
     payload: CreateTaskPayload,
     user: Dict[str, Any] = Depends(_require_ops_access),
 ):
@@ -130,7 +130,7 @@ async def create_maintenance_task(
 
 
 @router.post("/tasks/{task_id}/complete")
-async def complete_maintenance_task(
+def complete_maintenance_task(
     task_id: str,
     payload: CompleteTaskPayload,
     user: Dict[str, Any] = Depends(_require_ops_access),

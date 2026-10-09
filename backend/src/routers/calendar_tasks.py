@@ -83,7 +83,7 @@ class TaskUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/events")
-async def list_calendar_events(
+def list_calendar_events(
     month: Optional[str] = Query(None, description="YYYY-MM format to filter by month"),
     event_type: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
@@ -198,7 +198,7 @@ LOGISTICS_ALERT_WINDOW_DAYS = 30
 
 
 @router.get("/logistics/alerts")
-async def get_logistics_alerts(window_days: int = Query(30, ge=1, le=180), user=Depends(verify_jwt)):
+def get_logistics_alerts(window_days: int = Query(30, ge=1, le=180), user=Depends(verify_jwt)):
     """
     Return batches/events with expiry dates within the alert window.
     Scans metadata.batch_expiry on all logistics calendar events that start
@@ -261,7 +261,7 @@ async def get_logistics_alerts(window_days: int = Query(30, ge=1, le=180), user=
 # ---------------------------------------------------------------------------
 
 @tasks_router.get("")
-async def list_tasks(
+def list_tasks(
     status: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     assigned_to: Optional[str] = Query(None),

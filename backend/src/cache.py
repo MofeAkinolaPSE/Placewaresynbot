@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from functools import wraps
@@ -111,15 +112,16 @@ def ttl_cache(
         ignore_kwargs = []
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        name = f"{func.__module__}.{func.__qualname__}"
+
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Shared by every worker through Redis, built once when several laptops ask at the same
+            # moment, and dropped on any save (src/utils/shared_response.py); in-process if Redis is down.
+            from src.utils.shared_response import shared_response
             key = _make_key(func.__name__, args, kwargs, ignore_kwargs)
-            cached = _global_cache.get(key)
-            if cached is not None:
-                return cached
-            value = func(*args, **kwargs)
-            _global_cache.set(key, value, ttl_seconds, tags=tags)
-            return value
+            digest = hashlib.sha1(repr(key).encode()).hexdigest()
+            return shared_response(f"ttl:{name}:{digest}", ttl_seconds, lambda: func(*args, **kwargs))
 
         return wrapper
 
@@ -127,8 +129,14 @@ def ttl_cache(
 
 
 def invalidate_cache_tags(*tags: str) -> int:
+    # Cached values are versioned rather than tagged now: advancing the version drops them all
+    # (also covers writes made outside a request, e.g. by a background job).
+    from src.utils.shared_response import bump_data_version
+    bump_data_version()
     return _global_cache.invalidate_tags(tags)
 
 
 def clear_cache() -> None:
+    from src.utils.shared_response import bump_data_version
+    bump_data_version()
     _global_cache.clear()

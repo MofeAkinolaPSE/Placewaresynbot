@@ -21,6 +21,7 @@ import psycopg2
 from src.fin import audit, inventory, posting, rules
 from src.fin.db import ZERO, ex, money, q, q1, qty
 from src.fin.errors import FinError, invalid, not_found
+from src.fin import numbering
 from src.fin.numbering import next_number
 from src.fin.sales import bank_account, duplicate_reference
 
@@ -187,13 +188,36 @@ def list_bills(conn, entity_id: str, *, supplier_id: Any = None, search: Optiona
         where.append("(b.bill_number ILIKE %s OR s.name ILIKE %s OR b.supplier_invoice_number ILIKE %s)")
         params += [f"%{search}%"] * 3
     w = " AND ".join(where)
-    total = q1(conn, f"SELECT COUNT(*) n FROM fin_supplier_bills b LEFT JOIN suppliers s ON s.id=b.supplier_id WHERE {w}", params)["n"]
-    rows = q(conn, f"""SELECT b.id, b.bill_number, b.supplier_invoice_number, b.bill_date, b.due_date, b.supplier_id,
-                              s.name AS supplier_name, b.total, b.amount_settled, (b.total - b.amount_settled) AS balance_due,
-                              b.status, b.is_opening
-                       FROM fin_supplier_bills b LEFT JOIN suppliers s ON s.id=b.supplier_id
-                       WHERE {w} ORDER BY b.bill_date DESC, b.bill_number DESC LIMIT %s OFFSET %s""",
-             params + [limit, offset])
+    union = f"""SELECT b.id::text AS id, b.bill_number, b.supplier_invoice_number, b.bill_date, b.due_date, b.supplier_id::text AS supplier_id,
+                       s.name AS supplier_name, b.total, b.amount_settled, (b.total - b.amount_settled) AS balance_due,
+                       b.status, b.is_opening, 'ACE' AS source
+                FROM fin_supplier_bills b LEFT JOIN suppliers s ON s.id=b.supplier_id WHERE {w}"""
+    sp: List[Any] = []
+    if not open_only:
+        # Sage purchase invoices (vendor ledger), except those already here as open (brought-forward) bills
+        sw, sp = ["l.legal_entity_id=%s", "l.party_kind='VENDOR'", "l.row_kind='TXN'", "l.jrnl='PJ'", "l.credit > 0",
+                  """NOT EXISTS (SELECT 1 FROM fin_supplier_bills ob WHERE ob.legal_entity_id=l.legal_entity_id AND ob.is_opening
+                                 AND ob.supplier_id=l.supplier_id AND ob.supplier_invoice_number=l.trans_no)"""], [entity_id]
+        if supplier_id:
+            sw.append("l.supplier_id::text=%s")
+            sp.append(str(supplier_id))
+        if date_from:
+            sw.append("l.txn_date >= %s")
+            sp.append(date_from)
+        if date_to:
+            sw.append("l.txn_date <= %s")
+            sp.append(date_to)
+        if search:
+            sw.append("(l.trans_no ILIKE %s OR l.party_name ILIKE %s)")
+            sp += [f"%{search}%"] * 2
+        union += f"""
+                UNION ALL
+                SELECT NULL, l.trans_no, l.trans_no, l.txn_date, NULL, l.supplier_id::text, l.party_name, l.credit, l.credit, 0,
+                       'PAID', false, 'SAGE'
+                FROM fin_sage_party_ledger l WHERE {' AND '.join(sw)}"""
+    total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params + sp)["n"]
+    rows = q(conn, f"SELECT * FROM ({union}) u ORDER BY bill_date DESC, bill_number DESC LIMIT %s OFFSET %s",
+             params + sp + [limit, offset])
     return {"items": rows, "total": total}
 
 
@@ -361,6 +385,7 @@ def void_payment(conn, ctx, payment_id: str, reason: str) -> Dict[str, Any]:
     rev = posting.reverse(conn, ctx, str(p["journal_id"]), reversal_date=p["payment_date"],
                           reason=f"Void payment {p['payment_number']}: {reason}", allow_system=True)
     _unapply(conn, "PAYMENT", payment_id)
+    numbering.release_if_last(conn, ctx, "SUPPLIER_PAYMENT", p["payment_number"], "fin_supplier_payments", "payment_number", payment_id)
     ex(conn, "UPDATE fin_supplier_payments SET status='VOID', void_journal_id=%s, void_reason=%s, amount_allocated=0 WHERE id=%s",
        (rev["id"], reason, payment_id))
     audit.record(conn, ctx, "SUPPLIER_PAYMENT_VOIDED", "supplier_payment", payment_id, ref=p["payment_number"], reason=reason)
@@ -383,14 +408,34 @@ def list_payments(conn, entity_id: str, *, supplier_id: Any = None, search: Opti
         where.append("(p.payment_number ILIKE %s OR s.name ILIKE %s OR p.reference ILIKE %s)")
         params += [f"%{search}%"] * 3
     w = " AND ".join(where)
-    total = q1(conn, f"SELECT COUNT(*) n FROM fin_supplier_payments p LEFT JOIN suppliers s ON s.id=p.supplier_id WHERE {w}", params)["n"]
-    rows = q(conn, f"""SELECT p.id, p.payment_number, p.payment_date, p.supplier_id, s.name AS supplier_name, p.method,
-                              b.name AS bank_account_name, p.amount, p.wht_amount, p.amount_allocated,
-                              (p.amount + p.wht_amount - p.amount_allocated) AS unapplied, p.reference, p.status
-                       FROM fin_supplier_payments p LEFT JOIN suppliers s ON s.id=p.supplier_id
-                       LEFT JOIN fin_bank_accounts b ON b.id=p.bank_account_id
-                       WHERE {w} ORDER BY p.payment_date DESC, p.payment_number DESC LIMIT %s OFFSET %s""",
-             params + [limit, offset])
+    # Payments made in Sage (vendor ledger, cash disbursements) are listed with ACE Books' own, so the
+    # tab shows the supplier's payment history, not only what was paid since go-live.
+    sw, sp = ["l.legal_entity_id=%s", "l.party_kind='VENDOR'", "l.row_kind='TXN'", "l.jrnl='CDJ'", "l.debit > 0"], [entity_id]
+    if supplier_id:
+        sw.append("l.supplier_id::text=%s")
+        sp.append(str(supplier_id))
+    if date_from:
+        sw.append("l.txn_date >= %s")
+        sp.append(date_from)
+    if date_to:
+        sw.append("l.txn_date <= %s")
+        sp.append(date_to)
+    if search:
+        sw.append("(l.trans_no ILIKE %s OR l.party_name ILIKE %s)")
+        sp += [f"%{search}%"] * 2
+    swh = " AND ".join(sw)
+    union = f"""SELECT p.id::text AS id, p.payment_number, p.payment_date, p.supplier_id::text AS supplier_id, s.name AS supplier_name, p.method,
+                       b.name AS bank_account_name, p.amount, p.wht_amount, p.amount_allocated,
+                       (p.amount + p.wht_amount - p.amount_allocated) AS unapplied, p.reference, p.status, 'ACE' AS source
+                FROM fin_supplier_payments p LEFT JOIN suppliers s ON s.id=p.supplier_id
+                LEFT JOIN fin_bank_accounts b ON b.id=p.bank_account_id WHERE {w}
+                UNION ALL
+                SELECT NULL, l.trans_no, l.txn_date, l.supplier_id::text, l.party_name, NULL, NULL, l.debit, 0, l.debit, 0,
+                       l.trans_no, 'POSTED', 'SAGE'
+                FROM fin_sage_party_ledger l WHERE {swh}"""
+    total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params + sp)["n"]
+    rows = q(conn, f"SELECT * FROM ({union}) u ORDER BY payment_date DESC, payment_number DESC LIMIT %s OFFSET %s",
+             params + sp + [limit, offset])
     return {"items": rows, "total": total}
 
 
@@ -509,14 +554,94 @@ def get_debit_note(conn, entity_id: str, dn_id: str) -> Dict[str, Any]:
                     LEFT JOIN fin_journals j ON j.id=d.journal_id WHERE d.id=%s AND d.legal_entity_id=%s""", (dn_id, entity_id))
     if not d:
         raise not_found("Debit note", dn_id)
-    d["lines"] = q(conn, "SELECT * FROM fin_debit_note_lines WHERE debit_note_id=%s ORDER BY line_no", (dn_id,))
+    d["lines"] = q(conn, """SELECT l.*, bt.batch_number, bt.expiry_date FROM fin_debit_note_lines l
+                            LEFT JOIN fin_batches bt ON bt.id=l.batch_id WHERE l.debit_note_id=%s ORDER BY l.line_no""", (dn_id,))
+    d["allocations"] = q(conn, """SELECT a.id, a.bill_id, a.amount, a.allocation_date, a.reversed, b.bill_number, b.supplier_invoice_number
+                                  FROM fin_ap_allocations a JOIN fin_supplier_bills b ON b.id=a.bill_id
+                                  WHERE a.source_type='DEBIT_NOTE' AND a.source_id=%s ORDER BY a.allocation_date""", (dn_id,))
+    d["unused"] = money(d["total"]) - money(d["amount_settled"])
+    d["recall"] = q1(conn, """SELECT r.id AS recall_id, r.recall_number FROM fin_recall_supplier_returns rr JOIN fin_recalls r ON r.id=rr.recall_id
+                              WHERE rr.debit_note_id=%s LIMIT 1""", (dn_id,))
     return d
 
 
-def list_debit_notes(conn, entity_id: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
-    total = q1(conn, "SELECT COUNT(*) n FROM fin_debit_notes WHERE legal_entity_id=%s", (entity_id,))["n"]
-    rows = q(conn, """SELECT d.id, d.debit_note_number, d.note_date, s.name AS supplier_name, b.bill_number, d.reason,
-                             d.total, d.amount_settled, d.status FROM fin_debit_notes d
-                      LEFT JOIN suppliers s ON s.id=d.supplier_id LEFT JOIN fin_supplier_bills b ON b.id=d.bill_id
-                      WHERE d.legal_entity_id=%s ORDER BY d.note_date DESC LIMIT %s OFFSET %s""", (entity_id, limit, offset))
-    return {"items": rows, "total": total}
+def list_debit_notes(conn, entity_id: str, limit: int = 100, offset: int = 0, *, supplier_id: Any = None, search: Optional[str] = None,
+                     date_from=None, date_to=None, status: Optional[str] = None) -> Dict[str, Any]:
+    """Returns outward and supplier credits: ACE Books debit notes (what went back, from which batch,
+    against which supplier invoice, how much of the credit is used), the supplier credits brought
+    forward from Sage, and Sage's own credit memos (vendor ledger)."""
+    w, p = ["d.legal_entity_id=%s"], [entity_id]
+    sw, sp = ["l.legal_entity_id=%s", "l.party_kind='VENDOR'", "l.row_kind='TXN'", "l.jrnl='PJ'", "l.debit > 0"], [entity_id]
+    if supplier_id:
+        w.append("d.supplier_id::text=%s"); p.append(str(supplier_id))
+        sw.append("l.supplier_id::text=%s"); sp.append(str(supplier_id))
+    if date_from:
+        w.append("d.note_date >= %s"); p.append(date_from)
+        sw.append("l.txn_date >= %s"); sp.append(date_from)
+    if date_to:
+        w.append("d.note_date <= %s"); p.append(date_to)
+        sw.append("l.txn_date <= %s"); sp.append(date_to)
+    if search:
+        w.append("(d.debit_note_number ILIKE %s OR s.name ILIKE %s OR d.reason ILIKE %s OR COALESCE(b.supplier_invoice_number, d.sage_bill_number, '') ILIKE %s)")
+        p += [f"%{search}%"] * 4
+        sw.append("(l.trans_no ILIKE %s OR l.party_name ILIKE %s)"); sp += [f"%{search}%"] * 2
+    st = (status or "").lower()
+    if st == "unused":
+        w.append("d.total - d.amount_settled > 0 AND d.status <> 'VOID'")
+    elif st == "used":
+        w.append("d.total - d.amount_settled = 0")
+    elif st == "returns":
+        w.append("d.journal_id IS NOT NULL")
+    elif st == "brought_forward":
+        w.append("d.journal_id IS NULL")
+    sage_ok = st in ("", "used", "sage")
+    if st == "sage":
+        w.append("FALSE")
+    union = f"""
+        SELECT d.id::text AS id, d.debit_note_number, d.note_date, d.supplier_id::text AS supplier_id, s.name AS supplier_name,
+               d.bill_id::text AS bill_id, COALESCE(b.supplier_invoice_number, b.bill_number, d.sage_bill_number) AS against, d.reason,
+               d.total, d.amount_settled, d.total - d.amount_settled AS unused, d.status,
+               CASE WHEN d.journal_id IS NULL THEN 'BROUGHT_FORWARD' ELSE 'RETURN' END AS kind, 'ACE' AS source,
+               (SELECT COUNT(*) FROM fin_debit_note_lines x WHERE x.debit_note_id=d.id AND x.sku IS NOT NULL) AS items,
+               (SELECT COALESCE(SUM(x.quantity), 0) FROM fin_debit_note_lines x WHERE x.debit_note_id=d.id AND x.sku IS NOT NULL) AS units,
+               (SELECT string_agg(DISTINCT x.sku, ', ') FROM fin_debit_note_lines x WHERE x.debit_note_id=d.id) AS skus,
+               (SELECT r.recall_number FROM fin_recall_supplier_returns rr JOIN fin_recalls r ON r.id=rr.recall_id
+                 WHERE rr.debit_note_id=d.id LIMIT 1) AS recall_number,
+               (SELECT rr.recall_id::text FROM fin_recall_supplier_returns rr WHERE rr.debit_note_id=d.id LIMIT 1) AS recall_id
+        FROM fin_debit_notes d LEFT JOIN suppliers s ON s.id=d.supplier_id LEFT JOIN fin_supplier_bills b ON b.id=d.bill_id
+        WHERE {' AND '.join(w)}"""
+    params = p
+    if sage_ok:
+        union += f"""
+        UNION ALL
+        SELECT NULL, l.trans_no, l.txn_date, l.supplier_id::text, l.party_name, NULL, l.trans_no, 'Credit memo in Sage', l.debit, l.debit, 0,
+               'POSTED', 'SAGE_CREDIT', 'SAGE', NULL, NULL, NULL, NULL, NULL
+        FROM fin_sage_party_ledger l WHERE {' AND '.join(sw)}"""
+        params = p + sp
+    total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params)["n"]
+    rows = q(conn, f"SELECT * FROM ({union}) u ORDER BY note_date DESC, debit_note_number DESC LIMIT %s OFFSET %s", params + [limit, offset])
+    summary = q1(conn, """SELECT COUNT(*) FILTER (WHERE journal_id IS NOT NULL AND status <> 'VOID') AS returns,
+                                 COALESCE(SUM(total) FILTER (WHERE journal_id IS NOT NULL AND status <> 'VOID'), 0) AS returned_value,
+                                 COALESCE(SUM(total - amount_settled) FILTER (WHERE status <> 'VOID'), 0) AS unused_credit,
+                                 COUNT(*) FILTER (WHERE status <> 'VOID' AND total - amount_settled > 0) AS with_unused,
+                                 COALESCE(SUM(total) FILTER (WHERE journal_id IS NULL), 0) AS brought_forward
+                          FROM fin_debit_notes WHERE legal_entity_id=%s""", (entity_id,))
+    summary["units_returned"] = q1(conn, """SELECT COALESCE(SUM(x.quantity), 0) AS u FROM fin_debit_note_lines x JOIN fin_debit_notes d ON d.id=x.debit_note_id
+                                            WHERE d.legal_entity_id=%s AND d.status <> 'VOID' AND x.sku IS NOT NULL""", (entity_id,))["u"]
+    return {"items": rows, "total": total, "summary": summary}
+
+
+def allocate_debit_note(conn, ctx, dn_id: str, allocations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Use a supplier credit (a return, or a credit brought forward from Sage) against their open bills."""
+    ctx.require("payables.debit_note.create")
+    d = q1(conn, "SELECT * FROM fin_debit_notes WHERE id=%s AND legal_entity_id=%s FOR UPDATE", (dn_id, ctx.entity_id))
+    if not d or d["status"] == "VOID":
+        raise not_found("Debit note", dn_id)
+    avail = money(d["total"]) - money(d["amount_settled"])
+    if avail <= 0:
+        raise invalid("All of this credit is already used")
+    used = _apply(conn, ctx, source_type="DEBIT_NOTE", source_id=dn_id, supplier_id=str(d["supplier_id"]),
+                  allocations=allocations, available=avail, on=dt.date.today())
+    ex(conn, "UPDATE fin_debit_notes SET amount_settled = amount_settled + %s WHERE id=%s", (used, dn_id))
+    audit.record(conn, ctx, "DEBIT_NOTE_ALLOCATED", "debit_note", dn_id, ref=d["debit_note_number"], metadata={"allocated": str(used)})
+    return get_debit_note(conn, ctx.entity_id, dn_id)

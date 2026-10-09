@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -502,6 +503,8 @@ export default function FinanceAR() {
   const summary = aging.summary ?? {};
   const customers: any[] = aging.customers ?? [];
   const triggeredAlerts: any[] = aging.triggered_alerts ?? [];
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [arTab, setArTab] = useState("aging");
 
   // Only events.length is read here (TabsList badge); rules/create/delete/
   // ack all live in AlertRulesTab now.
@@ -554,10 +557,13 @@ export default function FinanceAR() {
           </p>
         </div>
         {triggeredAlerts.length > 0 && (
-          <Badge variant="destructive" className="self-start md:self-auto">
-            <AlertTriangle className="w-3 h-3 mr-1" />
-            {triggeredAlerts.length} active alert{triggeredAlerts.length > 1 ? "s" : ""}
-          </Badge>
+          <button type="button" onClick={() => { setShowAllAlerts(true); document.getElementById("ar-alerts")?.scrollIntoView({ behavior: "smooth" }); }}
+                  className="self-start md:self-auto" title="Show every customer that triggered an alert">
+            <Badge variant="destructive" className="cursor-pointer hover:opacity-90">
+              <AlertTriangle className="w-3 h-3 mr-1" />
+              {triggeredAlerts.length} active alert{triggeredAlerts.length > 1 ? "s" : ""} - open
+            </Badge>
+          </button>
         )}
       </div>
 
@@ -567,27 +573,44 @@ export default function FinanceAR() {
           them inline turns this summary banner into an unbounded wall of
           near-identical rows. */}
       {triggeredAlerts.length > 0 && (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardHeader className="py-3">
+        <Card id="ar-alerts" className="border-destructive/40 bg-destructive/5">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 py-3">
             <CardTitle className="text-sm text-destructive flex items-center gap-2">
-              <Bell className="w-4 h-4" /> Triggered Alert Rules
+              <Bell className="w-4 h-4" /> Triggered Alert Rules ({triggeredAlerts.length})
             </CardTitle>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setArTab("alerts")}>Alert rules</Button>
+              {triggeredAlerts.length > 8 && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAllAlerts((v) => !v)}>
+                {showAllAlerts ? "Show top 8" : `Show all ${triggeredAlerts.length}`}</Button>}
+            </div>
           </CardHeader>
-          <CardContent className="pt-0 space-y-2">
-            {triggeredAlerts.slice(0, 8).map((a, i) => (
-              <div key={i} className="text-sm flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-                <span>
-                  <strong><DrillLink to={a.ace_customer_id ? { type: "customer", id: String(a.ace_customer_id), label: a.name ?? a.customer_id } : null}>{a.name ?? a.customer_id}</DrillLink></strong>: outstanding{" "}
+          <CardContent className="pt-0">
+            <div className="divide-y divide-destructive/10">
+            {(showAllAlerts ? triggeredAlerts : triggeredAlerts.slice(0, 8)).map((a, i) => {
+              const cid = a.ace_customer_id ? String(a.ace_customer_id) : null;
+              return (
+              <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+                <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <strong><DrillLink to={cid ? { type: "customer", id: cid, label: a.name ?? a.customer_id } : null}>{a.name ?? a.customer_id}</DrillLink></strong>: outstanding{" "}
                   <strong>{fmt(a.outstanding_balance)}</strong> — {a.days_overdue} days overdue
-                  {a.rule_description && ` (${a.rule_description})`}
+                  {a.rule_description && <span className="text-muted-foreground"> ({a.rule_description})</span>}
                 </span>
+                {cid && (
+                  <span className="flex flex-wrap gap-1">
+                    <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs"><Link to={`/finance/books/sales?tab=statement&customer=${cid}`}>Statement</Link></Button>
+                    <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs"><Link to={`/finance/books/sales?tab=receipts&new=receipt&customer=${cid}`}>Record receipt</Link></Button>
+                    <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs"><Link to={`/crm/customers?customer=${cid}`}>Customer account</Link></Button>
+                  </span>
+                )}
               </div>
-            ))}
-            {triggeredAlerts.length > 8 && (
-              <p className="text-xs text-muted-foreground pt-1">
-                +{triggeredAlerts.length - 8} more customer{triggeredAlerts.length - 8 > 1 ? "s" : ""} over this threshold. See the AR Aging tab for the full customer list.
-              </p>
+              );
+            })}
+            </div>
+            {!showAllAlerts && triggeredAlerts.length > 8 && (
+              <button type="button" className="pt-2 text-xs text-primary underline" onClick={() => setShowAllAlerts(true)}>
+                +{triggeredAlerts.length - 8} more customer{triggeredAlerts.length - 8 > 1 ? "s" : ""} over this threshold - show them
+              </button>
             )}
           </CardContent>
         </Card>
@@ -598,7 +621,7 @@ export default function FinanceAR() {
         Sales › Aged receivables. Click a customer to open their account.
       </p>
 
-      <Tabs defaultValue="aging">
+      <Tabs value={arTab} onValueChange={setArTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="aging">AR Aging</TabsTrigger>
           <TabsTrigger value="alerts">

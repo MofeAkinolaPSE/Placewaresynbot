@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/components/AuthProvider";
+import { myUserId } from "@/lib/auth-client";
 
 /**
  * Role-aware QC/Finance/Dispatch action panel for a single Frontdesk
@@ -69,6 +70,8 @@ export function InvoiceActionPanel({
   const [financeApprover, setFinanceApprover] = useState("");
   const [financeReason, setFinanceReason] = useState("");
 
+  // QC can't be done by the person who raised the invoice (the server refuses it too)
+  const raisedByMe = !!myUserId() && String((invoice as any).created_by ?? "") === myUserId();
   const canQc = roles.includes("admin") || roles.includes("quality_assurance") || roles.includes("qa");
   const canFinance = roles.includes("admin") || roles.includes("finance");
   const canDispatch = roles.includes("admin") || roles.includes("finance") || roles.includes("ops");
@@ -76,7 +79,7 @@ export function InvoiceActionPanel({
   const qcMutation = useMutation({
     mutationFn: (passed: boolean) => api.frontdesk.submitQc(invoice.id, {
       passed,
-      inspector_name: qcInspector.trim(),
+      inspector_name: qcInspector.trim() || undefined,
       notes: qcNotes.trim() || undefined,
       batch_numbers: qcBatches.trim() ? qcBatches.split(",").map((b) => b.trim()).filter(Boolean) : undefined,
     }),
@@ -92,7 +95,7 @@ export function InvoiceActionPanel({
   const financeMutation = useMutation({
     mutationFn: (approved: boolean) => api.frontdesk.financeApproval(invoice.id, {
       approved,
-      approver_name: financeApprover.trim(),
+      approver_name: financeApprover.trim() || undefined,
       reason: financeReason.trim() || undefined,
     }),
     onSuccess: (_data, approved) => {
@@ -144,23 +147,28 @@ export function InvoiceActionPanel({
         )}
       </div>
 
-      {invoice.status === "qc_pending" && canQc && (
+      {invoice.status === "qc_pending" && canQc && raisedByMe && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+          You raised this invoice, so a QC colleague checks it. It is in their Quality Control queue and they have been notified.
+        </div>
+      )}
+
+      {invoice.status === "qc_pending" && canQc && !raisedByMe && (
         <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
-          <div className="text-xs font-semibold text-muted-foreground">QC CHECK</div>
-          <Input placeholder="Inspector name *" value={qcInspector} onChange={(e) => setQcInspector(e.target.value)} />
+          <div className="text-xs font-semibold text-muted-foreground">QC CHECK <span className="font-normal">· signed with your login</span></div>
           <Input placeholder="Batch numbers (comma-separated)" value={qcBatches} onChange={(e) => setQcBatches(e.target.value)} />
           <Textarea placeholder="Notes" rows={2} value={qcNotes} onChange={(e) => setQcNotes(e.target.value)} />
           <div className="flex gap-2">
             <Button
               size="sm" variant="destructive" className="flex-1"
-              disabled={!qcInspector.trim() || qcMutation.isPending}
+              disabled={qcMutation.isPending}
               onClick={() => qcMutation.mutate(false)}
             >
               Fail QC
             </Button>
             <Button
               size="sm" className="flex-1"
-              disabled={!qcInspector.trim() || qcMutation.isPending}
+              disabled={qcMutation.isPending}
               onClick={() => qcMutation.mutate(true)}
             >
               {qcMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
@@ -172,20 +180,19 @@ export function InvoiceActionPanel({
 
       {invoice.status === "finance_pending" && canFinance && (
         <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
-          <div className="text-xs font-semibold text-muted-foreground">FINANCE APPROVAL</div>
-          <Input placeholder="Approver name *" value={financeApprover} onChange={(e) => setFinanceApprover(e.target.value)} />
+          <div className="text-xs font-semibold text-muted-foreground">FINANCE APPROVAL <span className="font-normal">· signed with your login</span></div>
           <Textarea placeholder="Reason (required for rejection)" rows={2} value={financeReason} onChange={(e) => setFinanceReason(e.target.value)} />
           <div className="flex gap-2">
             <Button
               size="sm" variant="destructive" className="flex-1"
-              disabled={!financeApprover.trim() || financeMutation.isPending}
+              disabled={financeMutation.isPending}
               onClick={() => financeMutation.mutate(false)}
             >
               Reject
             </Button>
             <Button
               size="sm" className="flex-1"
-              disabled={!financeApprover.trim() || financeMutation.isPending}
+              disabled={financeMutation.isPending}
               onClick={() => financeMutation.mutate(true)}
             >
               {financeMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}

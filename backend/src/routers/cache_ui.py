@@ -28,18 +28,18 @@ def get_shared_cache() -> SimpleTTLCache:
 
 
 @router.get("/get/{key}")
-async def api_cache_get(key: str, _u=Depends(verify_jwt)):
+def api_cache_get(key: str, _u=Depends(verify_jwt)):
     v = _shared_cache.get(key)
     return {"key": key, "value": v}
 
 
 @router.get("/ttl/{key}")
-async def api_cache_ttl(key: str, _u=Depends(verify_jwt)):
+def api_cache_ttl(key: str, _u=Depends(verify_jwt)):
     ttl = _shared_cache.ttl(key)
     return {"key": key, "ttl_seconds": ttl}
 
 
 @router.post("/clear")
-async def api_cache_clear(_u=Depends(require_role("admin"))):
+def api_cache_clear(_u=Depends(require_role("admin"))):
     _shared_cache.clear()
     return {"ok": True}

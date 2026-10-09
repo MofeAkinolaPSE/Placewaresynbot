@@ -74,14 +74,14 @@ def _registry_available() -> dict[str, dict]:
 
 
 @router.get('/schemas')
-async def list_schemas(request: Request):
+def list_schemas(request: Request):
     verify_jwt(request)
     merged = {**AVAILABLE, **_registry_available()}
     return {"available": list(merged.keys())}
 
 
 @router.get('/schemas/{name}')
-async def get_schema(name: str, request: Request):
+def get_schema(name: str, request: Request):
     verify_jwt(request)
     merged = {**AVAILABLE, **_registry_available()}
     schema = merged.get(name)

@@ -9,26 +9,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { BooksShell } from "@/components/books/BooksShell";
-import { AccountPick, act, Amount, BankSelect, CsvButton, Empty, ErrorNote, JournalSheet, Loading, Section, Stat, StatusBadge, useBooks } from "@/components/books/kit";
+import { AccountPick, act, Amount, BankSelect, CsvButton, DrillLink, Empty, ErrorNote, JournalSheet, Loading, Section, Stat, StatusBadge, useBooks } from "@/components/books/kit";
+import { DrillTarget, sageLineTarget, useDrill } from "@/components/books/drill-context";
 import { books, Dict, fmtDate, naira, today } from "@/lib/books-api";
 
 export default function BooksAssets() {
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState(params.get("tab") ?? "register");
+  const [tab, setTab] = useState(params.get("tab") ?? "books");
+  // "Add to register" from a purchase in the books: the register form opens pre-filled
+  const [prefill, setPrefill] = useState<Dict | null>(null);
   const open = (k: string, v: string | null) => { const p = new URLSearchParams(params); v ? p.set(k, v) : p.delete(k); setParams(p, { replace: true }); };
   return (
     <BooksShell title="Fixed Assets" actions={<Button size="sm" onClick={() => open("new", "asset")}><Plus className="mr-1 h-4 w-4" />Register asset</Button>}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="register">Asset register</TabsTrigger>
+          <TabsTrigger value="books">Assets in the books</TabsTrigger>
+          <TabsTrigger value="register">Depreciation register</TabsTrigger>
           <TabsTrigger value="depreciation">Depreciation</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
         </TabsList>
+        <TabsContent value="books"><InTheBooks onRegister={(x) => { setPrefill(x); open("new", "asset"); }} onOpen={(id) => open("asset", id)} /></TabsContent>
         <TabsContent value="register"><Register onOpen={(id) => open("asset", id)} /></TabsContent>
         <TabsContent value="depreciation"><Depreciation /></TabsContent>
         <TabsContent value="categories"><Categories /></TabsContent>
       </Tabs>
-      <AssetForm open={params.get("new") === "asset"} onClose={(id) => { open("new", null); if (id) open("asset", id); }} />
+      <AssetForm open={params.get("new") === "asset"} prefill={prefill} onClose={(id) => { open("new", null); setPrefill(null); if (id) open("asset", id); }} />
       <AssetDetail id={params.get("asset")} onClose={() => open("asset", null)} />
     </BooksShell>
   );
@@ -66,7 +71,7 @@ function Register({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function AssetForm({ open, onClose }: { open: boolean; onClose: (id?: string) => void }) {
+function AssetForm({ open, onClose, prefill }: { open: boolean; onClose: (id?: string) => void; prefill?: Dict | null }) {
   const qc = useQueryClient();
   const { data: cats } = useBooks<Dict[]>(["asset-cats"], "/assets/categories");
   const blank = { name: "", category_id: "", serial_number: "", location: "", acquisition_date: today(), depreciation_start: "", cost: "", residual_value: "",
@@ -75,10 +80,16 @@ function AssetForm({ open, onClose }: { open: boolean; onClose: (id?: string) =>
   const [credit, setCredit] = useState<Dict | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!open) { setF(blank); setCredit(null); } }, [open]);
+  // opened from a purchase in the books: the cost is already in the ledger, so it is registered without a new journal
+  useEffect(() => {
+    if (open && prefill) setF({ ...blank, name: prefill.name ?? "", category_id: prefill.category_id ?? "", acquisition_date: String(prefill.date ?? today()).slice(0, 10),
+                                cost: String(prefill.cost ?? ""), funding: prefill.source === "sage" ? "OPENING" : "POSTED",
+                                notes: prefill.notes ?? "", useful_life_months: prefill.default_life_months ? String(prefill.default_life_months) : "" });
+  }, [open, prefill]);
   const cat = cats?.find((c) => c.id === f.category_id);
   const submit = async () => {
     setBusy(true);
-    const a = await act(() => books.post("/assets", { ...f, depreciation_start: f.depreciation_start || undefined, useful_life_months: f.useful_life_months || undefined,
+    const a = await act(() => books.post("/assets", { ...f, source_line: prefill?.source_line, depreciation_start: f.depreciation_start || undefined, useful_life_months: f.useful_life_months || undefined,
       residual_value: f.residual_value || 0, credit_account_id: credit?.id, bank_account_id: f.bank_account_id || undefined }), "Asset registered");
     setBusy(false);
     if (a) { qc.invalidateQueries({ queryKey: ["books"] }); onClose(a.id); }
@@ -102,11 +113,12 @@ function AssetForm({ open, onClose }: { open: boolean; onClose: (id?: string) =>
           <div className="space-y-1"><Label className="text-xs">Residual value</Label><Input type="number" value={f.residual_value} onChange={set("residual_value")} /></div>
         </div>
         <div className="space-y-1"><Label className="text-xs">How was it paid for?</Label>
-          <div className="flex gap-2">{[["BANK", "Paid from bank"], ["CLEARING", "Other account (e.g. creditor)"], ["OPENING", "Opening balance (from Sage)"]].map(([k, l]) =>
+          <div className="flex flex-wrap gap-2">{[["BANK", "Paid from bank"], ["CLEARING", "Other account (e.g. creditor)"], ["OPENING", "Opening balance (from Sage)"], ["POSTED", "Already paid in ACE Books"]].map(([k, l]) =>
             <Button key={k} size="sm" variant={f.funding === k ? "default" : "outline"} onClick={() => setF({ ...f, funding: k })}>{l}</Button>)}</div></div>
         {f.funding === "BANK" && <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label="Paid from" />}
         {f.funding === "CLEARING" && <AccountPick label="Credit account" value={credit} onChange={setCredit} />}
-        {f.funding === "OPENING" && <div className="space-y-1"><Label className="text-xs">Accumulated depreciation already charged in Sage</Label><Input type="number" value={f.opening_accumulated_depreciation} onChange={set("opening_accumulated_depreciation")} /></div>}
+        {(f.funding === "OPENING" || f.funding === "POSTED") && <div className="space-y-1"><Label className="text-xs">Accumulated depreciation already charged on it (if any)</Label><Input type="number" value={f.opening_accumulated_depreciation} onChange={set("opening_accumulated_depreciation")} /></div>}
+        {prefill && <p className="text-xs text-muted-foreground">From the books: {prefill.description} ({fmtDate(prefill.date)}). Its cost is already in account {prefill.code}, so registering it posts no new journal - it starts its depreciation schedule.</p>}
       </div>
     </DetailSheet>
   );
@@ -239,5 +251,77 @@ function Categories() {
         </Table>
       )}
     </Section>
+  );
+}
+
+/** Fixed assets as the ledger has them - Sage's years and ACE Books: per account cost, accumulated
+ *  depreciation and net book value, and every purchase (when, from whom, what), disposal and
+ *  depreciation charge. Each line opens its ledger entry; a purchase can be added to the register. */
+function InTheBooks({ onRegister, onOpen }: { onRegister: (x: Dict) => void; onOpen: (id: string) => void }) {
+  const drill = useDrill();
+  const [asOf, setAsOf] = useState(today());
+  const [search, setSearch] = useState("");
+  const [openAcct, setOpenAcct] = useState<string | null>(null);
+  const { data, isLoading, error } = useBooks<Dict>(["asset-history", asOf], "/assets/history", { as_of: asOf });
+  const s = search.trim().toLowerCase();
+  const match = (r: Dict) => !s || `${r.description} ${r.reference ?? ""} ${String(r.date).slice(0, 4)}`.toLowerCase().includes(s);
+  const lineTarget = (r: Dict): DrillTarget | null => r.source === "sage" ? sageLineTarget({ date: String(r.date).slice(0, 10), jrnl: r.jrnl, reference: r.reference })
+    : r.journal_id ? { type: "journal", id: r.journal_id } : null;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Cost" value={naira(data?.cost)} /><Stat label="Accumulated depreciation" value={naira(data?.accumulated_depreciation)} />
+        <Stat label="Net book value" value={naira(data?.net_book_value)} /><Stat label="In the depreciation register" value={String(data?.register_count ?? 0)} sub="assets with a schedule" />
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1"><Label className="text-xs">As at</Label><Input type="date" className="h-9 w-40" value={asOf} onChange={(e) => setAsOf(e.target.value || today())} /></div>
+        <div className="min-w-[240px] flex-1 space-y-1"><Label className="text-xs">Find a purchase</Label>
+          <Input className="h-9" placeholder="e.g. chair, generator, Mazda, 2021, supplier name" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+      </div>
+      {isLoading && <Loading />}<ErrorNote error={error} />
+      {(data?.accounts ?? []).map((a: Dict) => {
+        const purchases = a.purchases.filter(match), disposals = a.disposals.filter(match);
+        const isOpen = openAcct === a.code || (!!s && (purchases.length + disposals.length) > 0);
+        if (s && purchases.length + disposals.length === 0) return null;
+        return (
+          <Section key={a.code} title={<button className="text-left" onClick={() => setOpenAcct(isOpen && !s ? null : a.code)}>
+              {a.code} · {a.name}{a.category ? <span className="ml-2 text-xs font-normal text-muted-foreground">{a.category}{a.depreciable ? "" : " · not depreciated"}</span> : null}</button>}
+            actions={<div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+              <span>Cost <strong><Amount value={a.cost} /></strong></span>
+              {a.depreciable && <span>Acc. dep. <strong><Amount value={a.accumulated_depreciation} /></strong></span>}
+              <span>NBV <strong><Amount value={a.net_book_value} /></strong></span>
+              <Button size="sm" variant="ghost" onClick={() => setOpenAcct(isOpen && !s ? null : a.code)}>{isOpen ? "Hide" : `${a.purchases.length} purchases`}</Button></div>}>
+            {isOpen ? (
+              <div className="space-y-4">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Bought</TableHead><TableHead>What / from whom</TableHead><TableHead>Reference</TableHead><TableHead className="text-right">Cost</TableHead><TableHead>Register</TableHead></TableRow></TableHeader>
+                  <TableBody>{purchases.map((r: Dict) => (
+                    <TableRow key={r.source_line}>
+                      <TableCell className="whitespace-nowrap text-xs">{fmtDate(r.date)}</TableCell>
+                      <TableCell className="text-xs">{lineTarget(r) ? <DrillLink to={lineTarget(r)}>{r.description || "-"}</DrillLink> : r.description}
+                        {r.brought_forward && <div className="text-[11px] text-muted-foreground">assets bought before 2019, brought forward as one figure in Sage</div>}</TableCell>
+                      <TableCell className="text-xs">{r.reference} {r.jrnl ? <span className="text-muted-foreground">({r.jrnl})</span> : null}</TableCell>
+                      <TableCell className="text-right"><Amount value={r.amount} /></TableCell>
+                      <TableCell>{r.registered ? <button className="font-mono text-xs text-primary underline" onClick={() => onOpen(r.registered.id)}>{r.registered.asset_code}</button>
+                        : a.category_id ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onRegister({ ...r, name: r.description, cost: r.amount, category_id: a.category_id, code: a.code, default_life_months: a.default_life_months })}>Add to register</Button>
+                        : <span className="text-[11px] text-muted-foreground">no category</span>}</TableCell>
+                    </TableRow>))}</TableBody>
+                </Table>
+                {disposals.length > 0 && (<div><div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Sold / written off</div>
+                  <Table><TableBody>{disposals.map((r: Dict) => (
+                    <TableRow key={r.source_line}><TableCell className="whitespace-nowrap text-xs">{fmtDate(r.date)}</TableCell>
+                      <TableCell className="text-xs">{lineTarget(r) ? <DrillLink to={lineTarget(r)}>{r.description}</DrillLink> : r.description}</TableCell>
+                      <TableCell className="text-xs">{r.reference}</TableCell><TableCell className="text-right"><Amount value={r.amount} /></TableCell></TableRow>))}</TableBody></Table></div>)}
+                {a.depreciation.length > 0 && (<div><div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Depreciation charged</div>
+                  <Table><TableBody>{a.depreciation.map((r: Dict, i: number) => (
+                    <TableRow key={i}><TableCell className="whitespace-nowrap text-xs">{fmtDate(r.date)}</TableCell>
+                      <TableCell className="text-xs">{lineTarget(r) ? <DrillLink to={lineTarget(r)}>{r.description}</DrillLink> : r.description}</TableCell>
+                      <TableCell className="text-right"><Amount value={r.amount} /></TableCell></TableRow>))}</TableBody></Table></div>)}
+              </div>
+            ) : <p className="text-xs text-muted-foreground">Latest: {a.purchases[0] ? `${a.purchases[0].description} (${fmtDate(a.purchases[0].date)})` : "none"}</p>}
+          </Section>
+        );
+      })}
+    </div>
   );
 }

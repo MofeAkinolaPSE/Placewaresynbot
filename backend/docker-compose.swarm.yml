@@ -19,6 +19,18 @@ services:
   # ── PostgreSQL — stable through app deploys, never rolling-updated ───────────
   db:
     image: localhost:5000/placeware-postgres:18  # Pinned to local registry for Swarm consistency
+    # Same tuning as docker-compose.yml (30-50 laptops) - keep the two in step.
+    command: >
+      postgres
+      -c max_connections=150
+      -c shared_buffers=768MB
+      -c effective_cache_size=2GB
+      -c work_mem=8MB
+      -c maintenance_work_mem=128MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c jit=off
+    shm_size: 256mb
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set in .env}
@@ -51,7 +63,7 @@ services:
         max_attempts: 5
       resources:
         limits:
-          memory: 1g
+          memory: 2g                      # shared_buffers 768MB + work_mem per query
         reservations:
           memory: 256m
     logging:
@@ -71,11 +83,13 @@ services:
       - --port
       - "8000"
       - --workers
-      - "4"
+      - "${UVICORN_WORKERS:-3}"   # background jobs run in one of them (src/services/leader.py)
       - --timeout-graceful-shutdown
       - "30"
     env_file:
       - .env                              # Written by GitHub Actions deploy job (chmod 600)
+    environment:
+      PG_MAX_CONN: ${PG_MAX_CONN:-25}     # per worker; keep in step with docker-compose.yml
     volumes:
       # NeuroLayer licence (signed system.dat). On the manager node the file lives at
       # /var/lib/docker/volumes/placeware_license/_data/system.dat - see the licensing runbook.
@@ -109,7 +123,7 @@ services:
         window: 120s
       resources:
         limits:
-          memory: 1500m
+          memory: 2g                      # 3 uvicorn workers
         reservations:
           memory: 256m
     logging:

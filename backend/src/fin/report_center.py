@@ -152,7 +152,7 @@ def sales_analysis(conn, e, p):
     elif level == "customer":
         rows = q(conn, f"""SELECT i.customer_id, c.name AS customer, c.customer_code, COUNT(*) AS invoices, SUM(i.total) AS sales,
                                   SUM(k.cost) AS cost, SUM(i.total) - SUM(k.cost) AS margin, %s AS month
-                           {base} GROUP BY i.customer_id, c.name, c.customer_code ORDER BY sales DESC""", [p["month"]] + prm)
+                           {base} GROUP BY i.customer_id, c.name, c.customer_code ORDER BY lower(c.name), i.customer_id""", [p["month"]] + prm)
         cols = [C("customer", "Customer", link="drill:customer", id_field="customer_id"), C("customer_code", "Code"),
                 C("invoices", "Invoices", "qty"), C("sales", "Sales", "money", link="drill:customer", id_field="customer_id"),
                 C("cost", "Cost of sales", "money"), C("margin", "Gross margin", "money")]
@@ -177,19 +177,21 @@ def sales_analysis(conn, e, p):
 
 @report("invoice-register")
 def invoice_register(conn, e, p):
-    rows = q(conn, """SELECT i.id AS invoice_id, i.invoice_number, i.invoice_date, i.due_date, i.customer_id, c.name AS customer,
-                             i.source_type, i.total, i.amount_settled, i.total - i.amount_settled AS balance, i.status,
-                             i.journal_id, j.journal_number
-                      FROM fin_sales_invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN fin_journals j ON j.id=i.journal_id
-                      WHERE i.legal_entity_id=%s AND i.invoice_date BETWEEN %s AND %s AND i.status <> 'DRAFT'
-                      ORDER BY i.invoice_date, i.invoice_number""", (e, p["from"], p["to"]))
-    return {"title": "Invoice Register", "subtitle": f"{p['from']} to {p['to']}",
-            "columns": [C("invoice_date", "Date", "date"), C("invoice_number", "Invoice", link="invoice", id_field="invoice_id"),
-                        C("customer", "Customer", link="customer", id_field="customer_id"), C("source_type", "Source"),
-                        C("due_date", "Due", "date"), C("total", "Amount", "money", link="invoice", id_field="invoice_id"),
-                        C("amount_settled", "Paid", "money"), C("balance", "Balance", "money"), C("status", "Status"),
-                        C("journal_number", "Journal", link="journal", id_field="journal_id")],
-            "rows": rows, "totals": _tot(rows, "total", "amount_settled", "balance")}
+    """Every invoice raised in the period - Sage's (paid ones too) and ACE Books' - newest first."""
+    from src.fin import ledger_reports
+    r = ledger_reports.invoice_register(conn, e, p["from"], p["to"])
+    rows = []
+    for x in r["rows"]:
+        rows.append({**x, "link": "invoice" if x["invoice_id"] else "sageinvoice", "doc_id": x["invoice_id"] or x["number"],
+                     "raised_in": {"sage": "Sage", "frontdesk": "Frontdesk"}.get(x["source"], "ACE Books"),
+                     "status": x["status"].replace("_", " ").title()})
+    return {"title": "Invoice Register", "subtitle": f"{p['from']} to {p['to']} - last invoice "
+                                                     f"{(r['last_invoice'] or {}).get('number', '-')}, next {r['next_invoice_number']}",
+            "columns": [C("date", "Date", "date"), C("number", "Invoice", link="doc", id_field="doc_id"),
+                        C("customer", "Customer", link="customer", id_field="customer_id"), C("amount", "Amount", "money"),
+                        C("paid", "Paid / credited", "money"), C("balance", "Balance", "money"), C("status", "Status"),
+                        C("raised_in", "Raised in"), C("journal_number", "Journal", link="journal", id_field="journal_id")],
+            "rows": rows, "totals": _tot([x for x in rows if x["kind"] == "invoice"], "amount", "paid", "balance")}
 
 
 @report("receipts-register")
@@ -247,7 +249,7 @@ def _party_ledger(conn, e, p, kind: str):
                    OVER (PARTITION BY m.p2 ORDER BY m.date, m.number ROWS UNBOUNDED PRECEDING) AS balance,
                COALESCE(o.opening,0) AS opening
         FROM m LEFT JOIN n ON n.pid=m.p2 LEFT JOIN o ON o.pid=m.p2
-        ORDER BY n.name, m.date, m.number""", {"e": e, "f": p["from"], "t": p["to"], "pid": str(p.get("party_id") or "")})
+        ORDER BY lower(n.name), m.date, m.number""", {"e": e, "f": p["from"], "t": p["to"], "pid": str(p.get("party_id") or "")})
     party_link = "customer" if kind == "customer" else "supplier"
     return rows, party_link
 
@@ -293,7 +295,7 @@ def customer_sales_history(conn, e, p):
                              MAX(i.invoice_date) AS last_sale
                       FROM fin_sales_invoices i JOIN fin_sales_invoice_lines l ON l.invoice_id=i.id LEFT JOIN customers c ON c.id=i.customer_id
                       WHERE i.legal_entity_id=%s AND i.status NOT IN ('DRAFT','VOID') AND NOT i.is_opening AND i.invoice_date BETWEEN %s AND %s
-                      GROUP BY i.customer_id, c.name, c.customer_code ORDER BY sales DESC""", (e, p["from"], p["to"]))
+                      GROUP BY i.customer_id, c.name, c.customer_code ORDER BY lower(c.name), i.customer_id""", (e, p["from"], p["to"]))
     return {"title": "Customer Sales History", "subtitle": f"{p['from']} to {p['to']}",
             "columns": [C("customer", "Customer", link="customer", id_field="customer_id"), C("customer_code", "Code"),
                         C("invoices", "Invoices", "qty"), C("units", "Units", "qty"), C("sales", "Sales", "money"),
@@ -311,7 +313,7 @@ def items_sold(conn, e, p):
                       LEFT JOIN fin_products p ON p.legal_entity_id=i.legal_entity_id AND p.sku=l.sku LEFT JOIN customers c ON c.id=i.customer_id
                       WHERE i.legal_entity_id=%s AND l.sku IS NOT NULL AND i.status NOT IN ('DRAFT','VOID') AND NOT i.is_opening
                         AND i.invoice_date BETWEEN %s AND %s
-                      GROUP BY l.sku, p.name, i.customer_id, c.name ORDER BY l.sku, amount DESC""", (e, p["from"], p["to"]))
+                      GROUP BY l.sku, p.name, i.customer_id, c.name ORDER BY lower(COALESCE(p.name, l.sku)), lower(l.sku), lower(c.name)""", (e, p["from"], p["to"]))
     return {"title": "Items Sold to Customers", "subtitle": f"{p['from']} to {p['to']} - who bought what",
             "columns": [C("sku", "Item ID", link="product", id_field="sku"), C("product", "Description"),
                         C("customer", "Customer", link="customer", id_field="customer_id"), C("quantity", "Qty", "qty"),
@@ -326,7 +328,7 @@ def customer_list(conn, e, p):
         open_[it["customer_id"]] = open_.get(it["customer_id"], ZERO) + money(it["open_amount"])
     rows = q(conn, """SELECT id AS customer_id, customer_code, name, client_type, facility_type, credit_limit, payment_terms_days,
                              contact_details->>'phone' AS phone, contact_details->>'email' AS email, contact_details->>'address' AS address
-                      FROM customers ORDER BY name""")
+                      FROM customers ORDER BY lower(name)""")
     for r in rows:
         r["balance"] = open_.get(r["customer_id"], ZERO)
     if p.get("with_balance"):
@@ -405,7 +407,7 @@ def items_purchased(conn, e, p):
                       FROM fin_supplier_bill_lines l JOIN fin_supplier_bills b ON b.id=l.bill_id
                       LEFT JOIN fin_products pr ON pr.legal_entity_id=b.legal_entity_id AND pr.sku=l.sku LEFT JOIN suppliers s ON s.id=b.supplier_id
                       WHERE b.legal_entity_id=%s AND l.sku IS NOT NULL AND b.status <> 'VOID' AND b.bill_date BETWEEN %s AND %s
-                      GROUP BY l.sku, pr.name, b.supplier_id, s.name ORDER BY l.sku""", (e, p["from"], p["to"]))
+                      GROUP BY l.sku, pr.name, b.supplier_id, s.name ORDER BY lower(COALESCE(pr.name, l.sku)), lower(l.sku), lower(s.name)""", (e, p["from"], p["to"]))
     return {"title": "Items Purchased from Vendors", "subtitle": f"{p['from']} to {p['to']}",
             "columns": [C("sku", "Item ID", link="product", id_field="sku"), C("product", "Description"),
                         C("supplier", "Vendor", link="supplier", id_field="supplier_id"), C("quantity", "Qty", "qty"),
@@ -419,7 +421,7 @@ def vendor_list(conn, e, p):
     for it in reports.ap_open_items(conn, e, p["as_of"]):
         owed[str(it["supplier_id"])] = owed.get(str(it["supplier_id"]), ZERO) + money(it["open_amount"])
     rows = q(conn, """SELECT id::text AS supplier_id, external_vendor_id AS code, name, category, contact_name, phone, contact_email,
-                             address, payment_terms, tax_id, status FROM suppliers ORDER BY name""")
+                             address, payment_terms, tax_id, status FROM suppliers ORDER BY lower(name)""")
     for r in rows:
         r["balance"] = owed.get(r["supplier_id"], ZERO)
     return {"title": "Vendor List / Master File", "subtitle": f"Balances as of {p['as_of']}",
@@ -482,7 +484,7 @@ def inventory_profitability(conn, e, p):
                       FROM fin_sales_invoice_lines l JOIN fin_sales_invoices i ON i.id=l.invoice_id
                       LEFT JOIN fin_products pr ON pr.legal_entity_id=i.legal_entity_id AND pr.sku=l.sku
                       WHERE i.legal_entity_id=%s AND l.sku IS NOT NULL AND i.status NOT IN ('DRAFT','VOID') AND NOT i.is_opening
-                        AND i.invoice_date BETWEEN %s AND %s GROUP BY l.sku, pr.name ORDER BY margin DESC""", (e, p["from"], p["to"]))
+                        AND i.invoice_date BETWEEN %s AND %s GROUP BY l.sku, pr.name ORDER BY lower(COALESCE(pr.name, l.sku)), lower(l.sku)""", (e, p["from"], p["to"]))
     for r in rows:
         r["margin_pct"] = (money(r["margin"]) / money(r["sales"]) * 100).quantize(Decimal("0.1")) if money(r["sales"]) else None
     return {"title": "Inventory Profitability", "subtitle": f"{p['from']} to {p['to']} - margin per item",

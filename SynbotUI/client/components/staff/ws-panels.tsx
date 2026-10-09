@@ -56,6 +56,7 @@ export function DayPanel({ day, prefs }: { day: Dict; prefs: Dict }) {
     if (n.link_type === "task") ws.openTask(n.link_id);
     else if (n.link_type === "request") ws.openRequest(n.link_id);
     else if (n.link_type === "message") ws.chat(n.link_id);
+    else if (n.link_type === "path" && n.link_id) window.location.hash = n.link_id;
   };
   return (
     <div className="space-y-4">
@@ -292,6 +293,7 @@ export function InboxPanel() {
     if (x.link_type === "task") ws.openTask(x.link_id);
     else if (x.link_type === "request") ws.openRequest(x.link_id);
     else if (x.link_type === "message") ws.chat(x.link_id);
+    else if (x.link_type === "path" && x.link_id) window.location.hash = x.link_id;
   };
   const incoming: Dict[] = r.data?.incoming ?? [];
   const outgoing: Dict[] = r.data?.outgoing ?? [];

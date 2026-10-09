@@ -128,7 +128,7 @@ async def register_staff(
         raise HTTPException(500, "Failed to create staff record")
 
 @router.get("/staff")
-async def list_staff(
+def list_staff(
     department: Optional[str] = None,
     user: Dict[str, Any] = Depends(require_dept_read)
 ):
@@ -136,7 +136,7 @@ async def list_staff(
     return {"data": get_staff_by_department(department)}
 
 @router.get("/staff/snapshot")
-async def list_staff_snapshot(
+def list_staff_snapshot(
     limit: int = 1000,
     user: Dict[str, Any] = Depends(require_dept_read)
 ):
@@ -146,7 +146,7 @@ async def list_staff_snapshot(
 
 
 @router.get("/staff/{staff_id}")
-async def get_single_staff(
+def get_single_staff(
     staff_id: str,
     user: Dict[str, Any] = Depends(require_dept_read)
 ):
@@ -156,7 +156,7 @@ async def get_single_staff(
     return {"data": staff}
 
 @router.post("/staff/import")
-async def import_staff_csv(
+def import_staff_csv(
     file: UploadFile = File(...),
     user: Dict[str, Any] = Depends(require_hr_admin)
 ):
@@ -229,7 +229,7 @@ async def submit_timesheet(
         raise HTTPException(500, "Failed to record timesheet")
 
 @router.get("/timesheets")
-async def view_timesheets(
+def view_timesheets(
     department: Optional[str] = None,
     limit: int = 50,
     user: Dict[str, Any] = Depends(require_dept_read)
@@ -238,7 +238,7 @@ async def view_timesheets(
     return {"data": get_timesheets(department=department, limit=limit)}
 
 @router.get("/timesheets/staff/{staff_id}")
-async def view_staff_timesheets(
+def view_staff_timesheets(
     staff_id: str,
     limit: int = 50,
     user: Dict[str, Any] = Depends(require_dept_read)

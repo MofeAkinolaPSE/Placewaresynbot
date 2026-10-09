@@ -15,7 +15,7 @@ class CustodyEvent(BaseModel):
 
 
 @router.post("/record")
-async def api_record_event(evt: CustodyEvent, request: Request, _u=Depends(verify_jwt)):
+def api_record_event(evt: CustodyEvent, request: Request, _u=Depends(verify_jwt)):
     roles = set(getattr(request.state, "user", {}).get("roles") or [])
     if not roles.intersection({"ops", "qc", "logistics", "procurement"}):
         raise HTTPException(status_code=403, detail="Insufficient role to record custody event")
@@ -29,7 +29,7 @@ class CustodySign(BaseModel):
 
 
 @router.post("/sign/{shipment_id}")
-async def api_sign_delivery(shipment_id: str, payload: CustodySign, request: Request, _u=Depends(verify_jwt)):
+def api_sign_delivery(shipment_id: str, payload: CustodySign, request: Request, _u=Depends(verify_jwt)):
     roles = set(getattr(request.state, "user", {}).get("roles") or [])
     if not roles.intersection({"ops", "logistics", "sales", "admin"}):
         raise HTTPException(status_code=403, detail="Insufficient role to sign custody delivery")
@@ -38,5 +38,5 @@ async def api_sign_delivery(shipment_id: str, payload: CustodySign, request: Req
 
 
 @router.get("/events/{shipment_id}")
-async def api_list_events(shipment_id: str, _u=Depends(verify_jwt)):
+def api_list_events(shipment_id: str, _u=Depends(verify_jwt)):
     return list_custody_events(shipment_id)

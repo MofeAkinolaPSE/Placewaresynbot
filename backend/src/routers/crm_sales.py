@@ -191,7 +191,7 @@ def _select_leads(cols: str, **kwargs) -> list[dict]:
 
 
 @router.get("/pipeline")
-async def get_pipeline(
+def get_pipeline(
     limit: int = Query(default=200, le=500),
     _u=Depends(verify_jwt),
 ):
@@ -244,7 +244,7 @@ async def get_pipeline(
 # ---------------------------------------------------------------------------
 
 @router.patch("/leads/{lead_id}/stage")
-async def move_lead_stage(
+def move_lead_stage(
     lead_id: int,
     payload: StageUpdateIn,
     request=Depends(verify_jwt),   # type: ignore[assignment]
@@ -298,7 +298,7 @@ async def move_lead_stage(
 # ---------------------------------------------------------------------------
 
 @router.post("/followups", status_code=201)
-async def create_followup(
+def create_followup(
     payload: FollowUpCreateIn,
     request=Depends(verify_jwt),   # type: ignore[assignment]
 ):
@@ -339,7 +339,7 @@ async def create_followup(
 # ---------------------------------------------------------------------------
 
 @router.get("/followups/due")
-async def get_due_followups(
+def get_due_followups(
     hours: int = Query(default=24, ge=1, le=720),
     rep_id: Optional[str] = Query(default=None),
     _u=Depends(verify_jwt),
@@ -371,7 +371,7 @@ VALID_REMINDER_STATUSES = {"pending", "done", "dismissed", "snoozed"}
 
 
 @router.patch("/followups/{reminder_id}")
-async def update_followup(
+def update_followup(
     reminder_id: str,
     payload: FollowUpUpdateIn,
     _u=Depends(verify_jwt),
@@ -410,7 +410,7 @@ VALID_CHANNELS = {"email", "sms"}
 
 
 @router.post("/bulk-message", status_code=201)
-async def create_bulk_message(
+def create_bulk_message(
     payload: BulkMessageIn,
     request=Depends(require_any_role("sales", "management", "crm")),   # type: ignore[assignment]
 ):
@@ -440,7 +440,7 @@ async def create_bulk_message(
 
 
 @router.get("/bulk-message")
-async def list_bulk_messages(
+def list_bulk_messages(
     limit: int = Query(default=20, le=100),
     _u=Depends(verify_jwt),
 ):
@@ -464,7 +464,7 @@ async def list_bulk_messages(
 # ---------------------------------------------------------------------------
 
 @router.get("/weekly-report")
-async def get_weekly_report(
+def get_weekly_report(
     week_start: Optional[str] = Query(
         default=None,
         description="ISO date (YYYY-MM-DD). Defaults to start of current week.",
@@ -682,7 +682,7 @@ def _answer_crm(query_text: str, context: str, user: dict) -> dict:
 
 
 @router.post("/query")
-async def nlq_query(
+def nlq_query(
     payload: NLQIn,
     _u=Depends(verify_jwt),
 ):
@@ -801,7 +801,7 @@ async def nlq_query(
 # ---------------------------------------------------------------------------
 
 @router.get("/leaderboard")
-async def get_leaderboard(
+def get_leaderboard(
     days: int = Query(default=30, ge=1, le=365),
     _u=Depends(verify_jwt),
 ):
@@ -880,7 +880,7 @@ async def get_leaderboard(
 # ---------------------------------------------------------------------------
 
 @router.post("/bulk-message/{job_id}/dispatch")
-async def dispatch_bulk_message(
+def dispatch_bulk_message(
     job_id: str,
     request=Depends(require_any_role("sales", "management", "crm")),   # type: ignore[assignment]
 ):
@@ -937,7 +937,7 @@ async def dispatch_bulk_message(
 # ---------------------------------------------------------------------------
 
 @router.post("/leads", status_code=201)
-async def create_lead(
+def create_lead(
     payload: LeadCreateIn,
     request=Depends(verify_jwt),  # type: ignore[assignment]
 ):
@@ -980,7 +980,7 @@ async def create_lead(
 # ---------------------------------------------------------------------------
 
 @router.patch("/leads/{lead_id}")
-async def update_lead(
+def update_lead(
     lead_id: int,
     payload: LeadUpdateIn,
     request=Depends(verify_jwt),  # type: ignore[assignment]
@@ -1029,7 +1029,7 @@ VALID_INTERACTION_TYPES = {
 
 
 @router.post("/leads/{lead_id}/interactions", status_code=201)
-async def log_interaction(
+def log_interaction(
     lead_id: int,
     payload: InteractionLogIn,
     request=Depends(verify_jwt),  # type: ignore[assignment]
@@ -1096,7 +1096,7 @@ async def log_interaction(
 # ---------------------------------------------------------------------------
 
 @router.get("/leads/{lead_id}/interactions")
-async def list_interactions(
+def list_interactions(
     lead_id: int,
     limit: int = Query(default=50, le=200),
     _u=Depends(verify_jwt),
@@ -1126,7 +1126,7 @@ VALID_PERIOD_TYPES = {"weekly", "monthly", "quarterly"}
 
 
 @router.post("/targets", status_code=201)
-async def create_target(
+def create_target(
     payload: SalesTargetIn,
     request=Depends(require_any_role("sales", "management", "crm")),  # type: ignore[assignment]
 ):
@@ -1162,7 +1162,7 @@ async def create_target(
 
 
 @router.get("/targets")
-async def list_targets(
+def list_targets(
     period: Optional[str] = Query(default=None),
     rep_id: Optional[str] = Query(default=None),
     _u=Depends(verify_jwt),
@@ -1184,7 +1184,7 @@ async def list_targets(
 
 
 @router.patch("/targets/{target_id}")
-async def update_target(
+def update_target(
     target_id: str,
     payload: SalesTargetUpdateIn,
     request=Depends(require_any_role("sales", "management", "crm")),  # type: ignore[assignment]
@@ -1209,7 +1209,7 @@ async def update_target(
 
 
 @router.get("/targets/vs-actuals")
-async def targets_vs_actuals(
+def targets_vs_actuals(
     period: str = Query(..., description="e.g. 2026-04 (monthly) or 2026-W16 (weekly)"),
     _u=Depends(verify_jwt),
 ):
@@ -1334,7 +1334,7 @@ _BRIEF_SYSTEM_PROMPT = (
 
 
 @router.get("/leads/{lead_id}/brief")
-async def get_precall_brief(
+def get_precall_brief(
     lead_id: int,
     _u=Depends(verify_jwt),
 ):
@@ -1483,7 +1483,7 @@ async def get_precall_brief(
 # ---------------------------------------------------------------------------
 
 @router.get("/leads/{lead_id}/product-availability")
-async def get_product_availability(
+def get_product_availability(
     lead_id: int,
     _u=Depends(verify_jwt),
 ):
@@ -1574,7 +1574,7 @@ async def get_product_availability(
 # ---------------------------------------------------------------------------
 
 @router.get("/leads/{lead_id}/purchase-history")
-async def get_purchase_history(
+def get_purchase_history(
     lead_id: int,
     limit: int = Query(default=20, le=100),
     _u=Depends(verify_jwt),
@@ -1846,7 +1846,7 @@ def _build_report_pdf(report: dict) -> bytes:
 
 
 @router.get("/weekly-report/pdf")
-async def download_weekly_report_pdf(
+def download_weekly_report_pdf(
     week_start: Optional[str] = Query(default=None),
     _u=Depends(verify_jwt),
 ):

@@ -74,4 +74,6 @@ EXPOSE 8000
 
 ENTRYPOINT ["./entrypoint.sh"]
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# UVICORN_WORKERS (default 3) workers serve 30-50 laptops in parallel; background jobs run in
+# only one of them (src/services/leader.py).
+CMD ["sh", "-c", "exec uvicorn app:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-3} --timeout-graceful-shutdown 30"]

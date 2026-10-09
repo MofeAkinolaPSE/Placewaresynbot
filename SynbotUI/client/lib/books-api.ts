@@ -14,7 +14,7 @@ export type Money = string; // decimal string from the server, e.g. "12500.00"
 export type Dict = Record<string, any>;
 
 export class BooksError extends ApiError {
-  code?: string;
+  declare code?: string;
   details?: Dict;
 }
 
@@ -132,4 +132,14 @@ export function downloadCsv(filename: string, rows: Dict[], columns?: { key: str
 
 export function newIdemKey() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** The batch number to print: the one on the pack. Placeware's Sage lot letters (the "(Q)" in
+ *  HEXAXIM (Q)) are internal codes, never printed as a batch number. */
+export function packBatch(x?: { pack_batch_number?: string | null; batch_number?: string | null; lot_code?: string | null } | null): string {
+  if (!x) return "";
+  if (x.pack_batch_number) return x.pack_batch_number;
+  const b = (x.batch_number ?? "").trim();
+  if (!b || b === x.lot_code || b === "SAGE" || /^[A-Z]{1,3}( ?[ivx]+)?$/i.test(b)) return "";
+  return b;
 }

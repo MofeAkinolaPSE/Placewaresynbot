@@ -32,7 +32,7 @@ def _snapshot_row_to_supplier(row: dict) -> dict:
 
 
 @router.get('/suppliers')
-async def list_suppliers(request: Request):
+def list_suppliers(request: Request):
     """Return all suppliers from the suppliers table.
 
     Populated by the vendors CSV import (POST /sage/import/csv, file_type=vendors)
@@ -70,7 +70,7 @@ async def list_suppliers(request: Request):
 
 
 @router.post('/suppliers', status_code=201)
-async def create_supplier(request: Request, payload: Supplier):
+def create_supplier(request: Request, payload: Supplier):
     verify_jwt(request, required_role='admin')
     s = payload.dict()
     s['created_at'] = dt.datetime.utcnow().isoformat() + 'Z'
@@ -88,7 +88,7 @@ async def create_supplier(request: Request, payload: Supplier):
 
 
 @router.post('/suppliers/{supplier_name}/deliveries', status_code=201)
-async def record_delivery(request: Request, supplier_name: str, payload: SupplierDelivery):
+def record_delivery(request: Request, supplier_name: str, payload: SupplierDelivery):
     verify_jwt(request, required_role='ops')
     d = payload.dict()
     d['supplier_name'] = supplier_name
@@ -107,7 +107,7 @@ async def record_delivery(request: Request, supplier_name: str, payload: Supplie
 
 
 @router.get('/suppliers/{supplier_name}/metrics')
-async def supplier_metrics(request: Request, supplier_name: str):
+def supplier_metrics(request: Request, supplier_name: str):
     verify_jwt(request)
     try:
         resp = db.table('supplier_deliveries').select('*').eq('supplier_name', supplier_name).execute()
@@ -151,7 +151,7 @@ async def supplier_metrics(request: Request, supplier_name: str):
 
 
 @router.post('/suppliers/compute-metrics')
-async def compute_metrics_endpoint(request: Request):
+def compute_metrics_endpoint(request: Request):
     verify_jwt(request, required_role='admin')
     ok = compute_supplier_metrics()
     try:
