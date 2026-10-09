@@ -1,3 +1,4 @@
+import { SageBooksLoader } from "@/components/books/sage-loader";
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -368,11 +369,16 @@ const SageImport = () => {
         </p>
       </div>
 
-      <Tabs defaultValue="import" className="space-y-8">
+      <Tabs defaultValue="books" className="space-y-8">
         <TabsList>
-          <TabsTrigger value="import">Import from Sage</TabsTrigger>
+          <TabsTrigger value="books">Into ACE Books</TabsTrigger>
+          <TabsTrigger value="import">Reference snapshots</TabsTrigger>
           <TabsTrigger value="export">Export to Sage</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="books">
+          <SageBooksLoader />
+        </TabsContent>
 
         <TabsContent value="export">
           <SageExportPanel />
@@ -388,7 +394,8 @@ const SageImport = () => {
           predictions and every report read ACE Books directly, so there is no daily Sage upload to keep them current.
           The Sage data up to the go-live date (balances and full sales/purchase history) is already loaded; the final
           July-to-date Sage load goes through <strong>ACE Books › Setup &amp; Migration › Sage migration</strong>.
-          The uploads below only refresh Sage reference tables kept for history and are not needed day to day.
+          The uploads below only refresh Sage reference tables kept for history and are not needed day to day: they do
+          not change ACE Books. To bring Sage reports into the books, use the <strong>Into ACE Books</strong> tab.
         </p>
       </div>
 

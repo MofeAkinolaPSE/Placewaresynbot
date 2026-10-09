@@ -15,7 +15,7 @@ import psycopg2
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 
 from src.fin import (accounts, assets, audit, banking, books_ledger, closing, controls, dashboard, data_exceptions, integrations, inventory,
-                     ledger, ledger_reports, migration, numbering, periods, posting, purchases, report_center, reports, rules,
+                     ledger, ledger_reports, migration, numbering, periods, posting, purchases, report_center, reports, rollover, rules,
                      sage_history, sage_ledger, sales, setup)
 from src.fin.context import build_context
 from src.fin.db import plain, q, q1, tx
@@ -363,6 +363,23 @@ def ledger_range(request: Request):
                 "cutover_date": s["cutover_date"] if s else None,
                 "loaded": sage_ledger.coverage(conn, ctx.entity_id)}
     return _run(request, fn, "reports.view")
+
+
+@router.post("/sage-history/upload")
+async def sage_history_upload(request: Request, file: UploadFile = File(...), confirm: bool = Form(False)):
+    """Sage reports into ACE Books' history from the Sage Import page: confirm=false previews (nothing
+    kept), confirm=true loads after the same checks."""
+    raw = await file.read()
+    return _run(request, lambda c, x: sage_ledger.check_upload(c, x, file.filename or "upload.xlsx", raw, keep=confirm))
+
+
+@router.post("/sage-history/rollforward")
+async def sage_history_rollforward(request: Request, files: List[UploadFile] = File(...), as_of: str = Form(...),
+                                   confirm: bool = Form(False), void_ace_invoices: bool = Form(False)):
+    """Bring ACE up to date from a full Sage export set (Sage is the record; ACE follows)."""
+    payload = [(f.filename or "upload.xlsx", await f.read()) for f in files]
+    return _run(request, lambda c, x: rollover.from_upload(c, x, payload, _date(as_of), confirm=confirm,
+                                                            void_ace_invoices=void_ace_invoices))
 
 
 @router.get("/ledger/gl-summary")

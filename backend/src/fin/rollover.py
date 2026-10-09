@@ -123,7 +123,7 @@ def plan(conn, ctx, as_of: dt.date, folder: str) -> Dict[str, Any]:
 # Run
 # ---------------------------------------------------------------------------
 
-def _post_to_target(conn, ctx, on: dt.date, label: str) -> Optional[Dict[str, Any]]:
+def _post_to_target(conn, ctx, on: dt.date, label: str, run_id: str = "") -> Optional[Dict[str, Any]]:
     """Bring every account's ACE Books balance at `on` to Sage's General Ledger balance."""
     e = ctx.entity_id
     hist = books_ledger._hist_balances_uncached(conn, e, on)
@@ -146,7 +146,9 @@ def _post_to_target(conn, ctx, on: dt.date, label: str) -> Optional[Dict[str, An
     j = posting.post_system(conn, ctx, event_type="SAGE_ROLLFORWARD", journal_date=on, lines=lines,
                             description=f"Sage 50 activity brought into ACE Books: {label}", source_type="MIGRATION",
                             source_id=f"ROLLFORWARD:{on}", source_ref="SAGE-ROLLFORWARD", journal_type="ADJUSTMENT",
-                            idempotency_key=f"ROLLFORWARD:{e}:{on}")
+                            # one per run and date: a later roll-forward re-posts on the previous hand-over date (Sage's
+                            # late changes to it) and must not get the earlier run's journal back
+                            idempotency_key=f"ROLLFORWARD:{e}:{on}:{run_id}")
     # Sage reconciled these bank movements already: they are the reconciliation baseline.
     for l in q(conn, """SELECT l.id, ba.id AS bank_id FROM fin_journal_lines l JOIN fin_bank_accounts ba ON ba.gl_account_id=l.account_id
                         WHERE l.journal_id=%s""", (j["id"],)):
@@ -293,6 +295,70 @@ def _replace_stock(conn, ctx, rows: List[Dict[str, Any]], as_of: dt.date,
     return {"layers_replaced": removed, "items_loaded": out, "skipped_unknown_items": skipped}
 
 
+def from_upload(conn, ctx, files: List[tuple], as_of: dt.date, *, confirm: bool,
+                void_ace_invoices: bool = False) -> Dict[str, Any]:
+    """"Bring ACE up to date" on the Sage Import page (Sage is the record while staff get used to
+    ACE; ACE follows). The full Sage export set as of one date - the history reports (General
+    Ledger, ledgers, journals, item costing, masters) and the hand-over balances (trial balance,
+    aged receivables / payables, inventory valuation) - is loaded, checked and, on confirm, the
+    hand-over moves to that date: every account brought to Sage's balance month by month, open
+    invoices / bills and stock replaced by Sage's, invoice numbers continued. confirm=False shows the
+    plan and undoes everything. One transaction: a failure changes nothing."""
+    import os
+    import shutil
+    import tempfile
+    ctx.require("migration.load")
+    e = ctx.entity_id
+    old_h = books_ledger.history_until(conn, e)
+    if old_h and as_of < old_h:
+        raise invalid(f"The export date {as_of:%d %b %Y} is before the current hand-over ({old_h:%d %b %Y}): ACE already follows Sage to there")
+    if as_of > dt.date.today():
+        raise invalid("The export date cannot be in the future")
+    folder = tempfile.mkdtemp(prefix="sage_rollforward_")
+    try:
+        for name, raw in files:
+            with open(os.path.join(folder, os.path.basename(name)), "wb") as fh:
+                fh.write(raw)
+        found = {f["kind"] for f in sage_ledger.scan_folder(folder)}
+        missing_hist = [k for k in ("GENERAL_LEDGER", "CUSTOMER_LEDGER", "VENDOR_LEDGER", "SALES_JOURNAL") if k not in found]
+        missing_snap = [k for k in sage_ledger.SNAPSHOT_KINDS if k not in found]
+        if missing_hist or missing_snap:
+            raise invalid("The export set is missing: " + ", ".join(sage_ledger.KIND_LABEL.get(k, k) for k in missing_hist + missing_snap)
+                          + ". Export every report as of the same date and upload them together.")
+        with conn.cursor() as cur:
+            cur.execute("SAVEPOINT sage_rollforward")
+        try:
+            loaded = sage_ledger.ingest_folders(conn, ctx, [folder])
+            gl = next((r for r in loaded if r.get("kind") == "GENERAL_LEDGER"), {})
+            if gl.get("ending_balance_mismatches"):
+                raise invalid(f"The General Ledger does not tie to Sage's ending balances for {len(gl['ending_balance_mismatches'])} "
+                              "account(s): the export looks incomplete")
+            p = plan(conn, ctx, as_of, folder)
+            p["loaded"] = [{k: r.get(k) for k in ("kind", "file", "lines", "rows", "from", "to", "updated", "added", "note")} for r in loaded]
+            others = [d for d in p["documents_inside_sage_period"] if d["kind"] != "invoice"]
+            p["blocking_documents"] = others
+            p["invoices_to_void"] = [d for d in p["documents_inside_sage_period"] if d["kind"] == "invoice"]
+            if not confirm:
+                with conn.cursor() as cur:
+                    cur.execute("ROLLBACK TO SAVEPOINT sage_rollforward")
+                return {"status": "PREVIEW", **p}
+            if others:
+                raise FinError("INVALID_STATE_TRANSITION",
+                               f"{len(others)} receipt(s), payment(s), bill(s) or journal(s) were entered in ACE Books for days Sage now covers. "
+                               "Void them in ACE first - Sage already has them.", {"documents": others})
+            res = run(conn, ctx, as_of, folder, void_test_invoices=void_ace_invoices,
+                      void_reason="Entered in ACE Books for a day Sage covers (Sage is the record until the hand-over)")
+            with conn.cursor() as cur:
+                cur.execute("RELEASE SAVEPOINT sage_rollforward")
+            return {"status": "DONE", "previous_hand_over": old_h, "loaded": p["loaded"], **res}
+        except Exception:
+            with conn.cursor() as cur:
+                cur.execute("ROLLBACK TO SAVEPOINT sage_rollforward")
+            raise
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def run(conn, ctx, as_of: dt.date, folder: str, *, void_test_invoices: bool = False,
         void_reason: Optional[str] = None) -> Dict[str, Any]:
     ctx.require("migration.load")
@@ -310,10 +376,11 @@ def run(conn, ctx, as_of: dt.date, folder: str, *, void_test_invoices: bool = Fa
             sales.void_invoice(conn, ctx, d["id"], void_reason or "Test invoice inside the Sage period (before ACE Books took over)",
                                on=d["date"])
     journals = []
+    run_id = str(q1(conn, "SELECT gen_random_uuid() id")["id"])
     for d in p["journals"]:
         dd = dt.date.fromisoformat(d) if isinstance(d, str) else d
         label = (f"changes to periods up to {dd:%d %b %Y} after the first export" if dd == old_h else f"{dd:%B %Y}")
-        r = _post_to_target(conn, ctx, dd, label)
+        r = _post_to_target(conn, ctx, dd, label, run_id)
         if r:
             journals.append(r)
     # Every account now equals Sage's General Ledger at the hand-over date.

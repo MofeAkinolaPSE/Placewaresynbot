@@ -494,6 +494,92 @@ def load_file(conn, ctx, file_name: str, raw: Optional[bytes] = None, path: Opti
     return LOADERS[kind](conn, ctx, rows, h, idx, file_name)
 
 
+# Where each kind's dated rows land (to find rows the books must not take: after the hand-over).
+_DATED = {"GENERAL_LEDGER": ("fin_sage_gl_lines", "txn_date"), "CUSTOMER_LEDGER": ("fin_sage_party_ledger", "txn_date"),
+          "VENDOR_LEDGER": ("fin_sage_party_ledger", "txn_date")}
+KIND_LABEL = {"GENERAL_LEDGER": "General Ledger", "CUSTOMER_LEDGER": "Customer Ledger", "VENDOR_LEDGER": "Vendor Ledger",
+              "SALES_JOURNAL": "Sales Journal", "COGS_JOURNAL": "Cost of Goods Sold Journal", "PURCHASE_JOURNAL": "Purchase Journal",
+              "CASH_RECEIPTS_JOURNAL": "Cash Receipts Journal", "CASH_DISBURSEMENTS_JOURNAL": "Cash Disbursements Journal",
+              "GENERAL_JOURNAL": "General Journal", "ITEM_COSTING": "Item Costing Report", "ITEM_MASTER": "Item Master List",
+              "CUSTOMER_LIST": "Customer List", "VENDOR_LIST": "Vendor Master File", "TRIAL_BALANCE": "Trial Balance",
+              "OPEN_AR": "Aged Receivables", "OPEN_AP": "Aged Payables", "INVENTORY": "Inventory Valuation"}
+
+
+def _after_handover(conn, entity_id: str, kind: str, load_id: str, h: Optional[dt.date]) -> int:
+    if not h or not load_id:
+        return 0
+    table, col = _DATED.get(kind, ("fin_sage_journal_lines", "txn_date") if kind in JOURNAL_KIND else (None, None))
+    if not table:
+        return 0
+    return int(q1(conn, f"SELECT COUNT(*) AS n FROM {table} WHERE legal_entity_id=%s AND load_id=%s AND {col} > %s",
+                  (entity_id, load_id, h))["n"])
+
+
+def check_upload(conn, ctx, file_name: str, raw: bytes, *, keep: bool) -> Dict[str, Any]:
+    """The Sage Import page's door into ACE Books' history. The file is recognised from its header,
+    loaded, and checked; with keep=False (preview) everything is undone, so the user sees exactly
+    what loading would do before anything changes. Refused:
+      - a file ACE does not recognise;
+      - rows dated after the hand-over: from the day after ``history_until`` ACE Books keeps the
+        books, so Sage rows for those days would count twice;
+      - a General Ledger that does not tie (beginning balance + lines must equal Sage's ending
+        balance for every account) - the export is incomplete.
+    Hand-over balance reports (trial balance, aged AR/AP, stock valuation) are recognised but not
+    loaded: they are only read when ACE Books takes over from Sage (roll-forward)."""
+    from src.fin import books_ledger
+    ctx.require("migration.load")
+    rows = read_rows(file_name, raw)
+    kind, h_row, idx = detect(rows)
+    out: Dict[str, Any] = {"file": file_name, "kind": kind, "label": KIND_LABEL.get(kind or "", None)}
+    if not kind:
+        raise invalid(f"{file_name}: not a Sage report ACE Books recognises. Export it from Sage with its header row "
+                      "(General Ledger, Customer/Vendor Ledger, a journal, Item Costing, Item Master, Customer List, Vendor Master File).")
+    if kind in SNAPSHOT_KINDS:
+        return {**out, "status": "NOT_LOADED", "message": "Balances at a date: used only when ACE Books takes over from Sage, not loaded as history."}
+    h = books_ledger.history_until(conn, ctx.entity_id)
+    before = coverage(conn, ctx.entity_id)
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT sage_upload")
+    try:
+        res = LOADERS[kind](conn, ctx, rows, h_row, idx, file_name)
+        late = _after_handover(conn, ctx.entity_id, kind, res.get("load_id"), h)
+        problems = []
+        if late:
+            problems.append(f"{late} row(s) are dated after the hand-over ({h:%d %b %Y}). A single report cannot move the books past it: "
+                            "to bring later Sage activity into ACE, export the full set of reports as of one date and use "
+                            "'Bring ACE up to date' (it moves the hand-over to that date).")
+        if res.get("ending_balance_mismatches"):
+            problems.append(f"{len(res['ending_balance_mismatches'])} account(s) do not tie to Sage's ending balance - the export looks incomplete.")
+        replaced = [c for c in before if c["kind"] == kind and res.get("from") and res.get("to")
+                    and str(c["date_from"]) <= str(res["to"]) and str(c["date_to"]) >= str(res["from"])]
+        out.update({k: v for k, v in res.items() if k not in ("kind", "file")})
+        out["after_handover"] = late
+        out["history_until"] = h
+        out["replaces"] = bool(replaced)
+        out["problems"] = problems
+        if problems or not keep:
+            with conn.cursor() as cur:
+                cur.execute("ROLLBACK TO SAVEPOINT sage_upload")
+            out["status"] = "REFUSED" if problems else "PREVIEW"
+            if problems and keep:
+                raise invalid(" ".join(problems), **{k: str(v) for k, v in out.items() if k in ("file", "kind")})
+            return out
+        with conn.cursor() as cur:
+            cur.execute("RELEASE SAVEPOINT sage_upload")
+    except Exception:
+        with conn.cursor() as cur:
+            cur.execute("ROLLBACK TO SAVEPOINT sage_upload")
+        raise
+    out["status"] = "LOADED"
+    # the Data issues register is refreshed from the new history (negative lots, TB/GL, control accounts)
+    try:
+        from src.fin import data_exceptions
+        out["data_issues"] = data_exceptions.refresh(conn, ctx)
+    except Exception as exc:  # the load stands; the register can be refreshed from Close & Controls
+        out["data_issues_note"] = f"Data issues not refreshed: {exc}"
+    return out
+
+
 def scan_folder(folder: str) -> List[Dict[str, Any]]:
     out = []
     for name in sorted(os.listdir(folder)):
