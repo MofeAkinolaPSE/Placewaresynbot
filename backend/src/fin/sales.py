@@ -938,12 +938,22 @@ def post_from_frontdesk(conn, ctx, frontdesk_invoice_id: str) -> Dict[str, Any]:
                            {"frontdesk_invoice": fd["invoice_number"], "product": it.get("product")})
         batch_id = None
         if it.get("batch_number"):
-            batch_id = inventory.ensure_batch(conn, ctx.entity_id, sku, str(it["batch_number"]),
-                                              expiry_date=_as_date(it.get("expiry_date")))
+            # The number typed may be the Sage lot or the number printed on the pack.
+            typed = str(it["batch_number"]).strip()
+            known = q1(conn, """SELECT id FROM fin_batches WHERE legal_entity_id=%s AND sku=%s
+                                AND %s IN (batch_number, pack_batch_number, lot_code) ORDER BY (batch_number=%s) DESC LIMIT 1""",
+                       (ctx.entity_id, sku, typed, typed))
+            batch_id = str(known["id"]) if known else inventory.ensure_batch(
+                conn, ctx.entity_id, sku, typed, expiry_date=_as_date(it.get("expiry_date")))
         lines.append({"line_type": "ITEM", "sku": sku, "quantity": q_, "unit_price": it.get("unit_price") or 0,
                       "description": it.get("product"), "batch_id": batch_id})
     if not lines:
         raise invalid("Frontdesk invoice has no priced lines")
+    # Delivery charged to the customer: a charge line on the invoice, credited to Other Income (40800).
+    delivery = float(fd.get("delivery_charge") or 0)
+    if delivery > 0:
+        lines.append({"line_type": "CHARGE", "charge_kind": "DELIVERY", "description": "Delivery charge",
+                      "quantity": 1, "unit_price": delivery})
     terms = None
     if (fd.get("payment_terms") or "").lower().startswith("due on receipt"):
         terms = 0

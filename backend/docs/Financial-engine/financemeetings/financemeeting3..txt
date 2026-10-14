@@ -1,0 +1,372 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+The name doesn't resemble, it might be somewhere, Mofe Nolua, they saw Mofe, it might not be, the other one might not be full. So because we have Mofe Nolua, the accountant is looking at it, ah, Mofe, are you the same person? But they later discover, ah, it's not that Mofe Nolua, they have paid this for you, it's you to apply, I just take that one as an example. I understand.
+
+Yeah, but you need to go and repost that thing, delete it from the, the one they made error. Okay, and then repost the receipt. So we'll add a, you can edit and update an invoice, and then also edit and repost the particular receipt.
+
+Even Fausha, Oga might have picked one money to, ah, it's for under CR3. But later on, no, no, ah, it's not for under CR3. We might not even know, it might be Oga transferred that kind of money.
+
+Okay. Ah, no, no, no, it's not for under CR3, it's for under CX9. Okay.
+
+So we need to change that description. Okay, so you edit invoice. That's Fausha, payment Fausha, receipts.
+
+Receipts, okay, and invoice, that's it, okay. So we'll add a feature to edit the invoices. For example, if a client wants to add another stock to an already posted invoice, we can make that invoice re-editable, and then it should naturally affect the books and records.
+
+Also for the receipts, if there was a mistake with the receipts that was posted, we should allow the ability to edit that receipt, and either delete the receipt posted and update it, or modify the receipt to reflect the correct information. Same thing with vouchers. It should be editable in case a voucher is posted and it was posted to the wrong account, for example.
+
+We remove that out of our system, for taking it, it is not sales, so something like that. So if you want to remove stock that already exists because you want to return it to the supplier. Return it to the supplier because... So you just do stock adjustments to remove the page.
+
+Alright, no problem. Okay, you work on that. I will do that to you in a bit.
+
+Okay. So, what do you think about that? What I think... No, I think that he... I want to check this into... No, I think you should go. I should check.
+
+Officials... So, now, when you do it to, you know... You need to adjust the stock. The payment that you talk about. Yeah, so you can do invoice registry.
+
+All on here? Yes, invoice register. Yeah, so if you want to... No, the last one now. Is at the top? Okay, the last one will be at the top.
+
+So... Which one is 40? That's my test. So, what you should check in here is... You have done it at... The last invoice registry. So...
+
+Why would you maintain it from the main page? Okay, so it's just that you add it, once the stock comes in, you add it from that maintain tab. Of course. But is there any other place that shows the manufacturing number and the batch number? Any other place? It's where you maintain.
+
+Where you maintain it, it's where you show it. So, it's not a problem because there's already a page to add your batch number and manufacturing. Yes, now.
+
+But the stock you already have, that we have inputted on the new app. There's a way, it's just that you have to do it manually. Right now.
+
+So, once you do it manually once. You cannot pull it? It's not in all those Excel files, Timony. That's what I'm saying.
+
+That's what I'm saying. You can pick it. But the new one, as you are using it, you put batch number and batch range.
+
+If you want them to give you the… The reference. But what you already… That's what I'm saying. You can't just maintain it.
+
+But I was saying on the new app, all the current stock. We can't… There's no way for me to get that data from Sage directly. Because it's not on the reports Timony ingest.
+
+Unless there's a way that I can see all the batch number and manufacturing dates in one report. But you can't just file it manually. No.
+
+Right? But can we see it as one file? This stock, batch number, manufacturing. This stock, batch number, manufacturing. This stock.
+
+Like one report. I know. Even if it's manual from front desk.
+
+No, no, no. They don't type it like… Okay, they just do it hard maintain. Maintain, yeah.
+
+Alright, we can go forward. We'll figure that out, sir. Okay.
+
+I'll add the feature that you can… Any stock that is there, you can maintain it and add the batch number, manufacturing. So that it reflects in the invoice. Okay, I have you.
+
+Yeah, so it can reflect in the invoice. Okay. So, that's that.
+
+Yeah. Now, let's go back to it. Ah.
+
+Here we go. One, two. Let me see.
+
+The batch number is there. I know that's in there. Here's the total.
+
+Have you? Yeah. We have to… Is it save or post? Post. If you want to save, you can save.
+
+But post, so we can't… When we post the invoice, will it be saved automatically? Yes, it would reflect in the books. And then once you… And it will be saved? Yeah, it will be saved. Okay.
+
+So, yeah, it's not seen again already. You can delete it too, like you asked for. Ah.
+
+Okay, we can… Let us… Let me post it. Yeah, post it. Then we'll know.
+
+Here's how it will come up. Very good. Very good.
+
+The only manufacturing date that's not there. But how did you do the expiry date? Without a… How did you come up with… Some of the… How did you come up? Some of the… Because expiry date, what? Manufacturing date, who do you want? One of the reports have expiry dates, but it doesn't have manufacturing and batch number. It's only batch… Each batch you get.
+
+Okay, no batch. Sorry, no batch number. You can tell batch number.
+
+Check it. Okay. Ah.
+
+Okay. But as we are seeing now, you can… You can edit it. Ah, you can edit it.
+
+Yes. Okay. And manufacturing.
+
+So you can… Now, if I want to FOIL it, I can FOIL it. FOIL it. Then… Let me see.
+
+If you scroll up… What about… Yeah, that's what I want to see. You can see print invoice and record receipts. What about the… Prepared by, authorized by? No, this is just the… If you look up, if you scroll up, you see the print receipts.
+
+So if you click on print receipts, you see the full receipts template. Print invoice? Yes. Invoice, sir.
+
+Okay. Or need to… You see everything. Okay, okay.
+
+This is it now. Is that it will come out? Okay, okay. Mm-hmm.
+
+I want to do… I want us to do something, which is the major point here. Okay. Is now we will check the piano.
+
+Check our turnover to date. We will now do one invoice to see that it is added to hit in piano. Okay.
+
+Are you getting me? Yeah. We check that on payment also. We will post what we wanted to do that day.
+
+We can see the effect of it. Yeah, that's what we are looking for. So I don't need to print receipts? You don't need to print receipts.
+
+You just cancel. Let us cancel it. Oh.
+
+You can just close it. Close it? No, not this one. Here.
+
+Okay, okay. Okay. So… Avoid it.
+
+No. You can put it back on the screen. I think that… Okay.
+
+So, this is the invoice here now. In your invoice registry. So, we will make that decision.
+
+That we just did. That decision. If you are to delete it now.
+
+You click on it and avoid it. Yeah. And just click on it to bring the side button.
+
+So, you scroll down. I think I saw Fudge. Yeah, it's at the bottom.
+
+Scroll down. I want to scroll down but… Scroll down. That's for now.
+
+Page and… Where is the page? Page and… Okay, I want to… Control is good. So, the page… The void button just didn't pop up after we posted the receipts. Yeah, so the button is not there.
+
+So, the void button didn't pop up after we posted the receipts. And automatically after a receipt is posted. It should not try to just go back to the invoice registry page.
+
+Why is this record receipt? Full receipt for… So, this is where you want to record the receipts. This is in Fizo. Yeah.
+
+You want to record the receipt for that invoice. You click on that button. What is the meaning of record receipt? It's so that if you want to record a payment… Okay, say the… Void in here now.
+
+Which one is showing… Why is that one not showing void? Invoice. So, I think the pages… I'll correct it. The pages might have duplicated.
+
+But one page is showing void. This is invoice. Yeah.
+
+So, if you want to record… Because I thought it would be efficient to record the receipt directly. So, if you want to record the receipt for this invoice. So, you'll be making those mistakes.
+
+Everything is already automated. You just now choose what bank you want to pay it into. And then confirm that the receipt has been read.
+
+Check it. But you won't click record receipt until after the payment has been made. Do you understand? But there's also… There's also the record receipts page.
+
+Where when you click on the client, it shows you how much they owe you. And you can now pick the invoices that are open. And then you can now click on it.
+
+It says no open invoices. Wait, wait, wait. Sorry.
+
+Go back. So, if you want to make the payment on that invoice. Yes.
+
+That is record customer receipts. Yes. Record.
+
+Record customer receipts. Because I see this one has a… Wait, wait, wait. I want to add something.
+
+I want to add something. This one…
+And for example, we tell them 2%. So 46 to 60 multiplied by 0.02 is equals to 925.2. My fear is that all these test runs that we are doing, we'll be able to delete and just remember to, I don't know. Okay, we can remove receipts too. 
+
+But I don't think we should use it on one that actually has an actual invoice. So we can do our own. The invoice that we did, we have not deleted it. 
+
+So we can use it to test run the receipt. Yes, we can use that instead of using it live. Let us build this.
+
+Okay, this is it. Yes, that's it. So if we click open its page, it will show you the void.
+
+Okay, so because we don't want to keep void as a first option. If I click open its page, you will see the void. So you want to record the receipts now.
+
+So this is the invoice that we currently have. So we can do that. What account do you want to receive it to? Should we just use an empty one? Empty account.
+
+Diamond. We are going to close. We are going to delete it.
+
+We will void everything. So confirm receipts. Which one is confirm receipts? If they pay part payment.
+
+Okay, so you want to pay for part payment. It might be part payment. Okay, so we also need to add.
+
+For the record receipts, you also need to add an option for part payment. So that in case the customer pays part or full. We can easily select that.
+
+But we can test the confirm receipts now. Yes. Confirm receipts.
+
+Record receipts. What is the difference between the two? It is just so that after I have recorded it, you confirm it. So you do not want to show that you have been paid and credited, right? We want to pay.
+
+Paid and credited. For example, I said if there is a withholding tax on it, I saw. We just confirmed it.
+
+There is withholding tax. The customer deducted 2%. That is nominal.
+
+So it says paid. Let's just void it and do it again. Okay, let's edit receipts.
+
+I think we can edit receipts. So this is the demo bank. We can void it and try it again.
+
+Correct this receipt. So we can add the withholding tax. Withholding tax.
+
+So for example. Let's say 90. It is supposed to be automatically calculated.
+
+It is supposed to be automatically calculated. What is the percentage withholding tax? 2%. So it is always 2%.
+
+Always 2%. Just let them put it. There should be an option for inputs.
+
+For different versions of the withholding tax. So it is either 2%, 5%, 3% or 10%. So it can calculate it.
+
+Let's calculate it automatically. We put 3. Based on the value of the sales. The balance is now what? The balance that we paid.
+
+Out of this. We removed 9,000. So the balance is supposed to be.
+
+So we need to confirm. We need to confirm that the withholding tax. Where is the balance? It is supposed to take effect immediately.
+
+So that withholding tax. Did not take effect on the value. So we need to make sure that works.
+
+And that is not only that. After that we now go. Let me tell you the reason for that to be taking effect.
+
+Because when we save it now. It is the remaining value that will go to the bank. Not the whole value.
+
+So that is the reason why it was supposed to. So this one is supposed to go to. Withholding tax.
+
+Payable. Okay. The account.
+
+Okay. But here. Let it go to.
+
+Under expenses. The reason is that. This whole amount of the invoice.
+
+We have captured it. Initially as part of turnover. Do you understand what I mean? Our revenue.
+
+Everything we sell. Is going to revenue. Now.
+
+When the payment comes. They withhold this. This has to be deducted.
+
+From that turnover. But in what way? When we now treat it like this. It will automatically go to our under expenses.
+
+Are you getting it? So it becomes your expense. Because at the end of the day. Otherwise.
+
+If it didn't go out of expenses. At the end of the day. It will inflate our net profit.
+
+Okay. I don't know whether you are getting it. It will inflate our expenses.
+
+Expenses. No problem. I want to see why it has not.
+
+I want to see why it has not changed. Okay. So it is.
+
+So it is. Maybe it didn't. Compute that.
+
+Compute that. Withholding tax. And that is.
+
+Okay. Maybe you have mastered. What I said.
+
+So another thing is this. Alright. What next? Another thing is this.
+
+On the follow of invoice. Any items. That we send to.
+
+Outside legal. The customer. Supposed to pay the delivery charge.
+
+Are you getting it? On the first follow of invoice. We attach delivery charge. Are you getting it? So just like.
+
+Opposite of this withholding tax. Our follow of. Invoice follow is 86,000.
+
+You put delivery charge. 40,000. It used to be.
+
+It might be. It used to be. The total follow of that invoice.
+
+Will now be. Plus that. That will be the total follow.
+
+That delivery charge. Will go to other income. Are you getting me? No.
+
+We took our money. We need to pay that delivery charge. But we have to collect it back.
+
+And it will form part of other income. And the one that we expended. Will be under the expenses.
+
+We take care of themselves. So the way it is. You pay for the delivery charge.
+
+But in the invoice it says. The customer has to pay for it. But when the receipts.
+
+Or the money comes back. When they pay the entire. This is the invoice.
+
+Are you getting me? Let me show you one example. This is what I am talking about. Look at this.
+
+See all the items. Delivery charge. But how do we specify the delivery charge? How do we specify the delivery charge? You add it to the invoice directly? Of course.
+
+But under our journal. On the invoice. Under our journal.
+
+The person that type it. Delivery charge. Are you getting me? Not normal to all customers.
+
+It's different. Yeah it's different. So what you do is.
+
+We now go to our journal. This journal will show. All the items.
+
+That delivery charge. That you put here. Will reflect here as well.
+
+But here. You now go to change it. To put it under other income.
+
+So delivery charge should be recorded. Under other income. Once the payment is paid.
+
+So if the invoice comes back. Let's say we record the receipt. And the payment is.
+
+When the payment is not coming. The customer is paying the full. We just claim the whole.
+
+Invoice. So it will just go into your revenue. As the whole invoice.
+
+But the money we took from ourselves. We raise voucher. We put that on as expenses.
+
+It doesn't relate to this again. So it becomes your own expense. It's the same thing.
+
+But you've already received it. As part of income up. Do you understand? So the whole thing comes as income.
+
+Yes. You might not even confuse that one. Just based on this income.
+
+So when we get the expenses. We post it. As normal expenses.
+
+So it will just go automatically. To your expenses. I think I understand.
+
+But we keep going. So we can move on. We can add.
+
+A way to directly add. Delivery charge. To the invoice.
+
+And it should go to other income. Delivery charge should always just go to. Other income.
+
+On each invoice you can impute. The delivery charge. And the delivery charge.
+
+Should always go to other income. But the entire bill. Will go to your revenue.
+
+Yes. Because all these items. They have code.
+
+As you see. Automatically in our journal. Everything has code.
+
+As income. Income. Income.
+
+Everything. The delivery charge will go to. Other income.
+
+See part of income. Other income. You know everything will go to revenue.
+
+But this one will go to other income. See part of income. But it's red.
+
+So you understand. Because customer will pay for everything. And it will come to our account.
+
+So it will come to your account. But it's classified under other income. Yes.
+
+No problem. We are going through the app. We have already done the discount.
+
+Yes. Because discount can come up. It depends.
+
+We just sell them. We give you discount of 2,000. Around that.
+
+On new invoice. Yes. Discount also should reflect on the invoice.
+
+So you can add the discount to the invoice. You call it discount allowed. Discount allowed.
+
+Discount received. Is one from suppliers. So you understand.
+
+Those are the invoice. Okay. We will fix the void.
+
+Okay. We will fix it. So that the returning tax will show.
+
+So we can just close this. Okay. So it shows posted.
+
+And inventory shows paid. Because we have paid for it. Let's now go to this person's ledger and see it.
+
+Okay. General ledger. No.
+
+We have customer's ledger. Where is it? I told you that. That is why you call Royan as an example.
+
+That we didn't see. That's customer ledger. Will that be sales journal? No.
+
+Customer journal. So it's customer journal. How did you name it? Customer ledger.
+
+It's a customer ledger. It's a ledger. All we have is general ledger.
+
+But you call it up on that. We call it general ledger. Not general ledger.
+
+General ledger is different from...we call up Royan. Do you see the... This is a recent one. This is general ledger.
+
+This is not. General ledger will not be like this. I show you general ledger.
+
+I bet you'll make a mistake. But you've already showed me the...
+
+We delete the receipt on AB10 hospital and invoice on AB10 hospital. So yeah, so we need to be able to delete the voucher for example if we're paying for something and we want to void it. Currently there's only a correct this voucher so we need to be able to void the voucher. 
+
+Okay let's see if I can delete it here. Okay so we need to be able to delete and void vouchers. Huh? Even you know when you pay Mr. Yemi, he will not be saying Mr. Yemi. 
+
+He will say Mr. Yemi. But we need to get it correct now. Not that Mr. Yemi is not satisfied. 
+
+No, that's not the point. Why will I say I'm not satisfied? But at least we are yet to get the... Because if we are to raise them something for Abu Jannah and no way to put the leverage forward. Yeah, it will just be a... I'm not even sure I want to do it. 
+
+But it will just be... We get their back up. Yeah, we get their back up. Yeah, their financial records.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

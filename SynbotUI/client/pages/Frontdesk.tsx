@@ -399,6 +399,7 @@ function StepInvoice({
   const [customerPo, setCustomerPo] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("Due on Receipt");
   const [shippingMethod, setShippingMethod] = useState("");
+  const [deliveryCharge, setDeliveryCharge] = useState(0);
 
   const checkStock = useCallback((products: string[]) => {
     const toCheck = products.filter((p) => p.trim().length >= 2);
@@ -428,7 +429,8 @@ function StepInvoice({
     });
   };
 
-  const total = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const goods = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const total = goods + deliveryCharge;
   const valid = items.every((item) => item.product.trim() && item.quantity > 0 && item.unit_price >= 0);
 
   const createInvoice = useMutation({
@@ -447,9 +449,10 @@ function StepInvoice({
         customer_po: customerPo.trim() || undefined,
         payment_terms: paymentTerms,
         shipping_method: shippingMethod.trim() || undefined,
+        delivery_charge: deliveryCharge || undefined,
       }),
     onSuccess: (data: any) => {
-      toast({ title: "Invoice created", description: `Total: ${fmt(data.invoice?.total_amount ?? 0)}` });
+      toast({ title: "Invoice created", description: `Total: ${fmt(Number(data.invoice?.total_amount ?? 0) + Number(data.invoice?.delivery_charge ?? 0))}` });
       onSuccess(data as { invoice: Invoice });
     },
     onError: (e: any) => {
@@ -519,6 +522,12 @@ function StepInvoice({
             <div className="space-y-1">
               <label className="text-sm font-medium">Shipping Method</label>
               <Input placeholder="e.g. Hand Delivery" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Delivery charge (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={deliveryCharge || ""}
+                onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
             </div>
           </div>
           {previewDueDate(paymentTerms) && (
@@ -591,6 +600,12 @@ function StepInvoice({
           </Button>
         </div>
 
+        {deliveryCharge > 0 && (
+          <div className="space-y-0.5 border-t pt-2 text-sm text-muted-foreground">
+            <div className="flex justify-between"><span>Goods</span><span className="font-mono">{fmt(goods)}</span></div>
+            <div className="flex justify-between"><span>Delivery charge</span><span className="font-mono">{fmt(deliveryCharge)}</span></div>
+          </div>
+        )}
         <div className="flex items-center justify-between py-2 border-t">
           <span className="text-sm font-semibold">Total</span>
           <span className="text-xl font-bold font-mono">{fmt(total)}</span>
@@ -792,7 +807,7 @@ function StepComplete({ invoiceId, walkInName }: { invoiceId: string; walkInName
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-green-600 dark:text-green-300">{fmt(invoice.total_amount)}</span>
+              <span className="font-bold text-green-600 dark:text-green-300">{fmt(Number(invoice.total_amount) + Number((invoice as any).delivery_charge ?? 0))}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Payment</span>

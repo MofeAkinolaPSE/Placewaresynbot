@@ -1500,6 +1500,7 @@ export const api = {
       payment_terms?: string;
       shipping_method?: string;
       tax_amount?: number;
+      delivery_charge?: number;
     }) => sendJson<any>(`/frontdesk/walk-ins/${walkInId}/invoice`, "POST", payload),
 
     submitQc: (invoiceId: string, payload: {
@@ -1582,6 +1583,7 @@ export const api = {
       payment_terms?: string;
       shipping_method?: string;
       tax_amount?: number;
+      delivery_charge?: number;
     }) => sendJson<any>(`/frontdesk/customers/${customerId}/quick-request`, "POST", payload),
   },
 

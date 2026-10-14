@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { books, Dict, fmtDate, naira, today } from "@/lib/books-api";
-import { AccountPick, act, Amount, BankSelect, BatchPick, CustomerPick, ProductPick, useBooks } from "./kit";
+import { AccountPick, act, Amount, BankSelect, BatchPick, CustomerPick, ProductPick, r2, useBooks, WhtPicker } from "./kit";
 
 const box = "space-y-2 rounded-md border border-sky-300 bg-sky-50 p-3 text-xs dark:bg-sky-500/10";
 
@@ -104,6 +104,12 @@ export function CorrectReceipt({ r }: { r: Dict }) {
     Object.fromEntries((r.allocations ?? []).filter((a: Dict) => !a.reversed).map((a: Dict) => [a.invoice_id, String(Number(a.amount))])));
   const applied = Object.values(alloc).reduce((s, v) => s + Number(v || 0), 0);
   const avail = Number(f.amount || 0) + Number(f.wht_amount || 0);
+  const [whtRate, setWhtRate] = useState(Number(r.wht_amount) ? "custom" : "");
+  const pickRate = (rate: string) => {
+    setWhtRate(rate);
+    if (rate && rate !== "custom") { const w = r2(applied * Number(rate)); setF((v) => ({ ...v, wht_amount: w.toFixed(2), amount: (applied - w).toFixed(2) })); }
+    if (!rate) setF((v) => ({ ...v, wht_amount: "", amount: applied ? applied.toFixed(2) : v.amount }));
+  };
   const save = async () => {
     const n = await act(() => books.post<Dict>(`/receivables/receipts/${r.id}/correct`, {
       ...f, wht_amount: f.wht_amount || undefined, reference: f.reference || undefined, customer_id: customer?.id, reason,
@@ -120,7 +126,7 @@ export function CorrectReceipt({ r }: { r: Dict }) {
       <div className="grid gap-2 md:grid-cols-3">
         <div><Label className="text-xs">Date</Label><Input className="h-8" type="date" value={f.receipt_date} onChange={(e) => setF({ ...f, receipt_date: e.target.value })} /></div>
         <div><Label className="text-xs">Amount</Label><Input className="h-8" type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
-        <div><Label className="text-xs">WHT deducted</Label><Input className="h-8" type="number" value={f.wht_amount} onChange={(e) => setF({ ...f, wht_amount: e.target.value })} /></div>
+        <WhtPicker base={applied} rate={whtRate} onRate={pickRate} amount={f.wht_amount} onAmount={(a) => setF({ ...f, wht_amount: a })} />
         <div><Label className="text-xs">Method</Label>
           <select className="h-8 w-full rounded-md border bg-background px-2" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
             {["TRANSFER", "CHEQUE", "CASH", "POS", "OTHER"].map((m) => <option key={m} value={m}>{m.toLowerCase()}</option>)}</select></div>

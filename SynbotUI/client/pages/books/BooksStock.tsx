@@ -18,7 +18,8 @@ import {
   act, Amount, BatchPick, CsvButton, CustomerPick, DateRange, Empty, ErrorNote, JournalSheet, Loading, ProductPick, Section,
   StatusBadge, useBooks, useLines,
 } from "@/components/books/kit";
-import { books, Dict, fmtDate, monthStart, naira, num, today } from "@/lib/books-api";
+import { books, Dict, fmtDate, monthStart, naira, num, packBatch, today } from "@/lib/books-api";
+import { toast } from "sonner";
 import { askConfirm, askText } from "@/lib/ask";
 
 const REASONS = ["DAMAGE", "EXPIRY", "SHORTAGE", "EXCESS", "COUNT_CORRECTION", "DATA_CORRECTION", "OTHER"];
@@ -40,6 +41,7 @@ export default function BooksStock() {
           <TabsTrigger value="valuation">Valuation</TabsTrigger>
           <TabsTrigger value="activity">Unit activity</TabsTrigger>
           <TabsTrigger value="batches">Batches & expiry</TabsTrigger>
+          <TabsTrigger value="batchdetails">Batch numbers & dates</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
           <TabsTrigger value="counts">Stock counts</TabsTrigger>
           <TabsTrigger value="loans">Stock on loan</TabsTrigger>
@@ -49,6 +51,7 @@ export default function BooksStock() {
         <TabsContent value="valuation"><Valuation /></TabsContent>
         <TabsContent value="activity"><UnitActivity onItem={(sku) => open("item", sku)} /></TabsContent>
         <TabsContent value="batches"><Batches onTrace={(id) => open("batch", id)} /></TabsContent>
+        <TabsContent value="batchdetails"><BatchDetails /></TabsContent>
         <TabsContent value="adjustments"><AdjustmentList onOpen={(id) => open("adjustment", id)} /></TabsContent>
         <TabsContent value="counts"><CountList onOpen={(id) => open("count", id)} /></TabsContent>
         <TabsContent value="loans"><LoanList onOpen={(id) => open("loan", id)} /></TabsContent>
@@ -191,6 +194,98 @@ function Batches({ onTrace }: { onTrace: (id: string) => void }) {
               <TableCell className="text-right"><Amount value={b.value} /></TableCell>
             </TableRow>
           ))}</TableBody>
+        </Table>
+      ))}
+    </Section>
+  );
+}
+
+type BatchEdits = { pack_batch_number: string; manufacture_date: string; expiry_date: string };
+const batchFields = (b: Dict): BatchEdits => ({
+  pack_batch_number: b.pack_batch_number ?? packBatch(b), manufacture_date: b.manufacture_date ?? "", expiry_date: b.expiry_date ?? "" });
+
+/** One screen to enter the batch number printed on the pack and the manufacture date (and correct
+ *  the expiry) for every batch. Saved to the batch itself, so every invoice that sells it - ACE Books
+ *  and Frontdesk - prints them from then on. */
+function BatchDetails() {
+  const qc = useQueryClient();
+  const { data, isLoading, error, refetch } = useBooks<Dict[]>(["batches", "details"], "/reports/batches", {});
+  const [view, setView] = useState<"missing" | "stock" | "all">("missing");
+  const [search, setSearch] = useState("");
+  const [edits, setEdits] = useState<Record<string, BatchEdits>>({});
+  const [busy, setBusy] = useState(false);
+  const all = data ?? [];
+  const missing = (b: Dict) => !b.pack_batch_number || !b.manufacture_date;
+  const rows = all.filter((b) =>
+    (view === "all" || (view === "stock" && Number(b.on_hand) > 0) || (view === "missing" && missing(b) && (Number(b.on_hand) > 0 || b.status === "AVAILABLE")))
+    && (!search || `${b.sku} ${b.product_name ?? ""} ${b.batch_number ?? ""} ${b.pack_batch_number ?? ""}`.toLowerCase().includes(search.toLowerCase())))
+    // what is in stock (and so about to be invoiced) first, then A-Z
+    .sort((x, y) => Number(Number(y.on_hand) > 0) - Number(Number(x.on_hand) > 0) || String(x.sku).localeCompare(String(y.sku)));
+  const value = (b: Dict) => edits[b.id] ?? batchFields(b);
+  const set = (b: Dict, k: keyof BatchEdits, v: string) => setEdits((e) => ({ ...e, [b.id]: { ...value(b), [k]: v } }));
+  const changed = all.filter((b) => {
+    const e = edits[b.id];
+    if (!e) return false;
+    const o = batchFields(b);
+    return e.pack_batch_number.trim() !== o.pack_batch_number || e.manufacture_date !== o.manufacture_date || e.expiry_date !== o.expiry_date;
+  });
+  const saveAll = async () => {
+    const bad = changed.find((b) => edits[b.id].manufacture_date && edits[b.id].expiry_date && edits[b.id].manufacture_date >= edits[b.id].expiry_date);
+    if (bad) { toast.error(`${bad.sku}: the manufacture date must be before the expiry date`); return; }
+    setBusy(true);
+    let saved = 0;
+    for (const b of changed) {
+      const e = edits[b.id];
+      const ok = await act(() => books.put(`/inventory/batches/${b.id}`, {
+        pack_batch_number: e.pack_batch_number.trim(), manufacture_date: e.manufacture_date || null, expiry_date: e.expiry_date || null }), "");
+      if (!ok) break;
+      saved += 1;
+      setEdits((x) => { const n = { ...x }; delete n[b.id]; return n; });
+    }
+    setBusy(false);
+    if (saved) toast.success(`${saved} batch${saved === 1 ? "" : "es"} saved — invoices now print these details`);
+    qc.invalidateQueries({ queryKey: ["books"] });
+    refetch();
+  };
+  const done = all.filter((b) => !missing(b)).length;
+  return (
+    <Section title="Batch numbers & dates"
+             actions={<div className="flex items-center gap-2">
+               {changed.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => setEdits({})}>Discard</Button>}
+               <Button size="sm" disabled={busy || changed.length === 0} onClick={saveAll}>{busy ? "Saving…" : `Save ${changed.length || ""} change${changed.length === 1 ? "" : "s"}`}</Button>
+             </div>}>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Enter the batch number printed on the pack and the manufacture date for each batch. They are stored on the batch, so every invoice
+        that sells it - in ACE Books and on Frontdesk - shows them. {all.length > 0 && <span className="font-medium text-foreground">{done} of {all.length} batches complete.</span>}
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <select className="h-9 rounded-md border bg-background px-2" value={view} onChange={(e) => setView(e.target.value as typeof view)}>
+          <option value="missing">Missing details</option><option value="stock">In stock</option><option value="all">All batches</option>
+        </select>
+        <Input className="h-9 w-64" placeholder="Search item or batch" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <span className="text-xs text-muted-foreground">{rows.length} shown</span>
+      </div>
+      {isLoading && <Loading />}<ErrorNote error={error} />
+      {data && (rows.length === 0 ? <Empty>{view === "missing" ? "Every batch has its pack batch number and manufacture date." : "No batches."}</Empty> : (
+        <Table>
+          <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Sage lot</TableHead><TableHead>Batch no. on the pack</TableHead>
+            <TableHead>Manufacture date</TableHead><TableHead>Expiry date</TableHead><TableHead className="text-right">On hand</TableHead></TableRow></TableHeader>
+          <TableBody>{rows.map((b) => {
+            const v = value(b);
+            const dirty = changed.includes(b);
+            return (
+              <TableRow key={b.id} className={dirty ? "bg-amber-50 dark:bg-amber-500/10" : ""}>
+                <TableCell><div className="font-mono text-xs">{b.sku}</div><div className="max-w-[240px] truncate text-xs text-muted-foreground">{b.product_name}</div></TableCell>
+                <TableCell className="font-mono text-xs">{b.lot_code ?? b.batch_number}</TableCell>
+                <TableCell><Input className="h-8 w-40" placeholder="e.g. Y3C77D4" aria-label={`Batch number on the pack for ${b.sku}`}
+                                  value={v.pack_batch_number} onChange={(e) => set(b, "pack_batch_number", e.target.value)} /></TableCell>
+                <TableCell><Input className="h-8 w-40" type="date" aria-label={`Manufacture date for ${b.sku}`} max={today()}
+                                  value={v.manufacture_date} onChange={(e) => set(b, "manufacture_date", e.target.value)} /></TableCell>
+                <TableCell><Input className={`h-8 w-40 ${v.expiry_date && v.expiry_date < today() ? "text-red-600" : ""}`} type="date" aria-label={`Expiry date for ${b.sku}`}
+                                  value={v.expiry_date} onChange={(e) => set(b, "expiry_date", e.target.value)} /></TableCell>
+                <TableCell className="text-right">{num(b.on_hand)}</TableCell>
+              </TableRow>);
+          })}</TableBody>
         </Table>
       ))}
     </Section>

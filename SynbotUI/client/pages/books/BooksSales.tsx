@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { DrillLink } from "@/components/books/kit";
 import { DrillTarget, historyTarget, useDrill } from "@/components/books/drill-context";
-import { PartyBalances, SageTag } from "@/components/books/kit";
+import { PartyBalances, r2, SageTag, WhtPicker } from "@/components/books/kit";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -319,7 +319,7 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
             <div key={i} className="space-y-2 rounded-lg border p-2">
               <div className="flex items-center gap-2">
                 <select className="h-8 rounded-md border bg-background px-2 text-xs" value={l.line_type} onChange={(e) => L.update(i, { line_type: e.target.value })}>
-                  <option value="ITEM">Stock item</option><option value="SERVICE">Service</option><option value="CHARGE">Delivery / charge</option><option value="DISCOUNT">Invoice discount</option>
+                  <option value="ITEM">Stock item</option><option value="SERVICE">Service</option><option value="CHARGE">Delivery charge (other income)</option><option value="DISCOUNT">Discount allowed</option>
                 </select>
                 <div className="flex-1">{l.line_type === "ITEM"
                   ? <ProductPick value={l.product} customerId={customer?.id} forSale
@@ -361,7 +361,7 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
             </div>
             );
           })}
-          <Button size="sm" variant="outline" onClick={L.add}><Plus className="mr-1 h-4 w-4" />Add line</Button>
+          <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={L.add}><Plus className="mr-1 h-4 w-4" />Add line</Button><Button size="sm" variant="outline" onClick={() => L.setLines((ls) => [...ls, { ...blankLine(), line_type: "CHARGE", description: "Delivery charge", quantity: "1" }])}><Plus className="mr-1 h-4 w-4" />Delivery charge <span className="ml-1 text-[11px] text-muted-foreground">(other income)</span></Button><Button size="sm" variant="outline" onClick={() => L.setLines((ls) => [...ls, { ...blankLine(), line_type: "DISCOUNT", description: "Discount allowed", quantity: "1" }])}><Plus className="mr-1 h-4 w-4" />Discount allowed</Button></div>
         </div>
         <div className="space-y-1"><Label className="text-xs">Notes</Label><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
         {credit && (
@@ -393,18 +393,12 @@ function InvoiceDetail({ id, onClose }: { id: string | null; onClose: () => void
       else act(async () => { throw e; });
     }
   };
-  const voidIt = async () => {
-    const reason = await askText("Why is this invoice being voided? (stock and all postings will be reversed)");
-    if (reason && (await act(() => books.post(`/sales/invoices/${id}/void`, { reason }), "Invoice voided"))) refresh();
-  };
-  const canVoid = inv && ["DRAFT", "POSTED"].includes(inv.status) && !inv.is_opening && Number(inv.amount_settled) === 0;
   return (
     <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={inv ? `Invoice ${inv.invoice_number}` : "Invoice"} description={inv?.customer_name}
-                 footer={inv && (inv.status === "DRAFT" || canVoid) ? (
+                 footer={inv && inv.status === "DRAFT" ? (
                    <div className="flex w-full flex-wrap items-center justify-end gap-2">
-                     {inv.status === "DRAFT" && (<><Input className="h-9 w-64" placeholder="Credit override reason (if needed)" value={override} onChange={(e) => setOverride(e.target.value)} />
-                       <Button size="sm" onClick={post}>Post invoice</Button></>)}
-                     {canVoid && <Button size="sm" variant="destructive" onClick={voidIt}>Void</Button>}
+                     <Input className="h-9 w-64" placeholder="Credit override reason (if needed)" value={override} onChange={(e) => setOverride(e.target.value)} />
+                     <Button size="sm" onClick={post}>Post invoice</Button>
                    </div>) : undefined}>
       {id && <RecordView key={`${id}:${v}`} t={{ type: "invoice", id }} />}
     </DetailSheet>
@@ -434,7 +428,7 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
   const fromCustomer = open ? sp.get("customer") : null;
   const { data: preCust } = useBooks<Dict>(["receipt-cust", fromCustomer], `/customers/${fromCustomer}/overview`, undefined, !!fromCustomer && !customer);
   useEffect(() => { if (preCust?.customer && !customer) setCustomer(preCust.customer); }, [preCust]);
-  useEffect(() => { if (!open) { setCustomer(null); setAlloc({}); setDupe(null); setAmountTyped(false); setInvSearch(""); setF({ ...f, amount: "", wht_amount: "", reference: "", notes: "" }); } }, [open]);
+  useEffect(() => { if (!open) { setCustomer(null); setAlloc({}); setDupe(null); setAmountTyped(false); setInvSearch(""); setWhtRate(""); setF({ ...f, amount: "", wht_amount: "", reference: "", notes: "" }); } }, [open]);
   const { data: items } = useBooks<Dict[]>(["openitems", customer?.id], "/receivables/open-items", { customer_id: customer?.id }, !!customer);
   // newest first: the one just paid is usually at the top
   const invoices = useMemo(() => (items ?? []).filter((i) => i.doc_type === "INVOICE" && Number(i.open_amount) > 0).sort((a, b) => (a.doc_date > b.doc_date ? -1 : 1)), [items]);
@@ -445,17 +439,22 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
     const next = { ...alloc };
     if (on) next[i.doc_id] = Number(i.open_amount).toFixed(2); else delete next[i.doc_id];
     setAlloc(next);
-    if (!amountTyped) setF((v) => ({ ...v, amount: Object.values(next).reduce((s, x) => s + Number(x || 0), 0).toFixed(2) }));
   };
+  const [whtRate, setWhtRate] = useState("");
   useEffect(() => {
     const inv = fromInvoice ? invoices.find((i) => String(i.doc_id) === fromInvoice) : null;
     if (inv && !Object.keys(alloc).length) {
       setAlloc({ [inv.doc_id]: Number(inv.open_amount).toFixed(2) });
-      setF((v) => ({ ...v, amount: v.amount || Number(inv.open_amount).toFixed(2) }));
     }
   }, [invoices, fromInvoice]);
   const available = Number(f.amount || 0) + Number(f.wht_amount || 0);
   const allocated = Object.values(alloc).reduce((s, v) => s + Number(v || 0), 0);
+  // the invoices ticked are what is settled: WHT is the rate on that value, the bank gets the rest
+  useEffect(() => {
+    const w = whtRate && whtRate !== "custom" ? r2(allocated * Number(whtRate)) : Number(f.wht_amount || 0);
+    setF((v) => ({ ...v, wht_amount: whtRate && whtRate !== "custom" ? (w ? w.toFixed(2) : "") : whtRate ? v.wht_amount : "",
+      amount: amountTyped ? v.amount : allocated > 0 ? (allocated - (whtRate ? w : 0)).toFixed(2) : "" }));
+  }, [allocated, whtRate, whtRate === "custom" ? f.wht_amount : "", amountTyped]);
   const autoAllocate = () => {
     let left = available;
     const next: Record<string, string> = {};
@@ -483,7 +482,7 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
                  footer={<div className="flex w-full items-center justify-between"><span className="text-xs">Applied {naira(allocated)} of {naira(available)}{available - allocated > 0 ? ` · ${naira(available - allocated)} on account` : ""}</span>
                    <Button disabled={busy || !customer || !f.bank_account_id || Number(f.amount) <= 0 || allocated > available + 0.001} onClick={() => submit(false)}>{busy ? "Posting…" : "Post receipt"}</Button></div>}>
       <div className="space-y-3">
-        <CustomerPick value={customer} onChange={(c) => { setCustomer(c); setAlloc({}); setAmountTyped(false); setF((v) => ({ ...v, amount: "" })); }} />
+        <CustomerPick value={customer} onChange={(c) => { setCustomer(c); setAlloc({}); setAmountTyped(false); setWhtRate(""); setF((v) => ({ ...v, amount: "", wht_amount: "" })); }} />
         <CustomerPanel customer={customer} />
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1"><Label className="text-xs">Date</Label><Input type="date" value={f.receipt_date} onChange={(e) => setF({ ...f, receipt_date: e.target.value })} /></div>
@@ -495,7 +494,7 @@ function ReceiptForm({ open, onClose }: { open: boolean; onClose: () => void }) 
         <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label="Received into" />
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1"><Label className="text-xs">Amount received</Label><Input type="number" value={f.amount} placeholder="tick the invoice(s) paid below" onChange={(e) => { setAmountTyped(true); setF({ ...f, amount: e.target.value }); }} /></div>
-          <div className="space-y-1"><Label className="text-xs">WHT deducted</Label><Input type="number" value={f.wht_amount} onChange={(e) => setF({ ...f, wht_amount: e.target.value })} /></div>
+          <WhtPicker base={allocated} rate={whtRate} onRate={setWhtRate} amount={f.wht_amount} onAmount={(a) => setF({ ...f, wht_amount: a })} />
           <div className="space-y-1"><Label className="text-xs">Cheque / transfer ref</Label><Input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></div>
         </div>
         {dupe && (
@@ -542,13 +541,9 @@ function ReceiptDetail({ id, onClose }: { id: string | null; onClose: () => void
   const qc = useQueryClient();
   const { data: r, refetch } = useBooks<Dict>(["receipt", id], `/receivables/receipts/${id}`, undefined, !!id);
   const [v, setV] = useState(0);
-  const voidIt = async () => {
-    const reason = await askText("Why is this receipt being voided? (e.g. cheque bounced)");
-    if (reason && (await act(() => books.post(`/receivables/receipts/${id}/void`, { reason }), "Receipt voided"))) { refetch(); setV((x) => x + 1); qc.invalidateQueries({ queryKey: ["books"] }); }
-  };
   return (
     <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={r ? `Receipt ${r.receipt_number}` : "Receipt"} description={r?.customer_name}
-                 footer={r?.status === "POSTED" ? <Button size="sm" variant="destructive" onClick={voidIt}>Void receipt</Button> : undefined}>
+>
       {id && <RecordView key={`${id}:${v}`} t={{ type: "receipt", id }} />}
     </DetailSheet>
   );

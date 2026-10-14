@@ -187,6 +187,8 @@ class InvoiceCreateIn(BaseModel):
     payment_terms:    str = Field(default="Due on Receipt")
     shipping_method:  Optional[str] = None
     tax_amount:       float = Field(default=0, ge=0)
+    # Charged to the customer for delivering the goods; posts to Other Income (40800) in ACE Books.
+    delivery_charge:  float = Field(default=0, ge=0)
 
 
 class QCCheckIn(BaseModel):
@@ -475,6 +477,7 @@ async def create_invoice(
         _product, _qty, _price, line_item = _extract_line_item(item)
         total_amount += line_item["line_total"]
         line_items.append(line_item)
+    line_items = _fill_batch_details(line_items)
 
     invoice_id = str(uuid.uuid4())
     created_at = _now()
@@ -494,6 +497,7 @@ async def create_invoice(
         "due_date":         _due_date_from_terms(payload.payment_terms, dt.datetime.utcnow()),
         "shipping_method":  payload.shipping_method,
         "tax_amount":       round(payload.tax_amount, 2),
+        "delivery_charge":  round(payload.delivery_charge, 2),
         # Set directly to qc_pending, not "draft" — discovered via live
         # verification that nothing ever transitioned the invoice's own
         # status column afterward (only the walk-in's status advanced), so
@@ -885,6 +889,61 @@ def _resolve_item_sku(item: dict) -> Optional[str]:
     return None
 
 
+def _fill_batch_details(items: list) -> list:
+    """Show each line's batch details as stored in ACE Books (Stock > Batch numbers & dates).
+
+    The batch number printed on the pack and the manufacture date are entered once per batch;
+    every invoice that sells that batch then shows them. What was typed on the line itself wins;
+    only blanks are filled. The batch is the one the line names (by its number, pack number or
+    Sage lot) or, when the line names none, the product's only batch / its nearest-expiry batch.
+    """
+    try:
+        wanted = {}
+        for it in items or []:
+            if isinstance(it, dict):
+                sku = _resolve_item_sku(it)
+                if sku:
+                    wanted[id(it)] = sku
+        if not wanted:
+            return items
+        rows = (
+            db.table("fin_batches")
+            .select("sku,batch_number,lot_code,pack_batch_number,manufacture_date,expiry_date,status")
+            .in_("sku", sorted(set(wanted.values()))).execute()
+        ).data or []
+    except Exception as exc:
+        logger.warning("Batch details lookup failed: %s", exc)
+        return items
+    by_sku: dict = {}
+    for r in rows:
+        by_sku.setdefault(r["sku"], []).append(r)
+    today = dt.date.today().isoformat()
+    for it in items:
+        sku = wanted.get(id(it))
+        cands = by_sku.get(sku) or []
+        if not cands:
+            continue
+        typed = str(it.get("batch_number") or "").strip().lower()
+        b = None
+        if typed:
+            b = next((c for c in cands if typed in {str(c.get(k) or "").strip().lower()
+                                                     for k in ("batch_number", "pack_batch_number", "lot_code")}), None)
+        elif len(cands) == 1:
+            b = cands[0]
+        else:
+            live = [c for c in cands if c.get("status") == "AVAILABLE" and str(c.get("expiry_date") or "9999") >= today]
+            b = min(live, key=lambda c: str(c.get("expiry_date") or "9999")) if live else None
+        if not b:
+            continue
+        if b.get("pack_batch_number"):
+            it["pack_batch_number"] = b["pack_batch_number"]
+        if not it.get("manufacture_date") and b.get("manufacture_date"):
+            it["manufacture_date"] = str(b["manufacture_date"])[:10]
+        if not it.get("expiry_date") and b.get("expiry_date"):
+            it["expiry_date"] = str(b["expiry_date"])[:10]
+    return items
+
+
 def _record_dispatch_stock_events(
     items: list, reference: str, actor_id: Optional[str]
 ) -> list[str]:
@@ -1216,7 +1275,7 @@ def list_invoices(
     try:
         query = db.table("frontdesk_invoices").select(
             "id,invoice_number,walk_in_id,customer_name,company_name,"
-            "total_amount,payment_method,status,qc_passed,finance_approved,"
+            "total_amount,tax_amount,delivery_charge,payment_method,status,qc_passed,finance_approved,"
             "created_at,updated_at"
         )
         if status:
@@ -1321,6 +1380,7 @@ def get_invoice(
         except Exception:
             pass
 
+    invoice["items"] = _fill_batch_details(invoice.get("items") or [])
     return {"invoice": invoice, "walk_in": walk_in}
 
 
@@ -1650,6 +1710,8 @@ class QuickRequestIn(BaseModel):
     payment_terms:    str = Field(default="Due on Receipt")
     shipping_method:  Optional[str] = None
     tax_amount:       float = Field(default=0, ge=0)
+    # Charged to the customer for delivering the goods; posts to Other Income (40800) in ACE Books.
+    delivery_charge:  float = Field(default=0, ge=0)
 
 
 @router.post("/customers/{customer_id}/quick-request", status_code=201)
@@ -1700,6 +1762,7 @@ async def quick_request(
         _product, _qty, _price, line_item = _extract_line_item(item)
         total_amount += line_item["line_total"]
         line_items.append(line_item)
+    line_items = _fill_batch_details(line_items)
 
     now = _now()
     walk_in_id = str(uuid.uuid4())
@@ -1751,6 +1814,7 @@ async def quick_request(
         "due_date":         _due_date_from_terms(payment_terms, dt.datetime.utcnow()),
         "shipping_method":  payload.shipping_method,
         "tax_amount":       round(payload.tax_amount, 2),
+        "delivery_charge":  round(payload.delivery_charge, 2),
         "status":           "qc_pending",
         "qc_passed":        None,
         "finance_approved": None,

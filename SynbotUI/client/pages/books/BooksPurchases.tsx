@@ -341,15 +341,10 @@ function DocDetail({ kind, id, onClose }: { kind: "bill" | "payment" | "debitnot
   const path = { bill: "/payables/bills/", payment: "/payables/payments/", debitnote: "/payables/debit-notes/" }[kind] + id;
   const { data: d, refetch } = useBooks<Dict>([kind, id], path, undefined, !!id);
   const [v, setV] = useState(0);
-  const voidIt = async () => {
-    const reason = await askText(`Why is this ${kind === "bill" ? "bill" : "payment"} being voided?`);
-    if (reason && (await act(() => books.post(`${path}/void`, { reason }), "Voided"))) { refetch(); setV((x) => x + 1); qc.invalidateQueries({ queryKey: ["books"] }); }
-  };
   const title = d ? (kind === "bill" ? `Bill ${d.bill_number}` : kind === "payment" ? `Payment ${d.payment_number}` : `Debit note ${d.debit_note_number}`) : "";
-  const canVoid = d && kind !== "debitnote" && d.status !== "VOID" && !d.is_opening;
   return (
     <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={title} description={d?.supplier_name}
-                 footer={canVoid ? <Button size="sm" variant="destructive" onClick={voidIt}>Void</Button> : undefined}>
+>
       {id && <RecordView key={`${id}:${v}`} t={{ type: kind, id }} />}
     </DetailSheet>
   );

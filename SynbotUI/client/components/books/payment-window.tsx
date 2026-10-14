@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { books, BooksError, Dict, fmtDate, naira, newIdemKey, today } from "@/lib/books-api";
-import { AccountPick, act, Amount, BankSelect, SupplierPick, useBooks } from "./kit";
+import { AccountPick, act, Amount, BankSelect, r2, SupplierPick, useBooks, WhtPicker } from "./kit";
 
 type ExpLine = { account: Dict | null; description: string; amount: string; register: boolean; life: string };
 const blankExp = (): ExpLine => ({ account: null, description: "", amount: "", register: true, life: "" });
@@ -79,6 +79,8 @@ export function PaymentWindow({ open, onClose, oneOff = false }: { open: boolean
 
   const toInvoices = Object.values(pay).reduce((s, v) => s + n(v), 0);
   const toExpenses = exp.reduce((s, l) => s + n(l.amount), 0);
+  const [whtRate, setWhtRate] = useState("");
+  useEffect(() => { if (whtRate && whtRate !== "custom") setH((x) => ({ ...x, wht_amount: r2(toInvoices * Number(whtRate)).toFixed(2) })); if (!whtRate) setH((x) => ({ ...x, wht_amount: "" })); }, [whtRate, toInvoices]);
   const wht = mode === "supplier" ? n(h.wht_amount) : 0;
   const cashOut = toInvoices - wht + toExpenses;
   const name = mode === "supplier" ? supplier?.name : payee.trim();
@@ -211,7 +213,7 @@ export function PaymentWindow({ open, onClose, oneOff = false }: { open: boolean
                 </Table>
                 {credits.length > 0 && <p className="text-xs text-muted-foreground">{supplier.name} also has {credits.length} credit(s) / payment(s) on account not yet applied.</p>}
                 <div className="flex items-center gap-2"><Label className="text-xs">WHT withheld (owed to FIRS)</Label>
-                  <Input className="h-8 w-40" type="number" value={h.wht_amount} onChange={(e) => setH({ ...h, wht_amount: e.target.value })} /></div>
+                  <WhtPicker base={toInvoices} rate={whtRate} onRate={setWhtRate} amount={h.wht_amount} onAmount={(a) => setH({ ...h, wht_amount: a })} label="" /></div>
               </>
             )
         )}

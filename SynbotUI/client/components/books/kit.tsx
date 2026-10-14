@@ -285,6 +285,32 @@ export function PartyBalances({ kind, onPick }: { kind: "customer" | "supplier";
   );
 }
 
+export const WHT_RATES = ["0.02", "0.03", "0.05", "0.10"];
+export const r2 = (x: number) => Math.round(x * 100) / 100;
+
+/** Withholding tax deducted by the customer (or from a supplier): pick the rate and the amount is
+ *  worked out on the invoice value being settled; "other amount" lets it be typed. */
+export function WhtPicker({ base, rate, onRate, amount, onAmount, label = "WHT deducted" }: {
+  base: number; rate: string; onRate: (r: string) => void; amount: string; onAmount: (a: string) => void; label?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <div className="flex gap-2">
+        <select className="h-9 rounded-md border bg-background px-2 text-sm" value={rate} onChange={(e) => onRate(e.target.value)}>
+          <option value="">No WHT</option>
+          {WHT_RATES.map((r) => <option key={r} value={r}>{Math.round(Number(r) * 100)}%</option>)}
+          <option value="custom">Other amount</option>
+        </select>
+        {rate === "custom"
+          ? <Input className="h-9" type="number" placeholder="Amount" value={amount} onChange={(e) => onAmount(e.target.value)} />
+          : <div className="flex h-9 flex-1 items-center rounded-md bg-muted/40 px-2 text-sm">{rate ? naira(Number(amount || 0)) : "—"}</div>}
+      </div>
+      {rate && rate !== "custom" && base > 0 && <div className="text-[11px] text-muted-foreground">{Math.round(Number(rate) * 100)}% of {naira(base)}</div>}
+    </div>
+  );
+}
+
 /** Marks a row that comes from the Sage years (listed beside ACE Books documents). */
 export function SageTag() {
   return <span className="ml-1 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-medium text-muted-foreground">Sage</span>;

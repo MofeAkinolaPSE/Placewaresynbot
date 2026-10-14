@@ -20,7 +20,7 @@ import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { useQueryClient } from "@tanstack/react-query";
 import { books, Dict, fmtDate, naira, newIdemKey, num, packBatch, today, yearStart } from "@/lib/books-api";
 import { DrillContext, DrillTarget, sourceTarget } from "./drill-context";
-import { act, Amount, BankSelect, CsvButton, DateRange, DrillLink, ErrorNote, Loading, sourceLink, StatusBadge, useBooks } from "./kit";
+import { act, Amount, BankSelect, CsvButton, DateRange, DrillLink, ErrorNote, Loading, r2, sourceLink, StatusBadge, useBooks, WhtPicker } from "./kit";
 import { GlAccountDetail } from "./gl";
 import { DataIssueBody } from "./data-issues";
 import { RecallBody, RecallNotice } from "./recall-panel";
@@ -335,8 +335,19 @@ export function InvoiceBody({ id }: { id: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2"><StatusBadge status={i.status} /><span className="font-mono text-base font-semibold">{i.invoice_number}</span>
             {i.source_type === "FRONTDESK" && <Badge variant="outline">from Frontdesk</Badge>}</div>
-          <PrintInvoiceButton kind="ace" id={id} />
+          <div className="flex items-center gap-2"><PrintInvoiceButton kind="ace" id={id} />
+            {["DRAFT", "POSTED"].includes(i.status) && !i.is_opening && Number(i.amount_settled) === 0 && <VoidButton path={`/sales/invoices/${id}`} what="invoice" />}</div>
         </div>
+        {i.status !== "VOID" && !i.is_opening && Number(i.amount_settled) > 0 && (i.allocations ?? []).some((a: Dict) => a.source_type === "RECEIPT" && !a.reversed) && (
+          <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:bg-amber-500/10">
+            <div>This invoice has been paid. To void it, first void the receipt(s) that paid it (or raise a credit note):</div>
+            {(i.allocations ?? []).filter((a: Dict) => a.source_type === "RECEIPT" && !a.reversed).map((a: Dict) => (
+              <div key={a.id} className="flex items-center justify-between gap-2">
+                <DrillLink to={{ type: "receipt", id: a.source_id, label: a.source_number }}>{a.source_number}</DrillLink>
+                <span className="flex items-center gap-2"><Amount value={a.amount} /><VoidButton path={`/receivables/receipts/${a.source_id}`} what="receipt" label="Void receipt" /></span>
+              </div>))}
+          </div>
+        )}
         {Number(i.balance_due) > 0 && i.status !== "VOID" && i.status !== "DRAFT" &&
           <QuickReceipt invoiceId={id} invoiceNumber={i.invoice_number} customerId={i.customer_id} balance={Number(i.balance_due)} />}
         {["POSTED", "PARTIALLY_PAID", "PAID"].includes(i.status) && !i.is_opening && <AddItems inv={i} />}
@@ -478,7 +489,8 @@ export function ReceiptBody({ id }: { id: string }) {
   return (
     <Load path={`/receivables/receipts/${id}`}>{(r) => (
       <div className="space-y-3 text-sm">
-        <div className="flex items-center gap-2"><StatusBadge status={r.status} /><span className="font-mono">{r.receipt_number}</span></div>
+        <div className="flex items-center gap-2"><StatusBadge status={r.status} /><span className="font-mono">{r.receipt_number}</span>
+          {r.status === "POSTED" && <span className="ml-auto"><VoidButton path={`/receivables/receipts/${id}`} what="receipt" /></span>}</div>
         <Facts items={[["From", <Cust id={r.customer_id} name={r.customer_name} />], ["Date", fmtDate(r.receipt_date)], ["Method", `${r.method?.toLowerCase()}`],
           ["Cheque / ref", r.reference], ["Into", r.bank_account_name], ["Journal", <J id={r.journal_id} n={r.journal_number} />]]} />
         <Totals rows={[["Received", r.amount, true], ["WHT deducted", Number(r.wht_amount) ? r.wht_amount : undefined], ["Applied", r.amount_allocated], ["On account", r.unapplied, true]]} />
@@ -525,6 +537,26 @@ export function CreditNoteBody({ id }: { id: string }) {
 // Purchasing & banking documents
 // ---------------------------------------------------------------------------
 
+const VOID_ASK: Record<string, string> = {
+  invoice: "Why is this invoice being voided? Its stock and postings are reversed.",
+  receipt: "Why is this receipt being voided? (e.g. cheque bounced, posted to the wrong customer) The invoices it paid reopen.",
+  voucher: "Why is this voucher being voided? Its entry in the bank and the accounts is reversed.",
+  payment: "Why is this payment being voided? The bills it paid reopen.",
+  bill: "Why is this bill being voided? Its stock and postings are reversed.",
+};
+
+/** Void, in the record's own panel - the same button wherever the record is opened from. */
+function VoidButton({ path, what, label }: { path: string; what: keyof typeof VOID_ASK; label?: string }) {
+  const qc = useQueryClient();
+  const run = async () => {
+    const reason = await askText(VOID_ASK[what]);
+    if (reason && (await act(() => books.post(`${path}/void`, { reason }), `${what[0].toUpperCase()}${what.slice(1)} voided`))) {
+      qc.invalidateQueries({ queryKey: ["books"] });
+    }
+  };
+  return <Button size="sm" variant="destructive" className="h-8" onClick={run}>{label ?? "Void"}</Button>;
+}
+
 /** Record the customer's payment of this invoice from its panel: amount defaults to what is
  *  still owed, choose the bank and confirm. The receipt is applied to the invoice, so the invoice,
  *  the register, the customer's balance and the bank update together. */
@@ -534,12 +566,22 @@ function QuickReceipt({ invoiceId, invoiceNumber, customerId, balance }: { invoi
   const [f, setF] = useState({ amount: balance.toFixed(2), receipt_date: today(), method: "TRANSFER", bank_account_id: "", reference: "" });
   const [idem, setIdem] = useState(newIdemKey);
   const [busy, setBusy] = useState(false);
-  const amt = Number(f.amount || 0);
+  const [part, setPart] = useState(false);
+  const [whtRate, setWhtRate] = useState("");
+  const [whtTyped, setWhtTyped] = useState("");
+  const rate = whtRate && whtRate !== "custom" ? Number(whtRate) : 0;
+  // full payment: the invoice balance is settled, WHT is the rate on it and the bank gets the rest;
+  // part payment: the cash received is entered and the WHT on that part is added on top
+  const cash = part ? Number(f.amount || 0) : r2(balance - (whtRate === "custom" ? Number(whtTyped || 0) : r2(balance * rate)));
+  const wht = whtRate === "custom" ? Number(whtTyped || 0) : part ? r2((cash * rate) / (1 - rate || 1)) : r2(balance * rate);
+  const settles = r2(cash + wht);
+  const amt = cash;
   const save = async () => {
     setBusy(true);
     const r = await act(() => books.post<Dict>("/receivables/receipts", {
-      customer_id: customerId, receipt_date: f.receipt_date, method: f.method, bank_account_id: f.bank_account_id, amount: amt.toFixed(2),
-      reference: f.reference || undefined, allocations: [{ invoice_id: invoiceId, amount: Math.min(amt, balance).toFixed(2) }],
+      customer_id: customerId, receipt_date: f.receipt_date, method: f.method, bank_account_id: f.bank_account_id, amount: cash.toFixed(2),
+      wht_amount: wht > 0 ? wht.toFixed(2) : undefined, reference: f.reference || undefined,
+      allocations: [{ invoice_id: invoiceId, amount: Math.min(settles, balance).toFixed(2) }],
     }, idem), `Receipt recorded against ${invoiceNumber}`);
     setBusy(false);
     if (r) { setOpen(false); setIdem(newIdemKey()); qc.invalidateQueries({ queryKey: ["books"] }); }
@@ -554,8 +596,17 @@ function QuickReceipt({ invoiceId, invoiceNumber, customerId, balance }: { invoi
   return (
     <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:bg-emerald-500/10">
       <div className="font-semibold">Payment received for {invoiceNumber}</div>
-      <div className="grid gap-2 sm:grid-cols-4">
-        <div><div className="mb-1 text-muted-foreground">Amount</div><Input className="h-8" type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
+      <div className="flex gap-4">
+        <label className="flex items-center gap-1"><input type="radio" checked={!part} onChange={() => setPart(false)} />Full payment ({naira(balance)})</label>
+        <label className="flex items-center gap-1"><input type="radio" checked={part} onChange={() => { setPart(true); setF({ ...f, amount: "" }); }} />Part payment</label>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr]">
+        <WhtPicker base={part ? settles : balance} rate={whtRate} onRate={setWhtRate} amount={whtRate === "custom" ? whtTyped : wht ? wht.toFixed(2) : ""} onAmount={setWhtTyped} />
+        <div><div className="mb-1 text-muted-foreground">{part ? "Amount received (into the bank)" : "Into the bank"}</div>
+          {part ? <Input className="h-8" type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+            : <div className="flex h-8 items-center rounded-md bg-muted/40 px-2 font-semibold">{naira(cash)}</div>}</div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
         <div><div className="mb-1 text-muted-foreground">Date</div><Input className="h-8" type="date" value={f.receipt_date} onChange={(e) => setF({ ...f, receipt_date: e.target.value })} /></div>
         <div><div className="mb-1 text-muted-foreground">Method</div>
           <select className="h-8 w-full rounded-md border bg-background px-2" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
@@ -563,7 +614,8 @@ function QuickReceipt({ invoiceId, invoiceNumber, customerId, balance }: { invoi
         <div><div className="mb-1 text-muted-foreground">Cheque / transfer ref</div><Input className="h-8" value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></div>
       </div>
       <BankSelect value={f.bank_account_id} onChange={(v) => setF({ ...f, bank_account_id: v })} label="Received into" />
-      {amt > balance && <p className="text-amber-700">{naira(amt - balance)} more than is owed: it stays on the customer's account.</p>}
+      <p className="text-muted-foreground">Settles {naira(Math.min(settles, balance))} of the invoice{wht > 0 ? ` (${naira(cash)} received + ${naira(wht)} WHT)` : ""}; balance after: <strong>{naira(Math.max(0, balance - settles))}</strong>.</p>
+      {settles > balance + 0.001 && <p className="text-amber-700">{naira(settles - balance)} more than is owed: it stays on the customer's account.</p>}
       <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
         <Button size="sm" disabled={busy || !f.bank_account_id || !(amt > 0)} onClick={save}>{busy ? "Posting…" : `Confirm receipt of ${naira(amt)}`}</Button></div>
     </div>
@@ -575,8 +627,10 @@ export function BillBody({ id }: { id: string }) {
     <Load path={`/payables/bills/${id}`}>{(b) => (
       <div className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-2"><StatusBadge status={b.status} /><span className="font-mono">{b.bill_number}</span>
-          {Number(b.balance_due) > 0 && b.status !== "VOID" && (
-            <Button asChild size="sm" className="ml-auto"><Link to={`/finance/books/purchases?tab=payments&new=payment&supplier=${b.supplier_id}&pay=${id}`}>Pay this bill</Link></Button>)}</div>
+          <span className="ml-auto flex items-center gap-2">
+            {Number(b.balance_due) > 0 && b.status !== "VOID" && (
+              <Button asChild size="sm"><Link to={`/finance/books/purchases?tab=payments&new=payment&supplier=${b.supplier_id}&pay=${id}`}>Pay this bill</Link></Button>)}
+            {b.status !== "VOID" && !b.is_opening && Number(b.amount_settled) === 0 && <VoidButton path={`/payables/bills/${id}`} what="bill" />}</span></div>
         <Facts items={[["Supplier", <Sup id={b.supplier_id} name={b.supplier_name} />], ["Supplier invoice", b.supplier_invoice_number], ["Bill date", fmtDate(b.bill_date)],
           ["Due", fmtDate(b.due_date)], ["Journal", b.journal_id ? <J id={b.journal_id} n={b.journal_number} /> : null], ["Notes", b.notes]]} />
         {b.lines?.length > 0 && (<><H>What was bought</H><Table>
@@ -599,7 +653,8 @@ export function PaymentBody({ id }: { id: string }) {
   return (
     <Load path={`/payables/payments/${id}`}>{(p) => (
       <div className="space-y-3 text-sm">
-        <div className="flex items-center gap-2"><StatusBadge status={p.status} /><span className="font-mono">{p.payment_number}</span></div>
+        <div className="flex items-center gap-2"><StatusBadge status={p.status} /><span className="font-mono">{p.payment_number}</span>
+          {p.status === "POSTED" && <span className="ml-auto"><VoidButton path={`/payables/payments/${id}`} what="payment" /></span>}</div>
         <Facts items={[["Paid to", <Sup id={p.supplier_id} name={p.supplier_name} />], ["Date", fmtDate(p.payment_date)], ["Method", p.method?.toLowerCase()],
           ["Cheque / ref", p.reference], ["From", p.bank_account_name], ["Journal", <J id={p.journal_id} n={p.journal_number} />]]} />
         <Totals rows={[["Paid", p.amount, true], ["WHT withheld", Number(p.wht_amount) ? p.wht_amount : undefined], ["Applied", p.amount_allocated], ["Unapplied", p.unapplied, true]]} />
@@ -676,7 +731,8 @@ export function VoucherBody({ id }: { id: string }) {
   return (
     <Load path={`/banking/vouchers/${id}`}>{(v) => (
       <div className="space-y-3 text-sm">
-        <div className="flex items-center gap-2"><StatusBadge status={v.status} /><span className="font-mono">{v.voucher_number}</span><Badge variant="outline">{v.kind.toLowerCase()}</Badge></div>
+        <div className="flex items-center gap-2"><StatusBadge status={v.status} /><span className="font-mono">{v.voucher_number}</span><Badge variant="outline">{v.kind.toLowerCase()}</Badge>
+          {v.status === "POSTED" && <span className="ml-auto"><VoidButton path={`/banking/vouchers/${id}`} what="voucher" /></span>}</div>
         <Facts items={[["Date", fmtDate(v.voucher_date)], ["Account", `${v.bank_account_name}${v.to_bank_account_name ? ` → ${v.to_bank_account_name}` : ""}`], ["Payee", v.payee],
           ["Reference", v.reference], ["Amount", <Amount value={v.amount} bold />], ["Journal", <J id={v.journal_id} n={v.journal_number} />]]} />
         {(v.lines ?? []).length > 0 && (<><H>What it was for</H><Table><TableBody>{v.lines.map((l: Dict) => (

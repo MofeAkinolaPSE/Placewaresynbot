@@ -76,7 +76,7 @@ def executive_overview() -> Dict[str, Any]:
     o = overview()
     f, s, st, ql, p, c = (o.get(k) or {} for k in ("finance", "sales", "stock", "quality", "people", "customers"))
     return {
-        "books_complete_to": str(f.get("aged_on")), "note": "Trading after the 1 Jul 2026 cut-over is not yet loaded" if (f.get("books") or {}).get("stale") else "",
+        "books_complete_to": str(f.get("aged_on")), "note": "Trading after the Sage hand-over is not yet loaded (Sage Import / Export -> Into ACE Books)" if (f.get("books") or {}).get("stale") else "",
         "revenue_ytd": f.get("revenue_ytd"), "gross_profit_ytd": f.get("gross_profit_ytd"), "gross_margin_pct": f.get("gross_margin_pct"),
         "net_profit_ytd": f.get("net_profit_ytd"), "cash": f.get("cash"),
         "receivables": (f.get("receivables") or {}).get("total"), "receivables_over_90": (f.get("receivables") or {}).get("over_90"),

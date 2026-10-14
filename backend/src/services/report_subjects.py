@@ -725,7 +725,7 @@ def _dossier_period(report_type: str, pid: str) -> Dict[str, Any]:
                                  [[l.get("name") or l.get("account") or l.get("code"), _n(l.get("amount")), _n(l.get("compare_amount") or l.get("compare"))]
                                   for l in sec.get("lines") or []]))
         if not _f(inc["revenue"]):
-            gaps.append("ACE Books holds the months before the 1 Jul 2026 cut-over as one migrated opening figure, so a monthly P&L for them "
+            gaps.append("ACE Books holds the Sage months as migrated history, so a monthly P&L for them "
                         "comes from the sales lines above rather than the ledger.")
     if report_type == "ar_aging":
         from src.fin.readmodel import ar_rows

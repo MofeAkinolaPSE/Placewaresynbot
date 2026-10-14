@@ -551,8 +551,9 @@ laptop, and bringing the server's code up to date so it understands that copy.
 | | |
 |---|---|
 | Time needed | About 30 minutes. The app is offline for about 10 of them, so pick a quiet time. |
-| What changes | The server's data is replaced. Anything typed into the server since the last load is overwritten. Step 3 saves a copy first, so you can always go back. |
-| After the load | Log in with the **dev laptop's** usernames and passwords. The dump carries the dev laptop's user accounts. |
+| What changes | The server's data is replaced. Step 3 saves a full copy first, so you can always go back. |
+| User accounts | **Always kept.** Logins, passwords, roles and HR profiles created on the server are saved before the load and put back after it, automatically (Step 3). |
+| Real work on the server | **Replaced.** Invoices, receipts and other records typed into the server since the last load are not kept. Once staff use the server for real work, don't reload a dev dump: the code updates (Step 1) and the Sage update page bring the server up to date instead. |
 | Where you type | Step A on the **dev laptop**. Everything after that on the **server**, in the Ubuntu terminal. |
 
 **The file** (on the dev laptop, inside the project folder):
@@ -574,15 +575,11 @@ Use this file only. The older `ace_full_dump_2026-10-07.sql.gz` and `ace_sage_da
 - [ ] A. Code pushed from the dev laptop
 - [ ] 1. Server code updated and rebuilt
 - [ ] 2. Dump copied to the server and fingerprint checked
-- [ ] 3. Server's current data saved (your undo button)
-- [ ] 4. App stopped
-- [ ] 5. Old database replaced with an empty one
-- [ ] 6. New data loaded
-- [ ] 7. App started
-- [ ] 8. Numbers checked
-- [ ] 9. Test data removed
-- [ ] 10. Checked in the browser
-- [ ] 11. Tidied up
+- [ ] 3. Database replaced (one command - keeps user accounts, makes its own backup)
+- [ ] 4. Numbers checked
+- [ ] 5. Test data removed
+- [ ] 6. Checked in the browser
+- [ ] 7. Tidied up
 
 ---
 
@@ -651,77 +648,53 @@ You should see this, followed by the file name:
 
 - **Different fingerprint:** the copy was damaged. Copy the file again.
 - **"No such file or directory":** the file isn't in `C:\temp`. Check where you pasted it.
+  In Ubuntu, `C:\` is `/mnt/c/` (not `C:` or `/c/`). So if you pasted into **`C:\Windows\Temp`**, use:
+  ```bash
+  cp /mnt/c/Windows/Temp/ace_full_dump_2026-10-09.sql.gz ~/
+  ```
+  If that says **"Permission denied"**, Windows is protecting the folder. Move the file to `C:\temp` in
+  File Explorer and use the first command, or copy it as admin (asks for your Ubuntu password):
+  ```bash
+  sudo cp /mnt/c/Windows/Temp/ace_full_dump_2026-10-09.sql.gz ~/ && sudo chown $USER ~/ace_full_dump_2026-10-09.sql.gz
+  ```
+  To see what Ubuntu can find in a folder: `ls -l /mnt/c/Windows/Temp/ | grep -i ace`
 
 ---
 
-**Step 3 — Save a copy of the server's current data** (your undo button).
-
-```bash
-mkdir -p ~/db-backups
-docker exec backend-db-1 pg_dump -U postgres -d synbot_demo --no-owner --no-acl | gzip > ~/db-backups/server-before-restore.sql.gz
-ls -lh ~/db-backups/
-```
-
-You should see: `server-before-restore.sql.gz` with a size in **MB**, for example `38M`.
-
-- **The size is only a few K:** stop here and ask for help. The copy didn't work.
-
----
-
-**Step 4 — Stop the app**, so nobody changes data while it is being replaced. The database keeps running.
+**Step 3 — Replace the database (one command).** This takes 3–6 minutes. The app is offline while it runs.
 
 ```bash
 cd ~/Placewaresynbot/backend
-docker compose stop backend frontend
+bash scripts/reload_database.sh ~/ace_full_dump_2026-10-09.sql.gz
 ```
 
-You should see: `Stopped` for the backend and the frontend. The website is now offline.
+It asks you to **type `YES`** (capital letters) and press Enter. Then it does everything by itself and
+prints each step as it goes:
+
+```
+[1/6] Saving a full copy of the current database ...
+[2/6] Saving the server's user accounts ...
+[3/6] Stopping the app ...
+[4/6] Replacing the database (2-5 minutes, the screen stays quiet) ...
+[5/6] Putting the server's user accounts back ...
+[6/6] Starting the app ...
+DONE. The new data is loaded and the server's user accounts are kept.
+```
+
+Between steps 5 and 6 it shows a table of the server's accounts (email, roles, active, hr_profile).
+These are the people who will log in with their own passwords.
+
+- **`STOP: ...`** at the start: nothing was changed. Read the message. Usually the dump file is damaged
+  (copy it again, Step 2) or the file name is wrong.
+- **`!!! The load failed`**: the script has already put the old database back and restarted the app.
+  Nothing changed. Ask for help with the dump.
+- The full copy of the old data and a separate copy of the accounts are saved in `~/db-backups/`.
+
+Wait about one minute after `DONE` for the app to finish starting.
 
 ---
 
-**Step 5 — Delete the old database and create an empty one.**
-
-```bash
-docker exec backend-db-1 psql -U postgres -c "DROP DATABASE synbot_demo WITH (FORCE);"
-docker exec backend-db-1 psql -U postgres -c "CREATE DATABASE synbot_demo;"
-```
-
-You should see: `DROP DATABASE`, then `CREATE DATABASE`.
-
----
-
-**Step 6 — Load the new data.** This takes 2–5 minutes, and the terminal stays quiet while it works.
-
-```bash
-gunzip -c ~/ace_full_dump_2026-10-09.sql.gz | docker exec -i backend-db-1 psql -q -v ON_ERROR_STOP=1 -U postgres -d synbot_demo
-echo "exit code: $?"
-```
-
-You should see: `exit code: 0`. A few `set_config` or blank lines before it are normal.
-
-- **An ERROR line, or an exit code other than 0:** run Step 5 again, then Step 6 again.
-- **It fails a second time:** put the old data back (Step 5, then the box below) and ask for help.
-
-```bash
-gunzip -c ~/db-backups/server-before-restore.sql.gz | docker exec -i backend-db-1 psql -q -U postgres -d synbot_demo
-```
-
----
-
-**Step 7 — Start the app again.**
-
-```bash
-docker compose up -d
-docker compose logs -f backend
-```
-
-You should see: the log scroll by and stop at `Application startup complete`. The migration lines say `Skipping already-applied`.
-
-Press **Ctrl+C** to stop watching the log. The app keeps running.
-
----
-
-**Step 8 — Check the data loaded correctly.**
+**Step 4 — Check the data loaded correctly.**
 
 ```bash
 docker exec backend-db-1 psql -U postgres -d synbot_demo -c "
@@ -745,7 +718,7 @@ You should see exactly these numbers:
 
 ---
 
-**Step 9 — Remove the August test data** from the Operations Queue: test deliveries, test riders and two test recalls. The script saves a backup first.
+**Step 5 — Remove the August test data** from the Operations Queue: test deliveries, test riders and two test recalls. The script saves a backup first.
 
 ```bash
 cd ~/Placewaresynbot/backend
@@ -756,7 +729,7 @@ You should see: a `Backup:` line, then a small table showing `deliveries_left 0`
 
 ---
 
-**Step 10 — Check in the browser.** Open ACE and log in with the **dev laptop's** username and password.
+**Step 6 — Check in the browser.** Open ACE and log in with **your own account** (it was kept in Step 3).
 
 - [ ] **Dashboard:** the Operations Queue no longer lists test deliveries.
 - [ ] **ACE Books › Finance Control Tower:** a yellow "data issues need a decision" banner.
@@ -771,7 +744,7 @@ All ticked = done.
 
 ---
 
-**Step 11 — Tidy up.** The dump holds every client and financial record, so don't leave copies lying around.
+**Step 7 — Tidy up.** The dump holds every client and financial record, so don't leave copies lying around.
 
 ```bash
 rm ~/ace_full_dump_2026-10-09.sql.gz
@@ -786,11 +759,11 @@ rm ~/ace_full_dump_2026-10-09.sql.gz
 
 | What you see | What to do |
 |---|---|
-| `relation ... does not exist` / `table does not exist` | The server's code is older than the dump. Do Step A and Step 1, then repeat from Step 5. |
-| The website shows **502 Bad Gateway** after Step 7 | Wait one minute and refresh. Still there? Run `docker compose restart frontend`. |
-| You can't log in | Use the **dev laptop's** username and password, not the server's old one. |
-| Numbers in Step 8 differ | Stop and ask for help. Don't let staff use it yet. |
-| You want the old data back | Step 5, then the "put the old data back" box in Step 6, then Step 7. |
+| `relation ... does not exist` / `table does not exist` | The server's code is older than the dump. Do Step A and Step 1, then repeat Step 3. |
+| The website shows **502 Bad Gateway** after Step 3 | Wait one minute and refresh. Still there? Run `docker compose restart frontend`. |
+| You can't log in | Accounts are put back from the copy in `~/db-backups/`: run `bash scripts/keep_accounts.sh merge` followed by the newest `~/db-backups/accounts-....sql.gz` file. Still not working? Ask for help. |
+| Numbers in Step 4 differ | Stop and ask for help. Don't let staff use it yet. |
+| You want the old data back | Run Step 3 again with the copy it saved: `bash scripts/reload_database.sh` followed by the newest `~/db-backups/server-before-reload-....sql.gz` file. |
 
 > **For the developer — making the next dump** (on the dev laptop, PowerShell in the project folder):
 > ```powershell

@@ -917,6 +917,12 @@ def update_batch(conn, ctx, batch_id: str, data: Dict[str, Any]) -> Dict[str, An
         fields["notes"] = data["notes"]
     if not fields:
         return b
+    mfd = fields.get("manufacture_date", b.get("manufacture_date"))
+    exp = fields.get("expiry_date", b.get("expiry_date"))
+    if mfd and exp and str(mfd)[:10] >= str(exp)[:10]:
+        raise invalid(f"{b['sku']}: the manufacture date must be before the expiry date")
+    if mfd and str(mfd)[:10] > dt.date.today().isoformat():
+        raise invalid(f"{b['sku']}: the manufacture date cannot be in the future")
     ex(conn, f"UPDATE fin_batches SET {', '.join(f'{k}=%s' for k in fields)} WHERE id=%s", list(fields.values()) + [batch_id])
     audit.record(conn, ctx, "BATCH_UPDATED", "batch", batch_id, ref=f"{b['sku']} {b['batch_number']}",
                  before={k: b.get(k) for k in fields}, after=fields)

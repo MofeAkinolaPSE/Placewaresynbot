@@ -45,6 +45,7 @@ export interface InvoiceItem {
   // backend can only fall back to an exact name match.
   sku?: string;
   batch_number?: string;
+  pack_batch_number?: string;
   manufacture_date?: string;
   expiry_date?: string;
 }
@@ -75,6 +76,7 @@ export interface Invoice {
   due_date?: string;
   shipping_method?: string;
   tax_amount?: number;
+  delivery_charge?: number;
   created_by_email?: string;
 }
 
@@ -160,7 +162,7 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
     <tr>
       <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${esc(it.quantity)}</td>
       <td style="padding:8px;border-bottom:1px solid #eee">${esc(it.product)}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${it.batch_number ? esc(it.batch_number) : '<span class="muted">—</span>'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${(it.pack_batch_number || it.batch_number) ? esc(it.pack_batch_number || it.batch_number) : '<span class="muted">—</span>'}</td>
       <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.manufacture_date ? esc(fmtMonthYear(it.manufacture_date)) : '<span class="muted">—</span>'}</td>
       <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.expiry_date ? esc(fmtDateOnly(it.expiry_date)) : '<span class="muted">—</span>'}</td>
       <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">₦${Number(it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
@@ -168,8 +170,9 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
     </tr>`
   ).join("");
 
-  const taxAmount = invoice.tax_amount ?? 0;
-  const grandTotal = invoice.total_amount + taxAmount;
+  const taxAmount = Number(invoice.tax_amount ?? 0);
+  const deliveryCharge = Number(invoice.delivery_charge ?? 0);
+  const grandTotal = Number(invoice.total_amount) + taxAmount + deliveryCharge;
   const customerId = walkIn?.customer_code || "WALK-IN";
   const salesRep = invoice.created_by_email ? invoice.created_by_email.split("@")[0] : "—";
   const authorisedBy = invoice.finance_approved ? (invoice.finance_approver || "—") : null;
@@ -290,6 +293,7 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 
 <div class="totals">
   <div class="totals-row"><span>Subtotal</span><span>${fmt(invoice.total_amount)}</span></div>
+  ${deliveryCharge > 0 ? `<div class="totals-row"><span>Delivery Charge</span><span>${fmt(deliveryCharge)}</span></div>` : ""}
   <div class="totals-row"><span>Sales Tax</span><span>${fmt(taxAmount)}</span></div>
   <div class="totals-row"><span>Total Invoice Amount</span><span>${fmt(grandTotal)}</span></div>
   <div class="totals-row"><span>Payment/Credit Applied</span><span>₦0.00</span></div>
@@ -469,7 +473,7 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                   </div>
                   <div className="flex items-center justify-between gap-2 min-w-0">
                     <span className="text-xs text-muted-foreground truncate">{fmtDate(inv.created_at)}</span>
-                    <span className="font-bold font-mono text-sm flex-shrink-0">{fmt(inv.total_amount)}</span>
+                    <span className="font-bold font-mono text-sm flex-shrink-0">{fmt(Number(inv.total_amount) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
                   </div>
                 </button>
               ))
@@ -536,9 +540,17 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                           <span className="font-semibold">{fmt(it.line_total ?? it.quantity * it.unit_price)}</span>
                         </div>
                       ))}
+                      {Number(inv.delivery_charge ?? 0) > 0 && (
+                        <div className="flex justify-between rounded px-3 py-1.5 text-muted-foreground">
+                          <span>Delivery charge</span><span className="font-semibold">{fmt(Number(inv.delivery_charge))}</span>
+                        </div>)}
+                      {Number(inv.tax_amount ?? 0) > 0 && (
+                        <div className="flex justify-between rounded px-3 py-1.5 text-muted-foreground">
+                          <span>Sales tax</span><span className="font-semibold">{fmt(Number(inv.tax_amount))}</span>
+                        </div>)}
                       <div className="flex justify-between font-bold px-3 py-2 border-t mt-1">
                         <span>Total</span>
-                        <span className="text-green-600 dark:text-green-300">{fmt(inv.total_amount)}</span>
+                        <span className="text-green-600 dark:text-green-300">{fmt(Number(inv.total_amount) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
                       </div>
                     </div>
                   </div>

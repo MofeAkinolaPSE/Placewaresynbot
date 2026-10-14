@@ -224,13 +224,9 @@ function VoucherDetail({ id, onClose }: { id: string | null; onClose: () => void
   const qc = useQueryClient();
   const { data: v, refetch } = useBooks<Dict>(["voucher", id], `/banking/vouchers/${id}`, undefined, !!id);
   const [ver, setVer] = useState(0);
-  const voidIt = async () => {
-    const reason = await askText("Why is this voucher being voided?");
-    if (reason && (await act(() => books.post(`/banking/vouchers/${id}/void`, { reason }), "Voided"))) { refetch(); setVer((x) => x + 1); qc.invalidateQueries({ queryKey: ["books"] }); }
-  };
   return (
     <DetailSheet open={!!id} onOpenChange={(o) => !o && onClose()} title={v ? `Voucher ${v.voucher_number}` : ""} description={v?.payee ?? v?.description}
-                 footer={v?.status === "POSTED" ? <Button size="sm" variant="destructive" onClick={voidIt}>Void</Button> : undefined}>
+>
       {id && <RecordView key={`${id}:${ver}`} t={{ type: "voucher", id }} />}
     </DetailSheet>
   );
