@@ -164,6 +164,8 @@ services:
       # Let's Encrypt's domain check: certbot writes a token here and nginx
       # serves it at http://<domain>/.well-known/acme-challenge/<token>.
       - certbot_www:/var/www/certbot:ro
+      # RoyanHealth shares the public IP: pass Let's Encrypt's checks for its domain to the Royan server
+      - ./nginx-extra/royan-acme.conf:/etc/nginx/conf.d/royan-acme.conf:ro
     # Reload nginx every 6 hours so a renewed certificate is picked up without
     # a restart (certbot renews ~30 days before the 90-day expiry).
     command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec nginx -g 'daemon off;'"]
