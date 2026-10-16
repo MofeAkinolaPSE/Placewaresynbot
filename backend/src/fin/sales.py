@@ -226,6 +226,9 @@ def get_invoice(conn, entity_id: str, invoice_id: str) -> Dict[str, Any]:
                                    WHERE a.invoice_id=%s ORDER BY a.created_at""", (invoice_id,))
     from src.fin import inventory
     inv["recalls"] = inventory.recalls_for_invoice(conn, entity_id, invoice_id=str(invoice_id))
+    inv["returned"] = returned_quantities(conn, str(invoice_id))
+    inv["credit_notes"] = q(conn, """SELECT id, credit_note_number, note_date, reason, total, return_to_stock, status
+                                     FROM fin_credit_notes WHERE invoice_id=%s ORDER BY note_date, created_at""", (invoice_id,))
     inv["allocations"] = q(conn, """
         SELECT a.*, COALESCE(r.receipt_number, n.credit_note_number) AS source_number
         FROM fin_ar_allocations a
@@ -345,7 +348,8 @@ def amend_invoice(conn, ctx, invoice_id: str, data: Dict[str, Any]) -> Dict[str,
     """Add items to a posted invoice (the customer adds to the order before paying, client 9 Oct).
     The invoice keeps its number and gains the lines; the addition is posted as its own journal on
     the invoice (receivable up, revenue, stock out at FIFO cost), so the original posting is never
-    edited. Removing or changing an item is a credit note (or void and re-raise)."""
+    edited. A discount may be given on the added items. Removing items, or a discount on what was
+    already invoiced, is a credit note against the invoice (Return / remove items)."""
     ctx.require("sales.invoice.post")
     inv = q1(conn, "SELECT * FROM fin_sales_invoices WHERE id=%s AND legal_entity_id=%s FOR UPDATE", (invoice_id, ctx.entity_id))
     if not inv:
@@ -361,8 +365,8 @@ def amend_invoice(conn, ctx, invoice_id: str, data: Dict[str, Any]) -> Dict[str,
     priced = _price_lines(conn, ctx.entity_id, data.get("lines") or [])
     if not priced:
         raise invalid("Add at least one item")
-    if any(l["line_type"] == "DISCOUNT" for l in priced):
-        raise invalid("A discount after posting is a credit note")
+    if all(l["line_type"] == "DISCOUNT" for l in priced):
+        raise invalid("A discount on its own after posting is a credit note (Return / remove items -> Discount)")
     on = data.get("amend_date") or dt.date.today()
     if on < inv["invoice_date"]:
         raise invalid("The addition cannot be dated before the invoice")
@@ -744,6 +748,22 @@ def create_credit_note(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
     lines = _price_lines(conn, ctx.entity_id, data.get("lines") or [])
     if not lines:
         raise invalid("A credit note needs at least one line")
+    # A discount given after invoicing credits the customer and is booked to Sales Discount.
+    for l in lines:
+        if l["line_type"] == "DISCOUNT":
+            l["line_total"] = -l["line_total"]
+    if invoice and not invoice["is_opening"]:
+        sold = {r["sku"]: r["qty"] for r in q(conn, """SELECT sku, SUM(quantity) AS qty FROM fin_sales_invoice_lines
+                                                     WHERE invoice_id=%s AND line_type='ITEM' GROUP BY sku""", (invoice["id"],))}
+        back = returned_quantities(conn, str(invoice["id"]))
+        asked: Dict[str, Decimal] = {}
+        for l in lines:
+            if l["line_type"] == "ITEM":
+                asked[l["sku"]] = asked.get(l["sku"], ZERO) + Decimal(str(l["quantity"]))
+        for sku, n in asked.items():
+            left = Decimal(str(sold.get(sku) or 0)) - Decimal(str(back.get(sku) or 0))
+            if n > left:
+                raise invalid(f"{sku}: only {left.normalize():f} left on invoice {invoice['invoice_number']} to return")
     total = sum((l["line_total"] for l in lines), ZERO)
     if total <= 0:
         raise invalid("Credit note total must be positive")
@@ -812,6 +832,14 @@ def create_credit_note(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
     audit.record(conn, ctx, "CREDIT_NOTE_POSTED", "credit_note", cn["id"], ref=number, reason=reason,
                  metadata={"total": str(total), "return_to_stock": return_to_stock})
     return get_credit_note(conn, ctx.entity_id, cn["id"])
+
+
+def returned_quantities(conn, invoice_id: str) -> Dict[str, Any]:
+    """Quantity of each item already returned against an invoice (posted credit notes)."""
+    return {r["sku"]: r["qty"] for r in q(conn, """SELECT l.sku, SUM(l.quantity) AS qty FROM fin_credit_note_lines l
+                                                 JOIN fin_credit_notes n ON n.id=l.credit_note_id
+                                                 WHERE n.invoice_id=%s AND n.status='POSTED' AND l.line_type='ITEM'
+                                                 GROUP BY l.sku""", (invoice_id,))}
 
 
 def returnable_invoices(conn, entity_id: str, customer_id: int, search: Optional[str] = None,
@@ -954,6 +982,10 @@ def post_from_frontdesk(conn, ctx, frontdesk_invoice_id: str) -> Dict[str, Any]:
     if delivery > 0:
         lines.append({"line_type": "CHARGE", "charge_kind": "DELIVERY", "description": "Delivery charge",
                       "quantity": 1, "unit_price": delivery})
+    # Discount allowed on the request: a discount line, debited to Sales Discount (49000).
+    discount = float(fd.get("discount_amount") or 0)
+    if discount > 0:
+        lines.append({"line_type": "DISCOUNT", "description": "Discount allowed", "quantity": 1, "unit_price": discount})
     terms = None
     if (fd.get("payment_terms") or "").lower().startswith("due on receipt"):
         terms = 0

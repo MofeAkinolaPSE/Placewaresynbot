@@ -77,6 +77,7 @@ export interface Invoice {
   shipping_method?: string;
   tax_amount?: number;
   delivery_charge?: number;
+  discount_amount?: number;
   created_by_email?: string;
 }
 
@@ -129,7 +130,7 @@ export function fmtDate(iso: string) {
 // exact confirmed value rather than guessing from a photographed paper form.
 const COMPANY_INFO = {
   name: "PLACEWARE NIGERIA LIMITED",
-  address: "72, Aina Street, Ojodu, Lagos",
+  address: "64, Aina Street, Ojodu, Lagos",
   phones: ["08023246113", "08127541803"],
   email: "placewareng@hotmail.com",
   website: "www.placewarenigeria.com",
@@ -172,7 +173,8 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 
   const taxAmount = Number(invoice.tax_amount ?? 0);
   const deliveryCharge = Number(invoice.delivery_charge ?? 0);
-  const grandTotal = Number(invoice.total_amount) + taxAmount + deliveryCharge;
+  const discountAmount = Number(invoice.discount_amount ?? 0);
+  const grandTotal = Number(invoice.total_amount) - discountAmount + taxAmount + deliveryCharge;
   const customerId = walkIn?.customer_code || "WALK-IN";
   const salesRep = invoice.created_by_email ? invoice.created_by_email.split("@")[0] : "—";
   const authorisedBy = invoice.finance_approved ? (invoice.finance_approver || "—") : null;
@@ -293,6 +295,7 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
 
 <div class="totals">
   <div class="totals-row"><span>Subtotal</span><span>${fmt(invoice.total_amount)}</span></div>
+  ${discountAmount > 0 ? `<div class="totals-row"><span>Discount Allowed</span><span>-${fmt(discountAmount)}</span></div>` : ""}
   ${deliveryCharge > 0 ? `<div class="totals-row"><span>Delivery Charge</span><span>${fmt(deliveryCharge)}</span></div>` : ""}
   <div class="totals-row"><span>Sales Tax</span><span>${fmt(taxAmount)}</span></div>
   <div class="totals-row"><span>Total Invoice Amount</span><span>${fmt(grandTotal)}</span></div>
@@ -473,7 +476,7 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                   </div>
                   <div className="flex items-center justify-between gap-2 min-w-0">
                     <span className="text-xs text-muted-foreground truncate">{fmtDate(inv.created_at)}</span>
-                    <span className="font-bold font-mono text-sm flex-shrink-0">{fmt(Number(inv.total_amount) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
+                    <span className="font-bold font-mono text-sm flex-shrink-0">{fmt(Number(inv.total_amount) - Number(inv.discount_amount ?? 0) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
                   </div>
                 </button>
               ))
@@ -540,6 +543,10 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                           <span className="font-semibold">{fmt(it.line_total ?? it.quantity * it.unit_price)}</span>
                         </div>
                       ))}
+                      {Number(inv.discount_amount ?? 0) > 0 && (
+                        <div className="flex justify-between rounded px-3 py-1.5 text-muted-foreground">
+                          <span>Discount allowed</span><span className="font-semibold">−{fmt(Number(inv.discount_amount))}</span>
+                        </div>)}
                       {Number(inv.delivery_charge ?? 0) > 0 && (
                         <div className="flex justify-between rounded px-3 py-1.5 text-muted-foreground">
                           <span>Delivery charge</span><span className="font-semibold">{fmt(Number(inv.delivery_charge))}</span>
@@ -550,7 +557,7 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                         </div>)}
                       <div className="flex justify-between font-bold px-3 py-2 border-t mt-1">
                         <span>Total</span>
-                        <span className="text-green-600 dark:text-green-300">{fmt(Number(inv.total_amount) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
+                        <span className="text-green-600 dark:text-green-300">{fmt(Number(inv.total_amount) - Number(inv.discount_amount ?? 0) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
                       </div>
                     </div>
                   </div>

@@ -70,7 +70,7 @@ function statusBadge(status: string) {
   const map: Record<string, string> = {
     completed: "bg-green-500/20 text-green-400 border-green-500/30",
     in_progress: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    scheduled: "bg-slate-500/20 text-slate-300 border-slate-500/30",
+    scheduled: "bg-slate-500/15 text-slate-700 border-slate-500/30 dark:text-slate-300",
     overdue: "bg-red-500/20 text-red-400 border-red-500/30",
     open: "bg-orange-500/20 text-orange-400 border-orange-500/30",
     closed: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -79,7 +79,7 @@ function statusBadge(status: string) {
     draft: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     pending: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   };
-  const cls = map[status?.toLowerCase()] ?? "bg-slate-500/20 text-slate-300 border-slate-500/30";
+  const cls = map[status?.toLowerCase()] ?? "bg-slate-500/15 text-slate-700 border-slate-500/30 dark:text-slate-300";
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", cls)}>
       {status?.replace(/_/g, " ")}
@@ -92,9 +92,9 @@ function severityBadge(severity: string) {
     critical: "bg-red-600/25 text-red-300 border-red-600/40",
     major: "bg-orange-500/25 text-orange-300 border-orange-500/40",
     minor: "bg-yellow-500/25 text-yellow-300 border-yellow-500/40",
-    low: "bg-slate-500/20 text-slate-300 border-slate-500/30",
+    low: "bg-slate-500/15 text-slate-700 border-slate-500/30 dark:text-slate-300",
   };
-  const cls = map[severity?.toLowerCase()] ?? "bg-slate-500/20 text-slate-300 border-slate-500/30";
+  const cls = map[severity?.toLowerCase()] ?? "bg-slate-500/15 text-slate-700 border-slate-500/30 dark:text-slate-300";
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", cls)}>
       {severity}

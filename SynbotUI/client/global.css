@@ -18,13 +18,13 @@
        accent   #02646F  deep teal
     */
     --background: 0 0% 100%;             /* #FFFFFF */
-    --foreground: 216 30% 12%;           /* near-black w/ a blue cast */
+    --foreground: 216 35% 8%;            /* near-black w/ a blue cast (darkened for older eyes, 15 Oct) */
 
     --card: 0 0% 100%;
-    --card-foreground: 216 30% 12%;
+    --card-foreground: 216 35% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 216 30% 12%;
+    --popover-foreground: 216 35% 8%;
 
     --primary: 216 100% 28%;             /* #003A91 */
     --primary-foreground: 0 0% 100%;
@@ -33,7 +33,7 @@
     --secondary-foreground: 216 30% 12%;
 
     --muted: 216 40% 96%;                /* tinted blue-grey panel */
-    --muted-foreground: 216 12% 40%;     /* ≈ #5B6472 body grey */
+    --muted-foreground: 216 18% 26%;     /* ≈ #36404F - secondary text, dark enough to read easily on white */
 
     --accent: 186 96% 22%;               /* #02646F teal */
     --accent-foreground: 0 0% 100%;
@@ -42,8 +42,16 @@
     --destructive-foreground: 0 0% 100%;
 
     --border: 216 24% 89%;
-    --input: 0 0% 100%;
+    --input: 130 38% 48%;                /* input borders: green, so fields stand out (was white = invisible) */
     --ring: 216 100% 28%;
+
+    /* Input fields are highlighted so they are easy to find: a light green fill and a green
+       border; white with a strong ring while typing; grey when they cannot be changed. */
+    --field: 130 60% 95%;                /* #EAF8EC */
+    --field-border: 130 38% 48%;         /* #4CA85A */
+    --field-focus: 216 100% 28%;         /* brand blue */
+    --field-text: 216 35% 8%;
+    --placeholder: 216 12% 42%;
 
     --warning: 42 98% 59%;               /* #FDC332 */
     --warning-foreground: 216 30% 12%;
@@ -105,7 +113,7 @@
     --secondary-foreground: 60 5% 4%;
 
     --muted: 0 0% 15%;                   /* #262626 */
-    --muted-foreground: 0 0% 62%;        /* #9F9F9F */
+    --muted-foreground: 0 0% 74%;        /* #BDBDBD - readable secondary text */
 
     --accent: 186 60% 45%;               /* brand teal, lifted to read on black */
     --accent-foreground: 60 5% 4%;
@@ -114,8 +122,14 @@
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 22%;                  /* #383838 */
-    --input: 0 0% 10%;
+    --input: 130 35% 42%;
     --ring: 215 100% 62%;
+
+    --field: 135 30% 13%;
+    --field-border: 130 35% 42%;
+    --field-focus: 215 100% 62%;
+    --field-text: 0 0% 100%;
+    --placeholder: 0 0% 62%;
 
     --warning: 47 100% 60%;              /* #FFD633 */
     --warning-foreground: 60 5% 4%;
@@ -416,3 +430,43 @@
     }
   }
 }
+
+/* ── Input fields stand out everywhere (client, 15 Oct: older users must see at once where to type).
+   Unlayered and specific on purpose so it also reaches plain <select>/<input> elements that carry
+   their own bg-background / border utilities. Opt out with data-plain or bg-transparent. ── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not(.bg-transparent):not([data-plain]),
+textarea:not(.bg-transparent):not([data-plain]),
+select:not(.bg-transparent):not([data-plain]),
+button[role="combobox"]:not(.bg-transparent):not([data-plain]) {
+  background-color: hsl(var(--field));
+  border: 1.5px solid hsl(var(--field-border));
+  color: hsl(var(--field-text));
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not(.bg-transparent):not([data-plain]):hover:not(:disabled),
+textarea:not(.bg-transparent):not([data-plain]):hover:not(:disabled),
+select:not(.bg-transparent):not([data-plain]):hover:not(:disabled),
+button[role="combobox"]:not(.bg-transparent):not([data-plain]):hover:not(:disabled) {
+  border-color: hsl(var(--field-focus));
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not(.bg-transparent):not([data-plain]):focus,
+textarea:not(.bg-transparent):not([data-plain]):focus,
+select:not(.bg-transparent):not([data-plain]):focus,
+button[role="combobox"]:not(.bg-transparent):not([data-plain]):focus-visible,
+button[role="combobox"][data-state="open"]:not(.bg-transparent):not([data-plain]) {
+  background-color: hsl(var(--background));
+  border-color: hsl(var(--field-focus));
+  box-shadow: 0 0 0 3px hsl(var(--field-focus) / 0.22);
+  outline: none;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not(.bg-transparent):not([data-plain]):is(:disabled, [readonly]),
+textarea:not(.bg-transparent):not([data-plain]):is(:disabled, [readonly]),
+select:not(.bg-transparent):not([data-plain]):disabled,
+button[role="combobox"]:not(.bg-transparent):not([data-plain]):disabled {
+  background-color: hsl(var(--muted));
+  border-color: hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+input::placeholder, textarea::placeholder { color: hsl(var(--placeholder)); opacity: 1; }
+button[role="combobox"] > span[style*="pointer-events: none"] { color: hsl(var(--placeholder)); }
+input[type="checkbox"], input[type="radio"] { accent-color: hsl(var(--field-border)); width: 1.05rem; height: 1.05rem; }
+

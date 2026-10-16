@@ -141,7 +141,7 @@ def _load_invoices(conn, params) -> List[Dict[str, Any]]:
     return _q(conn, f"""
         SELECT i.id, i.invoice_number, {d} AS inv_date, i.due_date, i.payment_terms,
                i.customer_name, i.company_name, i.customer_po, i.shipping_method,
-               i.shipping_address, i.billing_address, i.tax_amount, i.delivery_charge, i.total_amount, i.items,
+               i.shipping_address, i.billing_address, i.tax_amount, i.delivery_charge, i.discount_amount, i.total_amount, i.items,
                c.id AS crm_id, c.customer_code, c.name AS crm_name, c.contact_details
         FROM frontdesk_invoices i
         LEFT JOIN frontdesk_walk_ins w ON w.id = i.walk_in_id
@@ -256,7 +256,7 @@ def plan(date_from: dt.date, date_to: dt.date, conn=None) -> Dict[str, Any]:
             "customer_id": cust_id, "customer_name": cust_name or r.get("company_name") or r.get("customer_name"),
             "customer_po": r.get("customer_po"), "ship_via": r.get("shipping_method"),
             "ship_address": r.get("shipping_address"), "tax_amount": r.get("tax_amount"),
-            "delivery_charge": r.get("delivery_charge"), "total_amount": r.get("total_amount"), "lines": lines,
+            "delivery_charge": r.get("delivery_charge"), "discount_amount": r.get("discount_amount"), "total_amount": r.get("total_amount"), "lines": lines,
             "_crm_id": r.get("crm_id"),
         })
     sales_rows, sales_blocked, sales_ids = B.build_sales(invoices, items, settings)

@@ -90,6 +90,7 @@ export function NewRequestSheet({
   const [paymentTerms, setPaymentTerms] = useState("Due on Receipt");
   const [shippingMethod, setShippingMethod] = useState("");
   const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
 
   // Item-row inventory autocomplete, debounced per row against GET
   // /inventory/search. Only one row can be typed in at a time, so a single
@@ -166,6 +167,7 @@ export function NewRequestSheet({
     return base.includes(paymentTerms) ? base : [...base, paymentTerms];
   }, [paymentTerms]);
 
+  const goods = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0);
   const quickRequestMutation = useMutation({
     mutationFn: () => api.frontdesk.quickRequest(customer!.id, {
       items: items
@@ -185,6 +187,7 @@ export function NewRequestSheet({
       payment_terms: paymentTerms,
       shipping_method: shippingMethod.trim() || undefined,
       delivery_charge: deliveryCharge || undefined,
+      discount_amount: Math.min(discountAmount, goods) || undefined,
     }),
     onSuccess: (data: any) => {
       toast({ title: "Request created", description: "Invoice raised and queued for QC." });
@@ -196,6 +199,7 @@ export function NewRequestSheet({
       setCustomerPo("");
       setShippingMethod("");
       setDeliveryCharge(0);
+      setDiscountAmount(0);
       onCreated?.(data);
     },
     onError: (e: any) => toast({ title: "Request failed", description: e?.message, variant: "destructive" }),
@@ -304,6 +308,12 @@ export function NewRequestSheet({
                 onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
               <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
             </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Discount allowed (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={discountAmount || ""}
+                onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount in ACE Books.</p>
+            </div>
           </div>
         </div>
 
@@ -398,16 +408,17 @@ export function NewRequestSheet({
 
         <Textarea placeholder="Notes (optional)" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
-        {deliveryCharge > 0 && (
+        {(deliveryCharge > 0 || discountAmount > 0) && (
           <div className="space-y-0.5 border-t pt-2 text-sm text-muted-foreground">
-            <div className="flex justify-between"><span>Goods</span><span>{fmt(items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0))}</span></div>
-            <div className="flex justify-between"><span>Delivery charge</span><span>{fmt(deliveryCharge)}</span></div>
+            <div className="flex justify-between"><span>Goods</span><span>{fmt(goods)}</span></div>
+            {discountAmount > 0 && <div className="flex justify-between"><span>Discount allowed</span><span>−{fmt(Math.min(discountAmount, goods))}</span></div>}
+            {deliveryCharge > 0 && <div className="flex justify-between"><span>Delivery charge</span><span>{fmt(deliveryCharge)}</span></div>}
           </div>
         )}
         <div className="flex justify-between font-bold pt-2 border-t">
           <span>Total</span>
           <span className="text-green-600 dark:text-green-300">
-            {fmt(items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0) + deliveryCharge)}
+            {fmt(goods - Math.min(discountAmount, goods) + deliveryCharge)}
           </span>
         </div>
       </div>

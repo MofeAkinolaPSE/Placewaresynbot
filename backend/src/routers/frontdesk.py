@@ -189,6 +189,8 @@ class InvoiceCreateIn(BaseModel):
     tax_amount:       float = Field(default=0, ge=0)
     # Charged to the customer for delivering the goods; posts to Other Income (40800) in ACE Books.
     delivery_charge:  float = Field(default=0, ge=0)
+    # Discount allowed on the whole request; posts to Sales Discount (49000) in ACE Books.
+    discount_amount:  float = Field(default=0, ge=0)
 
 
 class QCCheckIn(BaseModel):
@@ -498,6 +500,7 @@ async def create_invoice(
         "shipping_method":  payload.shipping_method,
         "tax_amount":       round(payload.tax_amount, 2),
         "delivery_charge":  round(payload.delivery_charge, 2),
+        "discount_amount":  round(min(payload.discount_amount, total_amount), 2),
         # Set directly to qc_pending, not "draft" — discovered via live
         # verification that nothing ever transitioned the invoice's own
         # status column afterward (only the walk-in's status advanced), so
@@ -1275,7 +1278,7 @@ def list_invoices(
     try:
         query = db.table("frontdesk_invoices").select(
             "id,invoice_number,walk_in_id,customer_name,company_name,"
-            "total_amount,tax_amount,delivery_charge,payment_method,status,qc_passed,finance_approved,"
+            "total_amount,tax_amount,delivery_charge,discount_amount,payment_method,status,qc_passed,finance_approved,"
             "created_at,updated_at"
         )
         if status:
@@ -1712,6 +1715,8 @@ class QuickRequestIn(BaseModel):
     tax_amount:       float = Field(default=0, ge=0)
     # Charged to the customer for delivering the goods; posts to Other Income (40800) in ACE Books.
     delivery_charge:  float = Field(default=0, ge=0)
+    # Discount allowed on the whole request; posts to Sales Discount (49000) in ACE Books.
+    discount_amount:  float = Field(default=0, ge=0)
 
 
 @router.post("/customers/{customer_id}/quick-request", status_code=201)
@@ -1815,6 +1820,7 @@ async def quick_request(
         "shipping_method":  payload.shipping_method,
         "tax_amount":       round(payload.tax_amount, 2),
         "delivery_charge":  round(payload.delivery_charge, 2),
+        "discount_amount":  round(min(payload.discount_amount, total_amount), 2),
         "status":           "qc_pending",
         "qc_passed":        None,
         "finance_approved": None,

@@ -253,7 +253,8 @@ def build_sales(
 
         # Delivery charged to the customer: a non-stock line to the delivery GL (Other Income 40800).
         delivery = _dec(inv.get("delivery_charge"))
-        ar_amount += delivery
+        discount = _dec(inv.get("discount_amount"))
+        ar_amount += delivery - discount
         txn_no += 1
         date: dt.date = inv["date"]
         header = {
@@ -271,7 +272,7 @@ def build_sales(
             "Displayed Terms": displayed_terms(inv.get("terms")),
             "Accounts Receivable Account": settings.get("ar_account") or "11000",
             "Accounts Receivable Amount": money(ar_amount),
-            "Number of Distributions": str(len(built) + (1 if delivery > 0 else 0)),
+            "Number of Distributions": str(len(built) + (1 if delivery > 0 else 0) + (1 if discount > 0 else 0)),
             "Apply to Invoice Distribution": "0",
             "Transaction Period": transaction_period(date, settings),
             "Transaction Number": str(txn_no),
@@ -304,6 +305,16 @@ def build_sales(
                 "Description": "Delivery Charge",
                 "G/L Account": settings.get("delivery_gl_account") or "40800",
                 "Amount": money(-delivery),
+            }))
+        if discount > 0:
+            # Sage's discount lines carry a positive amount to the discount GL (49000)
+            rows.append(make_row("sales", {
+                **header,
+                "Invoice/CM Distribution": str(len(built) + (1 if delivery > 0 else 0) + 1),
+                "Quantity": "0.00",
+                "Description": "Discount",
+                "G/L Account": settings.get("discount_gl_account") or "49000",
+                "Amount": money(discount),
             }))
         exported.append(str(inv["id"]))
     return rows, blocked, exported

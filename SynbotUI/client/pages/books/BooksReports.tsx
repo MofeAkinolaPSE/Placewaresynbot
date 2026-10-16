@@ -104,7 +104,7 @@ export default function BooksReports() {
                         ) : "to" in i ? (
                           <Link to={i.to} className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-muted">{i.name}<ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-50" /></Link>
                         ) : (
-                          <div className="rounded-md px-2 py-1.5 text-sm text-muted-foreground/70" title={i.na}>{i.name}<div className="text-[11px]">{i.na}</div></div>
+                          <div className="rounded-md px-2 py-1.5 text-sm text-muted-foreground" title={i.na}>{i.name}<div className="text-[11px]">{i.na}</div></div>
                         )}
                       </li>
                     ))}

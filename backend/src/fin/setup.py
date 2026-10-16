@@ -82,7 +82,7 @@ def set_mapping(conn, ctx, key: str, account_id: str, note: Optional[str] = None
 # The client's printed invoice (from their Sage invoice form) - editable in Setup.
 DEFAULT_INVOICE_LAYOUT = {
     "company_name": "PLACEWARE NIGERIA LIMITED",
-    "address_lines": ["72, Aina Street, Ojodu, Lagos"],
+    "address_lines": ["64, Aina Street, Ojodu, Lagos"],
     "phones": ["08023246113", "08127541803"],
     "email": "placewarenig@hotmail.com",
     "website": "www.placewarenigeria.com",

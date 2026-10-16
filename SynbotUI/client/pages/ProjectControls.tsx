@@ -789,13 +789,13 @@ const QC_CHIP: Record<string, string> = {
   failed:    "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30",
   in_review: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
   waived:    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
-  pending:   "bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/10 dark:text-white/60 dark:border-white/15",
+  pending:   "bg-slate-100 text-slate-700 border-slate-300 dark:bg-white/10 dark:text-white/60 dark:border-white/15",
 };
 
 const NAFDAC_CHIP: Record<string, string> = {
   released:    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30",
   in_progress: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
-  pending:     "bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/10 dark:text-white/60 dark:border-white/15",
+  pending:     "bg-slate-100 text-slate-700 border-slate-300 dark:bg-white/10 dark:text-white/60 dark:border-white/15",
 };
 
 const ACTIVITY_CHIP: Record<string, string> = {

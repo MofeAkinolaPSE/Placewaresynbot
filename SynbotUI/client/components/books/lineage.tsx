@@ -24,7 +24,7 @@ import { act, Amount, BankSelect, CsvButton, DateRange, DrillLink, ErrorNote, Lo
 import { GlAccountDetail } from "./gl";
 import { DataIssueBody } from "./data-issues";
 import { RecallBody, RecallNotice } from "./recall-panel";
-import { AddItems, Amendments, CorrectReceipt, CorrectVoucher } from "./corrections";
+import { AddItems, Amendments, CorrectReceipt, CorrectVoucher, CreditNotesOn, ReturnItems } from "./corrections";
 import { askConfirm, askText } from "@/lib/ask";
 
 const TITLES: Record<string, string> = {
@@ -350,8 +350,10 @@ export function InvoiceBody({ id }: { id: string }) {
         )}
         {Number(i.balance_due) > 0 && i.status !== "VOID" && i.status !== "DRAFT" &&
           <QuickReceipt invoiceId={id} invoiceNumber={i.invoice_number} customerId={i.customer_id} balance={Number(i.balance_due)} />}
-        {["POSTED", "PARTIALLY_PAID", "PAID"].includes(i.status) && !i.is_opening && <AddItems inv={i} />}
+        {["POSTED", "PARTIALLY_PAID", "PAID"].includes(i.status) && !i.is_opening && (
+          <div className="flex flex-wrap items-start gap-2"><AddItems inv={i} /><ReturnItems inv={i} /></div>)}
         <Amendments rows={i.amendments} />
+        <CreditNotesOn rows={i.credit_notes} />
         <RecallNotice recalls={i.recalls} />
         <Facts items={[["Customer", <Cust id={i.customer_id} name={i.customer_name} />], ["Customer ID", i.customer_code], ["Invoice date", fmtDate(i.invoice_date)], ["Due date", fmtDate(i.due_date)],
           ["Payment terms", i.terms_days === 0 ? "C.O.D." : i.terms_days ? `Net ${i.terms_days} days` : null], ["Customer PO", i.customer_po || i.reference], ["Shipping method", i.shipping_method],

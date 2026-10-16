@@ -400,6 +400,7 @@ function StepInvoice({
   const [paymentTerms, setPaymentTerms] = useState("Due on Receipt");
   const [shippingMethod, setShippingMethod] = useState("");
   const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
 
   const checkStock = useCallback((products: string[]) => {
     const toCheck = products.filter((p) => p.trim().length >= 2);
@@ -430,7 +431,8 @@ function StepInvoice({
   };
 
   const goods = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const total = goods + deliveryCharge;
+  const discount = Math.min(discountAmount, goods);
+  const total = goods - discount + deliveryCharge;
   const valid = items.every((item) => item.product.trim() && item.quantity > 0 && item.unit_price >= 0);
 
   const createInvoice = useMutation({
@@ -450,9 +452,10 @@ function StepInvoice({
         payment_terms: paymentTerms,
         shipping_method: shippingMethod.trim() || undefined,
         delivery_charge: deliveryCharge || undefined,
+        discount_amount: discount || undefined,
       }),
     onSuccess: (data: any) => {
-      toast({ title: "Invoice created", description: `Total: ${fmt(Number(data.invoice?.total_amount ?? 0) + Number(data.invoice?.delivery_charge ?? 0))}` });
+      toast({ title: "Invoice created", description: `Total: ${fmt(Number(data.invoice?.total_amount ?? 0) - Number(data.invoice?.discount_amount ?? 0) + Number(data.invoice?.delivery_charge ?? 0))}` });
       onSuccess(data as { invoice: Invoice });
     },
     onError: (e: any) => {
@@ -529,6 +532,12 @@ function StepInvoice({
                 onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
               <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
             </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Discount allowed (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={discountAmount || ""}
+                onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount in ACE Books.</p>
+            </div>
           </div>
           {previewDueDate(paymentTerms) && (
             <div className="text-xs text-muted-foreground">Due date: <span className="font-medium text-foreground">{previewDueDate(paymentTerms)}</span></div>
@@ -600,10 +609,11 @@ function StepInvoice({
           </Button>
         </div>
 
-        {deliveryCharge > 0 && (
+        {(deliveryCharge > 0 || discount > 0) && (
           <div className="space-y-0.5 border-t pt-2 text-sm text-muted-foreground">
             <div className="flex justify-between"><span>Goods</span><span className="font-mono">{fmt(goods)}</span></div>
-            <div className="flex justify-between"><span>Delivery charge</span><span className="font-mono">{fmt(deliveryCharge)}</span></div>
+            {discount > 0 && <div className="flex justify-between"><span>Discount allowed</span><span className="font-mono">−{fmt(discount)}</span></div>}
+            {deliveryCharge > 0 && <div className="flex justify-between"><span>Delivery charge</span><span className="font-mono">{fmt(deliveryCharge)}</span></div>}
           </div>
         )}
         <div className="flex items-center justify-between py-2 border-t">
@@ -807,7 +817,7 @@ function StepComplete({ invoiceId, walkInName }: { invoiceId: string; walkInName
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-green-600 dark:text-green-300">{fmt(Number(invoice.total_amount) + Number((invoice as any).delivery_charge ?? 0))}</span>
+              <span className="font-bold text-green-600 dark:text-green-300">{fmt(Number(invoice.total_amount) - Number((invoice as any).discount_amount ?? 0) + Number((invoice as any).delivery_charge ?? 0))}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Payment</span>

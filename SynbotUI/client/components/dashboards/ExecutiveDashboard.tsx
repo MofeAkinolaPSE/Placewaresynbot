@@ -533,7 +533,7 @@ export function ExecutiveDashboard() {
                     <div className="rounded-xl border border-border/60 bg-card/40 p-3 transition-all hover:shadow-elevation-lg">
                       <div className="text-xs font-semibold">{rec.action}</div>
                       <div className="text-[11px] text-muted-foreground">{rec.reason}</div>
-                      <div className="mt-0.5 text-[10px] text-muted-foreground/60">Source: {rec.data_source} · Confidence: {rec.confidence}</div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">Source: {rec.data_source} · Confidence: {rec.confidence}</div>
                     </div>
                   </Link>
                 ))
@@ -558,7 +558,7 @@ export function ExecutiveDashboard() {
                     <div className="rounded-xl border border-border/60 bg-card/40 p-3 transition-all hover:shadow-elevation-lg">
                       <div className="text-xs font-semibold">{a.domain}: {a.signal}</div>
                       <div className="text-[11px] text-muted-foreground">{a.detail}</div>
-                      <div className="mt-0.5 text-[10px] text-muted-foreground/60">Z-score: {a.zscore.toFixed(2)} · Source: {a.data_source}</div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">Z-score: {a.zscore.toFixed(2)} · Source: {a.data_source}</div>
                     </div>
                   </Link>
                 ))

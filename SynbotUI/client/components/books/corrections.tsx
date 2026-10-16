@@ -12,12 +12,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { books, Dict, fmtDate, naira, today } from "@/lib/books-api";
-import { AccountPick, act, Amount, BankSelect, BatchPick, CustomerPick, ProductPick, r2, useBooks, WhtPicker } from "./kit";
+import { AccountPick, act, Amount, BankSelect, BatchPick, CustomerPick, DrillLink, ProductPick, r2, useBooks, WhtPicker } from "./kit";
 
 const box = "space-y-2 rounded-md border border-sky-300 bg-sky-50 p-3 text-xs dark:bg-sky-500/10";
 
-type ItemLine = { product: Dict | null; batch: Dict | null; quantity: string; unit_price: string };
-const blank = (): ItemLine => ({ product: null, batch: null, quantity: "", unit_price: "" });
+type ItemLine = { kind: "ITEM" | "CHARGE" | "DISCOUNT"; product: Dict | null; batch: Dict | null; quantity: string; unit_price: string; description: string };
+const blank = (kind: ItemLine["kind"] = "ITEM"): ItemLine => ({
+  kind, product: null, batch: null, quantity: kind === "ITEM" ? "" : "1", unit_price: "",
+  description: kind === "CHARGE" ? "Delivery charge" : kind === "DISCOUNT" ? "Discount allowed" : "" });
+const lineValue = (l: ItemLine) => (l.kind === "ITEM" ? (l.product ? Number(l.quantity || 0) * Number(l.unit_price || 0) : 0)
+  : l.kind === "CHARGE" ? Number(l.unit_price || 0) : -Number(l.unit_price || 0));
 
 export function AddItems({ inv }: { inv: Dict }) {
   const qc = useQueryClient();
@@ -27,14 +31,18 @@ export function AddItems({ inv }: { inv: Dict }) {
   const [date, setDate] = useState(today());
   const [busy, setBusy] = useState(false);
   const set = (i: number, p: Partial<ItemLine>) => setLines((xs) => xs.map((x, k) => (k === i ? { ...x, ...p } : x)));
-  const total = lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
-  const ready = reason.trim() && lines.every((l) => !l.product || (Number(l.quantity) > 0 && Number(l.unit_price) >= 0)) && lines.some((l) => l.product && Number(l.quantity) > 0);
+  const total = lines.reduce((s, l) => s + lineValue(l), 0);
+  const ready = reason.trim() && total > 0
+    && lines.every((l) => (l.kind === "ITEM" ? !l.product || (Number(l.quantity) > 0 && Number(l.unit_price) >= 0) : Number(l.unit_price || 0) >= 0))
+    && lines.some((l) => (l.kind === "ITEM" ? l.product && Number(l.quantity) > 0 : l.kind === "CHARGE" && Number(l.unit_price) > 0));
   const save = async () => {
     setBusy(true);
     const r = await act(() => books.post(`/sales/invoices/${inv.id}/amend`, {
       reason, amend_date: date,
-      lines: lines.filter((l) => l.product && Number(l.quantity) > 0).map((l) => ({
-        line_type: "ITEM", sku: l.product!.sku, batch_id: l.batch?.id || undefined, quantity: Number(l.quantity), unit_price: Number(l.unit_price || 0) })),
+      lines: lines.filter((l) => (l.kind === "ITEM" ? l.product && Number(l.quantity) > 0 : Number(l.unit_price) > 0)).map((l) => (l.kind === "ITEM"
+        ? { line_type: "ITEM", sku: l.product!.sku, batch_id: l.batch?.id || undefined, quantity: Number(l.quantity), unit_price: Number(l.unit_price || 0) }
+        : { line_type: l.kind, description: l.description.trim() || (l.kind === "CHARGE" ? "Delivery charge" : "Discount allowed"), quantity: 1,
+            unit_price: Number(l.unit_price), charge_kind: l.kind === "CHARGE" && /deliver/i.test(l.description) ? "DELIVERY" : undefined })),
     }), `Items added to ${inv.invoice_number} - the invoice, the customer's balance and the books are updated`);
     setBusy(false);
     if (r) { setOpen(false); setLines([blank()]); qc.invalidateQueries({ queryKey: ["books"] }); }
@@ -43,8 +51,15 @@ export function AddItems({ inv }: { inv: Dict }) {
   return (
     <div className={box}>
       <div className="font-semibold">Add items to {inv.invoice_number}</div>
-      <p className="text-muted-foreground">The invoice keeps its number. The added items are posted as their own entry on it: the customer owes more, the stock leaves its batch, revenue and cost of sales are booked.</p>
-      {lines.map((l, i) => (
+      <p className="text-muted-foreground">The invoice keeps its number. The added items are posted as their own entry on it: the customer owes more, the stock leaves its batch, revenue and cost of sales are booked. A delivery charge goes to Other Income; a discount on the added items goes to Sales Discount.</p>
+      {lines.map((l, i) => l.kind !== "ITEM" ? (
+        <div key={i} className="grid items-end gap-2 md:grid-cols-[1.4fr_1fr_210px_32px]">
+          <div>{i === 0 && <Label className="text-xs">Line</Label>}<div className="flex h-9 items-center rounded-md border px-2 text-xs font-medium">{l.kind === "CHARGE" ? "Delivery charge (other income)" : "Discount allowed"}</div></div>
+          <div><Label className="text-xs">Description</Label><Input className="h-9" value={l.description} onChange={(e) => set(i, { description: e.target.value })} /></div>
+          <div><Label className="text-xs">{l.kind === "CHARGE" ? "Amount (₦)" : "Discount (₦)"}</Label><Input className="h-9" type="number" min={0} value={l.unit_price} onChange={(e) => set(i, { unit_price: e.target.value })} /></div>
+          <Button size="icon" variant="ghost" aria-label="Remove line" onClick={() => setLines((xs) => (xs.length > 1 ? xs.filter((_, k) => k !== i) : [blank()]))}><Trash2 className="h-4 w-4" /></Button>
+        </div>
+      ) : (
         <div key={i} className="grid items-end gap-2 md:grid-cols-[1.4fr_1fr_90px_120px_32px]">
           <ProductPick label={i === 0 ? "Product" : undefined} value={l.product} onChange={(p) => set(i, { product: p, batch: null, unit_price: l.unit_price || String(p?.unit_price ?? p?.selling_price ?? "") })} />
           <BatchPick label={i === 0 ? "Batch (FIFO if blank)" : undefined} value={l.batch} onChange={(b) => set(i, { batch: b })} />
@@ -53,7 +68,11 @@ export function AddItems({ inv }: { inv: Dict }) {
           <Button size="icon" variant="ghost" onClick={() => setLines((xs) => (xs.length > 1 ? xs.filter((_, k) => k !== i) : [blank()]))}><Trash2 className="h-4 w-4" /></Button>
         </div>
       ))}
-      <Button size="sm" variant="ghost" onClick={() => setLines((xs) => [...xs, blank()])}><Plus className="mr-1 h-3.5 w-3.5" />Another item</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => setLines((xs) => [...xs, blank()])}><Plus className="mr-1 h-3.5 w-3.5" />Another item</Button>
+        <Button size="sm" variant="outline" onClick={() => setLines((xs) => [...xs, blank("CHARGE")])}><Plus className="mr-1 h-3.5 w-3.5" />Delivery charge</Button>
+        <Button size="sm" variant="outline" onClick={() => setLines((xs) => [...xs, blank("DISCOUNT")])}><Plus className="mr-1 h-3.5 w-3.5" />Discount allowed</Button>
+      </div>
       <div className="grid gap-2 md:grid-cols-[1fr_160px]">
         <div><Label className="text-xs">Why</Label><Input className="h-8" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
         <div><Label className="text-xs">Date of the addition</Label><Input className="h-8" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
@@ -63,6 +82,101 @@ export function AddItems({ inv }: { inv: Dict }) {
         <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
         <Button size="sm" disabled={busy || !ready} onClick={save}>{busy ? "Posting…" : `Add ${naira(total)}`}</Button>
       </div>
+    </div>
+  );
+}
+
+type RetLine = { qty: string };
+
+/** Return or remove items from an invoice, or give a discount on it after posting: a credit note
+ *  against this invoice. The invoice keeps its posted lines; the credit note reduces what the
+ *  customer owes (or leaves them in credit if already paid) and, when ticked, puts the goods back
+ *  into the batch they were sold from. */
+export function ReturnItems({ inv }: { inv: Dict }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const items: Dict[] = (inv.lines ?? []).filter((l: Dict) => l.line_type === "ITEM");
+  const returned: Record<string, number> = Object.fromEntries(Object.entries(inv.returned ?? {}).map(([k, v]) => [k, Number(v)]));
+  // what is left to return per line: the item's returns are taken from its lines in order
+  const left = useMemo(() => {
+    const used: Record<string, number> = { ...returned };
+    return items.map((l) => { const take = Math.min(Number(l.quantity), used[l.sku] ?? 0); used[l.sku] = (used[l.sku] ?? 0) - take; return Number(l.quantity) - take; });
+  }, [inv.id, inv.returned]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [ret, setRet] = useState<Record<number, RetLine>>({});
+  const [discount, setDiscount] = useState("");
+  const [toStock, setToStock] = useState(true);
+  const [reason, setReason] = useState("");
+  const [date, setDate] = useState(today());
+  const [busy, setBusy] = useState(false);
+  const unit = (l: Dict) => (Number(l.quantity) ? Number(l.line_total) / Number(l.quantity) : Number(l.unit_price));
+  const back = items.reduce((s, l, k) => s + r2(Number(ret[k]?.qty || 0) * unit(l)), 0);
+  const credit = r2(back + Number(discount || 0));
+  const bad = items.some((_, k) => Number(ret[k]?.qty || 0) < 0 || Number(ret[k]?.qty || 0) > left[k]);
+  const ready = reason.trim() && credit > 0 && !bad && Number(discount || 0) >= 0;
+  const balance = Number(inv.balance_due);
+  const save = async () => {
+    setBusy(true);
+    const lines: Dict[] = items.flatMap((l, k) => (Number(ret[k]?.qty || 0) > 0 ? [{
+      line_type: "ITEM", sku: l.sku, batch_id: l.batch_id || undefined, description: l.description,
+      quantity: Number(ret[k].qty), unit_price: r2(unit(l)), unit_cost: l.unit_cost ?? undefined }] : []));
+    if (Number(discount) > 0) lines.push({ line_type: "DISCOUNT", description: "Discount allowed", quantity: 1, unit_price: Number(discount) });
+    const r = await act(() => books.post(`/sales/credit-notes`, {
+      customer_id: inv.customer_id, invoice_id: inv.id, note_date: date, reason, return_to_stock: toStock && back > 0, lines,
+    }), `Credit note posted against ${inv.invoice_number} - the customer's balance and the books are updated`);
+    setBusy(false);
+    if (r) { setOpen(false); setRet({}); setDiscount(""); setReason(""); qc.invalidateQueries({ queryKey: ["books"] }); }
+  };
+  if (!open) return <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Return / remove items</Button>;
+  return (
+    <div className="space-y-2 rounded-md border border-rose-300 bg-rose-50 p-3 text-xs dark:bg-rose-500/10">
+      <div className="font-semibold">Return / remove items on {inv.invoice_number}</div>
+      <p className="text-muted-foreground">Enter how many of each item come back (or are taken off the order), and any discount given after invoicing. A credit note is posted against this invoice: what the customer owes goes down{balance <= 0 ? " - this invoice is already paid, so the credit stays on the customer's account to refund or use on their next invoice" : ""}.</p>
+      {items.length > 0 && (
+        <Table>
+          <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Sold</TableHead><TableHead className="text-right">Already returned</TableHead>
+            <TableHead className="text-right">Unit price</TableHead><TableHead className="w-28">Return</TableHead><TableHead className="text-right">Credit</TableHead></TableRow></TableHeader>
+          <TableBody>{items.map((l, k) => {
+            const q = Number(ret[k]?.qty || 0);
+            return (
+              <TableRow key={l.id}>
+                <TableCell><div>{l.description || l.sku}</div><div className="text-[11px] text-muted-foreground">{l.sku}</div></TableCell>
+                <TableCell className="text-right">{Number(l.quantity)}</TableCell>
+                <TableCell className="text-right">{Number(l.quantity) - left[k] || "—"}</TableCell>
+                <TableCell className="text-right">{naira(unit(l))}</TableCell>
+                <TableCell><Input className={`h-8 ${q > left[k] ? "border-red-500" : ""}`} type="number" min={0} max={left[k]} disabled={left[k] <= 0}
+                                  aria-label={`Quantity of ${l.sku} to return`} placeholder={left[k] > 0 ? `max ${left[k]}` : "none left"}
+                                  value={ret[k]?.qty ?? ""} onChange={(e) => setRet((x) => ({ ...x, [k]: { qty: e.target.value } }))} /></TableCell>
+                <TableCell className="text-right">{q > 0 ? naira(r2(q * unit(l))) : ""}</TableCell>
+              </TableRow>);
+          })}</TableBody>
+        </Table>)}
+      <div className="grid gap-2 md:grid-cols-[180px_1fr_160px]">
+        <div><Label className="text-xs">Discount allowed (₦)</Label><Input className="h-8" type="number" min={0} placeholder="0.00" value={discount} onChange={(e) => setDiscount(e.target.value)} /></div>
+        <div><Label className="text-xs">Why</Label><Input className="h-8" placeholder="e.g. customer returned 2 vials - damaged in transit" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        <div><Label className="text-xs">Date</Label><Input className="h-8" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+      </div>
+      {back > 0 && (
+        <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4" checked={toStock} onChange={(e) => setToStock(e.target.checked)} />
+          The goods come back into stock (back into the batch they were sold from). Untick if they are being written off.</label>)}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span>Invoice {naira(inv.total)} · credit <strong>{naira(credit)}</strong> · customer then owes <strong>{naira(Math.max(0, balance - credit))}</strong> on it</span>
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button size="sm" disabled={busy || !ready} onClick={save}>{busy ? "Posting…" : `Post credit ${naira(credit)}`}</Button>
+      </div>
+    </div>
+  );
+}
+
+export function CreditNotesOn({ rows }: { rows?: Dict[] }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="space-y-1 text-xs">
+      {rows.map((n) => (
+        <div key={n.id} className="flex flex-wrap justify-between gap-2 rounded border px-2 py-1">
+          <span><DrillLink to={{ type: "creditnote", id: n.id, label: n.credit_note_number }}>{n.credit_note_number}</DrillLink> {fmtDate(n.note_date)} · {n.reason}{n.return_to_stock ? " · back into stock" : ""}{n.status === "VOID" ? " · void" : ""}</span>
+          <Amount value={n.total} />
+        </div>
+      ))}
     </div>
   );
 }
