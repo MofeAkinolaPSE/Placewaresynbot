@@ -6111,7 +6111,11 @@ def update_user_roles(request: Request, user_id: str, payload: UserRolesUpdate):
         before = _q1(conn, "SELECT roles FROM placeware_users WHERE id::text=%s", (user_id,))
         if not before:
             raise HTTPException(status_code=404, detail="User not found")
-        _q1(conn, "UPDATE placeware_users SET roles=%s, updated_at=now() WHERE id::text=%s RETURNING id", (roles, user_id))
+        _q1(conn, "UPDATE placeware_users SET roles=%s, updated_at=now(), access_changed_at=now() WHERE id::text=%s RETURNING id",
+            (roles, user_id))
+    # the person's open sessions pick up the new access on their next request, not in 45 minutes
+    from src.middleware import _access_cache
+    _access_cache.pop(str(user_id), None)
     audit_event(
         "user_roles_changed",
         {"admin": actor, "target_user_id": user_id, "from": before["roles"], "to": roles, "approval_reason": payload.approval_reason},
@@ -6131,6 +6135,14 @@ def reset_user_password(request: Request, user_id: str, payload: UserPasswordUpd
     ok = update_user_password(user_id, hashed)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update password")
+    from src.middleware import access_changed
+    access_changed(user_id)   # sessions opened with the old password must sign in again
+    try:   # ...and cannot renew themselves either
+        from src.fin.db import ex as _ex, tx as _tx
+        with _tx() as conn:
+            _ex(conn, "UPDATE placeware_refresh_tokens SET revoked_at=now() WHERE user_id::text=%s AND revoked_at IS NULL", (user_id,))
+    except Exception as exc:
+        logging.warning(f"Could not revoke sessions after password reset: {exc}")
     
     audit_event(
         "user_password_reset",
@@ -6163,6 +6175,8 @@ def update_user_status(request: Request, user_id: str, payload: UserStatusUpdate
     ok = toggle_user_active(user_id, payload.is_active)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update status")
+    from src.middleware import access_changed
+    access_changed(user_id)   # a deactivated person is signed out on their next request
 
     audit_event(
         "user_status_changed",
@@ -6182,6 +6196,48 @@ def update_user_status(request: Request, user_id: str, payload: UserStatusUpdate
         attestation_text=payload.attestation_text or "I attest this account status change is authorized.",
     )
     return {"status": "ok"}
+
+
+class UserDelete(BaseModel):
+    approval_reason: str
+
+
+@app.delete("/users/{user_id}")
+def delete_user(request: Request, user_id: str, payload: UserDelete):
+    """Delete a login created on User Access (e.g. made by mistake, or no longer needed).
+
+    The login, its sessions, notifications, clock-in sessions and preferences go; the HR profile,
+    timesheets and tasks stay (unlinked), and every posted record keeps who did it. For someone who
+    has left, Deactivate keeps everything and can be undone - the page says so before deleting."""
+    require_role(request, "admin")
+    actor = request.state.user.get("sub")
+    reason = (payload.approval_reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Give a reason for deleting this access")
+    if str(user_id) == str(actor):
+        raise HTTPException(status_code=400, detail="You can't delete your own account")
+    from src.fin.db import q1 as _q1, tx as _tx
+    with _tx() as conn:
+        target = _q1(conn, "SELECT id, email, roles, is_active FROM placeware_users WHERE id::text=%s FOR UPDATE", (user_id,))
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        if "admin" in (target["roles"] or []) and target["is_active"]:
+            others = _q1(conn, """SELECT count(*) AS n FROM placeware_users
+                                  WHERE is_active AND 'admin' = ANY(roles) AND id::text <> %s""", (user_id,))["n"]
+            if not others:
+                raise HTTPException(status_code=400, detail="This is the only active admin - give someone else admin access first")
+        _q1(conn, "DELETE FROM placeware_users WHERE id::text=%s RETURNING id", (user_id,))
+    from src.middleware import _access_cache
+    _access_cache.pop(str(user_id), None)
+    audit_event(
+        "user_deleted",
+        {"admin": actor, "target_user_id": user_id, "target_email": target["email"], "roles": target["roles"],
+         "approval_reason": reason},
+        actor_id=actor, action="admin_delete_user", outcome="success", reason_code="deprovision",
+        subject_type="user", subject_id=user_id, approval_reason=reason,
+        attestation_text="I attest this account deletion is authorized.",
+    )
+    return {"status": "deleted", "id": user_id, "email": target["email"]}
 
 
 # ---- Sage Adapter Import ----------------------------------------------------

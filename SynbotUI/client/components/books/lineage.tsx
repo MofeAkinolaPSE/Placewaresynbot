@@ -377,7 +377,16 @@ export function InvoiceBody({ id }: { id: string }) {
         <Totals rows={[["Invoice amount", i.original_total ?? i.total, true],
           ["Paid before this period", i.original_total && Number(i.original_total) !== Number(i.total) ? -(Number(i.original_total) - Number(i.total)) : undefined],
           ["Discounts", Number(i.discount_total) ? -Number(i.discount_total) : undefined], ["Charges", Number(i.charge_total) ? i.charge_total : undefined],
-          ["Tax", Number(i.tax_total) ? i.tax_total : undefined], ["Paid / credited", Number(i.amount_settled) ? -Number(i.amount_settled) : undefined], ["Balance due", i.balance_due, true]]} />
+          ["Tax", Number(i.tax_total) ? i.tax_total : undefined],
+          ...(() => {
+            const live = (i.allocations ?? []).filter((a: Dict) => !a.reversed);
+            const credited = live.filter((a: Dict) => a.source_type === "CREDIT_NOTE").reduce((s: number, a: Dict) => s + Number(a.amount), 0);
+            const paid = Number(i.amount_settled) - credited;
+            return credited > 0
+              ? [["Returned / removed (credit notes)", -credited], ["Invoice after adjustments", Number(i.total) - credited, true], ["Paid", paid ? -paid : undefined]]
+              : [["Paid / credited", Number(i.amount_settled) ? -Number(i.amount_settled) : undefined]];
+          })() as [string, any, boolean?][],
+          ["Balance due", i.balance_due, true]]} />
         <SagePayments rows={i.sage_payments} customer={i.customer_name} />
         {i.allocations?.length > 0 && (<><H>Paid / credited by</H>
           {i.allocations.map((a: Dict) => (
@@ -400,6 +409,13 @@ function SageInvoiceBody({ number }: { number: string }) {
           <div className="flex gap-2">{d.ace_invoice_id && <DrillLink to={{ type: "invoice", id: d.ace_invoice_id, label: d.invoice_number }}>open item in ACE Books</DrillLink>}
             <PrintInvoiceButton kind="sage" id={number} /></div>
         </div>
+        {d.customer_id && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm" variant="outline"><Link to={`/finance/books/sales?tab=credit&new=creditnote&cn_customer=${d.customer_id}&cn_name=${encodeURIComponent(d.customer_name ?? "")}&cn_invoice=${encodeURIComponent(d.invoice_number)}`}>Return / remove items</Link></Button>
+            <Button asChild size="sm" variant="outline"><Link to="/finance/books/sales?tab=register&new=invoice">Add items (new invoice)</Link></Button>
+            <span className="text-xs text-muted-foreground">This invoice was raised in Sage: items come off it with a credit note against it; extra items go on a new invoice.</span>
+          </div>
+        )}
         <RecallNotice recalls={d.recalls} />
         {d.ace_invoice_id && Number(d.balance) > 0 &&
           <QuickReceipt invoiceId={d.ace_invoice_id} invoiceNumber={d.invoice_number} customerId={d.customer_id} balance={Number(d.balance)} />}

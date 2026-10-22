@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { DrillLink } from "@/components/books/kit";
 import { DrillTarget, historyTarget, useDrill } from "@/components/books/drill-context";
 import { PartyBalances, r2, SageTag, WhtPicker } from "@/components/books/kit";
-import { AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,7 +56,9 @@ export default function BooksSales() {
       </Tabs>
       <InvoiceForm open={params.get("new") === "invoice"} onClose={(id) => { open("new", null); if (id) open("invoice", id); }} />
       <ReceiptForm open={params.get("new") === "receipt"} onClose={() => { const p = new URLSearchParams(params); ["new", "customer", "apply"].forEach((k) => p.delete(k)); setParams(p, { replace: true }); }} />
-      <CreditNoteForm open={params.get("new") === "creditnote"} onClose={() => open("new", null)} />
+      <CreditNoteForm open={params.get("new") === "creditnote"}
+                      preset={params.get("cn_customer") ? { customerId: params.get("cn_customer")!, customerName: params.get("cn_name") ?? "", invoice: params.get("cn_invoice") ?? "" } : undefined}
+                      onClose={() => { const p = new URLSearchParams(params); ["new", "cn_customer", "cn_name", "cn_invoice"].forEach((k) => p.delete(k)); setParams(p, { replace: true }); }} />
       <InvoiceDetail id={params.get("invoice")} onClose={() => open("invoice", null)} />
       <ReceiptDetail id={params.get("receipt")} onClose={() => open("receipt", null)} />
       <CreditNoteDetail id={params.get("creditnote")} onClose={() => open("creditnote", null)} />
@@ -278,14 +280,18 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
       pack_batch_number: l.pack_batch_number?.trim() || undefined, manufacture_date: l.manufacture_date || undefined,
     })),
   });
-  const submit = async (post: boolean) => {
+  const submit = async (post: boolean, print = false) => {
     if (!customer) return;
+    // opened at the click so the browser allows it; pointed at the printed invoice once posted
+    const win = print ? window.open("", "_blank") : null;
     setBusy(true);
     try {
       const inv = await books.post("/sales/invoices", payload(post), idem + (post ? "p" : "d"));
       qc.invalidateQueries({ queryKey: ["books"] });
+      if (win) win.location.href = `${window.location.origin}${window.location.pathname}#/finance/books/invoice-print/ace/${encodeURIComponent(inv.id)}`;
       onClose(inv.id);
     } catch (e) {
+      win?.close();
       const err = e as BooksError;
       if (err.code === "CREDIT_LIMIT_EXCEEDED") setCredit(err.details ?? {});
       else act(async () => { throw e; });
@@ -300,6 +306,7 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
                    <span className="text-sm">Total <strong>{naira(total)}</strong></span>
                    <div className="flex gap-2">
                      <Button variant="outline" disabled={busy || !customer} onClick={() => submit(false)}>Save draft</Button>
+                     <Button variant="outline" disabled={busy || !customer || total <= 0} onClick={() => submit(true, true)}><Printer className="mr-1 h-4 w-4" />Post & print</Button>
                      <Button disabled={busy || !customer || total <= 0} onClick={() => submit(true)}>{busy ? "Posting…" : "Post invoice"}</Button>
                    </div>
                  </div>}>
@@ -556,7 +563,9 @@ function ReceiptDetail({ id, onClose }: { id: string | null; onClose: () => void
 /** Return inward: pick the customer, then the invoice the goods were sold on (ACE Books or Sage
  *  history); its lines come up with the batch, price and cost - enter what came back. The credit
  *  reduces that invoice (and the customer's balance) and the stock returns to the batch at its cost. */
-function CreditNoteForm({ open, onClose }: { open: boolean; onClose: () => void }) {
+function CreditNoteForm({ open, onClose, preset }: { open: boolean; onClose: () => void;
+  /** opened from an invoice's "Return / remove items": that customer and invoice already chosen */
+  preset?: { customerId: string; customerName: string; invoice: string } }) {
   const qc = useQueryClient();
   const [customer, setCustomer] = useState<Dict | null>(null);
   const [inv, setInv] = useState<Dict | null>(null);
@@ -569,7 +578,13 @@ function CreditNoteForm({ open, onClose }: { open: boolean; onClose: () => void 
   const L = useLines<Line>(blankLine);
   const { data: invs, isLoading } = useBooks<Dict[]>(["cn-returnable", customer?.id, search], "/sales/returnable-invoices",
     { customer_id: customer?.id, search: search || undefined }, !!customer);
-  useEffect(() => { if (!open) { setCustomer(null); setInv(null); setReason(""); setBack({}); L.reset(); } }, [open]);
+  useEffect(() => { if (!open) { setCustomer(null); setInv(null); setReason(""); setBack({}); setSearch(""); L.reset(); } }, [open]);
+  useEffect(() => {
+    if (open && preset && !customer) { setCustomer({ id: Number(preset.customerId), name: preset.customerName }); setSearch(preset.invoice); }
+  }, [open, preset?.customerId, preset?.invoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (open && preset?.invoice && !inv) { const hit = (invs ?? []).find((i) => String(i.invoice_number) === preset.invoice); if (hit) setInv(hit); }
+  }, [open, invs, preset?.invoice]); // eslint-disable-line react-hooks/exhaustive-deps
   const invLines: Dict[] = inv?.lines ?? [];
   const fromInvoice = invLines.map((l, i): Dict => ({ ...l, qty: Number(back[i] || 0) })).filter((l) => l.qty > 0);
   const total = inv ? fromInvoice.reduce((s, l) => s + l.qty * Number(l.unit_price || 0), 0) : L.lines.reduce((s, l) => s + lineTotal(l), 0);

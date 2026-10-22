@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontdeskInvoice";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 
 /**
@@ -191,7 +192,9 @@ export function NewRequestSheet({
     }),
     onSuccess: (data: any) => {
       toast({ title: "Request created", description: "Invoice raised and queued for QC." });
-      onOpenChange(false);
+      // stay open on a "created" view so the invoice can be printed straight away
+      setCreated(data?.invoice ?? null);
+      if (!data?.invoice) onOpenChange(false);
       setChangingCustomer(false);
       setItems([BLANK_ITEM]);
       setItemSuggestions(null);
@@ -206,24 +209,39 @@ export function NewRequestSheet({
   });
 
   const canSubmitRequest = !!customer && items.some((it) => it.product.trim() && it.quantity > 0);
+  const [created, setCreated] = useState<any>(null);
+  const createdTotal = created ? Number(created.total_amount ?? 0) - Number(created.discount_amount ?? 0)
+    + Number(created.delivery_charge ?? 0) + Number(created.tax_amount ?? 0) : 0;
 
   return (
     <DetailSheet
       open={open}
       onOpenChange={(o) => {
         onOpenChange(o);
-        if (!o) setChangingCustomer(false);
+        if (!o) { setChangingCustomer(false); setCreated(null); }
       }}
       title="Make New Request"
       description={customer?.name ? `Raise a new invoice request for ${customer.name}.` : "Pick a customer below, then raise a new invoice request."}
       icon={Plus}
-      footer={
+      footer={created ? (
+        <div className="flex w-full gap-2">
+          <Button variant="outline" className="flex-1" onClick={() => setCreated(null)}>Raise another request</Button>
+          <Button className="flex-1" onClick={() => { setCreated(null); onOpenChange(false); }}>Done</Button>
+        </div>
+      ) : (
         <Button className="w-full" disabled={!canSubmitRequest || quickRequestMutation.isPending} onClick={() => quickRequestMutation.mutate()}>
           {quickRequestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
           Raise Request
         </Button>
-      }
+      )}
     >
+      {created ? (
+        <div className="space-y-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm dark:bg-emerald-500/10">
+          <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-5 w-5 text-emerald-600" />Invoice {created.invoice_number} raised</div>
+          <p>{created.customer_name} · <strong>{fmt(createdTotal)}</strong> · queued for QC, then Finance.</p>
+          <PrintFrontdeskInvoiceButton invoiceId={created.id} size="default" className="w-full" />
+        </div>
+      ) : (
       <div className="space-y-3">
         <div className="space-y-1.5">
           <div className="text-xs font-semibold text-muted-foreground">CUSTOMER</div>
@@ -422,6 +440,7 @@ export function NewRequestSheet({
           </span>
         </div>
       </div>
+      )}
     </DetailSheet>
   );
 }

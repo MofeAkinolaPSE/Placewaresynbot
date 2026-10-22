@@ -155,8 +155,9 @@ function fmtMonthYear(ym?: string | null): string {
 const esc = (v: unknown): string =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 
-export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null) {
-  const win = window.open("", "_blank", "width=1000,height=800");
+export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: Window | null) {
+  // `target`: a window opened at the click (before an await), so pop-up blockers allow it
+  const win = target ?? window.open("", "_blank", "width=1000,height=800");
   if (!win) return;
 
   const itemRows = invoice.items.map((it) => `
@@ -585,6 +586,7 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                       invoice here but not the action buttons. */}
                   <InvoiceActionPanel
                     invoice={inv}
+                    showPrint={false}
                     onActioned={() => {
                       queryClient.invalidateQueries({ queryKey: ["fd-invoices"] });
                       if (selected) openDetail(selected);

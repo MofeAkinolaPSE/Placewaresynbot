@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/components/AuthProvider";
 import { myUserId } from "@/lib/auth-client";
+import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontdeskInvoice";
 
 /**
  * Role-aware QC/Finance/Dispatch action panel for a single Frontdesk
@@ -50,9 +51,12 @@ const fmtHistoryDate = (iso?: string) =>
 export function InvoiceActionPanel({
   invoice,
   onActioned,
+  showPrint = true,
 }: {
   invoice: ActionableInvoice;
   onActioned: () => void;
+  /** Print invoice at the top of the panel (off where the page already has its own print button). */
+  showPrint?: boolean;
 }) {
   const { roles } = useAuth();
   const { toast } = useToast();
@@ -119,6 +123,7 @@ export function InvoiceActionPanel({
 
   return (
     <>
+      {showPrint && <div className="flex justify-end"><PrintFrontdeskInvoiceButton invoiceId={invoice.id} /></div>}
       {/* Always rendered regardless of status -- this is the only place in
           the panel that shows anything at all for qc_failed/finance_rejected/
           completed/cancelled invoices, which otherwise render an empty

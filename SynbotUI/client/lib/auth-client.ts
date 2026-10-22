@@ -140,10 +140,16 @@ class AuthClient {
   }
 
   private applyTokenResponse(data: TokenResponse): void {
+    const before = this.roles.join(",");
     this.accessToken = data.access_token;
     this.roles = Array.isArray(data.roles) ? data.roles : [];
     localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
     this.lastAuthError = null;
+    // An admin changed this person's access (User Access -> Edit access): the session refreshed
+    // with the new roles - tell the app so menus and page guards update without a reload.
+    if (before && before !== this.roles.join(",") && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("auth:roles", { detail: this.roles }));
+    }
   }
 
   clear(): void {

@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { motion } from "framer-motion";
 import { NewRequestSheet, type CustomerSearchResult } from "@/components/workspace/NewRequestSheet";
+import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontdeskInvoice";
 import { motionVariants, motionTransitions } from "@/lib/motion";
 import {
   InvoicesTab,
@@ -681,8 +682,9 @@ function StepQC({ invoiceId, onSuccess }: { invoiceId: string; onSuccess: (passe
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <CheckCircle2 className="h-5 w-5" /> QC Inspection
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> QC Inspection</span>
+          <PrintFrontdeskInvoiceButton invoiceId={invoiceId} />
         </CardTitle>
         <CardDescription>Quality assurance check before finance approval.</CardDescription>
       </CardHeader>
@@ -743,8 +745,9 @@ function StepFinance({ invoiceId, onSuccess }: { invoiceId: string; onSuccess: (
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <DollarSign className="h-5 w-5" /> Finance Approval
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <span className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> Finance Approval</span>
+          <PrintFrontdeskInvoiceButton invoiceId={invoiceId} />
         </CardTitle>
         <CardDescription>Final finance review and approval.</CardDescription>
       </CardHeader>

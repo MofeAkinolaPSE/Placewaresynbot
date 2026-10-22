@@ -40,10 +40,13 @@ const AuthProvider = ({ children }: PropsWithChildren) => {
       setIsAuthenticated(false);
     };
     window.addEventListener("auth:expired", onAuthExpired as EventListener);
+    const onRoles = () => { if (active) setRoles(authClient.getRoles()); };
+    window.addEventListener("auth:roles", onRoles as EventListener);
 
     return () => {
       active = false;
       window.removeEventListener("auth:expired", onAuthExpired as EventListener);
+      window.removeEventListener("auth:roles", onRoles as EventListener);
     };
   }, []);
 

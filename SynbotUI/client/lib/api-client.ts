@@ -149,7 +149,7 @@ async function fetchRaw<T = any>(endpoint: string): Promise<T> {
 
 async function sendJson<T>(
   endpoint: string,
-  method: "POST" | "PUT" | "PATCH",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   body: Record<string, any>,
 ): Promise<T> {
   let token = await getBearerToken();
@@ -475,6 +475,9 @@ export const api = {
         attestation_text: string;
       },
     ) => sendJson<any>(`/users/${userId}/status`, "PATCH", payload),
+    /** Delete a login (DELETE /users/{id}); Deactivate keeps the history and can be undone. */
+    remove: (userId: string, payload: { approval_reason: string }) =>
+      sendJson<any>(`/users/${userId}`, "DELETE", payload),
   },
   imports: {
     sage: (payload: FormData, asyncMode: boolean = false) =>

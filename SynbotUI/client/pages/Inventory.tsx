@@ -16,6 +16,7 @@ import { FilterBar } from "@/components/workspace/FilterBar";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { InventoryAnalytics } from "@/components/workspace/InventoryAnalytics";
+import { StockReports } from "@/components/books/inventory-reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -532,6 +533,12 @@ const InventoryPage = () => {
         onAdvanceRequest={(row, action) => advanceRequest.mutate({ row, action })}
         onCancelRequest={(row) => cancelRequest.mutate(row)}
       />
+
+      {/* The Sage stock reports (finance meeting 4): unit activity and item costing, each sale opening its invoice. */}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Stock reports - unit activity & item costing</CardTitle></CardHeader>
+        <CardContent><StockReports /></CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* List Panel: card grid */}

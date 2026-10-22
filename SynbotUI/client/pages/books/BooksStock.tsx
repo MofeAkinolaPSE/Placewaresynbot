@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { historyTarget, useDrill } from "@/components/books/drill-context";
 import { DrillLink } from "@/components/books/kit";
 import { RecallBody } from "@/components/books/recall-panel";
+import { StockReports } from "@/components/books/inventory-reports";
 import { SageTag } from "@/components/books/kit";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,7 @@ export default function BooksStock() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="status">Stock status</TabsTrigger>
           <TabsTrigger value="valuation">Valuation</TabsTrigger>
-          <TabsTrigger value="activity">Unit activity</TabsTrigger>
+          <TabsTrigger value="activity">Unit activity & item costing</TabsTrigger>
           <TabsTrigger value="batches">Batches & expiry</TabsTrigger>
           <TabsTrigger value="batchdetails">Batch numbers & dates</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
@@ -49,7 +50,7 @@ export default function BooksStock() {
         </TabsList>
         <TabsContent value="status"><StockStatus onItem={(sku) => open("item", sku)} /></TabsContent>
         <TabsContent value="valuation"><Valuation /></TabsContent>
-        <TabsContent value="activity"><UnitActivity onItem={(sku) => open("item", sku)} /></TabsContent>
+        <TabsContent value="activity"><Section><StockReports /></Section></TabsContent>
         <TabsContent value="batches"><Batches onTrace={(id) => open("batch", id)} /></TabsContent>
         <TabsContent value="batchdetails"><BatchDetails /></TabsContent>
         <TabsContent value="adjustments"><AdjustmentList onOpen={(id) => open("adjustment", id)} /></TabsContent>
@@ -140,30 +141,6 @@ function Valuation() {
           </Table>
         </div>
       )}
-    </Section>
-  );
-}
-
-function UnitActivity({ onItem }: { onItem: (sku: string) => void }) {
-  const drill = useDrill();
-  const [range, setRange] = useState({ from: monthStart(), to: today() });
-  const { data, isLoading, error } = useBooks<any>(["unit-activity", range], "/reports/unit-activity", range);
-  return (
-    <Section title="Inventory unit activity" actions={<CsvButton filename="unit-activity.csv" rows={data?.rows} />}>
-      <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
-      {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.rows.length === 0 ? <Empty>No stock movement in this period.</Empty> : (
-        <Table className="mt-3">
-          <TableHeader><TableRow><TableHead>SKU</TableHead><TableHead className="text-right">Opening</TableHead><TableHead className="text-right">Purchased</TableHead><TableHead className="text-right">Sold</TableHead><TableHead className="text-right">Returns</TableHead><TableHead className="text-right">Loans</TableHead><TableHead className="text-right">Adjusted</TableHead><TableHead className="text-right">Closing</TableHead><TableHead className="text-right">Cost of sales</TableHead></TableRow></TableHeader>
-          <TableBody>{data.rows.map((r: Dict) => (
-            <TableRow key={r.sku} className="cursor-pointer hover:bg-muted/50" onClick={() => (drill ? drill.open({ type: "product", id: r.sku, label: r.sku }) : onItem(r.sku))}>
-              <TableCell><div className="font-mono text-xs">{r.sku}</div><div className="max-w-[200px] truncate text-xs text-muted-foreground">{r.name}</div></TableCell>
-              {["opening", "purchased", "sold", "returns", "loans", "adjusted", "closing"].map((k) => <TableCell key={k} className="text-right">{Number(r[k]) ? num(r[k]) : ""}</TableCell>)}
-              <TableCell className="text-right"><Amount value={r.cost_of_sales} blankZero /></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table>
-      ))}
     </Section>
   );
 }

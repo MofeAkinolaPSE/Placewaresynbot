@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { motion } from "framer-motion";
+import { askConfirm, askText } from "@/lib/ask";
 import { motionTransitions } from "@/lib/motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -194,6 +195,22 @@ const AdminUsers = () => {
       toast.error(error?.message || "Failed to update user status");
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (p: { userId: string; reason: string }) => api.users.remove(p.userId, { approval_reason: p.reason }),
+    onSuccess: (r: any) => {
+      toast.success(`Access deleted${r?.email ? ` - ${r.email}` : ""}`);
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (error: any) => toast.error(error?.message || "Failed to delete user"),
+  });
+  const deleteUser = async (user: { id: string; email: string }) => {
+    const ok = await askConfirm(`Delete the access for ${user.email}?\n\nThey can no longer sign in, and the login is removed from this list. ` +
+      `Their HR profile, timesheets and tasks stay; posted records keep who did them.\n\nIf this person has left, use Deactivate instead - it keeps everything and can be undone.`);
+    if (!ok) return;
+    const reason = await askText(`Why is the access for ${user.email} being deleted? (kept in the audit trail)`);
+    if (reason && reason.trim()) deleteMutation.mutate({ userId: user.id, reason: reason.trim() });
+  };
 
   const passwordMutation = useMutation({
     mutationFn: (userId: string) =>
@@ -393,6 +410,10 @@ const AdminUsers = () => {
                   <Button size="sm" variant="outline" className="min-w-[7.5rem] flex-1" onClick={() => openAccess(user)}>
                     Edit access
                   </Button>
+                  <Button size="sm" variant="destructive" className="min-w-[7.5rem] flex-1" disabled={deleteMutation.isPending}
+                          onClick={() => deleteUser(user)}>
+                    Delete
+                  </Button>
                 </div>
               </div>
             ))}
@@ -430,6 +451,7 @@ const AdminUsers = () => {
                         Reset Password
                       </Button>
                       <Button variant="outline" onClick={() => openAccess(user)}>Edit access</Button>
+                      <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteUser(user)}>Delete</Button>
                     </TableCell>
                   </TableRow>
                 ))}

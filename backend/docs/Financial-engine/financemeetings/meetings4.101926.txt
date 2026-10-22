@@ -1,0 +1,115 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Can I show you the way we used to do it, so that you understand? No problem. What I want to do is what you understand, so that you know what to do. No problem.
+
+For example, this is infantry. Are you getting it? Yes, sir. So, under this, our infantry. 
+
+These are the reports we have under the infantry. Infantry adjustment, cut-out, this and that. But, mutually, we use this.
+
+For example, infantry unit activities report. So, this one, we just told us, because you may ask me now, for the past three months, on a particular product, how many quantities did we sell? Probably, we are projecting something. Are you getting it? So, here, this is infantry unit activity report.
+
+So, this one, we tell you, beginning balance. For example, let me choose. I will select the date.
+
+For example, we want to know on quarterly basis for the past four quarters. You want to buy from another manufacturer? We will project this. So, now, January to March, for example.
+
+What did we sell on some particular? Let us do all the products. So, there are no activities on all these ones. Are you getting it? Yes.
+
+So, this one, we give us the beginning balance. The unit sold. So, look at this one now.
+
+This is the unit sold. For three months, I will say this unit sold. This unit will purchase for that three months.
+
+And this quantity will sell. This is what we have before. Are you getting it? That's why we don't have any quantity.
+
+We should have a report like this. Let me check quickly. So, this is the infantry unit activity report.
+
+Then, number two. Maybe you want to do it one by one. No, add that number two.
+
+Number two. Number two. Costume report.
+
+This is the major thing they use downstairs. Okay. To do the reconciliation.
+
+Item costume report. Item costume report. Let me tell you how it is.
+
+So, this is item costume report. This is it. Because the stocks are voluminous, that is why it takes time to upload.
+
+Okay. So, for example, let's pick one item. Let's pick something like flu.
+
+That is a facile grip tetra. Facile grip. So, let's use savarit.
+
+Facile grip tetra used to be too voluminous. So, we look at the bash that you want to shake up. For a particular period, which bash we should pick from here to the last one.
+
+We picked about four bashes. Okay. Four or more.
+
+This is one and a half. The stock count of this bash. So, there are some things.
+
+Okay, let's see from January. January 2026. January 2026 to date, for example.
+
+To date. Yeah, there are some things. Because a lot of things will come up with it.
+
+But there are some things we don't need to fill. For the purpose, I removed those things that we don't need out of it. So, like stock adjustment, we need it.
+
+Because if there is any adjustment, we will know. In the course of. So, like this one.
+
+Adjustment in dollar, we don't need it. Quantity sold, we need it. So, we open this.
+
+Yeah. Cost of sales, we may not need it. Because it's stock adjustment we want to do.
+
+So, we don't need this. So, remaining quantity, remaining file. We may not need file because it's stock we want to work on.
+
+So, it will reduce the. All these. Even all this assembly, whatever.
+
+We don't need it. Assembly, custody, we don't need. We don't need this one.
+
+We need this one. We don't need the actual cost or whatever. We don't need it.
+
+So, downstairs, they used to need this one. Seriously. Okay.
+
+For the reconciliation. On this batch, at a glance, how many do we have? We don't have anything on this batch again. But how did we sell it? Here you understand.
+
+I mean, maybe they are maintaining being cut. So, they reconcile this with being cut. We sold one, yeah.
+
+And so, so, blah, blah, blah. This. Then, on this batch, we purchase the note.
+
+We purchase this at this cost. This is how we sold it. Are you getting it? This is how we sold it.
+
+This is how we sold it. And we purchase. In between, when it remains five, we purchase more.
+
+Seventy on this. We purchase hundred here. So, they use this one to do their reconciliation.
+
+That weekly, monthly, or whatever. Reconciliation. Downstairs.
+
+And they used to check. Who bought this? If they want to know. At least, God said, how did we sell the fifty? So, you understand.
+
+It's easy to come here to say, ah, this is how we. Instead of looking for individual, from here, this and that. This is where we, ah, this thing.
+
+Who bought this book? And it will open up to show you. Yes, EXE bought it. It will show you the, the.
+
+Can you click in it again? Okay, okay, okay, okay. So. So, it will show, open you the invoice.
+
+Invoice, number. You click on it, it will show you the invoice. Yes, how, invoice, all, everything that we sold on Daddy.
+
+Okay. But this is what relates you. When we get to another product.
+
+So, we see, when we double click it. Everything that is on that invoice, on that day. Will reflect like this.
+
+But this is what we are particular about. Who did we sell this ten to? Okay. Are you getting me? For example, we told them.
+
+Reserve you five hundred. Because we are going to be out of stock. We will be releasing it.
+
+They are now telling us, ah. That man, two hundred had to release, oh. Has finished.
+
+Ah. How did you sell it? Who is it? Yeah, me. Okay.
+
+So, it's easier to. You see the item costing. The invoice attached.
+
+Those that you want. And the customer. Yes.
+
+Yeah, okay. So, you see the linkage. Alright.
+
+So, I'll take this and work on it. Is there anything else? Eh. You know as I'm working on it.
+
+Okay, no problem. I'm coming across. No problem.
+
+So, I'll take this and work on it.
+So we need to add a print so as soon as as soon as you raise an invoice you need to add the print button to all the side panels that creates invoices because currently it looks like we still have to go to Frontdex to print the invoice but if you could print the invoice as soon as I've raised the invoice even on the whatever page I'm raising the invoice on that will be that will be needed all right so I'll add that as well so you know
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

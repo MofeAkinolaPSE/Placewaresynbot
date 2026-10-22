@@ -25,6 +25,74 @@ def _get_auth0_jwks_client() -> PyJWKClient | None:
     return _jwks_client
 
 
+# ---------------------------------------------------------------------------
+# Access changes take effect at once (User Access -> Edit access / Deactivate / Delete / reset
+# password). A session token carries the roles it was issued with; a token issued before the
+# account's access last changed - or for an account that is gone or deactivated - is refused with
+# 401, and the app's automatic refresh then issues one with the current roles (or signs them out).
+# Looked up at most every few seconds per process.
+# ---------------------------------------------------------------------------
+_ACCESS_TTL = 10.0
+_access_cache: Dict[str, tuple] = {}
+
+
+def _account_state(user_id: str) -> tuple | None:
+    """(exists, is_active, access_changed_epoch, roles) for a login, cached briefly; None if it can't be read."""
+    hit = _access_cache.get(user_id)
+    now = time.monotonic()
+    if hit and now - hit[0] < _ACCESS_TTL:
+        return hit[1]
+    try:
+        from .db import db
+        conn = db.pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT is_active, EXTRACT(EPOCH FROM access_changed_at), roles FROM placeware_users WHERE id::text=%s",
+                            (user_id,))
+                row = cur.fetchone()
+            conn.rollback()
+        finally:
+            db.pool.putconn(conn)
+    except Exception as exc:  # never lock everyone out because the lookup failed
+        logging.warning(f"access check unavailable: {exc}")
+        return None
+    state = (False, False, None, None) if not row else (True, bool(row[0]), float(row[1]) if row[1] is not None else None,
+                                                         sorted(str(r) for r in (row[2] or [])))
+    _access_cache[user_id] = (now, state)
+    return state
+
+
+def access_changed(user_id: str) -> None:
+    """Stamp a login's access as changed now (its existing sessions must refresh) and forget the cached state."""
+    _access_cache.pop(str(user_id), None)
+    from .db import db
+    conn = db.pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE placeware_users SET access_changed_at=now() WHERE id::text=%s", (str(user_id),))
+        conn.commit()
+    finally:
+        db.pool.putconn(conn)
+
+
+def _check_current_access(payload: dict) -> None:
+    sub, iat = payload.get("sub"), payload.get("iat")
+    if not sub or iat is None:
+        return
+    state = _account_state(str(sub))
+    if state is None:
+        return
+    exists, active, changed, roles = state
+    if not exists or not active:
+        raise HTTPException(status_code=401, detail="This account is no longer active")
+    # roles changed on User Access -> Edit access: the session must refresh to pick them up
+    if roles is not None and sorted(str(r) for r in (payload.get("roles") or [])) != roles:
+        raise HTTPException(status_code=401, detail="Your access has changed - refreshing your session")
+    # password reset (or another access change): sessions opened before it must sign in again
+    if changed is not None and int(iat) < int(changed):
+        raise HTTPException(status_code=401, detail="Your access has changed - refreshing your session")
+
+
 def decode_jwt_token(token: str, required_role: str | None = None) -> dict:
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
@@ -65,6 +133,9 @@ def decode_jwt_token(token: str, required_role: str | None = None) -> dict:
     except Exception as e:
         logging.warning(f"JWT decode failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
+
+    if alg == "HS256":
+        _check_current_access(payload)
 
     if required_role:
         roles = payload.get("roles") or payload.get("permissions") or []

@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import psycopg2
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 
+from src.fin import inventory_reports
 from src.fin import (accounts, assets, audit, banking, books_ledger, closing, controls, dashboard, data_exceptions, integrations, inventory,
                      ledger, ledger_reports, migration, numbering, periods, posting, purchases, report_center, reports, rollover, rules,
                      sage_history, sage_ledger, sales, setup)
@@ -1060,6 +1061,32 @@ def return_loan(loan_id: str, request: Request, payload: Dict[str, Any] = Body(.
 @router.post("/inventory/loans/{loan_id}/write-off")
 def write_off_loan(loan_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
     return _run(request, lambda c, x: inventory.write_off_loan(c, x, loan_id, payload.get("reason", ""), _date(payload.get("on")) or _today()))
+
+
+@router.get("/inventory/unit-activity")
+def inventory_unit_activity(request: Request, date_from: Optional[str] = Query(None, alias="from"),
+                            date_to: Optional[str] = Query(None, alias="to"), search: Optional[str] = None,
+                            sku: Optional[str] = None, sku_from: Optional[str] = None, sku_to: Optional[str] = None,
+                            include_inactive: bool = False):
+    """Sage's Inventory Unit Activity report across Sage history and ACE Books (inventory_reports)."""
+    def fn(conn, ctx):
+        f, t = _range(date_from, date_to)
+        return inventory_reports.unit_activity(conn, ctx.entity_id, f, t, search=search or None, sku=sku or None,
+                                               sku_from=sku_from or None, sku_to=sku_to or None, include_inactive=include_inactive)
+    return _run(request, fn, "inventory.view", cache_ttl=60)
+
+
+@router.get("/inventory/item-costing")
+def inventory_item_costing(request: Request, date_from: Optional[str] = Query(None, alias="from"),
+                           date_to: Optional[str] = Query(None, alias="to"), search: Optional[str] = None,
+                           sku: Optional[str] = None, sku_from: Optional[str] = None, sku_to: Optional[str] = None,
+                           offset: int = 0, limit: int = Query(25, le=200)):
+    """Sage's Item Costing report: each item's movements with the invoice / bill / adjustment behind each."""
+    def fn(conn, ctx):
+        f, t = _range(date_from, date_to)
+        return inventory_reports.item_costing(conn, ctx.entity_id, f, t, search=search or None, sku=sku or None,
+                                              sku_from=sku_from or None, sku_to=sku_to or None, offset=max(0, offset), limit=limit)
+    return _run(request, fn, "inventory.view", cache_ttl=60)
 
 
 @router.get("/inventory/batches/{batch_id}/trace")
