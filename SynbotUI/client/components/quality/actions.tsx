@@ -17,7 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
-import { BatchPick, CustomerPick, ProductPick } from "@/components/books/kit";
+import { BatchPick, CustomerPick, ProductPick, SupplierPick } from "@/components/books/kit";
+import { NewItemSheet } from "@/components/books/new-item";
 import { api } from "@/lib/api-client";
 import { Dict, fmtDate, num } from "@/lib/books-api";
 import { useAuth } from "@/components/AuthProvider";
@@ -73,6 +74,17 @@ export function QualityActionsProvider({ children }: { children: ReactNode }) {
         {active && <ActionForm key={`${active.a}-${JSON.stringify(active.d)}`} action={active.a} defaults={active.d} onDone={close} />}
       </DetailSheet>
     </Ctx.Provider>
+  );
+}
+
+/** The incoming-batch panel on its own (Reorder stock on the Dashboard and Inventory open it): supplier,
+ *  their invoice, item, quantity - linked to ACE Books; "Confirm arrived" later receives it. */
+export function IncomingBatchSheet({ open, onClose, defaults = {} }: { open: boolean; onClose: () => void; defaults?: Dict }) {
+  return (
+    <DetailSheet open={open} onOpenChange={(o) => !o && onClose()} title="Reorder stock · register the incoming batch"
+                 description="Order it from the supplier and register the delivery here: it shows on the calendar, QC confirms it when it arrives, and finance records the supplier's bill from it.">
+      {open && <ActionForm key={JSON.stringify(defaults)} action="batch" defaults={defaults} onDone={onClose} />}
+    </DetailSheet>
   );
 }
 
@@ -139,7 +151,74 @@ function Submit({ busy, label, disabled }: { busy: boolean; label: string; disab
 
 // ---------------------------------------------------------------------------
 
-function RecallForm({ defaults, busy, run }: FormProps) {
+/** Recall from the customer's side: customer -> their invoices -> tick the items on the invoice being recalled. */
+function RecallFromInvoice({ busy, run }: FormProps) {
+  const [cust, setCust] = useState<Dict | null>(null);
+  const [inv, setInv] = useState("");
+  const [qtys, setQtys] = useState<Record<number, string>>({});
+  const [f, setF] = useState({ reason: "", severity: "major", scope: "voluntary" });
+  const { data: invoices, isLoading } = useQuery({ queryKey: ["quality", "cust-invoices-all", cust?.id], enabled: !!cust,
+                                                   queryFn: () => api.quality.customerInvoices(cust!.id, {}) });
+  const chosen = (invoices ?? []).find((i: Dict) => `${i.sage ? "s" : "a"}:${i.invoice_number}` === inv);
+  const lines: Dict[] = chosen?.lines ?? [];
+  const picked = lines.map((l, k) => ({ l, q: Number(qtys[k] || 0) })).filter((x) => x.q > 0);
+  const credit = picked.reduce((s, x) => s + x.q * Number(x.l.unit_price || 0), 0);
+  return (
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault();
+      run(() => api.quality.recallFromInvoice({ customer_id: cust!.id, invoice_id: chosen?.sage ? undefined : chosen?.invoice_id,
+          sage_invoice_number: chosen?.sage ? chosen.invoice_number : undefined, recall_reason: f.reason, severity: f.severity, scope: f.scope,
+          lines: picked.map(({ l, q }) => ({ sku: l.sku, batch_id: l.batch_id || l.return_batch_id, quantity: q, unit_price: l.unit_price, unit_cost: l.unit_cost })) }),
+        (r) => `${(r.recalls ?? []).length} item${(r.recalls ?? []).length === 1 ? "" : "s"} recalled from invoice ${chosen?.invoice_number} - ${cust?.name}'s invoice credited`);
+    }}>
+      <CustomerPick label="Customer" value={cust} onChange={(c) => { setCust(c); setInv(""); setQtys({}); }} />
+      {cust && (isLoading ? <div className="text-xs text-muted-foreground">Loading invoices…</div> : (
+        <Field label="Invoice">
+          <select className="h-10 w-full rounded-md px-3 text-sm" value={inv} onChange={(e) => { setInv(e.target.value); setQtys({}); }}>
+            <option value="">Choose the invoice…</option>
+            {(invoices ?? []).map((i: Dict) => <option key={`${i.sage ? "s" : "a"}:${i.invoice_number}`} value={`${i.sage ? "s" : "a"}:${i.invoice_number}`}>
+              {i.invoice_number} · {fmtDate(i.invoice_date)} · {num(i.total, 2)}{i.sage ? " (Sage)" : ""}</option>)}
+          </select>
+        </Field>))}
+      {chosen && (
+        <div className="space-y-1 rounded-md border p-2">
+          <div className="grid grid-cols-[1fr_70px_90px_90px] gap-2 text-[11px] font-medium text-muted-foreground"><span>Item on the invoice</span><span className="text-right">Sold</span><span className="text-right">Price</span><span>Recall qty</span></div>
+          {lines.map((l, k) => (
+            <div key={k} className="grid grid-cols-[1fr_70px_90px_90px] items-center gap-2 text-xs">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={Number(qtys[k] || 0) > 0}
+                onChange={(e) => setQtys((x) => ({ ...x, [k]: e.target.checked ? String(Number(l.quantity)) : "" }))} />
+                <span><span className="font-medium">{l.description}</span><span className="block font-mono text-[10px] text-muted-foreground">{l.sku}{l.batch_number ? ` · batch ${l.batch_number}` : ""}</span></span></label>
+              <span className="text-right">{num(l.quantity)}</span><span className="text-right">{num(l.unit_price, 2)}</span>
+              <Input className="h-8" type="number" min={0} max={Number(l.quantity)} value={qtys[k] ?? ""} onChange={(e) => setQtys((x) => ({ ...x, [k]: e.target.value }))} />
+            </div>))}
+          <div className="pt-1 text-right text-xs">Credit to {cust?.name}: <strong>₦{credit.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</strong></div>
+        </div>
+      )}
+      <Field label="Reason"><Textarea rows={2} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. NAFDAC alert, suspected contamination" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Scope"><Pick value={f.scope} onChange={(v) => setF({ ...f, scope: v })} options={[["voluntary", "Voluntary"], ["mandatory", "Mandatory"]]} /></Field>
+        <Field label="Severity"><Pick value={f.severity} onChange={(v) => setF({ ...f, severity: v })} options={[["critical", "Critical"], ["major", "Major"], ["minor", "Minor"]]} /></Field>
+      </div>
+      <p className="text-[11px] text-muted-foreground">Each ticked item opens the recall on its batch (or joins the one already open) - the batch is frozen and its other buyers listed - and the quantity is credited on this invoice, so the customer owes less; the units come back into the frozen batch.</p>
+      <Submit busy={busy} label="Recall these items" disabled={!cust || !chosen || picked.length === 0 || f.reason.trim().length < 5} />
+    </form>
+  );
+}
+
+function RecallForm(props: FormProps) {
+  const [mode, setMode] = useState<"batch" | "invoice">(props.defaults.batch ? "batch" : "invoice");
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-4 text-sm">
+        <label className="flex items-center gap-2"><input type="radio" checked={mode === "invoice"} onChange={() => setMode("invoice")} />From a customer's invoice</label>
+        <label className="flex items-center gap-2"><input type="radio" checked={mode === "batch"} onChange={() => setMode("batch")} />From a batch</label>
+      </div>
+      {mode === "invoice" ? <RecallFromInvoice {...props} /> : <RecallFromBatch {...props} />}
+    </div>
+  );
+}
+
+function RecallFromBatch({ defaults, busy, run }: FormProps) {
   const [batch, setBatch] = useState<Dict | null>(defaults.batch ?? null);
   const [f, setF] = useState({ reason: "", scope: "voluntary", severity: "major", authority: "NAFDAC",
                                expected: defaults.date ?? plusDays(14), notified: false });
@@ -306,39 +385,56 @@ export function CapaEditor({ rows, onChange }: { rows: Dict[]; onChange: (r: Dic
 function BatchForm({ defaults, busy, run }: FormProps) {
   const isQa = useIsQa();
   const [product, setProduct] = useState<Dict | null>(defaults.product ?? null);
+  // the supplier first, from the same vendor list ACE Books pays - so this delivery and the
+  // supplier's bill finance records are one and the same
+  const [supplier, setSupplier] = useState<Dict | null>(null);
+  const [addingItem, setAddingItem] = useState(false);
   const { data: orders } = useQuery({ queryKey: ["stock-orders", "ordered"], queryFn: () => api.procurement.stockOrders("ordered").catch(() => []) });
-  const [f, setF] = useState({ batch_number: defaults.batch_number ?? "", expected_arrival_date: defaults.date ?? plusDays(7), quantity: "", expiry_date: "",
-                               supplier: "", nafdac_reg_number: "", certificate_ref: "", stock_order_id: "", notes: "", release_now: false });
+  const [f, setF] = useState({ batch_number: defaults.batch_number ?? "", expected_arrival_date: defaults.date ?? plusDays(7),
+                               quantity: defaults.quantity != null ? String(defaults.quantity) : "", expiry_date: "",
+                               manufacture_date: "", unit_cost: "", supplier_invoice_number: "",
+                               nafdac_reg_number: "", certificate_ref: "", stock_order_id: "", notes: "", release_now: false });
   const pickOrder = (id: string) => {
     const o = (orders ?? []).find((x: Dict) => x.id === id);
-    setF({ ...f, stock_order_id: id, quantity: o ? String(o.requested_qty) : f.quantity, supplier: o?.supplier_name ?? f.supplier,
-           expected_arrival_date: o?.expected_date ?? f.expected_arrival_date });
+    setF({ ...f, stock_order_id: id, quantity: o ? String(o.requested_qty) : f.quantity, expected_arrival_date: o?.expected_date ?? f.expected_arrival_date });
     if (o) setProduct({ sku: o.sku, name: o.name });
+    if (o?.supplier_id) setSupplier({ id: o.supplier_id, name: o.supplier_name });
   };
   return (
     <form className="space-y-3" onSubmit={(e) => {
       e.preventDefault();
-      run(() => api.quality.registerBatch({ ...f, sku: product?.sku, quantity: f.quantity ? Number(f.quantity) : undefined,
-                                           expiry_date: f.expiry_date || undefined, stock_order_id: f.stock_order_id || undefined }),
+      run(() => api.quality.registerBatch({ ...f, sku: product?.sku, supplier_id: supplier?.id, supplier: supplier?.name,
+                                           quantity: f.quantity ? Number(f.quantity) : undefined, unit_cost: f.unit_cost ? Number(f.unit_cost) : undefined,
+                                           expiry_date: f.expiry_date || undefined, manufacture_date: f.manufacture_date || undefined,
+                                           stock_order_id: f.stock_order_id || undefined }),
           f.release_now ? "Batch registered and released" : "Batch registered · on the calendar, held until QC releases it");
     }}>
+      <SupplierPick label="Supplier (vendor)" value={supplier} onChange={setSupplier} />
+      <Field label="Supplier's invoice / delivery note no."><Input placeholder="as printed on their invoice" value={f.supplier_invoice_number}
+        onChange={(e) => setF({ ...f, supplier_invoice_number: e.target.value })} /></Field>
       {(orders ?? []).length > 0 && (
         <Field label="From a stock order (optional)"><Pick value={f.stock_order_id} onChange={pickOrder}
           options={(orders ?? []).map((o: Dict) => [o.id, `${o.name} · ${num(o.requested_qty)} units · ${o.supplier_name ?? ""}`] as [string, string])} /></Field>
       )}
-      <ProductPick label="Product (ACE Books)" value={product} onChange={setProduct} />
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Batch / lot number"><Input value={f.batch_number} onChange={(e) => setF({ ...f, batch_number: e.target.value })} /></Field>
-        <Field label="Expected arrival"><Input type="date" value={f.expected_arrival_date} onChange={(e) => setF({ ...f, expected_arrival_date: e.target.value })} /></Field>
-        <Field label="Quantity"><Input type="number" value={f.quantity} onChange={(e) => setF({ ...f, quantity: e.target.value })} /></Field>
-        <Field label="Expiry date"><Input type="date" value={f.expiry_date} onChange={(e) => setF({ ...f, expiry_date: e.target.value })} /></Field>
-        <Field label="Supplier"><Input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} /></Field>
-        <Field label="NAFDAC reg. no."><Input value={f.nafdac_reg_number} onChange={(e) => setF({ ...f, nafdac_reg_number: e.target.value })} /></Field>
-        <Field label="Certificate / CoA ref" className="col-span-2"><Input value={f.certificate_ref} onChange={(e) => setF({ ...f, certificate_ref: e.target.value })} /></Field>
+      <div className="flex items-end gap-2">
+        <div className="flex-1"><ProductPick label="Product (item ID)" value={product} onChange={setProduct} /></div>
+        <Button type="button" variant="outline" onClick={() => setAddingItem(true)}><Plus className="mr-1 h-4 w-4" />New item</Button>
       </div>
+      <NewItemSheet open={addingItem} defaultFrom={product} onClose={(r) => { setAddingItem(false); if (r) setProduct({ sku: r.sku, name: r.name }); }} />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Batch number on the pack"><Input placeholder="blank if not known yet - give it on arrival" value={f.batch_number} onChange={(e) => setF({ ...f, batch_number: e.target.value })} /></Field>
+        <Field label="Quantity"><Input type="number" value={f.quantity} onChange={(e) => setF({ ...f, quantity: e.target.value })} /></Field>
+        <Field label="Manufacture date"><Input type="date" value={f.manufacture_date} onChange={(e) => setF({ ...f, manufacture_date: e.target.value })} /></Field>
+        <Field label="Expiry date"><Input type="date" value={f.expiry_date} onChange={(e) => setF({ ...f, expiry_date: e.target.value })} /></Field>
+        <Field label="Unit cost (₦, optional)"><Input type="number" value={f.unit_cost} onChange={(e) => setF({ ...f, unit_cost: e.target.value })} /></Field>
+        <Field label="Expected arrival"><Input type="date" value={f.expected_arrival_date} onChange={(e) => setF({ ...f, expected_arrival_date: e.target.value })} /></Field>
+        <Field label="NAFDAC reg. no."><Input value={f.nafdac_reg_number} onChange={(e) => setF({ ...f, nafdac_reg_number: e.target.value })} /></Field>
+        <Field label="Certificate / CoA ref"><Input value={f.certificate_ref} onChange={(e) => setF({ ...f, certificate_ref: e.target.value })} /></Field>
+      </div>
+      <p className="text-xs text-muted-foreground">Finance sees this delivery when recording {supplier?.name ?? "the supplier"}'s bill and can fill the bill from it.</p>
       {isQa && <label className="flex items-center gap-2 text-sm"><Checkbox checked={f.release_now} onCheckedChange={(v) => setF({ ...f, release_now: !!v })} />
         Already checked - release it now</label>}
-      <Submit busy={busy} label={f.release_now ? "Register and release" : "Register batch"} disabled={!product || !f.batch_number.trim()} />
+      <Submit busy={busy} label={f.release_now ? "Register and release" : "Register batch"} disabled={!product || !supplier || (f.release_now && !f.batch_number.trim())} />
     </form>
   );
 }

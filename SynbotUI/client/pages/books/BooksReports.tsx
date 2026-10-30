@@ -6,8 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BooksShell } from "@/components/books/BooksShell";
 import { sourceTarget, useDrill } from "@/components/books/drill-context";
-import { AccountPick, Amount, BankSelect, CustomerPick, DateRange, Empty, ErrorNote, Loading, ProductPick, Section, SupplierPick, useBooks } from "@/components/books/kit";
+import {
+  AccountPick, Amount, BankSelect, ClearVoidedButton, CustomerPick, DateRange, Empty, ErrorNote, Loading, ProductPick, Section, SupplierPick, useBooks,
+} from "@/components/books/kit";
+import { isVoided, useClearVoided } from "@/lib/voided";
 import { Dict, downloadCsv, fmtDate, num, today, yearStart } from "@/lib/books-api";
+import { toast } from "sonner";
 
 type Param = "range" | "asOf" | "account" | "bank" | "customer" | "supplier" | "sku" | "withBalance";
 type Entry = { name: string; desc?: string } & ({ key: string; params?: Param[] } | { to: string } | { na: string });
@@ -143,12 +147,14 @@ function ReportView({ entry, params, set }: { entry: { key: string; name: string
     sku: params.get("sku") ?? undefined, with_balance: params.get("with_balance") ?? undefined };
   const needsAccount = ps.includes("account") && entry.key === "account-register" && !q.account_id;
   const { data, isLoading, error } = useBooks<Dict>(["report-center", entry.key, q], `/report-center/${entry.key}`, q, !needsAccount);
+  // registers list voided documents (they add nothing to the totals); Clear voided hides them, and the download never has them
+  const vd = useClearVoided(`reports.${entry.key}`, data?.rows as Dict[] | undefined);
   const rows: Dict[] = useMemo(() => {
-    const r = data?.rows ?? [];
+    const r = vd.rows;
     if (!search) return r;
     const s = search.toLowerCase();
     return r.filter((x) => Object.values(x).some((v) => v != null && String(v).toLowerCase().includes(s)));
-  }, [data, search]);
+  }, [vd.rows, search]);
   const cols: Dict[] = data?.columns ?? [];
   const click = (c: Dict, row: Dict) => {
     const id = row[c.id];
@@ -173,8 +179,10 @@ function ReportView({ entry, params, set }: { entry: { key: string; name: string
   return (
     <Section title={data?.title ?? entry.name}
              actions={<>
+               <ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} />
                <Button size="sm" variant="outline" disabled={!rows.length}
-                       onClick={() => downloadCsv(`${entry.key}-${q.as_of ?? to}.csv`, rows, cols.map((c) => ({ key: c.key, label: c.label })))}>
+                       onClick={() => { const n = downloadCsv(`${entry.key}-${q.as_of ?? to}.csv`, rows, cols.map((c) => ({ key: c.key, label: c.label })));
+                                        if (n > 0) toast.info(`${n} voided ${n === 1 ? "record" : "records"} left out of the CSV`); }}>
                  <FileSpreadsheet className="mr-1.5 h-4 w-4" />Download (Excel CSV)</Button>
                <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="mr-1.5 h-4 w-4" />Print / PDF</Button>
              </>}>
@@ -217,7 +225,7 @@ function ReportView({ entry, params, set }: { entry: { key: string; name: string
             <TableHeader><TableRow>{cols.map((c) => <TableHead key={c.key} className={`whitespace-nowrap ${["money", "qty"].includes(c.type) ? "text-right" : ""}`}>{c.label}</TableHead>)}</TableRow></TableHeader>
             <TableBody>
               {rows.slice(0, 2000).map((r, i) => (
-                <TableRow key={i} className={r.name === "NET INCOME" || r.line?.startsWith?.("TOTAL") ? "font-semibold" : ""}>
+                <TableRow key={i} data-voided={isVoided(r) || undefined} className={`${r.name === "NET INCOME" || r.line?.startsWith?.("TOTAL") ? "font-semibold" : ""} ${isVoided(r) ? "text-muted-foreground line-through decoration-muted-foreground/40" : ""}`}>
                   {cols.map((c) => <TableCell key={c.key} className={`${["money", "qty"].includes(c.type) ? "text-right" : ""} ${c.type === "date" ? "whitespace-nowrap" : ""} text-sm`}>{cell(c, r)}</TableCell>)}
                 </TableRow>
               ))}

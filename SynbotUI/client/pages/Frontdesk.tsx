@@ -34,6 +34,10 @@ import { api } from "@/lib/api-client";
 import { motion } from "framer-motion";
 import { NewRequestSheet, type CustomerSearchResult } from "@/components/workspace/NewRequestSheet";
 import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontdeskInvoice";
+import { ShipViaSelect } from "@/components/frontdesk/ShipViaSelect";
+import { FrontdeskInvoiceBody } from "@/components/frontdesk/FrontdeskInvoicePanel";
+import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { ModifyInvoiceButton } from "@/components/frontdesk/ModifyInvoice";
 import { motionVariants, motionTransitions } from "@/lib/motion";
 import {
   InvoicesTab,
@@ -292,7 +296,7 @@ function StepWalkIn({
   const valid = name.trim().length >= 2 && purpose.trim().length >= 3;
 
   return (
-    <Card>
+    <Card data-tour-id="frontdesk-walkin-form">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UserPlus className="h-5 w-5" /> Register Walk-in Client
@@ -485,66 +489,6 @@ function StepInvoice({
           </div>
         )}
 
-        {/* Invoice Details — Bill To/Ship To, PO, Payment Terms, Shipping
-            Method. Matches the real Placeware paper invoice's fields; none
-            of this was captured anywhere in this app before. */}
-        <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-          <div className="text-xs font-semibold text-muted-foreground">INVOICE DETAILS</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Bill To</label>
-              <Textarea rows={2} placeholder="Billing address" value={billingAddress}
-                onChange={(e) => setBillingAddress(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Ship To</label>
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
-                    checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
-                  Same as Bill To
-                </label>
-              </div>
-              <Textarea rows={2} placeholder="Shipping address" value={sameAsBilling ? billingAddress : shippingAddress}
-                disabled={sameAsBilling} onChange={(e) => setShippingAddress(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Customer PO</label>
-              <Input placeholder="Optional" value={customerPo} onChange={(e) => setCustomerPo(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Payment Terms</label>
-              <Select value={paymentTerms} onValueChange={setPaymentTerms}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_TERMS_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Shipping Method</label>
-              <Input placeholder="e.g. Hand Delivery" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Delivery charge (₦)</label>
-              <Input type="number" min={0} step="0.01" placeholder="0.00" value={deliveryCharge || ""}
-                onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
-              <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Discount allowed (₦)</label>
-              <Input type="number" min={0} step="0.01" placeholder="0.00" value={discountAmount || ""}
-                onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
-              <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount in ACE Books.</p>
-            </div>
-          </div>
-          {previewDueDate(paymentTerms) && (
-            <div className="text-xs text-muted-foreground">Due date: <span className="font-medium text-foreground">{previewDueDate(paymentTerms)}</span></div>
-          )}
-        </div>
-
         <div className="space-y-2">
           <div className="hidden grid-cols-12 gap-2 px-1 text-xs font-semibold text-muted-foreground sm:grid">
             <span className="col-span-5">Product</span>
@@ -595,12 +539,13 @@ function StepInvoice({
                   autocomplete exists in this wizard (unlike CustomerWorkspace's
                   "Make New Request", which autofills batch_number/expiry_date
                   from the inventory search). */}
+              <div className="grid grid-cols-3 gap-2 pl-1 text-[11px] font-medium text-muted-foreground"><span>Batch number (on the pack)</span><span>Manufacture date</span><span>Expiry date</span></div>
               <div className="grid grid-cols-3 gap-2 pl-1">
-                <Input placeholder="Batch number" className="h-8 text-xs" value={item.batch_number ?? ""}
+                <Input placeholder="blank = from Maintain" className="h-8 text-xs" value={item.batch_number ?? ""}
                   onChange={(e) => updateItem(i, "batch_number", e.target.value)} />
-                <Input type="month" className="h-8 text-xs" value={item.manufacture_date ?? ""}
+                <Input type="date" aria-label="Manufacture date" className="h-8 text-xs" value={(item.manufacture_date ?? "").length === 7 ? `${item.manufacture_date}-01` : item.manufacture_date ?? ""}
                   onChange={(e) => updateItem(i, "manufacture_date", e.target.value)} />
-                <Input type="date" className="h-8 text-xs" value={item.expiry_date ?? ""}
+                <Input type="date" aria-label="Expiry date" className="h-8 text-xs" value={item.expiry_date ?? ""}
                   onChange={(e) => updateItem(i, "expiry_date", e.target.value)} />
               </div>
             </div>
@@ -609,6 +554,74 @@ function StepInvoice({
             <Plus className="h-3.5 w-3.5" /> Add Line Item
           </Button>
         </div>
+
+        {/* item first, then what is added to or taken off it (client, 26 Oct) */}
+        <div className="space-y-2 rounded-lg border p-3">
+          <div className="text-xs font-semibold text-muted-foreground">DELIVERY CHARGE & DISCOUNT</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Delivery charge (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={deliveryCharge || ""}
+                onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Discount allowed (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={discountAmount || ""}
+                onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount in ACE Books.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Invoice Details — Bill To/Ship To, PO, Payment Terms, Shipping
+            Method. Matches the real Placeware paper invoice's fields; none
+            of this was captured anywhere in this app before. */}
+        <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
+          <div className="text-xs font-semibold text-muted-foreground">INVOICE DETAILS</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Bill To</label>
+              <Textarea rows={2} placeholder="Billing address" value={billingAddress}
+                onChange={(e) => setBillingAddress(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Ship To</label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
+                    checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
+                  Same as Bill To
+                </label>
+              </div>
+              <Textarea rows={2} placeholder="Shipping address" value={sameAsBilling ? billingAddress : shippingAddress}
+                disabled={sameAsBilling} onChange={(e) => setShippingAddress(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Customer PO</label>
+              <Input placeholder="Optional" value={customerPo} onChange={(e) => setCustomerPo(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Payment Terms</label>
+              <Select value={paymentTerms} onValueChange={setPaymentTerms}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_TERMS_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Ship via</label>
+              <ShipViaSelect value={shippingMethod} onChange={setShippingMethod} />
+            </div>
+          </div>
+          {previewDueDate(paymentTerms) && (
+            <div className="text-xs text-muted-foreground">Due date: <span className="font-medium text-foreground">{previewDueDate(paymentTerms)}</span></div>
+          )}
+        </div>
+
 
         {(deliveryCharge > 0 || discount > 0) && (
           <div className="space-y-0.5 border-t pt-2 text-sm text-muted-foreground">
@@ -654,64 +667,24 @@ function StepInvoice({
 // Step 3: QC Check
 // ---------------------------------------------------------------------------
 
-function StepQC({ invoiceId, onSuccess }: { invoiceId: string; onSuccess: (passed: boolean) => void }) {
-  const { toast } = useToast();
-  const [inspectorName, setInspectorName] = useState("");
-  const [batchNumbers,  setBatchNumbers]  = useState("");
-  const [notes,         setNotes]         = useState("");
-
-  const submitQc = useMutation({
-    mutationFn: (pass: boolean) =>
-      api.frontdesk.submitQc(invoiceId, {
-        passed: pass,
-        inspector_name: inspectorName.trim(),
-        notes: notes.trim() || undefined,
-        batch_numbers: batchNumbers.trim()
-          ? batchNumbers.split(",").map((b) => b.trim()).filter(Boolean)
-          : undefined,
-      }),
-    onSuccess: (_: any, pass) => {
-      toast({ title: pass ? "QC Passed ✓" : "QC Failed", variant: pass ? "default" : "destructive" });
-      onSuccess(pass);
-    },
-    onError: (e: any) => {
-      toast({ title: "QC submission failed", description: e?.message, variant: "destructive" });
-    },
-  });
-
+function StepQC({ invoiceId, onNewWalkIn }: { invoiceId: string; onNewWalkIn: () => void }) {
+  // Whoever raised an invoice cannot QC it (frontdesk.py refuses it), and here that is always the person at the
+  // desk - so this step hands it over instead of offering Pass / Fail buttons that could only fail (28 Oct).
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2 text-base">
-          <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> QC Inspection</span>
-          <PrintFrontdeskInvoiceButton invoiceId={invoiceId} />
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> Sent for QC</span>
+          <span className="flex gap-2"><ModifyInvoiceButton invoiceId={invoiceId} /><PrintFrontdeskInvoiceButton invoiceId={invoiceId} /></span>
         </CardTitle>
-        <CardDescription>Quality assurance check before finance approval.</CardDescription>
+        <CardDescription>A QC colleague checks it next, then Finance approves it.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Inspector Name *</label>
-          <Input placeholder="QA Officer name" value={inspectorName} onChange={(e) => setInspectorName(e.target.value)} />
+      <CardContent className="space-y-3 text-sm">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+          You raised this invoice, so a QC colleague checks it - it is in their Quality Control queue and they have been notified.
+          The stock is held for this customer meanwhile. Follow it in Today's Queue; you can still Modify or Print it above until Finance approves it.
         </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Batch Numbers <span className="text-muted-foreground text-xs">(comma-separated)</span></label>
-          <Input placeholder="BN2024-001, BN2024-002" value={batchNumbers} onChange={(e) => setBatchNumbers(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium">QC Notes</label>
-          <Textarea placeholder="Inspection findings…" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="resize-none" />
-        </div>
-        <div className="flex gap-3 pt-2">
-          <Button variant="destructive" className="flex-1 gap-2" disabled={!inspectorName.trim() || submitQc.isPending}
-            onClick={() => submitQc.mutate(false)}>
-            {submitQc.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Fail QC
-          </Button>
-          <Button className="flex-1 gap-2 bg-green-600 hover:bg-green-700" disabled={!inspectorName.trim() || submitQc.isPending}
-            onClick={() => submitQc.mutate(true)}>
-            {submitQc.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Pass QC
-          </Button>
-        </div>
+        <Button variant="outline" className="w-full" onClick={onNewWalkIn}>Next customer: start a new walk-in</Button>
       </CardContent>
     </Card>
   );
@@ -723,14 +696,12 @@ function StepQC({ invoiceId, onSuccess }: { invoiceId: string; onSuccess: (passe
 
 function StepFinance({ invoiceId, onSuccess }: { invoiceId: string; onSuccess: (approved: boolean) => void }) {
   const { toast } = useToast();
-  const [approverName, setApproverName] = useState("");
   const [reason, setReason] = useState("");
 
   const approve = useMutation({
     mutationFn: (approved: boolean) =>
       api.frontdesk.financeApproval(invoiceId, {
         approved,
-        approver_name: approverName.trim(),
         reason: reason.trim() || undefined,
       }),
     onSuccess: (_: any, approved) => {
@@ -747,25 +718,22 @@ function StepFinance({ invoiceId, onSuccess }: { invoiceId: string; onSuccess: (
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2 text-base">
           <span className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> Finance Approval</span>
-          <PrintFrontdeskInvoiceButton invoiceId={invoiceId} />
+          <span className="flex gap-2"><ModifyInvoiceButton invoiceId={invoiceId} /><PrintFrontdeskInvoiceButton invoiceId={invoiceId} /></span>
         </CardTitle>
         <CardDescription>Final finance review and approval.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Finance Officer Name *</label>
-          <Input placeholder="Name and title" value={approverName} onChange={(e) => setApproverName(e.target.value)} />
-        </div>
+        <p className="text-xs text-muted-foreground">Signed with your login - your name prints on the invoice.</p>
         <div className="space-y-1">
           <label className="text-sm font-medium">Reason / Notes <span className="text-muted-foreground text-xs">(optional)</span></label>
           <Textarea placeholder="Approval notes or rejection reason…" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="resize-none" />
         </div>
         <div className="flex gap-3 pt-2">
           <Button variant="outline" className="flex-1 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            disabled={!approverName.trim() || approve.isPending} onClick={() => approve.mutate(false)}>
+            disabled={approve.isPending} onClick={() => approve.mutate(false)}>
             {approve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Reject
           </Button>
-          <Button className="flex-1 bg-green-600 hover:bg-green-700" disabled={!approverName.trim() || approve.isPending}
+          <Button className="flex-1 bg-green-600 hover:bg-green-700" disabled={approve.isPending}
             onClick={() => approve.mutate(true)}>
             {approve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
             Approve
@@ -912,7 +880,7 @@ function NewWalkInTab() {
           />
         )}
         {step === 2 && invoiceId && (
-          <StepQC invoiceId={invoiceId} onSuccess={(passed) => { if (passed) setStep(3); }} />
+          <StepQC invoiceId={invoiceId} onNewWalkIn={reset} />
         )}
         {step === 3 && invoiceId && (
           <StepFinance invoiceId={invoiceId} onSuccess={(approved) => { if (approved) setStep(4); }} />
@@ -963,15 +931,20 @@ function QueueTab() {
   });
 
   const report = data as any;
-  const walkIns: WalkIn[] = report?.walk_ins ?? [];
+  // voided visits leave the queue (they stay in All invoices as "Voided")
+  const [showVoided, setShowVoided] = useState(false);
+  const [openInv, setOpenInv] = useState<string | null>(null);
+  const allWalkIns: WalkIn[] = report?.walk_ins ?? [];
+  const voidedCount = allWalkIns.filter((w) => w.status === "cancelled").length;
+  const walkIns: WalkIn[] = showVoided ? allWalkIns : allWalkIns.filter((w) => w.status !== "cancelled");
 
   const stats = [
-    { label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
-    { label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
-    { label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
-    { label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600 dark:text-yellow-300" },
-    { label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600 dark:text-orange-300" },
-    { label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600 dark:text-green-300"  },
+    { tourId: "frontdesk-walkins-today", label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
+    { tourId: "frontdesk-invoices-raised", label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
+    { tourId: "frontdesk-revenue-today", label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
+    { tourId: "frontdesk-pending-qc", label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600 dark:text-yellow-300" },
+    { tourId: "frontdesk-pending-finance", label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600 dark:text-orange-300" },
+    { tourId: "frontdesk-completed", label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600 dark:text-green-300"  },
   ];
 
   return (
@@ -1055,7 +1028,7 @@ function QueueTab() {
         {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <Card key={s.label} className="p-3 text-center">
+            <Card key={s.label} data-tour-id={s.tourId} className="p-3 text-center">
               <Icon className={`h-5 w-5 mx-auto mb-1 ${s.color}`} />
               <div className="text-lg font-bold">{isLoading ? "—" : s.value}</div>
               <div className="text-xs text-muted-foreground leading-tight">{s.label}</div>
@@ -1067,6 +1040,10 @@ function QueueTab() {
       <div>
         <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
           <Users className="h-4 w-4" /> Today's Walk-ins
+          {voidedCount > 0 && (
+            <button type="button" className="ml-auto text-xs font-normal text-muted-foreground underline" onClick={() => setShowVoided((v) => !v)}>
+              {showVoided ? "Hide voided" : `Show voided (${voidedCount})`}
+            </button>)}
         </h3>
         {isLoading ? (
           <div className="flex items-center justify-center py-10 text-muted-foreground gap-2">
@@ -1080,7 +1057,11 @@ function QueueTab() {
           <div className="space-y-2">
             {walkIns.map((wi) => (
               <motion.div key={wi.id} {...motionVariants.cardEnter}>
-                <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 hover:bg-muted/40 transition-colors">
+                <div role={(wi as any).invoice_id ? "button" : undefined} tabIndex={(wi as any).invoice_id ? 0 : undefined}
+                     data-tour-row={(wi as any).invoice_id ? "" : undefined}
+                     onClick={() => (wi as any).invoice_id && setOpenInv((wi as any).invoice_id)}
+                     onKeyDown={(e) => e.key === "Enter" && (wi as any).invoice_id && setOpenInv((wi as any).invoice_id)}
+                     className={`flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors ${(wi as any).invoice_id ? "cursor-pointer hover:bg-muted/40 hover:border-primary/40" : ""}`}>
                   <div className="flex items-center gap-3">
                     <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold">
                       {wi.customer_name[0].toUpperCase()}
@@ -1091,7 +1072,9 @@ function QueueTab() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 text-right">
-                    <div className="text-xs text-muted-foreground hidden sm:block">{fmtDate(wi.created_at)}</div>
+                    <div className="text-xs text-muted-foreground hidden sm:block">
+                      {(wi as any).invoice_number ? <span className="font-mono font-medium text-foreground">{(wi as any).invoice_number}</span> : "No invoice yet"}
+                      {(wi as any).invoice_total != null && <> · {fmt((wi as any).invoice_total)}</>}<div>{fmtDate(wi.created_at)}</div></div>
                     <StatusPill status={wi.status} />
                     {!["completed", "cancelled"].includes(wi.status) && (
                       <Button
@@ -1099,7 +1082,8 @@ function QueueTab() {
                         variant="ghost"
                         className="h-6 px-2 text-xs text-destructive hover:bg-destructive/10"
                         disabled={cancelMut.isPending}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (confirm(`Cancel walk-in for ${wi.customer_name}?`))
                             cancelMut.mutate(wi.id);
                         }}
@@ -1114,6 +1098,11 @@ function QueueTab() {
           </div>
         )}
       </div>
+
+      {/* a visit in the queue opens its invoice: items, stage, Modify / Void / Print, QC and Finance actions */}
+      <DetailSheet open={!!openInv} onOpenChange={(o) => !o && setOpenInv(null)} title="Invoice" description="The visit's invoice - act on it here.">
+        {openInv && <FrontdeskInvoiceBody id={openInv} />}
+      </DetailSheet>
 
       {(report?.top_products?.length ?? 0) > 0 && (
         <div>
@@ -1286,9 +1275,9 @@ export default function Frontdesk() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full sm:grid sm:grid-cols-4">
-          <TabsTrigger value="queue"    className="gap-1.5"><Clock     className="h-3.5 w-3.5" /> Today's Queue</TabsTrigger>
-          <TabsTrigger value="new"      className="gap-1.5"><UserPlus  className="h-3.5 w-3.5" /> New Walk-in</TabsTrigger>
-          <TabsTrigger value="invoices" className="gap-1.5"><FileText  className="h-3.5 w-3.5" /> All Invoices</TabsTrigger>
+          <TabsTrigger value="queue"    data-tour-id="frontdesk-queue-tab" className="gap-1.5"><Clock     className="h-3.5 w-3.5" /> Today's Queue</TabsTrigger>
+          <TabsTrigger value="new"      data-tour-id="frontdesk-new-walkin-tab" className="gap-1.5"><UserPlus  className="h-3.5 w-3.5" /> New Walk-in</TabsTrigger>
+          <TabsTrigger value="invoices" data-tour-id="frontdesk-invoices-tab" className="gap-1.5"><FileText  className="h-3.5 w-3.5" /> All Invoices</TabsTrigger>
           <TabsTrigger value="reports"  className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Reports</TabsTrigger>
         </TabsList>
 

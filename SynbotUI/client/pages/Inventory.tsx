@@ -17,6 +17,7 @@ import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { InventoryAnalytics } from "@/components/workspace/InventoryAnalytics";
 import { StockReports } from "@/components/books/inventory-reports";
+import { IncomingBatchSheet } from "@/components/quality/actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,23 @@ const STATUS_ORDER = ["critical", "warning", "adequate", "out_of_stock"];
 type InventorySearchResult = { sku?: string; name: string };
 
 // The lineage sheet: a product opens with who bought it, every invoice line, purchases and batches.
+/** The stock reports fold away (they were stacked in the middle of the page) and open on their own page. */
+function StockReportsPanel() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 py-3">
+        <button className="text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          <CardTitle className="text-base" data-tour-label="Stock reports">{open ? "▾" : "▸"} Stock reports - unit activity & item costing</CardTitle>
+          <p className="text-xs text-muted-foreground">What came in, went out and is left for any period - and who bought each lot.</p>
+        </button>
+        <Button asChild size="sm" variant="outline"><Link to="/stock-reports">Open on its own page</Link></Button>
+      </CardHeader>
+      {open && <CardContent><StockReports /></CardContent>}
+    </Card>
+  );
+}
+
 const Inventory = () => (
   <DrillProvider>
     <InventoryPage />
@@ -80,6 +98,7 @@ const Inventory = () => (
 );
 
 const InventoryPage = () => {
+  const [reorderFor, setReorderFor] = useState<Record<string, any> | null>(null);
   const drill = useDrill();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -520,12 +539,9 @@ const InventoryPage = () => {
           setShowDormantBatches(false);
         }}
         onReorder={(row) =>
-          reorderMutation.mutate({
-            sku: row.sku,
-            // Prefer the demand-derived quantity; fall back to the canonical
-            // top-up heuristic when there's no rate to project from.
-            qty: Math.max(1, Math.round(Number(row.recommended_reorder_qty ?? 0) || 20)),
-          })
+          // Reorder opens the incoming-batch panel (supplier, their invoice, quantity) - linked to ACE Books
+          setReorderFor({ product: { sku: row.sku, name: row.name ?? row.sku },
+                          quantity: Math.max(1, Math.round(Number(row.recommended_reorder_qty ?? 0) || 20)) })
         }
         onWriteOff={(row) => writeOffMutation.mutate(row)}
         requests={Array.isArray(reorderRequests) ? reorderRequests : []}
@@ -535,10 +551,8 @@ const InventoryPage = () => {
       />
 
       {/* The Sage stock reports (finance meeting 4): unit activity and item costing, each sale opening its invoice. */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Stock reports - unit activity & item costing</CardTitle></CardHeader>
-        <CardContent><StockReports /></CardContent>
-      </Card>
+      <StockReportsPanel />
+      <IncomingBatchSheet open={!!reorderFor} defaults={reorderFor ?? {}} onClose={() => setReorderFor(null)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* List Panel: card grid */}

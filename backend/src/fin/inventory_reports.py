@@ -75,8 +75,32 @@ def _item_filter(search: Optional[str], sku: Optional[str], sku_from: Optional[s
     return (" AND " + " AND ".join(w)) if w else "", p
 
 
+def _lot_code(v: Optional[str]) -> Optional[tuple]:
+    """A short lot code typed in the range ("A", "g", "Z ii", "(H)") -> its order key; None for a full item ID."""
+    import re
+    m = re.match(r"^\(?\s*([A-Za-z])\s*\)?\s*([ivxlcIVXLC]*)\s*$", (v or "").strip())
+    if not m:
+        return None
+    from src.fin.maintain import _roman
+    return (ord(m.group(1).upper()) - 64, _roman(m.group(2)))
+
+
 def _items(conn, e: str, search=None, sku=None, sku_from=None, sku_to=None) -> List[Dict[str, Any]]:
-    """Every item ID known to either system (ACE products and Sage's item costing), A-Z."""
+    """Every item ID known to either system (ACE products and Sage's item costing), A-Z. The range may be
+    full item IDs, or - with a product name - lot codes: "CERVARIX", A to G."""
+    lo, hi = _lot_code(sku_from), _lot_code(sku_to)
+    if lo or hi:
+        rows = _items(conn, e, search, sku, None if lo else sku_from, None if hi else sku_to)
+        from src.fin.maintain import lot_key
+        out = []
+        for r in rows:
+            k = lot_key(r["sku"])
+            if k[0] == 0:
+                continue
+            if (lo and (k[0], k[1]) < lo) or (hi and (k[0], k[1]) > hi):
+                continue
+            out.append(r)
+        return out
     f, p = _item_filter(search, sku, sku_from, sku_to)
     return q(conn, f"""
         SELECT x.sku, MAX(x.name) AS name, BOOL_OR(x.ace) AS in_ace FROM (

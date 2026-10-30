@@ -1,0 +1,7 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Let's link the incoming batch to the supplier's name for the input. Yeah, it should be automated. Alright, I'm going to move supplier to the top of, before the product, when you are registering an incoming batch.
+
+So you can add the batch inbound.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

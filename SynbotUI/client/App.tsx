@@ -33,6 +33,9 @@ import AgentDetail from "./pages/AgentDetail";
 import Workflow from "./pages/Workflow";
 import Settings from "./pages/Settings";
 import AdminUsers from "./pages/AdminUsers";
+import Maintain from "./pages/Maintain";
+import { LiveUpdates } from "./components/LiveUpdates";
+import StockReportsPage from "./pages/StockReportsPage";
 import DataIntelligence from "./pages/DataIntelligence";
 import CustomerWorkspace from "./pages/CustomerWorkspace";
 import Leads from "./pages/Leads";
@@ -95,6 +98,7 @@ const App = () => (
         <AskHost />
         <AuthProvider>
           <SessionPrewarm />
+          <LiveUpdates />
           <PresenceHeartbeat />
           <LicenseGate>
           <HashRouter>
@@ -136,6 +140,8 @@ const App = () => (
                 <Route path="/finance/books/reports" element={books(<BooksReports />)} />
                 <Route path="/hr" element={<HR />} />
                 <Route path="/inventory" element={<Inventory />} />
+                <Route path="/maintain" element={<Maintain />} />
+                <Route path="/stock-reports" element={<StockReportsPage />} />
                 <Route path="/operations" element={<Operations />} />
                 <Route path="/operations/project-controls" element={<ProjectControls />} />
                 <Route path="/operations/suppliers" element={<Suppliers />} />

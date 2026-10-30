@@ -14,7 +14,8 @@ function extractQuotedValues(source: string, pattern: RegExp): string[] {
 describe("navigation guardrail", () => {
   it("detects orphan app routes and missing sidebar route references", () => {
     const appPath = path.resolve(__dirname, "../App.tsx");
-    const sidebarPath = path.resolve(__dirname, "../components/Sidebar.tsx");
+    // the menu lives in lib/nav-items.ts (moved out of Sidebar.tsx, 28 Oct)
+    const sidebarPath = path.resolve(__dirname, "./nav-items.ts");
 
     const appSource = fs.readFileSync(appPath, "utf8");
     const sidebarSource = fs.readFileSync(sidebarPath, "utf8");
@@ -22,12 +23,20 @@ describe("navigation guardrail", () => {
     const appRoutes = new Set(
       extractQuotedValues(appSource, /<Route\s+path="([^"]+)"/g).filter((route) => route && route !== "*")
     );
-    const sidebarRoutes = new Set(extractQuotedValues(sidebarSource, /href:\s*"([^"]+)"/g));
+    // a menu link may open a tab (/maintain?tab=items): the route is the path without the query
+    const sidebarRoutes = new Set(extractQuotedValues(sidebarSource, /href:\s*"([^"]+)"/g).map((h) => h.split("?")[0]));
 
+    // old URLs kept as redirects to their new home (<Route ... element={<Navigate ...)
+    const redirects = extractQuotedValues(appSource, /<Route\s+path="([^"]+)"\s+element=\{<Navigate/g);
     const excludedFromSidebar = new Set([
       "/login",
       "/executive/summary",       // drilldown from Executive page, not a direct nav item
       "/finance/reports/ar/:bucket", // parameterised detail route
+      "/frontdesk/invoices",      // All Invoices: opened from the Frontdesk and the Dashboard
+      "/calendar/tasks",          // opened from the Logistics Calendar
+      "/reports/classic",         // Classic report builder: opened from Generate Report
+      "/rider",                   // the riders' own sign-in (rider app), not part of the staff menu
+      ...redirects,
     ]);
 
     const appRoutesForSidebar = [...appRoutes].filter(

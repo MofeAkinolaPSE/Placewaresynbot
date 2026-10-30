@@ -212,6 +212,40 @@ def _rank_for_sale(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                                        [-ord(ch) for ch in str(r.get("sku") or "")]))
 
 
+def _with_batch_details(rows: list) -> list:
+    """The batch an invoice line will ship, as entered in Maintain (number on the pack, manufacture and
+    expiry dates) - never the Sage lot letter (P, Q, E...), which is how Sage tells lots apart, not a
+    batch number. Also the stock held for Frontdesk invoices awaiting QC / Finance."""
+    skus = [r["sku"] for r in rows if r.get("sku")]
+    if not skus:
+        return rows
+    try:
+        from src.fin.db import q as fq, tx
+        from src.fin.maintain import held_by_requests
+        with tx() as conn:
+            nxt = {b["sku"]: b for b in fq(conn, """SELECT DISTINCT ON (b.sku) b.sku, b.pack_batch_number, b.manufacture_date, b.expiry_date
+                                                    FROM fin_batches b JOIN fin_cost_layers l ON l.batch_id=b.id AND l.qty_remaining > 0
+                                                    WHERE b.sku = ANY(%s) AND b.status='AVAILABLE'
+                                                      AND (b.expiry_date IS NULL OR b.expiry_date >= current_date)
+                                                    ORDER BY b.sku, b.expiry_date NULLS LAST""", (skus,))}
+            held = held_by_requests(conn, skus)
+    except Exception as exc:
+        logging.warning(f"batch details for search failed: {exc}")
+        return rows
+    for r in rows:
+        b = nxt.get(r.get("sku"))
+        r["batch_number"] = (b or {}).get("pack_batch_number") or None
+        r["manufacture_date"] = str(b["manufacture_date"]) if b and b.get("manufacture_date") else None
+        if b and b.get("expiry_date"):
+            r["expiry_date"] = str(b["expiry_date"])
+        h = held.get(r.get("sku"))
+        if h:
+            r["held_for_invoices"] = float(h)
+            if r.get("current_stock") is not None:
+                r["current_stock"] = max(0.0, float(r["current_stock"]) - float(h))
+    return rows
+
+
 @router.get("/search")
 def search_items(
     q: str = Query(..., min_length=1),
@@ -249,7 +283,7 @@ def search_items(
             seen = {r["sku"] for r in rows}
             rows.extend(r for r in sku_rows if r["sku"] not in seen)
         rows.extend(_books_only_items(q, {r["sku"] for r in rows}))
-        return {"data": _rank_for_sale(rows)[:limit]}
+        return {"data": _with_batch_details(_rank_for_sale(rows)[:limit])}
     except Exception as e:
         logging.error(f"Inventory search error: {e}")
         raise HTTPException(500, detail="Failed to search inventory")

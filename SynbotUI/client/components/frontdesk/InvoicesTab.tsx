@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
+import { ClearVoidedButton } from "@/components/books/kit";
+import { useClearVoided } from "@/lib/voided";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Eye, Download, RefreshCw,
@@ -95,7 +97,7 @@ export const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   finance_approved:  { label: "Finance Approved",  color: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" },
   finance_rejected:  { label: "Finance Rejected",  color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
   completed:         { label: "Completed",         color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
-  cancelled:         { label: "Cancelled",         color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  cancelled:         { label: "Voided",            color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
   draft:             { label: "Draft",             color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
 
@@ -155,20 +157,36 @@ function fmtMonthYear(ym?: string | null): string {
 const esc = (v: unknown): string =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 
+/** The batch number printed on an invoice line: the number on the pack. Sage's lot letters (E, P, Z ii)
+ *  only tell lots apart and are never a batch number, so they print as blank. */
+export function printableBatch(it: { pack_batch_number?: string | null; batch_number?: string | null }): string {
+  if (it.pack_batch_number) return it.pack_batch_number;
+  const b = (it.batch_number ?? "").trim();
+  return !b || b.toUpperCase() === "SAGE" || /^[A-Z]{1,3}( ?[ivxlc]+)?$/i.test(b) ? "" : b;
+}
+
 export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: Window | null) {
-  // `target`: a window opened at the click (before an await), so pop-up blockers allow it
+  // Every invoice prints from the one ACE Books invoice layout (client, 28 Oct) - Frontdesk invoices included.
+  const url = `${window.location.origin}${window.location.pathname}#/finance/books/invoice-print/frontdesk/${encodeURIComponent(invoice.id)}?print=1`;
+  if (target) { target.location.href = url; return; }
+  window.open(url, "_blank");
+  return;
+}
+
+/** The previous Frontdesk paper layout (kept for reference; not used). */
+export function printInvoiceLegacy(invoice: Invoice, walkIn?: WalkIn | null, target?: Window | null) {
   const win = target ?? window.open("", "_blank", "width=1000,height=800");
   if (!win) return;
 
   const itemRows = invoice.items.map((it) => `
     <tr>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${esc(it.quantity)}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee">${esc(it.product)}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${(it.pack_batch_number || it.batch_number) ? esc(it.pack_batch_number || it.batch_number) : '<span class="muted">—</span>'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.manufacture_date ? esc(fmtMonthYear(it.manufacture_date)) : '<span class="muted">—</span>'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;font-size:11px">${it.expiry_date ? esc(fmtDateOnly(it.expiry_date)) : '<span class="muted">—</span>'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">₦${Number(it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:600">₦${Number(it.line_total ?? it.quantity * it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee;text-align:center">${esc(it.quantity)}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee">${esc(it.product)}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${printableBatch(it) ? esc(printableBatch(it)) : '<span class="muted">—</span>'}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee;font-size:11px">${it.manufacture_date ? esc(fmtMonthYear(it.manufacture_date)) : '<span class="muted">—</span>'}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee;font-size:11px">${it.expiry_date ? esc(fmtDateOnly(it.expiry_date)) : '<span class="muted">—</span>'}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee;text-align:right">₦${Number(it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td style="padding:5px 7px;border-bottom:1px solid #eee;text-align:right;font-weight:600">₦${Number(it.line_total ?? it.quantity * it.unit_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
     </tr>`
   ).join("");
 
@@ -177,7 +195,8 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: 
   const discountAmount = Number(invoice.discount_amount ?? 0);
   const grandTotal = Number(invoice.total_amount) - discountAmount + taxAmount + deliveryCharge;
   const customerId = walkIn?.customer_code || "WALK-IN";
-  const salesRep = invoice.created_by_email ? invoice.created_by_email.split("@")[0] : "—";
+  // the person who raised (prepared) the invoice: their HR name, else their login
+  const salesRep = (invoice as any).created_by_name || (invoice.created_by_email ? invoice.created_by_email.split("@")[0] : "—");
   const authorisedBy = invoice.finance_approved ? (invoice.finance_approver || "—") : null;
   const deliveredBy = invoice.delivered_by || null;
   const shipDate = invoice.dispatched_at ? fmtDateOnly(invoice.dispatched_at) : "Pending dispatch";
@@ -191,36 +210,47 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: 
 <title>Invoice ${esc(invoice.invoice_number)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',Arial,sans-serif;padding:40px;color:#12203A;background:#fff;font-size:13px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:24px}
+  body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#12203A;background:#fff;font-size:12px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:24px}
   .company-block img{height:44px;display:block;margin-bottom:8px}
   .company-block .name{font-size:16px;font-weight:800;color:#003A91}
   .company-block .line{font-size:11px;color:#666;line-height:1.5}
   .inv-title{font-size:28px;font-weight:800;text-align:right;background:linear-gradient(90deg,#003A91,#62C76A);-webkit-background-clip:text;background-clip:text;color:transparent}
   .inv-meta{text-align:right;font-size:12px;color:#555;margin-top:4px}
   .inv-meta strong{color:#12203A}
-  .divider{height:2px;background:linear-gradient(90deg,#003A91,#62C76A);margin:16px 0;border-radius:2px}
+  .divider{height:2px;background:linear-gradient(90deg,#003A91,#62C76A);margin:8px 0;border-radius:2px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:16px 0}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin:16px 0}
   .section-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px}
   .field{font-size:13px;color:#12203A;margin-bottom:2px;line-height:1.5}
   .muted{color:#aaa}
-  table{width:100%;border-collapse:collapse;margin:20px 0}
-  th{background:#003A91;color:#fff;padding:8px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase}
+  .boxes{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:10px 0}
+  .box{border:1px solid #8A96A8;min-height:92px}
+  .box-h{background:#E3E8F0;border-bottom:1px solid #8A96A8;padding:4px 8px;font-weight:700;font-size:12px}
+  .box-b{padding:6px 8px;line-height:1.5;font-size:12.5px}
+  table.meta{width:100%;border-collapse:collapse;margin:10px 0 18px;text-align:center}
+  table.meta td{border:1px solid #8A96A8!important;padding:5px 8px;font-size:12px}
+  table.meta tr.mh td{background:#E3E8F0;font-weight:700;color:#12203A}
+  table{width:100%;border-collapse:collapse;margin:0 0 12px;border:1px solid #8A96A8}
+  th{background:#003A91;color:#fff;padding:8px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;border:1px solid #8A96A8}
+  td{border:1px solid #8A96A8!important}
+  .totals{border:1px solid #8A96A8}
+  .totals-row{border-bottom:1px solid #D5DBE5}
   th:nth-child(1){text-align:center}
   th:nth-child(6),th:nth-child(7){text-align:right}
   tbody tr:nth-child(even){background:#F2F6FC}
   .totals{margin-left:auto;width:280px;margin-top:8px}
   .totals-row{display:flex;justify-content:space-between;padding:5px 8px;font-size:13px}
   .totals-row.grand{background:#62C76A;color:#fff;font-weight:700;font-size:15px;border-radius:6px;margin-top:4px;padding:10px 8px}
-  .compliance-note{margin:20px 0;padding:12px 16px;background:#F2F6FC;border-radius:8px;border-left:4px solid #62C76A;font-size:12px;font-weight:600;color:#12203A}
-  .sig-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:24px 0 16px}
+  .compliance-note{margin:12px 0;padding:8px 14px;background:#F2F6FC;border-radius:8px;border-left:4px solid #62C76A;font-size:12px;font-weight:600;color:#12203A}
+  .sig-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:14px 0 10px}
   .sig-cell{font-size:11px}
   .sig-name{font-weight:600;color:#12203A;margin-bottom:22px;min-height:14px}
   .sig-line{border-top:1px solid #999;padding-top:4px;color:#888}
-  .footer{margin-top:20px;padding-top:14px;border-top:1px solid #eee;font-size:10.5px;color:#999;display:flex;justify-content:space-between;gap:24px}
+  .footer{margin-top:10px;padding-top:8px;border-top:1px solid #eee;font-size:10.5px;color:#999;display:flex;justify-content:space-between;gap:24px}
   .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#d1fae5;color:#065f46}
-  @media print{body{padding:20px}button{display:none!important}.no-print{display:none!important}}
+  @page{size:A4;margin:10mm}
+  @media print{body{padding:0;font-size:11px}button{display:none!important}.no-print{display:none!important}.totals,.sig-grid,.footer{break-inside:avoid}}
 </style>
 </head><body>
 <div class="header">
@@ -240,49 +270,25 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: 
 </div>
 <div class="divider"></div>
 
-<div class="grid2">
-  <div>
-    <div class="section-label">Bill To</div>
-    <div class="field" style="font-weight:700;font-size:15px">${esc(invoice.customer_name)}</div>
-    ${invoice.company_name ? `<div class="field">${esc(invoice.company_name)}</div>` : ""}
-    <div class="field">${billingAddress || '<span class="muted">—</span>'}</div>
-    ${walkIn?.contact_phone ? `<div class="field">📞 ${esc(walkIn.contact_phone)}</div>` : ""}
-    ${walkIn?.email ? `<div class="field">✉ ${esc(walkIn.email)}</div>` : ""}
-  </div>
-  <div>
-    <div class="section-label">Ship To</div>
-    <div class="field">${shippingAddress ? shippingAddress : "Same as Bill To"}</div>
-  </div>
+<div class="boxes">
+  <div class="box"><div class="box-h">Bill To:</div><div class="box-b">
+    <div style="font-weight:700">${esc(invoice.company_name || invoice.customer_name)}</div>
+    <div>${billingAddress || ""}</div>
+    ${walkIn?.contact_phone ? `<div>${esc(walkIn.contact_phone)}</div>` : ""}
+    ${walkIn?.email ? `<div>${esc(walkIn.email)}</div>` : ""}
+  </div></div>
+  <div class="box"><div class="box-h">Ship to:</div><div class="box-b">
+    <div style="font-weight:700">${esc(invoice.company_name || invoice.customer_name)}</div>
+    <div>${shippingAddress || billingAddress || ""}</div>
+  </div></div>
 </div>
 
-<div class="grid3">
-  <div>
-    <div class="section-label">Customer ID</div>
-    <div class="field">${esc(customerId)}</div>
-  </div>
-  <div>
-    <div class="section-label">Customer PO</div>
-    <div class="field">${invoice.customer_po ? esc(invoice.customer_po) : '<span class="muted">—</span>'}</div>
-  </div>
-  <div>
-    <div class="section-label">Payment Terms</div>
-    <div class="field">${esc(invoice.payment_terms || "Due on Receipt")}</div>
-  </div>
-</div>
-<div class="grid3">
-  <div>
-    <div class="section-label">Sales Rep</div>
-    <div class="field">${esc(salesRep)}</div>
-  </div>
-  <div>
-    <div class="section-label">Shipping Method</div>
-    <div class="field">${invoice.shipping_method ? esc(invoice.shipping_method) : '<span class="muted">—</span>'}</div>
-  </div>
-  <div>
-    <div class="section-label">Ship Date / Due Date</div>
-    <div class="field">${shipDate} / ${dueDate}</div>
-  </div>
-</div>
+<table class="meta">
+  <tr class="mh"><td>Customer ID</td><td>Customer PO</td><td colspan="2">Payment Terms</td></tr>
+  <tr><td>${esc(customerId)}</td><td>${invoice.customer_po ? esc(invoice.customer_po) : ""}</td><td colspan="2">${esc(invoice.payment_terms || "Due on Receipt")}</td></tr>
+  <tr class="mh"><td>Prepared by</td><td>Shipping Method</td><td>Ship Date</td><td>Due Date</td></tr>
+  <tr><td>${esc(salesRep)}</td><td>${invoice.shipping_method ? esc(invoice.shipping_method) : ""}</td><td>${shipDate}</td><td>${dueDate}</td></tr>
+</table>
 
 <table>
   <thead>
@@ -291,7 +297,7 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: 
       <th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th>
     </tr>
   </thead>
-  <tbody>${itemRows}</tbody>
+  <tbody>${itemRows}${Array.from({ length: Math.max(0, 6 - invoice.items.length) }).map(() => `<tr>${'<td style="height:18px;padding:0"></td>'.repeat(7)}</tr>`).join("")}</tbody>
 </table>
 
 <div class="totals">
@@ -310,8 +316,8 @@ export function printInvoice(invoice: Invoice, walkIn?: WalkIn | null, target?: 
   <div class="sig-cell"><div class="sig-name">${salesRep !== "—" ? esc(salesRep) : ""}</div><div class="sig-line">Prepared by (Name/Sign)</div></div>
   <div class="sig-cell"><div class="sig-name">${esc(authorisedBy)}</div><div class="sig-line">Authorised by</div></div>
   <div class="sig-cell"><div class="sig-name">${esc(deliveredBy)}</div><div class="sig-line">Delivered</div></div>
-  <div class="sig-cell"><div class="sig-name">${esc(invoice.customer_name)}</div><div class="sig-line">Customer Name</div></div>
-  <div class="sig-cell"><div class="sig-name">&nbsp;</div><div class="sig-line">Customer Sign</div></div>
+  <div class="sig-cell"><div class="sig-name">&nbsp;</div><div class="sig-line">Received by (Name)</div></div>
+  <div class="sig-cell"><div class="sig-name">&nbsp;</div><div class="sig-line">Received by (Sign)</div></div>
 </div>
 
 <div class="footer">
@@ -358,13 +364,20 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
     staleTime: 15_000,
   });
 
-  const invoices: Invoice[] = (data as any)?.invoices ?? [];
+  const allInvoices: Invoice[] = (data as any)?.invoices ?? [];
+  // Clear voided hides voided invoices from the list (remembered on this computer); choosing the
+  // Cancelled status still shows them. Nothing is deleted.
+  const vd = useClearVoided("frontdesk.all-invoices", allInvoices as any[]);
+  const invoices: Invoice[] = statusFilter === "cancelled" ? allInvoices : (vd.rows as Invoice[]);
 
   const kpis = useMemo(() => ({
-    total: invoices.length,
-    totalValue: invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0),
-    pendingQc: invoices.filter((inv) => inv.status === "qc_pending").length,
-    pendingFinance: invoices.filter((inv) => inv.status === "finance_pending").length,
+    // voided invoices are not counted, whether or not the list shows them
+    total: invoices.filter((inv) => inv.status !== "cancelled").length,
+    // voided invoices are not worth anything; each invoice at its full value (goods - discount + delivery + tax)
+    totalValue: invoices.filter((inv) => inv.status !== "cancelled").reduce((sum, inv) => sum + Number(inv.total_amount || 0)
+      - Number(inv.discount_amount ?? 0) + Number(inv.delivery_charge ?? 0) + Number(inv.tax_amount ?? 0), 0),
+    pendingQc: invoices.filter((inv) => inv.status === "qc_pending" || inv.status === "draft").length,
+    pendingFinance: invoices.filter((inv) => inv.status === "finance_pending" || inv.status === "qc_passed").length,
   }), [invoices]);
 
   async function openDetail(inv: Invoice) {
@@ -438,8 +451,9 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">
         {/* List / Queue Panel */}
         <Card className="lg:max-h-[600px] flex flex-col">
-          <CardHeader className="pb-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm">Invoices</CardTitle>
+            <ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} />
           </CardHeader>
           <CardContent className="overflow-y-auto space-y-2 flex-1">
             {isLoading ? (
@@ -452,6 +466,7 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
               invoices.map((inv) => (
                 <button
                   key={inv.id}
+                  data-tour-row
                   onClick={() => openDetail(inv)}
                   className={`w-full text-left rounded-lg border bg-card px-4 py-3 hover:bg-muted/40 transition-colors space-y-1 ${
                     selected?.id === inv.id ? "border-primary bg-muted/40" : ""

@@ -9,12 +9,13 @@ no generic "post a journal line" or "edit a posted document" endpoint.
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional
 
 import psycopg2
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 
-from src.fin import inventory_reports
+from src.fin import deletion, inventory_reports, maintain, receiving
 from src.fin import (accounts, assets, audit, banking, books_ledger, closing, controls, dashboard, data_exceptions, integrations, inventory,
                      ledger, ledger_reports, migration, numbering, periods, posting, purchases, report_center, reports, rollover, rules,
                      sage_history, sage_ledger, sales, setup)
@@ -620,9 +621,14 @@ def customer_credit(customer_id: int, request: Request, amount: float = 0):
 
 @router.get("/suppliers")
 def find_suppliers(request: Request, search: str = "", limit: int = 20):
-    return _run(request, lambda c, x: q(c, """SELECT id, name, external_vendor_id AS supplier_code, payment_terms, address, phone, contact_email FROM suppliers
-                                               WHERE name ILIKE %s OR external_vendor_id ILIKE %s ORDER BY name LIMIT %s""",
-                                         (f"%{search}%", f"%{search}%", limit)), "payables.view")
+    """Vendor search (Vendor ID or name) - for finance, and for QC / operations registering an incoming batch."""
+    def fn(c, x):
+        if not (x.can("payables.view") or x.can("inventory.view")):
+            x.require("payables.view")
+        return q(c, """SELECT id, name, external_vendor_id AS supplier_code, payment_terms, address, phone, contact_email FROM suppliers
+                       WHERE COALESCE(status,'active') <> 'inactive' AND (name ILIKE %s OR external_vendor_id ILIKE %s) ORDER BY name LIMIT %s""",
+                 (f"%{search}%", f"%{search}%", limit))
+    return _run(request, fn)
 
 
 @router.get("/products")
@@ -688,6 +694,13 @@ def find_products(request: Request, search: str = "", limit: int = 30, customer_
             fam = fams.get(data_exceptions.family(r["sku"]), [])
             r["receipt_pending"] = next((x for x in fam if x["sku"] == r["sku"]), None)
             r["family_receipts_pending"] = fam
+        # stock already on Frontdesk invoices awaiting QC / Finance is held - not offered twice
+        held = maintain.held_by_requests(conn, [r["sku"] for r in rows]) if rows else {}
+        for r in rows:
+            h = held.get(r["sku"])
+            r["held_for_invoices"] = h or 0
+            if h:
+                r["sellable_qty"] = max(Decimal("0"), Decimal(str(r["sellable_qty"] or 0)) - h)
         return rows
     return _run(request, fn, "inventory.view")
 
@@ -1063,6 +1076,126 @@ def write_off_loan(loan_id: str, request: Request, payload: Dict[str, Any] = Bod
     return _run(request, lambda c, x: inventory.write_off_loan(c, x, loan_id, payload.get("reason", ""), _date(payload.get("on")) or _today()))
 
 
+# ---------------------------------------------------------------------------
+# Maintain (as Sage's Maintain menu): inventory items and vendors
+# ---------------------------------------------------------------------------
+
+@router.get("/maintain/accounts")
+def maintain_accounts(request: Request, account_type: Optional[str] = None):
+    """Accounts an item can post to (Maintain -> Inventory Items GL dropdowns): code and name, active only."""
+    def fn(conn, ctx):
+        return q(conn, """SELECT code, name, account_type FROM fin_accounts WHERE legal_entity_id=%s AND status='ACTIVE'
+                          AND (%s::text IS NULL OR account_type=%s) ORDER BY code""", (ctx.entity_id, account_type, account_type))
+    return _run(request, fn, "inventory.view", cache_ttl=60)
+
+
+@router.get("/maintain/items")
+def maintain_items(request: Request, search: Optional[str] = None, include_inactive: bool = False):
+    return _run(request, lambda c, x: maintain.list_items(c, x.entity_id, search or None, include_inactive), "inventory.view")
+
+
+@router.get("/maintain/items/{sku:path}")
+def maintain_item(sku: str, request: Request):
+    return _run(request, lambda c, x: maintain.get_item(c, x.entity_id, sku), "inventory.view")
+
+
+@router.put("/maintain/items/{sku:path}")
+def maintain_item_save(sku: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: maintain.update_item(c, x, sku, payload))
+
+
+@router.post("/maintain/items")
+def maintain_item_create(request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: maintain.create_item(c, x, payload))
+
+
+@router.get("/maintain/vendors")
+def maintain_vendors(request: Request, search: Optional[str] = None, include_inactive: bool = False):
+    return _run(request, lambda c, x: maintain.list_vendors(c, search or None, include_inactive), "payables.view")
+
+
+@router.get("/maintain/vendors/{vendor_id}")
+def maintain_vendor(vendor_id: str, request: Request):
+    return _run(request, lambda c, x: maintain.get_vendor(c, vendor_id), "payables.view")
+
+
+@router.put("/maintain/vendors/{vendor_id}")
+def maintain_vendor_save(vendor_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: maintain.save_vendor(c, x, vendor_id, payload))
+
+
+@router.post("/maintain/vendors")
+def maintain_vendor_create(request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: maintain.save_vendor(c, x, None, payload))
+
+
+@router.put("/maintain/ship-methods")
+def maintain_ship_methods(request: Request, payload: Dict[str, Any] = Body(...)):
+    """The "Ship via" list on every invoice form (Sage's: Airborne, Courier, Hand Delivery, Cust. Pickup, UPS Ground ...)."""
+    def fn(conn, ctx):
+        if not (ctx.can("finance.settings.edit") or ctx.can("sales.invoice.create")):
+            ctx.require("finance.settings.edit")
+        methods = [str(m).strip() for m in (payload.get("methods") or []) if str(m).strip()]
+        if not methods:
+            raise invalid("Keep at least one shipping method")
+        if len({m.lower() for m in methods}) != len(methods):
+            raise invalid("A shipping method is listed twice")
+        from psycopg2.extras import Json
+        before = q1(conn, "SELECT ship_methods FROM fin_settings WHERE legal_entity_id=%s", (ctx.entity_id,))
+        q1(conn, "UPDATE fin_settings SET ship_methods=%s WHERE legal_entity_id=%s RETURNING legal_entity_id", (Json(methods), ctx.entity_id))
+        audit.record(conn, ctx, "SHIP_METHODS_CHANGED", "settings", ctx.entity_id, before={"methods": (before or {}).get("ship_methods")},
+                     after={"methods": methods})
+        return {"methods": methods}
+    return _run(request, fn)
+
+
+# Deleting a record made by mistake (item, lot, batch, vendor, customer, GL account): only while nothing
+# has been recorded against it (src/fin/deletion.py). The key is a query parameter - item IDs carry
+# brackets, spaces and slashes.
+
+@router.get("/records/{kind}/can-delete")
+def record_can_delete(kind: str, request: Request, key: str = Query(...)):
+    return _run(request, lambda c, x: deletion.check(c, x, kind, key))
+
+
+@router.delete("/records/{kind}")
+def record_delete(kind: str, request: Request, key: str = Query(...), reason: Optional[str] = Query(None)):
+    return _run(request, lambda c, x: deletion.delete(c, x, kind, key, reason))
+
+
+@router.post("/inventory/incoming/{registry_id}/arrived")
+def incoming_arrived(registry_id: str, request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Confirm a registered incoming batch has arrived: stock received into its batch (held for QC), bill to come."""
+    return _run(request, lambda c, x: receiving.receive_arrival(c, x, registry_id, _dates(payload)))
+
+
+@router.get("/payables/goods-received")
+def goods_received(request: Request, supplier_id: Optional[str] = None):
+    """Deliveries received and waiting on the supplier's bill."""
+    def fn(conn, ctx):
+        if not (ctx.can("payables.view") or ctx.can("inventory.view")):
+            ctx.require("payables.view")
+        return receiving.awaiting_bill(conn, ctx.entity_id, supplier_id or None)
+    return _run(request, fn)
+
+
+@router.post("/payables/goods-received/{gr_id}/undo")
+def goods_received_undo(gr_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
+    return _run(request, lambda c, x: receiving.undo_arrival(c, x, gr_id, payload.get("reason") or ""))
+
+
+@router.get("/payables/incoming-batches")
+def incoming_batches(request: Request, supplier_id: str):
+    """Batches QC registered as coming from this supplier and not yet received on a bill - to fill the bill."""
+    def fn(conn, ctx):
+        return q(conn, """SELECT r.id::text AS id, r.sku, r.product_name, r.batch_number, r.quantity, r.unit_cost, r.expiry_date,
+                                 r.manufacture_date, r.supplier_invoice_number, r.expected_arrival_date, r.status
+                          FROM nafdac_batch_registry r
+                          WHERE r.supplier_id::text=%s AND r.fin_batch_id IS NULL AND r.status <> 'rejected'
+                          ORDER BY r.created_at""", (supplier_id,))
+    return _run(request, fn, "payables.view")
+
+
 @router.get("/inventory/unit-activity")
 def inventory_unit_activity(request: Request, date_from: Optional[str] = Query(None, alias="from"),
                             date_to: Optional[str] = Query(None, alias="to"), search: Optional[str] = None,
@@ -1106,6 +1239,12 @@ def batch_search(request: Request, search: str = ""):
 @router.post("/inventory/batches/{batch_id}/status")
 def batch_status(batch_id: str, request: Request, payload: Dict[str, Any] = Body(...)):
     return _run(request, lambda c, x: inventory.set_batch_status(c, x, batch_id, payload["status"], payload.get("reason", "")))
+
+
+@router.post("/inventory/batches/assign")
+def batch_assign(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Give stock held without a batch record its batch (number on the pack, manufacture and expiry dates)."""
+    return _run(request, lambda c, x: inventory.assign_batch(c, x, str(payload.get("sku") or ""), _dates(payload)))
 
 
 @router.put("/inventory/batches/{batch_id}")

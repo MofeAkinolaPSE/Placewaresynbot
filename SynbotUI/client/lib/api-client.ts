@@ -338,6 +338,9 @@ export const api = {
       fetchRaw<{ users: { user_id: string; email: string; roles: string[]; last_seen: string }[]; count: number }>("/presence/online"),
   },
   staff: {
+    /** The signed-in person's welcome-tour progress (routers/staff_me.py). */
+    getTourState: () => fetchRaw<{ tour_state: { completed?: boolean; skipped?: boolean; current_step?: number } | null }>("/staff/me/tour"),
+    updateTourState: (patch: { completed?: boolean; skipped?: boolean; current_step?: number }) => sendJson<any>("/staff/me/tour", "PATCH", patch),
     list: (dept?: string) => fetchJson<StaffMember[]>(`/staff${dept ? `?department=${dept}` : ""}`),
     snapshot: () => fetchJson<StaffMember[]>(`/staff/snapshot`),
     timesheets: (department?: string, limit: number = 50) =>
@@ -1557,6 +1560,16 @@ export const api = {
     getInvoice: (invoiceId: string) =>
       fetchRaw<any>(`/frontdesk/invoices/${invoiceId}`),
 
+    /** Void wherever it is in QC -> Finance -> dispatch; an approved one voids its ACE Books invoice too. */
+    shipMethods: () => fetchRaw<{ methods: string[] }>(`/frontdesk/ship-methods`),
+
+    /** Change an invoice Finance has not approved yet (items, delivery, discount); back to QC if QC had passed it. */
+    modifyInvoice: (invoiceId: string, payload: { items: any[]; delivery_charge?: number; discount_amount?: number; reason: string }) =>
+      sendJson<any>(`/frontdesk/invoices/${invoiceId}/items`, "PUT", payload),
+
+    voidInvoice: (invoiceId: string, reason: string) =>
+      sendJson<any>(`/frontdesk/invoices/${invoiceId}/void`, "POST", { reason }),
+
     /** Full lifecycle trail (create -> QC -> finance -> dispatch -> completed), oldest first. */
     invoiceHistory: (invoiceId: string) =>
       fetchRaw<any>(`/frontdesk/invoices/${invoiceId}/history`),
@@ -1606,6 +1619,8 @@ export const api = {
     recalls: (status?: string) => fetchRaw<{ recalls: any[] }>(`/quality/recalls${status ? `?status=${status}` : ""}`).then((r) => r.recalls),
     recall: (id: string) => fetchRaw<any>(`/quality/recalls/${id}`),
     openRecall: (payload: Record<string, any>) => sendJson<any>("/quality/recalls", "POST", payload),
+    /** Recall the items ticked on one customer invoice (each opens or joins its batch's recall, credited on that invoice). */
+    recallFromInvoice: (payload: Record<string, any>) => sendJson<any>("/quality/recalls/from-invoice", "POST", payload),
     updateRecall: (id: string, payload: Record<string, any>) => sendJson<any>(`/quality/recalls/${id}`, "PATCH", payload),
     voidRecall: (id: string, reason: string) => sendJson<any>(`/quality/recalls/${id}/void`, "POST", { reason }),
     // a customer returns recalled stock: credit note on the invoice they bought it on + stock back (frozen)

@@ -413,12 +413,13 @@ def subledger_balances(conn, entity_id: str, as_of: dt.date) -> Dict[str, Decima
 
 
 def journal_report(conn, entity_id: str, kind: str, date_from: dt.date, date_to: dt.date) -> Dict[str, Any]:
+    from src.fin.ledger import same_day_void
     if kind == "cogs":
-        rows = q(conn, """SELECT g.journal_date AS date, g.account_code, g.account_name, g.source_ref AS reference,
+        rows = q(conn, f"""SELECT g.journal_date AS date, g.account_code, g.account_name, g.source_ref AS reference,
                                  g.product_sku, g.description, g.debit, g.credit, g.journal_id, g.journal_number, g.source_type, g.source_id
                           FROM fin_v_general_ledger g WHERE g.legal_entity_id=%s AND g.journal_date BETWEEN %s AND %s
                           AND g.product_sku IS NOT NULL AND g.subtype IN ('COST_OF_SALES','INVENTORY')
-                          AND g.source_type IN ('SALES_INVOICE','CREDIT_NOTE')
+                          AND g.source_type IN ('SALES_INVOICE','CREDIT_NOTE') AND NOT {same_day_void("g.journal_id")}
                           ORDER BY g.journal_date, g.journal_number, g.line_no""", (entity_id, date_from, date_to))
     else:
         from src.fin import journal_map
@@ -432,7 +433,8 @@ def journal_report(conn, entity_id: str, kind: str, date_from: dt.date, date_to:
                                  g.debit, g.credit, g.journal_id, g.journal_number, g.source_type, g.source_id,
                                  {journal_map.code_sql()} AS jrnl
                           FROM fin_v_general_ledger g WHERE g.legal_entity_id=%s AND g.journal_date BETWEEN %s AND %s
-                          AND {journal_map.code_sql()} = ANY(%s) ORDER BY g.journal_date, g.journal_number, g.line_no""",
+                          AND {journal_map.code_sql()} = ANY(%s) AND NOT {same_day_void("g.journal_id")}
+                          ORDER BY g.journal_date, g.journal_number, g.line_no""",
                  (entity_id, date_from, date_to, list(journal_map.report_codes(code))))
     return {"kind": kind, "date_from": date_from, "date_to": date_to, "rows": rows,
             "total_debit": sum((money(r["debit"]) for r in rows), ZERO),
@@ -512,12 +514,27 @@ def batch_list(conn, entity_id: str, sku: Optional[str] = None, expiring_within_
     if expiring_within_days is not None:
         extra += " AND b.expiry_date <= current_date + %s"
         p.append(int(expiring_within_days))
-    return q(conn, f"""SELECT b.*, p.name AS product_name, COALESCE(SUM(l.qty_remaining),0) AS on_hand,
+    rows = q(conn, f"""SELECT b.*, p.name AS product_name, COALESCE(SUM(l.qty_remaining),0) AS on_hand,
                               COALESCE(SUM(l.qty_remaining*l.unit_cost),0) AS value
                        FROM fin_batches b LEFT JOIN fin_products p ON p.legal_entity_id=b.legal_entity_id AND p.sku=b.sku
                        LEFT JOIN fin_cost_layers l ON l.batch_id=b.id
                        WHERE b.legal_entity_id=%s {extra}
                        GROUP BY b.id, p.name ORDER BY b.expiry_date NULLS LAST, b.sku""", p)
+    if expiring_within_days is None:
+        # stock held without a batch record (e.g. brought over without one): listed so its batch number and
+        # dates can be entered - saving creates the batch (inventory.assign_batch)
+        loose = q(conn, f"""SELECT l.sku, p.name AS product_name, p.lot_expiry AS expiry_date, SUM(l.qty_remaining) AS on_hand,
+                                   SUM(l.qty_remaining*l.unit_cost) AS value
+                            FROM fin_cost_layers l LEFT JOIN fin_products p ON p.legal_entity_id=l.legal_entity_id AND p.sku=l.sku
+                            WHERE l.legal_entity_id=%s AND l.batch_id IS NULL AND l.qty_remaining > 0 {"AND l.sku=%s" if sku else ""}
+                            GROUP BY l.sku, p.name, p.lot_expiry""", [entity_id] + ([sku] if sku else []))
+        from src.fin.maintain import lot_of
+        for r in loose:
+            lot = lot_of(r["sku"])
+            rows.append({**r, "id": f"nobatch:{r['sku']}", "no_batch": True, "status": "AVAILABLE", "batch_number": None,
+                         "lot_code": lot[1] + (" " + lot[2] if lot and lot[2] else "") if lot else None,
+                         "pack_batch_number": None, "manufacture_date": None})
+    return rows
 
 
 def item_movements(conn, entity_id: str, sku: str, date_from: dt.date, date_to: dt.date):

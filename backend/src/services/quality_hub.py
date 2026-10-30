@@ -350,6 +350,49 @@ def record_return(user: Dict[str, Any], recall_case_id: str, data: Dict[str, Any
     return get_recall(recall_case_id)
 
 
+def recall_from_invoice(user: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+    """Recall from a customer's invoice (client, 28 Oct): the customer -> one of their invoices -> the items on
+    it being recalled. Each item opens the recall on its batch (or joins the one already open for it) and its
+    quantity comes back as a credit note on that invoice, so what the customer owes goes down."""
+    lines = [l for l in (data.get("lines") or []) if float(l.get("quantity") or 0) > 0]
+    if not data.get("customer_id"):
+        raise QualityError("Choose the customer")
+    if not lines:
+        raise QualityError("Tick the items on the invoice being recalled")
+    reason = (data.get("recall_reason") or data.get("reason") or "").strip()
+    if len(reason) < 5:
+        raise QualityError("Give the reason for the recall")
+    done = []
+    for l in lines:
+        batch_id = l.get("batch_id") or l.get("return_batch_id")
+        if not batch_id:
+            raise QualityError(f"{l.get('sku')}: no batch is known for this line - recall it from the batch instead")
+        ret = {"customer_id": data["customer_id"], "invoice_id": data.get("invoice_id"), "sage_invoice_number": data.get("sage_invoice_number"),
+               "quantity": l["quantity"], "unit_price": l.get("unit_price"), "unit_cost": l.get("unit_cost"), "credit": data.get("credit", True)}
+        with tx() as conn:
+            case = q1(conn, """SELECT c.id::text AS id, c.recall_id FROM fin_recalls f JOIN recall_cases c ON c.fin_recall_id=f.id
+                               WHERE f.batch_id::text=%s AND f.status='OPEN' LIMIT 1""", (str(batch_id),))
+        if case:
+            from src.fin import inventory
+            with tx() as conn:
+                fr = q1(conn, "SELECT fin_recall_id::text AS f FROM recall_cases WHERE id=%s", (case["id"],))
+                fin = inventory.get_recall(conn, _ctx(conn, user).entity_id, fr["f"])
+                item = next((i for i in fin.get("items", []) if str(i.get("customer_id")) == str(data["customer_id"])
+                             and (str(i.get("invoice_id") or "") == str(data.get("invoice_id") or "-")
+                                  or str(i.get("invoice_number") or "") == str(data.get("sage_invoice_number") or "-"))), None)
+            record_return(user, case["id"], {**ret, "item_id": item["id"] if item else None})
+            done.append({"sku": l.get("sku"), "recall_id": case["recall_id"], "joined": True})
+        else:
+            r = initiate_recall(user, {"batch_id": batch_id, "recall_reason": reason, "scope": data.get("scope"), "severity": data.get("severity"),
+                                       "regulatory_authority": data.get("regulatory_authority"), "expected_return_date": data.get("expected_return_date"),
+                                       "nafdac_notified": data.get("nafdac_notified"), "customer_id": data["customer_id"],
+                                       "return_quantity": l["quantity"], "unit_price": l.get("unit_price"), "unit_cost": l.get("unit_cost"),
+                                       "invoice_id": data.get("invoice_id"), "sage_invoice_number": data.get("sage_invoice_number"),
+                                       "credit": data.get("credit", True)})
+            done.append({"sku": l.get("sku"), "recall_id": r.get("recall_id"), "joined": False})
+    return {"recalls": done}
+
+
 def customer_invoices_for_batch(customer_id: int, batch_id: Optional[str] = None, sku: Optional[str] = None) -> List[Dict[str, Any]]:
     """The customer's invoices that carried this product (ACE Books and Sage), for linking a return."""
     from src.fin import sales
@@ -453,6 +496,8 @@ def list_batches() -> Dict[str, Any]:
                                  r.certificate_ref, r.valid_from, r.valid_to, r.expected_arrival_date, r.quantity, r.expiry_date,
                                  r.stock_order_id::text AS stock_order_id, r.registered_by, r.approved_by, r.approved_at, r.rejection_reason,
                                  r.notes, r.created_at, r.fin_batch_id::text AS fin_batch_id, b.status AS batch_status,
+                                 r.supplier_id::text AS supplier_id, r.supplier_invoice_number, r.unit_cost, r.manufacture_date,
+                                 r.arrived_at, r.goods_receipt_id::text AS goods_receipt_id,
                                  (SELECT COALESCE(SUM(qty_remaining),0) FROM fin_cost_layers l WHERE l.batch_id=b.id) AS on_hand
                           FROM nafdac_batch_registry r LEFT JOIN fin_batches b ON b.id=r.fin_batch_id
                           ORDER BY (r.status='pending') DESC, COALESCE(r.expected_arrival_date, r.created_at::date) DESC""")
@@ -479,21 +524,36 @@ def list_batches() -> Dict[str, Any]:
 def register_batch(user: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
     sku = (data.get("sku") or "").strip()
     bn = (data.get("batch_number") or "").strip()
-    if not sku or not bn:
-        raise QualityError("Choose the product and give the batch number")
+    if not sku:
+        raise QualityError("Choose the product")
+    if not bn:
+        # ordered before the supplier has said which batch: the number is given when it arrives
+        import uuid as _uuid
+        bn = f"TBC-{_uuid.uuid4().hex[:6].upper()}"
     with tx() as conn:
         fp = q1(conn, f"SELECT {FAMILY_SQL.format(name='name', sku='sku')} AS family FROM fin_products WHERE sku=%s", (sku,))
         if not fp:
             raise QualityError(f"{sku} is not a product in ACE Books")
         if q1(conn, "SELECT 1 FROM nafdac_batch_registry WHERE sku=%s AND batch_number=%s", (sku, bn)):
             raise QualityError(f"Batch {bn} of {sku} is already registered")
+        # the supplier is the ACE Books vendor (same list as Purchases & Payables), so finance can
+        # receive this delivery on the supplier's bill straight from what QC registered
+        supplier_id, supplier_name = data.get("supplier_id") or None, data.get("supplier")
+        if supplier_id:
+            sup = q1(conn, "SELECT name FROM suppliers WHERE id::text=%s", (str(supplier_id),))
+            if not sup:
+                raise QualityError("That supplier is not in the vendor list")
+            supplier_name = sup["name"]
         row = q1(conn, """INSERT INTO nafdac_batch_registry (batch_number, product_name, sku, nafdac_reg_number, supplier, status, dispatch_blocked,
                                                              valid_from, valid_to, certificate_ref, registered_by, notes, expected_arrival_date,
-                                                             quantity, expiry_date, stock_order_id)
-                          VALUES (%s,%s,%s,%s,%s,'pending',TRUE,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id::text AS id""",
-                  (bn, fp["family"], sku, data.get("nafdac_reg_number"), data.get("supplier"), _d(data.get("valid_from")),
+                                                             quantity, expiry_date, stock_order_id, supplier_id, supplier_invoice_number,
+                                                             unit_cost, manufacture_date)
+                          VALUES (%s,%s,%s,%s,%s,'pending',TRUE,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id::text AS id""",
+                  (bn, fp["family"], sku, data.get("nafdac_reg_number"), supplier_name, _d(data.get("valid_from")),
                    _d(data.get("valid_to")), data.get("certificate_ref"), str(user.get("sub") or "unknown"), data.get("notes"),
-                   _d(data.get("expected_arrival_date")), data.get("quantity"), _d(data.get("expiry_date")), data.get("stock_order_id") or None))
+                   _d(data.get("expected_arrival_date")), data.get("quantity"), _d(data.get("expiry_date")), data.get("stock_order_id") or None,
+                   supplier_id, (data.get("supplier_invoice_number") or "").strip() or None, data.get("unit_cost") or None,
+                   _d(data.get("manufacture_date"))))
         sync_batches(conn)
         _audit_log(conn, user, "batch_registered", "nafdac_batch", row["id"], {"sku": sku, "batch": bn})
     if data.get("release_now"):

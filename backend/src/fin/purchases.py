@@ -108,9 +108,32 @@ def create_bill(conn, ctx, data: Dict[str, Any], *, is_opening: bool = False) ->
     ap = rules.account(conn, ctx.entity_id, "AP_CONTROL")
     jl: List[Dict[str, Any]] = []
     txns = []
+    billed_receipts = []
     for p in priced:
         txn_id = None
         batch_id = None
+        if p["line_type"] == "ITEM" and p.get("goods_receipt_id"):
+            # goods already received (Confirm arrived): this line clears the goods-received accrual -
+            # the stock is not received again; a price difference goes to the item's cost of sales
+            from src.fin import receiving
+            gr = receiving.bill_line_for_receipt(conn, ctx, str(p["goods_receipt_id"]), str(s["id"]))
+            if gr["sku"] != p["sku"]:
+                raise invalid(f"Line {p['line_no']}: that delivery was {gr['sku']}, not {p['sku']}")
+            batch_id = gr["batch_id"]
+            grni = rules.account(conn, ctx.entity_id, "GOODS_RECEIVED_ACCRUAL")
+            jl.append({"account_id": grni["id"], "debit": money(gr["total"]), "supplier_id": str(s["id"]), "product_sku": p["sku"],
+                       "description": f"{p['description']} - received {gr['received_date']}"})
+            diff = p["line_total"] - money(gr["total"])
+            if diff != 0:
+                cogs = rules.product_accounts(conn, ctx.entity_id, p["sku"])["cogs_account_id"]
+                jl.append({"account_id": cogs, "debit" if diff > 0 else "credit": abs(diff), "supplier_id": str(s["id"]),
+                           "product_sku": p["sku"], "description": f"Price difference on received {p['sku']}"})
+            ex(conn, """INSERT INTO fin_supplier_bill_lines (bill_id, line_no, line_type, sku, batch_id, description, quantity,
+                        unit_cost, line_total, account_id, inventory_txn_id, goods_receipt_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               (b["id"], p["line_no"], p["line_type"], p.get("sku"), batch_id, p["description"], p["quantity"], p["unit_cost"],
+                p["line_total"], grni["id"], None, gr["id"]))
+            billed_receipts.append(str(gr["id"]))
+            continue
         if p["line_type"] == "ITEM":
             batch_id = inventory.ensure_batch(conn, ctx.entity_id, p["sku"], p.get("batch_number"),
                                               expiry_date=_d(p.get("expiry_date")), manufacture_date=_d(p.get("manufacture_date")),
@@ -137,6 +160,8 @@ def create_bill(conn, ctx, data: Dict[str, Any], *, is_opening: bool = False) ->
                             source_id=b["id"], source_ref=number)
     inventory.link_journal(conn, txns, j["id"])
     ex(conn, "UPDATE fin_supplier_bills SET journal_id=%s WHERE id=%s", (j["id"], b["id"]))
+    for gid in billed_receipts:
+        ex(conn, "UPDATE fin_goods_receipts SET status='BILLED', bill_id=%s WHERE id::text=%s", (b["id"], gid))
     audit.record(conn, ctx, "BILL_POSTED", "supplier_bill", b["id"], ref=number,
                  metadata={"supplier": s["name"], "total": str(total), "journal": j["journal_number"]})
     return get_bill(conn, ctx.entity_id, b["id"])
@@ -249,6 +274,8 @@ def void_bill(conn, ctx, bill_id: str, reason: str) -> Dict[str, Any]:
         inventory.link_journal(conn, [str(t["id"])], rev["id"])
     ex(conn, "UPDATE fin_supplier_bills SET status='VOID', void_journal_id=%s, void_reason=%s WHERE id=%s",
        (rev["id"], reason, bill_id))
+    # deliveries this bill cleared are waiting for a (corrected) bill again
+    ex(conn, "UPDATE fin_goods_receipts SET status='RECEIVED', bill_id=NULL WHERE bill_id=%s AND status='BILLED'", (bill_id,))
     audit.record(conn, ctx, "BILL_VOIDED", "supplier_bill", bill_id, ref=b["bill_number"], reason=reason)
     return get_bill(conn, ctx.entity_id, bill_id)
 

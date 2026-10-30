@@ -11,6 +11,8 @@ import { Menu, Circle, ArrowLeft, ArrowRight, Bell } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import ThemeToggle from "./ThemeToggle";
+import { TourHost } from "./tour/TourHost";
+import { ShowMeHow } from "./tour/ShowMeHow";
 import { useBackForward } from "@/hooks/use-back-forward";
 
 const Layout = () => {
@@ -49,11 +51,12 @@ const Layout = () => {
   const unread = inboxData?.counts?.unread ?? 0;
 
   return (
+    <TourHost>
     <div className="pw-page-surface pw-safe-top flex w-full overflow-x-hidden">
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <main className="relative z-10 min-h-dvh w-full min-w-0 flex-1 bg-transparent lg:ml-64">
         {/* Slim diagnostic top bar */}
-        <div className="pw-surface-interactive sticky top-[env(safe-area-inset-top)] z-20 mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground sm:mx-6 sm:mt-4 sm:px-6 sm:py-2.5">
+        <div data-tour-topbar className="pw-surface-interactive sticky top-[env(safe-area-inset-top)] z-20 mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground sm:mx-6 sm:mt-4 sm:px-6 sm:py-2.5">
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -95,6 +98,7 @@ const Layout = () => {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <ShowMeHow />
             <ClockPill />
             <Link to="/workspace?tab=inbox" title="Inbox" className="relative flex h-7 w-7 items-center justify-center rounded-md border border-border/40 bg-muted/30 hover:bg-muted/60">
               <Bell className="h-3.5 w-3.5" />
@@ -148,6 +152,7 @@ const Layout = () => {
       </main>
       <FloatingChat />
     </div>
+    </TourHost>
   );
 };
 

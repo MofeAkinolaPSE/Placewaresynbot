@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dict, fmtDate, naira, num, today } from "@/lib/books-api";
+import { books, Dict, fmtDate, naira, num, today } from "@/lib/books-api";
 import { CsvButton, DateRange, DrillLink, Empty, ErrorNote, Loading, SageTag, useBooks } from "./kit";
 import type { DrillTarget } from "./drill-context";
 
@@ -52,21 +52,65 @@ function PeriodPicker({ value, onChange }: { value: Period; onChange: (p: Period
 }
 
 type ItemFilter = { search: string; sku_from: string; sku_to: string };
+
+/** Item field with a dropdown of matching inventory items (type a few letters, pick the item ID) -
+ *  so nobody has to type "CERVARIX 0.5ml(H)" in full. `family`: picking fills the product name. */
+function ItemInput({ value, onChange, onPick, placeholder, className = "", family = false, label, scope = "" }: {
+  value: string; onChange: (v: string) => void; onPick?: (v: string) => void; placeholder: string; className?: string; family?: boolean; label: string;
+  /** a product name: list that product's item IDs (its lots) as soon as the field is opened */
+  scope?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hits, setHits] = useState<Dict[]>([]);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (timer.current) clearTimeout(timer.current);
+    const q = value.trim();
+    const sc = scope.trim();
+    if (!open || (!sc && q.length < 2)) { setHits([]); return; }
+    timer.current = setTimeout(() => {
+      books.get<Dict[]>("/maintain/items", { search: sc || q, include_inactive: true })
+        .then((r) => setHits((r ?? []).filter((h) => !sc || !q || h.sku.toLowerCase().includes(q.toLowerCase())).slice(0, 60)))
+        .catch(() => setHits([]));
+    }, 250);
+  }, [value, open, scope]);
+  const opts = family
+    ? Array.from(new Map(hits.map((h) => [h.name, { key: h.name, main: h.name, sub: `${hits.filter((x) => x.name === h.name).length} item IDs` }])).values())
+    : hits.map((h) => ({ key: h.sku, main: h.sku, sub: `${h.name} · ${num(h.on_hand)} on hand` }));
+  return (
+    <div className="relative">
+      <Input aria-label={label} className={className} placeholder={placeholder} value={value} autoComplete="off"
+             onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+             onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+             onKeyDown={(e) => e.key === "Enter" && onPick?.(value)} />
+      {open && opts.length > 0 && (
+        <ul className="absolute z-50 mt-1 max-h-72 w-80 overflow-auto rounded-md border bg-popover text-sm shadow-lg" role="listbox">
+          {opts.map((o) => (
+            <li key={o.key} role="option" aria-selected={false} className="cursor-pointer px-3 py-1.5 hover:bg-accent"
+                onMouseDown={(e) => { e.preventDefault(); onChange(o.main); setOpen(false); onPick?.(o.main); }}>
+              <div className="font-mono text-xs font-medium">{o.main}</div><div className="text-[11px] text-muted-foreground">{o.sub}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 function ItemFilterBar({ value, onChange }: { value: ItemFilter; onChange: (v: ItemFilter) => void }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   const apply = () => onChange(v);
   return (
     <div className="flex flex-wrap items-end gap-2">
-      <div className="space-y-1"><Label className="text-xs">Item (ID or name contains)</Label>
-        <Input className="h-9 w-56" placeholder="e.g. CERVARIX" value={v.search} onChange={(e) => setV({ ...v, search: e.target.value })}
-               onKeyDown={(e) => e.key === "Enter" && apply()} /></div>
+      <div className="space-y-1"><Label className="text-xs">Product (name contains)</Label>
+        <ItemInput family label="Product" className="h-9 w-56" placeholder="type e.g. CERV, pick from the list" value={v.search}
+                   onChange={(x) => setV({ ...v, search: x })} onPick={(x) => onChange({ ...v, search: x })} /></div>
       <div className="space-y-1"><Label className="text-xs">Item IDs from</Label>
-        <Input className="h-9 w-44" placeholder="CERVARIX 0.5ml(E)" value={v.sku_from} onChange={(e) => setV({ ...v, sku_from: e.target.value })}
-               onKeyDown={(e) => e.key === "Enter" && apply()} /></div>
+        <ItemInput label="Item ID from" scope={v.search} className="h-9 w-48" placeholder={v.search ? "e.g. A - or pick" : "pick an item ID"} value={v.sku_from}
+                   onChange={(x) => setV({ ...v, sku_from: x })} onPick={(x) => setV({ ...v, sku_from: x, sku_to: v.sku_to || x })} /></div>
       <div className="space-y-1"><Label className="text-xs">to</Label>
-        <Input className="h-9 w-44" placeholder="CERVARIX 0.5ml(H)" value={v.sku_to} onChange={(e) => setV({ ...v, sku_to: e.target.value })}
-               onKeyDown={(e) => e.key === "Enter" && apply()} /></div>
+        <ItemInput label="Item ID to" scope={v.search} className="h-9 w-48" placeholder={v.search ? "e.g. G - or pick" : "pick an item ID"} value={v.sku_to}
+                   onChange={(x) => setV({ ...v, sku_to: x })} onPick={(x) => setV({ ...v, sku_to: x })} /></div>
       <Button size="sm" className="h-9" onClick={apply}>Show</Button>
       {(value.search || value.sku_from || value.sku_to) && <Button size="sm" variant="ghost" className="h-9" onClick={() => onChange({ search: "", sku_from: "", sku_to: "" })}>Clear</Button>}
     </div>
@@ -232,6 +276,10 @@ export function ItemCostingReport({ period, setPeriod, filter, setFilter }: {
       offset: page * limit, limit });
   const items: Dict[] = data?.items ?? [];
   const total = Number(data?.items_total ?? 0);
+  // each item folds; one item on its own opens straight away
+  const [openSet, setOpenSet] = useState<Set<string>>(new Set());
+  useEffect(() => { setOpenSet(items.length === 1 ? new Set([items[0].sku]) : new Set()); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (sku: string) => setOpenSet((o) => { const n = new Set(o); n.has(sku) ? n.delete(sku) : n.add(sku); return n; });
   const flat = useMemo(() => items.flatMap((i) => i.rows.map((r: Dict) => ({
     item_id: i.sku, description: i.name, date: r.date, type: r.kind, qty_received: r.qty_received, item_cost: r.item_cost, adjust_qty: r.qty_adjusted,
     quantity_sold: r.qty_sold, cost_of_sales: r.cost_of_sales, remaining_qty: r.remaining_qty, remaining_value: r.remaining_value,
@@ -265,6 +313,8 @@ export function ItemCostingReport({ period, setPeriod, filter, setFilter }: {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3"><PeriodPicker value={period} onChange={setPeriod} /><ItemFilterBar value={filter} onChange={setFilter} /></div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setOpenSet(new Set(items.map((i) => i.sku)))}>Expand all</Button>
+          <Button size="sm" variant="ghost" onClick={() => setOpenSet(new Set())}>Collapse all</Button>
           {menu}
           <Button size="sm" variant="outline" onClick={() => printReport("Item Costing Report", periodText(period), ref.current)}><Printer className="mr-1 h-4 w-4" />Print</Button>
           <CsvButton filename={`item-costing-${period.from}-${period.to}.csv`} rows={flat}
@@ -292,7 +342,7 @@ export function ItemCostingReport({ period, setPeriod, filter, setFilter }: {
             </TableRow></TableHeader>
             <TableBody>
               {items.map((i) => (
-                <ItemBlock key={i.sku} i={i} colCount={colCount} cells={cells} show={show} />
+                <ItemBlock key={i.sku} i={i} colCount={colCount} cells={cells} show={show} open={openSet.has(i.sku)} onToggle={() => toggle(i.sku)} />
               ))}
             </TableBody>
           </Table>
@@ -309,16 +359,16 @@ export function ItemCostingReport({ period, setPeriod, filter, setFilter }: {
   );
 }
 
-function ItemBlock({ i, colCount, cells, show }: { i: Dict; colCount: number; cells: (r: Dict) => ReactNode; show: (k: string) => boolean }) {
-  const [open, setOpen] = useState(true);
+function ItemBlock({ i, colCount, cells, show, open, onToggle }: { i: Dict; colCount: number; cells: (r: Dict) => ReactNode; show: (k: string) => boolean;
+  open: boolean; onToggle: () => void }) {
   return (
     <>
       <TableRow className="bg-muted/40 hover:bg-muted/60">
         <TableCell colSpan={colCount} className="py-2">
-          <button className="flex w-full flex-wrap items-baseline justify-between gap-2 text-left" onClick={() => setOpen((o) => !o)}>
+          <button className="flex w-full flex-wrap items-baseline justify-between gap-2 text-left" aria-expanded={open} onClick={onToggle}>
             <span><span className="font-mono text-sm font-semibold">{i.sku}</span> <span className="text-xs text-muted-foreground">{i.name}</span></span>
             <span className="text-xs">opening <strong>{q(i.opening_qty)}</strong> · received {q(i.totals.received)} · sold {q(i.totals.sold)}
-              {Number(i.totals.adjusted) ? <> · adjusted {q(i.totals.adjusted)}</> : null} · closing <strong>{q(i.closing_qty)}</strong> {open ? "▾" : "▸"}</span>
+              {Number(i.totals.adjusted) ? <> · adjusted {q(i.totals.adjusted)}</> : null} · closing <strong>{q(i.closing_qty)}</strong> · {i.rows.length} movement{i.rows.length === 1 ? "" : "s"} <span className="font-semibold text-primary">{open ? "▾ fold" : "▸ open"}</span></span>
           </button>
         </TableCell>
       </TableRow>

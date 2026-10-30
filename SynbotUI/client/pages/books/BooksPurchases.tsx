@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { DrillLink } from "@/components/books/kit";
+import {
+  ClearVoidedButton, DrillLink,
+} from "@/components/books/kit";
+import { isVoided, useClearVoided } from "@/lib/voided";
 import { DrillTarget, historyTarget, useDrill } from "@/components/books/drill-context";
 import { PartyBalances, SageTag } from "@/components/books/kit";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
@@ -44,13 +47,18 @@ export default function BooksPurchases() {
           <TabsTrigger value="aging">Aged payables</TabsTrigger>
           <TabsTrigger value="statement">Supplier statement</TabsTrigger>
         </TabsList>
-        <TabsContent value="bills"><BillList onOpen={(id) => open("bill", id)} /></TabsContent>
+        <TabsContent value="bills" className="space-y-4">
+          <AwaitingBills onRecord={(sid, name) => { const p = new URLSearchParams(params); p.set("new", "bill"); p.set("bill_supplier", sid); p.set("bill_supplier_name", name); setParams(p, { replace: true }); }} />
+          <BillList onOpen={(id) => open("bill", id)} />
+        </TabsContent>
         <TabsContent value="payments"><PaymentList onOpen={(id) => open("payment", id)} /></TabsContent>
         <TabsContent value="debit"><DebitNoteList onOpen={(id) => open("debitnote", id)} onNew={() => open("new", "debitnote")} /></TabsContent>
         <TabsContent value="aging"><AgedPayables /></TabsContent>
         <TabsContent value="statement"><SupplierStatement /></TabsContent>
       </Tabs>
-      <BillForm open={params.get("new") === "bill"} onClose={(id) => { open("new", null); if (id) open("bill", id); }} />
+      <BillForm open={params.get("new") === "bill"}
+                preset={params.get("bill_supplier") ? { id: params.get("bill_supplier")!, name: params.get("bill_supplier_name") ?? "" } : null}
+                onClose={(id) => { const p = new URLSearchParams(params); ["new", "bill_supplier", "bill_supplier_name"].forEach((k) => p.delete(k)); if (id) p.set("bill", id); setParams(p, { replace: true }); }} />
       <PaymentWindow open={params.get("new") === "payment" || params.get("new") === "oneoff"} oneOff={params.get("new") === "oneoff"} onClose={() => open("new", null)} />
       <DebitNoteForm open={params.get("new") === "debitnote"} onClose={() => open("new", null)} />
       <DocDetail kind="bill" id={params.get("bill")} onClose={() => open("bill", null)} />
@@ -67,18 +75,19 @@ function BillList({ onOpen }: { onOpen: (id: string) => void }) {
   const [range, setRange] = useState({ from: yearStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["bills", search, openOnly, range], "/payables/bills",
     { search, open_only: openOnly === "open", from: range.from, to: range.to, limit: 300 });
+  const vd = useClearVoided("books.bills", data?.items as Dict[] | undefined);
   return (
-    <Section title={`Supplier bills${data ? ` (${data.total})` : ""}`} actions={<CsvButton filename="bills.csv" rows={data?.items} />}>
+    <Section title={`Supplier bills${data ? ` (${data.total})` : ""}`} actions={<><ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} /><CsvButton filename="bills.csv" rows={data?.items} /></>}>
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Bill no., supplier, supplier invoice no." }}
           selects={[{ label: "Show", value: openOnly, onChange: setOpenOnly, options: [{ value: "open", label: "Unpaid only" }] }]} /></div>
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No bills in this period.</Empty> : (
+      {data && (vd.rows.length === 0 ? <Empty>No bills in this period.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Bill</TableHead><TableHead>Supplier inv.</TableHead><TableHead>Date</TableHead><TableHead>Supplier</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Balance</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{data.items.map((b: Dict) => (
+          <TableBody>{vd.rows.map((b: Dict) => (
             <TableRow key={b.id ?? `s:${b.bill_date}:${b.bill_number}:${b.supplier_id}`} className="cursor-pointer hover:bg-muted/50"
                       onClick={() => (b.id ? onOpen(b.id) : drill?.open(historyTarget("bill", b)))}>
               <TableCell className="font-mono text-xs">{b.bill_number}{b.is_opening && <span className="ml-1 text-[10px] text-muted-foreground">opening</span>}{b.source === "SAGE" && <SageTag />}</TableCell>
@@ -102,17 +111,18 @@ function PaymentList({ onOpen }: { onOpen: (id: string) => void }) {
   const [search, setSearch] = useState("");
   const [range, setRange] = useState({ from: yearStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["spayments", search, range], "/payables/payments", { search, from: range.from, to: range.to, limit: 300 });
+  const vd = useClearVoided("books.supplier-payments", data?.items as Dict[] | undefined);
   return (
-    <Section title={`Supplier payments${data ? ` (${data.total})` : ""}`} actions={<CsvButton filename="supplier-payments.csv" rows={data?.items} />}>
+    <Section title={`Supplier payments${data ? ` (${data.total})` : ""}`} actions={<><ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} /><CsvButton filename="supplier-payments.csv" rows={data?.items} /></>}>
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Payment no., supplier, cheque ref" }} /></div>
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No payments in this period.</Empty> : (
+      {data && (vd.rows.length === 0 ? <Empty>No payments in this period.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Date</TableHead><TableHead>Supplier</TableHead><TableHead>Method</TableHead><TableHead>From</TableHead><TableHead className="text-right">Paid</TableHead><TableHead className="text-right">WHT</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{data.items.map((p: Dict) => (
+          <TableBody>{vd.rows.map((p: Dict) => (
             <TableRow key={p.id ?? `s:${p.payment_date}:${p.payment_number}:${p.supplier_id}`} className="cursor-pointer hover:bg-muted/50"
                       onClick={() => (p.id ? onOpen(p.id) : drill?.open(historyTarget("payment", p)))}>
               <TableCell className="font-mono text-xs">{p.payment_number}{p.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(p.payment_date)}</TableCell>
@@ -181,11 +191,76 @@ function DebitNoteList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew:
   );
 }
 
-type BLine = { line_type: string; product: Dict | null; account: Dict | null; description: string; quantity: string; unit_cost: string; line_total: string; batch_number: string; expiry_date: string };
-const blankBLine = (): BLine => ({ line_type: "ITEM", product: null, account: null, description: "", quantity: "", unit_cost: "", line_total: "", batch_number: "", expiry_date: "" });
+type BLine = { line_type: string; product: Dict | null; account: Dict | null; description: string; quantity: string; unit_cost: string; line_total: string; batch_number: string; expiry_date: string; manufacture_date?: string; goods_receipt_id?: string };
+const blankBLine = (): BLine => ({ line_type: "ITEM", product: null, account: null, description: "", quantity: "", unit_cost: "", line_total: "", batch_number: "", expiry_date: "", manufacture_date: "", goods_receipt_id: "" });
+
+/** Deliveries QC registered as coming from this supplier (Inventory & Quality -> register incoming batch)
+ *  and not yet on a bill: one click fills the bill with them, so the batch and the bill are one delivery. */
+function IncomingFromQc({ supplier, onFill }: { supplier: Dict | null; onFill: (rows: Dict[]) => void }) {
+  const { data } = useBooks<Dict[]>(["incoming", supplier?.id], "/payables/incoming-batches", { supplier_id: supplier?.id }, !!supplier?.id);
+  if (!data?.length) return null;
+  return (
+    <div className="space-y-1 rounded-md border border-sky-300 bg-sky-50 p-2 text-xs dark:bg-sky-500/10">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{data.length} deliver{data.length === 1 ? "y" : "ies"} QC registered from {supplier?.name} (not confirmed arrived yet - billing them receives the stock)</span>
+        <Button size="sm" className="h-7" onClick={() => onFill(data)}>Fill the bill from these</Button>
+      </div>
+      {data.map((r) => (
+        <div key={r.id}>{r.sku} · batch {r.batch_number} · {num(r.quantity)} units{r.unit_cost ? ` @ ${naira(r.unit_cost)}` : ""}
+          {r.expiry_date ? ` · exp ${fmtDate(r.expiry_date)}` : ""}{r.supplier_invoice_number ? ` · their invoice ${r.supplier_invoice_number}` : ""}</div>
+      ))}
+    </div>
+  );
+}
 const bLineTotal = (l: BLine) => (l.line_total ? Number(l.line_total) : Number(l.quantity || 0) * Number(l.unit_cost || 0));
 
-function BillForm({ open, onClose }: { open: boolean; onClose: (id?: string) => void }) {
+/** Deliveries received (QC "Confirm arrived") and waiting on the supplier's bill - Sage's "Waiting on bill". */
+function AwaitingBills({ onRecord }: { onRecord: (supplierId: string, name: string) => void }) {
+  const { data } = useBooks<Dict[]>(["goods-received"], "/payables/goods-received", {});
+  if (!data?.length) return null;
+  const groups: Record<string, Dict> = {};
+  for (const r of data) {
+    const g = groups[r.supplier_id] ?? (groups[r.supplier_id] = { supplier_id: r.supplier_id, name: r.supplier_name, vendor_id: r.vendor_id, rows: [] as Dict[] });
+    g.rows.push(r);
+  }
+  return (
+    <div data-tour-id="books-bills-waiting">
+    <Section title={`Received, waiting on the supplier's bill (${data.length})`}>
+      <p className="mb-2 text-xs text-muted-foreground">Deliveries Quality Control confirmed as arrived: the stock is in its batch and the cost is held as goods received. Record each supplier's bill from them - the bill clears it.</p>
+      <Table>
+        <TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Received</TableHead><TableHead>Item / batch</TableHead><TableHead>Their invoice</TableHead>
+          <TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Value</TableHead><TableHead /></TableRow></TableHeader>
+        <TableBody>{Object.values(groups).map((g: Dict) => g.rows.map((r: Dict, k: number) => (
+          <TableRow key={r.id}>
+            <TableCell>{k === 0 && <><div className="font-medium">{g.name}</div><div className="font-mono text-[11px] text-muted-foreground">{g.vendor_id}</div></>}</TableCell>
+            <TableCell className="whitespace-nowrap text-xs">{fmtDate(r.received_date)}</TableCell>
+            <TableCell className="text-xs"><span className="font-mono">{r.sku}</span> / batch {r.batch_number}{r.expiry_date ? ` / exp ${fmtDate(r.expiry_date)}` : ""}</TableCell>
+            <TableCell className="text-xs">{r.supplier_invoice_number ?? "-"}</TableCell>
+            <TableCell className="text-right">{num(r.quantity)}</TableCell><TableCell className="text-right"><Amount value={r.total} /></TableCell>
+            <TableCell className="text-right">{k === 0 && <Button size="sm" onClick={() => onRecord(g.supplier_id, g.name)}>Record the bill</Button>}</TableCell>
+          </TableRow>)))}</TableBody>
+      </Table>
+    </Section>
+    </div>
+  );
+}
+
+/** On the bill: this supplier's received deliveries - they become lines that clear the goods received. */
+function ReceivedForBill({ supplier, onFill }: { supplier: Dict | null; onFill: (rows: Dict[]) => void }) {
+  const { data } = useBooks<Dict[]>(["goods-received", supplier?.id], "/payables/goods-received", { supplier_id: supplier?.id }, !!supplier?.id);
+  if (!data?.length) return null;
+  return (
+    <div className="space-y-1 rounded-md border border-emerald-300 bg-emerald-50 p-2 text-xs dark:bg-emerald-500/10">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{data.length} deliver{data.length === 1 ? "y" : "ies"} from {supplier?.name} already received, waiting on this bill</span>
+        <Button size="sm" className="h-7" onClick={() => onFill(data)}>Bill these</Button>
+      </div>
+      {data.map((r) => <div key={r.id}>{fmtDate(r.received_date)} / {r.sku} / batch {r.batch_number} / {num(r.quantity)} @ {naira(r.unit_cost)}{r.supplier_invoice_number ? ` / their invoice ${r.supplier_invoice_number}` : ""}</div>)}
+    </div>
+  );
+}
+
+function BillForm({ open, onClose, preset }: { open: boolean; onClose: (id?: string) => void; preset?: { id: string; name: string } | null }) {
   const qc = useQueryClient();
   const [supplier, setSupplier] = useState<Dict | null>(null);
   const [f, setF] = useState({ supplier_invoice_number: "", bill_date: today(), due_date: "", notes: "" });
@@ -193,6 +268,7 @@ function BillForm({ open, onClose }: { open: boolean; onClose: (id?: string) => 
   const [idem] = useState(newIdemKey);
   const L = useLines<BLine>(blankBLine);
   useEffect(() => { if (!open) { setSupplier(null); L.reset(); setF({ supplier_invoice_number: "", bill_date: today(), due_date: "", notes: "" }); } }, [open]);
+  useEffect(() => { if (open && preset?.id && !supplier) setSupplier({ id: preset.id, name: preset.name }); }, [open, preset?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const total = L.lines.reduce((s, l) => s + bLineTotal(l), 0);
   const submit = async () => {
     setBusy(true);
@@ -200,7 +276,7 @@ function BillForm({ open, onClose }: { open: boolean; onClose: (id?: string) => 
       supplier_id: supplier?.id, ...f, due_date: f.due_date || undefined,
       lines: L.lines.map((l) => ({ line_type: l.line_type, sku: l.product?.sku, account_id: l.account?.id, description: l.description || undefined,
         quantity: l.quantity || 1, unit_cost: l.unit_cost || 0, line_total: l.line_total || undefined, batch_number: l.batch_number || undefined,
-        expiry_date: l.expiry_date || undefined })),
+        expiry_date: l.expiry_date || undefined, manufacture_date: l.manufacture_date || undefined, goods_receipt_id: l.goods_receipt_id || undefined })),
     }, idem), "Bill posted");
     setBusy(false);
     if (b) { qc.invalidateQueries({ queryKey: ["books"] }); onClose(b.id); }
@@ -212,6 +288,20 @@ function BillForm({ open, onClose }: { open: boolean; onClose: (id?: string) => 
                    <Button disabled={busy || !supplier || !f.supplier_invoice_number || total <= 0} onClick={submit}>{busy ? "Posting…" : "Post bill"}</Button></div>}>
       <div className="space-y-3">
         <SupplierPick value={supplier} onChange={setSupplier} />
+        <ReceivedForBill supplier={supplier} onFill={(rows) => {
+          const inv = rows.map((r) => r.supplier_invoice_number).find(Boolean);
+          if (inv && !f.supplier_invoice_number) setF({ ...f, supplier_invoice_number: inv });
+          L.setLines(rows.map((r) => ({ ...blankBLine(), product: { sku: r.sku, name: r.product_name }, quantity: String(Number(r.quantity)),
+            unit_cost: String(Number(r.unit_cost)), batch_number: r.batch_number ?? "", expiry_date: r.expiry_date ?? "",
+            manufacture_date: r.manufacture_date ?? "", goods_receipt_id: r.id })));
+        }} />
+        <IncomingFromQc supplier={supplier} onFill={(rows) => {
+          const inv = rows.map((r) => r.supplier_invoice_number).find(Boolean);
+          if (inv && !f.supplier_invoice_number) setF({ ...f, supplier_invoice_number: inv });
+          L.setLines(rows.map((r) => ({ ...blankBLine(), product: { sku: r.sku, name: r.product_name }, quantity: String(r.quantity ?? ""),
+            unit_cost: r.unit_cost ? String(r.unit_cost) : "", batch_number: r.batch_number ?? "", expiry_date: r.expiry_date ?? "",
+            manufacture_date: r.manufacture_date ?? "" })));
+        }} />
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1"><Label className="text-xs">Supplier invoice no.</Label><Input value={f.supplier_invoice_number} onChange={(e) => setF({ ...f, supplier_invoice_number: e.target.value })} /></div>
           <div className="space-y-1"><Label className="text-xs">Invoice date</Label><Input type="date" value={f.bill_date} onChange={(e) => setF({ ...f, bill_date: e.target.value })} /></div>
@@ -233,9 +323,10 @@ function BillForm({ open, onClose }: { open: boolean; onClose: (id?: string) => 
               <Input className="h-8" type="number" placeholder="Line total (as on invoice)" value={l.line_total} onChange={(e) => L.update(i, { line_total: e.target.value })} />
             </div>
             {l.line_type === "ITEM" ? (
-              <div className="grid grid-cols-2 gap-2">
-                <Input className="h-8" placeholder="Batch / lot number" value={l.batch_number} onChange={(e) => L.update(i, { batch_number: e.target.value })} />
-                <Input className="h-8" type="date" title="Expiry date" value={l.expiry_date} onChange={(e) => L.update(i, { expiry_date: e.target.value })} />
+              <div className="grid grid-cols-3 gap-2">
+                <div><Label className="text-[11px]">Batch number (on the pack)</Label><Input className="h-8" placeholder="e.g. Y3C77D4" value={l.batch_number} onChange={(e) => L.update(i, { batch_number: e.target.value })} /></div>
+                <div><Label className="text-[11px]">Manufacture date</Label><Input className="h-8" type="date" value={l.manufacture_date ?? ""} onChange={(e) => L.update(i, { manufacture_date: e.target.value })} /></div>
+                <div><Label className="text-[11px]">Expiry date</Label><Input className="h-8" type="date" value={l.expiry_date} onChange={(e) => L.update(i, { expiry_date: e.target.value })} /></div>
               </div>
             ) : <Input className="h-8" placeholder="Description" value={l.description} onChange={(e) => L.update(i, { description: e.target.value })} />}
             <div className="text-right text-xs text-muted-foreground">Line {naira(bLineTotal(l))}</div>

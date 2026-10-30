@@ -9,6 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontdeskInvoice";
+import { ShipViaSelect } from "@/components/frontdesk/ShipViaSelect";
+import { ModifyInvoiceButton } from "@/components/frontdesk/ModifyInvoice";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 
 /**
@@ -31,7 +33,7 @@ type ItemRow = {
 // GET /inventory/search's real return shape (v_inventory).
 type InventorySuggestion = {
   sku?: string; name: string; category?: string; current_stock?: number; selling_price?: number;
-  batch_number?: string; expiry_date?: string;
+  batch_number?: string; expiry_date?: string; manufacture_date?: string; held_for_invoices?: number;
   // ranked by the server: sellable first, then a lot whose receipt Finance still has to record
   sellable?: boolean; receipt_pending?: boolean; stock_note?: string | null;
 };
@@ -130,6 +132,7 @@ export function NewRequestSheet({
         ...r, product: sug.name, sku: sug.sku ?? r.sku,
         unit_price: sug.selling_price ?? r.unit_price,
         batch_number: sug.batch_number ?? r.batch_number,
+        manufacture_date: sug.manufacture_date ?? r.manufacture_date,
         expiry_date: sug.expiry_date ?? r.expiry_date,
       } : r
     ));
@@ -240,6 +243,7 @@ export function NewRequestSheet({
           <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-5 w-5 text-emerald-600" />Invoice {created.invoice_number} raised</div>
           <p>{created.customer_name} · <strong>{fmt(createdTotal)}</strong> · queued for QC, then Finance.</p>
           <PrintFrontdeskInvoiceButton invoiceId={created.id} size="default" className="w-full" />
+          <ModifyInvoiceButton invoiceId={created.id} className="w-full" />
         </div>
       ) : (
       <div className="space-y-3">
@@ -279,65 +283,10 @@ export function NewRequestSheet({
           )}
         </div>
 
-        <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-          <div className="text-xs font-semibold text-muted-foreground">INVOICE DETAILS</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Bill To</label>
-              <Textarea rows={2} placeholder="Billing address" value={billingAddress}
-                onChange={(e) => setBillingAddress(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Ship To</label>
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
-                    checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
-                  Same as Bill To
-                </label>
-              </div>
-              <Textarea rows={2} placeholder="Shipping address" value={sameAsBilling ? billingAddress : shippingAddress}
-                disabled={sameAsBilling} onChange={(e) => setShippingAddress(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Customer PO</label>
-              <Input placeholder="Optional" value={customerPo} onChange={(e) => setCustomerPo(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Payment Terms</label>
-              <Select value={paymentTerms} onValueChange={setPaymentTerms}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {termsOptions.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Shipping Method</label>
-              <Input placeholder="e.g. Hand Delivery" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Delivery charge (₦)</label>
-              <Input type="number" min={0} step="0.01" placeholder="0.00" value={deliveryCharge || ""}
-                onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
-              <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Discount allowed (₦)</label>
-              <Input type="number" min={0} step="0.01" placeholder="0.00" value={discountAmount || ""}
-                onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
-              <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount in ACE Books.</p>
-            </div>
-          </div>
-        </div>
-
         <div className="text-xs font-semibold text-muted-foreground">ITEMS</div>
         {items.map((it, idx) => (
-          <div key={idx} className="space-y-1">
+          <div key={idx} className="space-y-1 rounded-lg border p-2">
+            <div className="flex gap-2 text-[11px] font-medium text-muted-foreground"><span className="flex-1">Product (item)</span><span className="w-20">Qty</span><span className="w-28">Unit price (₦)</span><span className="w-9" /></div>
             <div className="flex gap-2 items-start">
               <div className="relative flex-1">
                 <Input
@@ -398,12 +347,13 @@ export function NewRequestSheet({
             </div>
             {/* Batch Number/Expiry Date autofill from the inventory suggestion
                 above; Manufacture Date always manual (no data source for it). */}
+            <div className="grid grid-cols-3 gap-2 pl-1 text-[11px] font-medium text-muted-foreground"><span>Batch number (on the pack)</span><span>Manufacture date</span><span>Expiry date</span></div>
             <div className="grid grid-cols-3 gap-2 pl-1">
-              <Input placeholder="Batch number" className="h-8 text-xs" value={it.batch_number ?? ""}
+              <Input placeholder="filled from Maintain" className="h-8 text-xs" value={it.batch_number ?? ""}
                 onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, batch_number: e.target.value } : r)))} />
-              <Input type="month" className="h-8 text-xs" value={it.manufacture_date ?? ""}
+              <Input type="date" aria-label="Manufacture date" className="h-8 text-xs" value={(it.manufacture_date ?? "").length === 7 ? `${it.manufacture_date}-01` : it.manufacture_date ?? ""}
                 onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, manufacture_date: e.target.value } : r)))} />
-              <Input type="date" className="h-8 text-xs" value={it.expiry_date ?? ""}
+              <Input type="date" aria-label="Expiry date" className="h-8 text-xs" value={it.expiry_date ?? ""}
                 onChange={(e) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, expiry_date: e.target.value } : r)))} />
             </div>
           </div>
@@ -411,6 +361,67 @@ export function NewRequestSheet({
         <Button variant="outline" size="sm" onClick={() => setItems((prev) => [...prev, { ...BLANK_ITEM }])}>
           <Plus className="h-4 w-4 mr-1" /> Add item
         </Button>
+
+        <div className="text-xs font-semibold text-muted-foreground">DELIVERY CHARGE & DISCOUNT</div>
+        <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Delivery charge (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={deliveryCharge || ""}
+                onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income in ACE Books.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Discount allowed (₦)</label>
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={discountAmount || ""}
+                onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
+              <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount in ACE Books.</p>
+            </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
+          <div className="text-xs font-semibold text-muted-foreground">INVOICE DETAILS</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Bill To</label>
+              <Textarea rows={2} placeholder="Billing address" value={billingAddress}
+                onChange={(e) => setBillingAddress(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Ship To</label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30"
+                    checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
+                  Same as Bill To
+                </label>
+              </div>
+              <Textarea rows={2} placeholder="Shipping address" value={sameAsBilling ? billingAddress : shippingAddress}
+                disabled={sameAsBilling} onChange={(e) => setShippingAddress(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Customer PO</label>
+              <Input placeholder="Optional" value={customerPo} onChange={(e) => setCustomerPo(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Payment Terms</label>
+              <Select value={paymentTerms} onValueChange={setPaymentTerms}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {termsOptions.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Ship via</label>
+              <ShipViaSelect value={shippingMethod} onChange={setShippingMethod} />
+            </div>
+          </div>
+        </div>
+
 
         <div className="pt-2">
           <div className="text-xs font-semibold text-muted-foreground mb-1">PAYMENT METHOD</div>

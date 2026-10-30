@@ -387,6 +387,9 @@ def reverse(conn, ctx, journal_id: str, *, reversal_date: Optional[dt.date] = No
     return get_journal(conn, ctx.entity_id, rev["id"])
 
 
+from src.fin.ledger import same_day_void  # noqa: E402  (no import cycle: ledger has no fin imports)
+
+
 def list_journals(conn, entity_id: str, *, status: Optional[str] = None, date_from: Optional[dt.date] = None,
                   date_to: Optional[dt.date] = None, search: Optional[str] = None, journal_type: Optional[str] = None,
                   source_type: Optional[str] = None, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
@@ -412,7 +415,8 @@ def list_journals(conn, entity_id: str, *, status: Optional[str] = None, date_fr
     w = " AND ".join(where)
     union = f"""SELECT j.id::text AS id, j.journal_number, j.journal_date, j.journal_type, j.description, j.status,
                        j.total_debit, j.total_credit, j.source_type, j.source_ref, j.created_by,
-                       j.posted_at, j.reversal_of_id::text AS reversal_of_id, j.reversed_by_id::text AS reversed_by_id, 'ACE' AS source
+                       j.posted_at, j.reversal_of_id::text AS reversal_of_id, j.reversed_by_id::text AS reversed_by_id, 'ACE' AS source,
+                       {same_day_void("j.id")} AS voided
                 FROM fin_journals j WHERE {w}"""
     sp: List[Any] = []
     # The general journal entries made in Sage, one row per transaction (date + reference), unless the
@@ -431,7 +435,7 @@ def list_journals(conn, entity_id: str, *, status: Optional[str] = None, date_fr
         union += f"""
                 UNION ALL
                 SELECT NULL, COALESCE(NULLIF(l.reference, ''), 'GENJ'), l.txn_date, 'SAGE', MAX(l.description), 'POSTED',
-                       SUM(l.debit), SUM(l.credit), 'SAGE_GENJ', l.reference, NULL, NULL, NULL, NULL, 'SAGE'
+                       SUM(l.debit), SUM(l.credit), 'SAGE_GENJ', l.reference, NULL, NULL, NULL, NULL, 'SAGE', FALSE
                 FROM fin_sage_gl_lines l WHERE {' AND '.join(sw)}
                 GROUP BY l.txn_date, l.reference HAVING SUM(l.debit) <> 0 OR SUM(l.credit) <> 0"""
     total = q1(conn, f"SELECT COUNT(*) n FROM ({union}) u", params + sp)["n"]

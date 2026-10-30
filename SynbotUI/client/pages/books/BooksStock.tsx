@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { historyTarget, useDrill } from "@/components/books/drill-context";
 import { DrillLink } from "@/components/books/kit";
 import { RecallBody } from "@/components/books/recall-panel";
+import { DeleteRecord } from "@/components/books/delete-record";
 import { StockReports } from "@/components/books/inventory-reports";
 import { SageTag } from "@/components/books/kit";
 import { Plus, Trash2 } from "lucide-react";
@@ -184,17 +185,20 @@ const batchFields = (b: Dict): BatchEdits => ({
 /** One screen to enter the batch number printed on the pack and the manufacture date (and correct
  *  the expiry) for every batch. Saved to the batch itself, so every invoice that sells it - ACE Books
  *  and Frontdesk - prints them from then on. */
-function BatchDetails() {
+export function BatchDetails() {
   const qc = useQueryClient();
   const { data, isLoading, error, refetch } = useBooks<Dict[]>(["batches", "details"], "/reports/batches", {});
-  const [view, setView] = useState<"missing" | "stock" | "all">("missing");
+  const [view, setView] = useState<"missing" | "stock" | "complete" | "all">("missing");
   const [search, setSearch] = useState("");
   const [edits, setEdits] = useState<Record<string, BatchEdits>>({});
   const [busy, setBusy] = useState(false);
   const all = data ?? [];
   const missing = (b: Dict) => !b.pack_batch_number || !b.manufacture_date;
+  const inView = (b: Dict, v: string) => v === "all" || (v === "stock" && Number(b.on_hand) > 0) || (v === "complete" && !missing(b))
+    || (v === "missing" && missing(b) && (Number(b.on_hand) > 0 || b.status === "AVAILABLE"));
+  const count = (v: string) => all.filter((b) => inView(b, v)).length;
   const rows = all.filter((b) =>
-    (view === "all" || (view === "stock" && Number(b.on_hand) > 0) || (view === "missing" && missing(b) && (Number(b.on_hand) > 0 || b.status === "AVAILABLE")))
+    inView(b, view)
     && (!search || `${b.sku} ${b.product_name ?? ""} ${b.batch_number ?? ""} ${b.pack_batch_number ?? ""}`.toLowerCase().includes(search.toLowerCase())))
     // what is in stock (and so about to be invoiced) first, then A-Z
     .sort((x, y) => Number(Number(y.on_hand) > 0) - Number(Number(x.on_hand) > 0) || String(x.sku).localeCompare(String(y.sku)));
@@ -213,8 +217,9 @@ function BatchDetails() {
     let saved = 0;
     for (const b of changed) {
       const e = edits[b.id];
-      const ok = await act(() => books.put(`/inventory/batches/${b.id}`, {
-        pack_batch_number: e.pack_batch_number.trim(), manufacture_date: e.manufacture_date || null, expiry_date: e.expiry_date || null }), "");
+      const body = { pack_batch_number: e.pack_batch_number.trim(), manufacture_date: e.manufacture_date || null, expiry_date: e.expiry_date || null };
+      // stock held without a batch record gets one when its details are entered
+      const ok = await act(() => (b.no_batch ? books.post("/inventory/batches/assign", { sku: b.sku, ...body }) : books.put(`/inventory/batches/${b.id}`, body)), "");
       if (!ok) break;
       saved += 1;
       setEdits((x) => { const n = { ...x }; delete n[b.id]; return n; });
@@ -237,7 +242,8 @@ function BatchDetails() {
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <select className="h-9 rounded-md border bg-background px-2" value={view} onChange={(e) => setView(e.target.value as typeof view)}>
-          <option value="missing">Missing details</option><option value="stock">In stock</option><option value="all">All batches</option>
+          <option value="missing">Missing details ({count("missing")})</option><option value="stock">In stock ({count("stock")})</option>
+          <option value="complete">Details complete ({count("complete")})</option><option value="all">All batches ({count("all")})</option>
         </select>
         <Input className="h-9 w-64" placeholder="Search item or batch" value={search} onChange={(e) => setSearch(e.target.value)} />
         <span className="text-xs text-muted-foreground">{rows.length} shown</span>
@@ -246,14 +252,14 @@ function BatchDetails() {
       {data && (rows.length === 0 ? <Empty>{view === "missing" ? "Every batch has its pack batch number and manufacture date." : "No batches."}</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Sage lot</TableHead><TableHead>Batch no. on the pack</TableHead>
-            <TableHead>Manufacture date</TableHead><TableHead>Expiry date</TableHead><TableHead className="text-right">On hand</TableHead></TableRow></TableHeader>
+            <TableHead>Manufacture date</TableHead><TableHead>Expiry date</TableHead><TableHead className="text-right">On hand</TableHead><TableHead className="w-10" /></TableRow></TableHeader>
           <TableBody>{rows.map((b) => {
             const v = value(b);
             const dirty = changed.includes(b);
             return (
               <TableRow key={b.id} className={dirty ? "bg-amber-50 dark:bg-amber-500/10" : ""}>
                 <TableCell><div className="font-mono text-xs">{b.sku}</div><div className="max-w-[240px] truncate text-xs text-muted-foreground">{b.product_name}</div></TableCell>
-                <TableCell className="font-mono text-xs">{b.lot_code ?? b.batch_number}</TableCell>
+                <TableCell className="font-mono text-xs">{b.lot_code ?? b.batch_number}{b.no_batch && <div className="font-sans text-[10px] text-amber-700 dark:text-amber-300">no batch record yet</div>}</TableCell>
                 <TableCell><Input className="h-8 w-40" placeholder="e.g. Y3C77D4" aria-label={`Batch number on the pack for ${b.sku}`}
                                   value={v.pack_batch_number} onChange={(e) => set(b, "pack_batch_number", e.target.value)} /></TableCell>
                 <TableCell><Input className="h-8 w-40" type="date" aria-label={`Manufacture date for ${b.sku}`} max={today()}
@@ -261,6 +267,9 @@ function BatchDetails() {
                 <TableCell><Input className={`h-8 w-40 ${v.expiry_date && v.expiry_date < today() ? "text-red-600" : ""}`} type="date" aria-label={`Expiry date for ${b.sku}`}
                                   value={v.expiry_date} onChange={(e) => set(b, "expiry_date", e.target.value)} /></TableCell>
                 <TableCell className="text-right">{num(b.on_hand)}</TableCell>
+                <TableCell>{!b.no_batch && (
+                  <DeleteRecord kind="batch" recordKey={b.id} name={`Batch ${b.pack_batch_number || b.lot_code || b.batch_number} of ${b.sku}`} iconOnly label="Delete batch"
+                                onDeleted={() => { setEdits((x) => { const n = { ...x }; delete n[b.id]; return n; }); refetch(); }} />)}</TableCell>
               </TableRow>);
           })}</TableBody>
         </Table>

@@ -21,6 +21,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { DeleteRecord } from "@/components/books/delete-record";
 import { ReportButton } from "@/components/reports/ReportButton";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { PageHeader } from "@/components/workspace/PageHeader";
@@ -182,6 +183,8 @@ function CustomerPanel({ id, onClose }: { id: number | null; onClose: () => void
               <Button size="sm" variant="outline" onClick={() => navigate(`/customers/workspace?customer=${c.id}`)}><ShoppingCart className="mr-1.5 h-4 w-4" />New request</Button>
               <Button size="sm" variant="ghost" onClick={() => setAction("edit")}><Pencil className="mr-1.5 h-4 w-4" />Edit</Button>
               <ReportButton type="customer" kind="customer" id={c.id} variant="ghost" label="Report" />
+              <DeleteRecord kind="customer" recordKey={String(c.id)} name={c.name} label="Delete customer"
+                            onDeleted={() => { refresh(); qc.invalidateQueries({ queryKey: ["crm"] }); onClose(); }} />
             </div>
             {m.at_risk && <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
               At risk: {m.risk_reasons.join("; ")}.</div>}

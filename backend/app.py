@@ -501,6 +501,8 @@ from src.routers.crm_hub import router as crm_hub_router
 app.include_router(crm_hub_router)
 from src.routers.staff_workspace import router as staff_workspace_router
 app.include_router(staff_workspace_router)
+from src.routers.staff_me import router as staff_me_router
+app.include_router(staff_me_router)
 from src.routers.hr_hub import router as hr_hub_router
 app.include_router(hr_hub_router)
 app.include_router(threads_router)

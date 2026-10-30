@@ -3,7 +3,7 @@
  * the preview is computed from the same menu definition the sidebar uses (NAV_ITEMS),
  * so it can't drift from what they will actually see.
  */
-import { visibleNav } from "@/components/Sidebar";
+import { visibleNav } from "@/lib/nav-items";
 
 export type RoleDef = { key: string; label: string; department: string; about: string };
 

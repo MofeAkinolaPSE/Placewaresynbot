@@ -12,6 +12,7 @@ import { BooksShell } from "@/components/books/BooksShell";
 import { AccountPick, AccountSheet, act, Amount, CsvButton, Empty, ErrorNote, Loading, Section, StatusBadge, useBooks } from "@/components/books/kit";
 import { books, Dict, fmtDate, today, yearStart } from "@/lib/books-api";
 import { askConfirm, askText } from "@/lib/ask";
+import { DeleteRecord } from "@/components/books/delete-record";
 
 const SUBTYPES: [string, string][] = [
   ["CASH", "ASSET"], ["RECEIVABLE", "ASSET"], ["INVENTORY", "ASSET"], ["OTHER_CURRENT_ASSET", "ASSET"], ["FIXED_ASSET", "ASSET"],
@@ -122,6 +123,8 @@ function AccountEditor({ account, onClose }: { account: Dict | null; onClose: ()
     <DetailSheet open={!!account} onOpenChange={(o) => !o && onClose()} title={isNew ? "New account" : `Edit ${account?.code}`}
                  description="The subtype decides where the account appears on the statements and in the cash flow."
                  footer={<div className="flex gap-2">{!isNew && <Button variant="outline" onClick={toggle}>{account?.status === "ACTIVE" ? "Deactivate" : "Activate"}</Button>}
+                   {!isNew && account && <DeleteRecord kind="account" recordKey={String(account.id)} name={`${account.code} ${account.name}`} label="Delete"
+                                                       onDeleted={done} onMakeInactive={account.status === "ACTIVE" ? toggle : undefined} />}
                    <Button disabled={!f.code || !f.name} onClick={save}>Save</Button></div>}>
       <div className="space-y-3">
         <div className="grid grid-cols-[140px_1fr] gap-3">

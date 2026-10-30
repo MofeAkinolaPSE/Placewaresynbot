@@ -16,7 +16,9 @@ export type DrillType =
   /** a Data issue (Close & Controls) - also the source of every FIX- correction journal */
   | "dataissue"
   /** an ACE Books recall (id = fin_recalls.id): invoices affected, returns, supplier debit notes */
-  | "recall";
+  | "recall"
+  /** a Frontdesk invoice not (yet) in the books (id = frontdesk_invoices.id): stage, items, Void / Print / QC / Finance */
+  | "frontdesk";
 
 /** The record behind a Sage General Ledger line: the invoice for a sale, else the whole transaction. */
 export function sageLineTarget(l: { date: string; jrnl?: string | null; reference?: string | null }): DrillTarget {

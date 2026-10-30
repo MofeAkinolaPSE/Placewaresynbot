@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { historyTarget, useDrill } from "@/components/books/drill-context";
-import { DrillLink, SageTag } from "@/components/books/kit";
+import {
+  ClearVoidedButton, DrillLink, SageTag,
+} from "@/components/books/kit";
+import { isVoided, useClearVoided } from "@/lib/voided";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Plus, Trash2, Upload, Wand2 } from "lucide-react";
@@ -118,8 +121,9 @@ function VoucherList({ onOpen }: { onOpen: (id: string) => void }) {
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["vouchers", search, kind, bank, range], "/banking/vouchers",
     { search, kind: kind || undefined, bank_account_id: bank || undefined, from: range.from, to: range.to, limit: 300 });
+  const vd = useClearVoided("books.vouchers", data?.items as Dict[] | undefined);
   return (
-    <Section title={`Vouchers${data ? ` (${data.total})` : ""}`} actions={<CsvButton filename="vouchers.csv" rows={data?.items} />}>
+    <Section title={`Vouchers${data ? ` (${data.total})` : ""}`} actions={<><ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} /><CsvButton filename="vouchers.csv" rows={data?.items} /></>}>
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Number, payee, reference, description" }}
           selects={[{ label: "Kind", value: kind, onChange: setKind, options: [{ value: "SPEND", label: "Spend" }, { value: "RECEIVE", label: "Receive" }, { value: "TRANSFER", label: "Transfer" }] }]} /></div>
@@ -127,10 +131,10 @@ function VoucherList({ onOpen }: { onOpen: (id: string) => void }) {
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No vouchers in this period.</Empty> : (
+      {data && (vd.rows.length === 0 ? <Empty>No vouchers in this period.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Voucher</TableHead><TableHead>Date</TableHead><TableHead>Kind</TableHead><TableHead>Account</TableHead><TableHead>Payee / description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{data.items.map((v: Dict) => (
+          <TableBody>{vd.rows.map((v: Dict) => (
             <TableRow key={v.id ?? `s:${v.voucher_date}:${v.voucher_number}:${v.amount}:${v.jrnl}`} className="cursor-pointer hover:bg-muted/50"
                       onClick={() => (v.id ? onOpen(v.id) : drill?.open(historyTarget("voucher", v)))}>
               <TableCell className="font-mono text-xs">{v.voucher_number}{v.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(v.voucher_date)}</TableCell>

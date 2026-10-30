@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { DrillLink } from "@/components/books/kit";
+import {
+  ClearVoidedButton, DrillLink,
+} from "@/components/books/kit";
+import { isVoided, useClearVoided } from "@/lib/voided";
 import { DrillTarget, historyTarget, useDrill } from "@/components/books/drill-context";
 import { PartyBalances, r2, SageTag, WhtPicker } from "@/components/books/kit";
 import { AlertTriangle, Plus, Printer, Trash2 } from "lucide-react";
+import { ShipViaSelect } from "@/components/frontdesk/ShipViaSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,22 +83,27 @@ function InvoiceRegister() {
   const { data, isLoading, error } = useBooks<Dict>(["invoice-register", range, search], "/sales/invoice-register",
     { from: range.from, to: range.to, search: search || undefined });
   const [status, setStatus] = useState("");
-  const STATUS: Record<string, string[]> = { open: ["OPEN", "POSTED", "PARTIALLY_PAID"], paid: ["PAID"], void: ["VOID"], draft: ["DRAFT"], credit: ["CREDIT"] };
-  const rows: Dict[] = (data?.rows ?? []).filter((r: Dict) => !status || (STATUS[status] ?? []).includes(String(r.status).toUpperCase()));
-  const openRow = (r: Dict) => drill?.open(r.invoice_id ? { type: "invoice", id: r.invoice_id, label: r.number } : { type: "sageinvoice", id: r.number, label: r.number });
+  const STATUS: Record<string, string[]> = { open: ["OPEN", "POSTED", "PARTIALLY_PAID"], paid: ["PAID"], void: ["VOID"], draft: ["DRAFT"], credit: ["CREDIT"],
+    awaiting: ["AWAITING_QC", "AWAITING_FINANCE", "QC_FAILED", "NOT_POSTED"] };
+  const v = useClearVoided("books.invoice-register", data?.rows as Dict[] | undefined);
+  // choosing the Void status shows the voided invoices even when the list is cleared
+  const rows: Dict[] = (status === "void" ? data?.rows ?? [] : v.rows).filter((r: Dict) => !status || (STATUS[status] ?? []).includes(String(r.status).toUpperCase()));
+  const openRow = (r: Dict) => drill?.open(r.frontdesk_id ? { type: "frontdesk", id: r.frontdesk_id, label: r.number }
+    : r.invoice_id ? { type: "invoice", id: r.invoice_id, label: r.number } : { type: "sageinvoice", id: r.number, label: r.number });
   return (
-    <Section title={`Invoice register${data ? ` (${data.count})` : ""}`} actions={<CsvButton filename={`invoice-register-${range.from}-to-${range.to}.csv`} rows={data?.rows} />}>
+    <Section title={`Invoice register${data ? ` (${data.count})` : ""}`} actions={<><ClearVoidedButton cleared={v.cleared} count={v.voidedCount} onToggle={v.toggle} /><CsvButton filename={`invoice-register-${range.from}-to-${range.to}.csv`} rows={data?.rows} /></>}>
       {data && (
         <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
           {data.last_invoice && <span>Last invoice raised: <strong className="font-mono">{data.last_invoice.number}</strong> on {fmtDate(data.last_invoice.date)}{data.last_invoice.customer ? ` · ${data.last_invoice.customer}` : ""}</span>}
           <span>Next invoice: <strong className="font-mono">{data.next_invoice_number}</strong></span>
-          <span className="ml-auto">Invoiced <strong>{naira(data.total)}</strong> · still open <strong>{naira(data.open)}</strong></span>
+          <span className="ml-auto">Invoiced <strong>{naira(data.total)}</strong> · still open <strong>{naira(data.open)}</strong>{Number(data.awaiting) > 0 && <> · on Frontdesk awaiting QC / Finance <strong>{naira(data.awaiting)}</strong></>}</span>
         </div>
       )}
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Invoice no. or customer" }}
           selects={[{ label: "Status", value: status, onChange: setStatus, options: [{ value: "open", label: "Open (owing)" }, { value: "paid", label: "Paid" },
-            { value: "credit", label: "Credit memos" }, { value: "void", label: "Void" }, { value: "draft", label: "Draft" }] }]} /></div>
+            { value: "credit", label: "Credit memos" }, { value: "void", label: "Void" }, { value: "draft", label: "Draft" },
+            { value: "awaiting", label: "Frontdesk - awaiting QC / Finance" }] }]} /></div>
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
@@ -111,7 +120,7 @@ function InvoiceRegister() {
                 <TableCell className="text-right"><Amount value={r.amount} /></TableCell>
                 <TableCell className="text-right"><Amount value={r.paid} blankZero /></TableCell>
                 <TableCell className="text-right"><Amount value={r.balance} blankZero /></TableCell>
-                <TableCell><StatusBadge status={r.status} /></TableCell>
+                <TableCell><StatusBadge status={r.status} />{r.status === "NOT_POSTED" && <div className="max-w-[220px] text-[11px] text-red-700 dark:text-red-300">{r.posting_message || "approved but not posted - see Close & Controls → Frontdesk postings"}</div>}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.source === "sage" ? "Sage" : r.source === "frontdesk" ? "Frontdesk" : "ACE Books"}</TableCell>
               </TableRow>
             ))}
@@ -129,18 +138,19 @@ function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
   const [search, setSearch] = useState("");
   const [range, setRange] = useState({ from: yearStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["receipts", search, range], "/receivables/receipts", { search, from: range.from, to: range.to, limit: 300 });
+  const v = useClearVoided("books.receipts", data?.items as Dict[] | undefined);
   return (
-    <Section title={`Receipts${data ? ` (${data.total})` : ""}`} actions={<CsvButton filename="receipts.csv" rows={data?.items} />}>
+    <Section title={`Receipts${data ? ` (${data.total})` : ""}`} actions={<><ClearVoidedButton cleared={v.cleared} count={v.voidedCount} onToggle={v.toggle} /><CsvButton filename="receipts.csv" rows={data?.items} /></>}>
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Receipt no., customer, cheque/transfer ref" }} /></div>
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No receipts in this period.</Empty> : (
+      {data && (v.rows.length === 0 ? <Empty>No receipts in this period{v.cleared && v.voidedCount ? " (voided receipts are cleared)" : ""}.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead>Customer</TableHead><TableHead>Method</TableHead><TableHead>Into</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Unapplied</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>
-            {data.items.map((r: Dict) => (
+            {v.rows.map((r: Dict) => (
               <TableRow key={r.id ?? `s:${r.receipt_date}:${r.receipt_number}:${r.customer_id}`} className="cursor-pointer hover:bg-muted/50"
                         onClick={() => (r.id ? onOpen(r.id) : drill?.open(historyTarget("receipt", r)))}>
                 <TableCell className="font-mono text-xs">{r.receipt_number}{r.source === "SAGE" && <SageTag />}</TableCell>
@@ -162,15 +172,16 @@ function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
 
 function CreditNoteList({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, isLoading, error } = useBooks<any>(["creditnotes"], "/sales/credit-notes", { limit: 300 });
+  const v = useClearVoided("books.credit-notes", data?.items as Dict[] | undefined);
   return (
-    <Section title="Credit notes & returns inward" actions={<CsvButton filename="credit-notes.csv" rows={data?.items} />}>
+    <Section title="Credit notes & returns inward" actions={<><ClearVoidedButton cleared={v.cleared} count={v.voidedCount} onToggle={v.toggle} /><CsvButton filename="credit-notes.csv" rows={data?.items} /></>}>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No credit notes yet.</Empty> : (
+      {data && (v.rows.length === 0 ? <Empty>No credit notes yet.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Date</TableHead><TableHead>Customer</TableHead><TableHead>Against</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Stock back</TableHead></TableRow></TableHeader>
           <TableBody>
-            {data.items.map((n: Dict) => (
-              <TableRow key={n.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(n.id)}>
+            {v.rows.map((n: Dict) => (
+              <TableRow key={n.id} data-voided={isVoided(n) || undefined} className="cursor-pointer hover:bg-muted/50" onClick={() => onOpen(n.id)}>
                 <TableCell className="font-mono text-xs">{n.credit_note_number}</TableCell>
                 <TableCell className="whitespace-nowrap">{fmtDate(n.note_date)}</TableCell>
                 <TableCell className="max-w-[200px] truncate"><DrillLink to={{ type: "customer", id: String(n.customer_id ?? ""), label: n.customer_name }}>{n.customer_name}</DrillLink></TableCell>
@@ -316,7 +327,7 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="space-y-1"><Label className="text-xs">Invoice date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           <div className="space-y-1"><Label className="text-xs">Customer PO</Label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
-          <div className="space-y-1"><Label className="text-xs">Shipping method</Label><Input value={shipping} onChange={(e) => setShipping(e.target.value)} /></div>
+          <div className="space-y-1"><Label className="text-xs">Ship via</Label><ShipViaSelect value={shipping} onChange={setShipping} /></div>
           <div className="space-y-1"><Label className="text-xs">Ship to (if not the billing address)</Label><Input value={shipTo} onChange={(e) => setShipTo(e.target.value)} /></div>
         </div>
         <div className="space-y-2">

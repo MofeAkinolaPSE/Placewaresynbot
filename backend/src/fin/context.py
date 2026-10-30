@@ -30,9 +30,9 @@ ROLE_PERMISSIONS = {
     "management": {
         "*.view", "reports.*", "accounting.journal.approve", "sales.credit.override",
         "inventory.adjustment.approve", "finance.period.close", "finance.period.reopen",
-        "finance.settings.edit", "budget.approve", "controls.*",
+        "finance.settings.edit", "budget.approve", "controls.*", "receivables.customer.delete",
     },
-    "sales": {"sales.invoice.view", "sales.invoice.create", "receivables.view", "inventory.view"},
+    "sales": {"sales.invoice.view", "sales.invoice.create", "receivables.view", "inventory.view", "receivables.customer.delete"},
     # Operations read supplier bills and balances (stock orders are received on the bill),
     # but do not record them.
     "ops": {"inventory.*", "reports.view", "payables.view"},
@@ -40,10 +40,10 @@ ROLE_PERMISSIONS = {
     "procurement": {"inventory.view", "reports.view", "payables.view"},
     # Quality assurance acts on stock through ACE Books: recalls (batch frozen, buyers traced),
     # batch release/quarantine and expiry write-offs (a second person approves those).
-    "quality_assurance": {"inventory.view", "inventory.recall.create", "inventory.batch.edit",
-                          "inventory.adjustment.create", "reports.view"},
-    "qa": {"inventory.view", "inventory.recall.create", "inventory.batch.edit",
-           "inventory.adjustment.create", "reports.view"},
+    "quality_assurance": {"inventory.view", "inventory.recall.create", "inventory.batch.edit", "inventory.receipt.create", "inventory.product.create",
+                          "inventory.product.delete", "inventory.batch.delete", "inventory.adjustment.create", "reports.view"},
+    "qa": {"inventory.view", "inventory.recall.create", "inventory.batch.edit", "inventory.receipt.create", "inventory.product.create",
+           "inventory.product.delete", "inventory.batch.delete", "inventory.adjustment.create", "reports.view"},
 }
 
 

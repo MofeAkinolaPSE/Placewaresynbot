@@ -43,6 +43,11 @@ def _tot(rows: List[Dict[str, Any]], *keys: str) -> Dict[str, Any]:
     return {k: sum((money(r.get(k)) for r in rows), ZERO) for k in keys}
 
 
+def _standing(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The rows that count: a voided document stays listed (the screen can clear it) but adds nothing."""
+    return [r for r in rows if str(r.get("status") or "").upper() not in ("VOID", "VOIDED", "CANCELLED")]
+
+
 def run(conn, entity_id: str, key: str, p: Dict[str, Any]) -> Dict[str, Any]:
     fn = REPORTS.get(key)
     if not fn:
@@ -191,7 +196,7 @@ def invoice_register(conn, e, p):
                         C("customer", "Customer", link="customer", id_field="customer_id"), C("amount", "Amount", "money"),
                         C("paid", "Paid / credited", "money"), C("balance", "Balance", "money"), C("status", "Status"),
                         C("raised_in", "Raised in"), C("journal_number", "Journal", link="journal", id_field="journal_id")],
-            "rows": rows, "totals": _tot([x for x in rows if x["kind"] == "invoice"], "amount", "paid", "balance")}
+            "rows": rows, "totals": _tot([x for x in rows if x["kind"] == "invoice" and x["status"] != "Void"], "amount", "paid", "balance")}
 
 
 @report("receipts-register")
@@ -207,7 +212,7 @@ def receipts_register(conn, e, p):
                         C("customer", "Customer", link="customer", id_field="customer_id"), C("method", "Method"), C("reference", "Cheque / ref"),
                         C("bank", "Deposited to"), C("amount", "Amount", "money", link="receipt", id_field="receipt_id"),
                         C("wht_amount", "WHT", "money"), C("status", "Status"), C("journal_number", "Journal", link="journal", id_field="journal_id")],
-            "rows": rows, "totals": _tot(rows, "amount", "wht_amount")}
+            "rows": rows, "totals": _tot(_standing(rows), "amount", "wht_amount")}
 
 
 def _party_ledger(conn, e, p, kind: str):
@@ -243,7 +248,10 @@ def _party_ledger(conn, e, p, kind: str):
     rows = q(conn, f"""
         WITH d AS ({docs}), n AS ({names}),
         o AS (SELECT pid::text pid, SUM({sign}) opening FROM d WHERE date < %(f)s GROUP BY 1),
-        m AS (SELECT d.*, d.pid::text AS p2 FROM d WHERE date BETWEEN %(f)s AND %(t)s {party_filter})
+        -- a document voided on its own date (both lines, same day) nets to nothing: neither is listed
+        m AS (SELECT d.*, d.pid::text AS p2 FROM d WHERE date BETWEEN %(f)s AND %(t)s {party_filter}
+              AND NOT EXISTS (SELECT 1 FROM d y WHERE y.link = d.link AND y.doc_id = d.doc_id AND y.date = d.date
+                              AND (y.debit <> d.debit OR y.credit <> d.credit)))
         SELECT m.p2 AS party_id, n.name AS party, n.code, m.date, m.type, m.number, m.doc_id, m.link, m.debit, m.credit,
                COALESCE(o.opening,0) + SUM({sign.replace('debit', 'm.debit').replace('credit', 'm.credit')})
                    OVER (PARTITION BY m.p2 ORDER BY m.date, m.number ROWS UNBOUNDED PRECEDING) AS balance,
@@ -355,7 +363,7 @@ def purchase_register(conn, e, p):
                         C("supplier_invoice_number", "Vendor invoice"), C("supplier", "Vendor", link="supplier", id_field="supplier_id"),
                         C("due_date", "Due", "date"), C("total", "Amount", "money"), C("amount_settled", "Paid", "money"),
                         C("balance", "Balance", "money"), C("status", "Status"), C("journal_number", "Journal", link="journal", id_field="journal_id")],
-            "rows": rows, "totals": _tot(rows, "total", "amount_settled", "balance")}
+            "rows": rows, "totals": _tot(_standing(rows), "total", "amount_settled", "balance")}
 
 
 @report("check-register")
@@ -376,7 +384,7 @@ def check_register(conn, e, p):
             "columns": [C("date", "Date", "date"), C("number", "Number", link="doc", id_field="doc_id"), C("method", "Method"),
                         C("reference", "Cheque / ref"), C("payee", "Payee"), C("bank", "Paid from"), C("amount", "Amount", "money"),
                         C("status", "Status"), C("journal_number", "Journal", link="journal", id_field="journal_id")],
-            "rows": rows, "totals": _tot(rows, "amount")}
+            "rows": rows, "totals": _tot(_standing(rows), "amount")}
 
 
 @report("cash-requirements")

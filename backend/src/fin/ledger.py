@@ -65,6 +65,16 @@ def account_balance(conn, entity_id: str, account_id: str, as_of: dt.date) -> An
     return money(r["b"])
 
 
+def same_day_void(journal_col: str) -> str:
+    """SQL test: the journal was voided / deleted the same day it was posted (it was reversed on its own
+    date), or it is that reversal. Such a pair nets to nothing on any day and any range, so ledgers and
+    their CSV leave both out - they stay in Journals and the audit trail. A void dated later (a cheque
+    that bounced next week) changed the books in between and stays listed, so the CSV always agrees
+    with the trial balance."""
+    return (f"EXISTS (SELECT 1 FROM fin_journals jx JOIN fin_journals jy ON jy.id = COALESCE(jx.reversed_by_id, jx.reversal_of_id) "
+            f"WHERE jx.id = {journal_col} AND jy.journal_date = jx.journal_date)")
+
+
 def account_activity(conn, entity_id: str, account_id: str, date_from: dt.date, date_to: dt.date,
                      limit: int = 1000, offset: int = 0, **filters: Any) -> Dict[str, Any]:
     acct = q1(conn, "SELECT * FROM fin_accounts WHERE id=%s AND legal_entity_id=%s", (account_id, entity_id))
@@ -87,11 +97,12 @@ def account_activity(conn, entity_id: str, account_id: str, date_from: dt.date, 
                    ROW_NUMBER() OVER (ORDER BY g.journal_date, g.journal_number, g.line_no) AS rn
             FROM fin_v_general_ledger g
             WHERE g.legal_entity_id=%s AND g.account_id=%s AND g.journal_date BETWEEN %s AND %s {d1}
+              AND NOT {same_day_void("g.journal_id")}
         ) x ORDER BY rn LIMIT %s OFFSET %s
     """, [opening] + p1 + [limit, offset])
     totals = q1(conn, f"""SELECT COALESCE(SUM(debit),0) d, COALESCE(SUM(credit),0) c, COUNT(*) n
                           FROM fin_v_general_ledger g WHERE g.legal_entity_id=%s AND g.account_id=%s
-                          AND g.journal_date BETWEEN %s AND %s {d1}""", p1)
+                          AND g.journal_date BETWEEN %s AND %s {d1} AND NOT {same_day_void("g.journal_id")}""", p1)
     d, c = money(totals["d"]), money(totals["c"])
     return {"account": acct, "date_from": date_from, "date_to": date_to, "opening": opening,
             "total_debit": d, "total_credit": c, "closing": opening + d - c,

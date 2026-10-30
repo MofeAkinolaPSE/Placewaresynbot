@@ -125,6 +125,15 @@ async def _broadcast_frontdesk(event: str, invoice_id: str, walk_in_id: str | No
 
 logger = logging.getLogger(__name__)
 
+
+def push_frontdesk(event: str, invoice_id: Optional[str] = None, walk_in_id: Optional[str] = None, status: Optional[str] = None) -> None:
+    """Live update for every Frontdesk / QC / Finance / Customer Workspace screen - they refresh without a reload."""
+    try:
+        realtime_hub.broadcast_threadsafe("frontdesk_updates", {"event": event, "invoice_id": invoice_id, "walk_in_id": walk_in_id, "status": status})
+    except Exception:
+        logger.debug("frontdesk_updates push failed (non-fatal)", exc_info=True)
+
+
 router = APIRouter(prefix="/frontdesk", tags=["Frontdesk"])
 
 # ---------------------------------------------------------------------------
@@ -147,10 +156,10 @@ WALK_IN_STATUSES = {
 WALK_IN_TRANSITIONS: dict[str, set[str]] = {
     "arrived":          {"invoiced", "cancelled"},
     "invoiced":         {"qc_pending", "cancelled"},
-    "qc_pending":       {"qc_passed", "qc_failed"},
-    "qc_passed":        {"finance_pending"},
+    "qc_pending":       {"qc_passed", "qc_failed", "cancelled"},
+    "qc_passed":        {"finance_pending", "cancelled"},
     "qc_failed":        {"qc_pending", "cancelled"},
-    "finance_pending":  {"finance_approved", "finance_rejected"},
+    "finance_pending":  {"finance_approved", "finance_rejected", "cancelled"},
     "finance_approved": {"completed"},
     "finance_rejected": {"finance_pending", "cancelled"},
     "completed":        set(),
@@ -360,6 +369,7 @@ def register_walk_in(
     except Exception:
         pass
 
+    push_frontdesk("walk_in_registered", None, walk_in_id, "arrived")
     return {"status": "registered", "walk_in": created}
 
 
@@ -1362,6 +1372,11 @@ def get_invoice(
             creator = get_user_by_id(invoice["created_by"])
             if creator:
                 invoice["created_by_email"] = creator.get("email")
+            # "Prepared by" prints the person's name from HR (User Access creates the profile)
+            from src.services.people import names_for
+            nm = names_for([invoice["created_by"]]).get(str(invoice["created_by"]))
+            if nm and "@" not in nm:
+                invoice["created_by_name"] = nm
         except Exception:
             pass
 
@@ -1384,6 +1399,14 @@ def get_invoice(
             pass
 
     invoice["items"] = _fill_batch_details(invoice.get("items") or [])
+    try:
+        from src.fin.db import q1 as _fq1, tx as _ftx
+        with _ftx() as conn:
+            ace = _fq1(conn, """SELECT id::text AS id FROM fin_sales_invoices WHERE source_type='FRONTDESK' AND source_id=%s
+                               AND status <> 'VOID' LIMIT 1""", (str(invoice["id"]),))
+        invoice["ace_invoice_id"] = ace["id"] if ace else None
+    except Exception:
+        invoice["ace_invoice_id"] = None
     return {"invoice": invoice, "walk_in": walk_in}
 
 
@@ -1514,10 +1537,12 @@ def daily_report(
         except ValueError:
             raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
     else:
-        target_date = dt.date.today()
+        # "today" is Lagos's day (the server runs on UTC)
+        target_date = (dt.datetime.utcnow() + dt.timedelta(hours=1)).date()
 
-    day_start = dt.datetime.combine(target_date, dt.time.min).isoformat() + "Z"
-    day_end   = dt.datetime.combine(target_date, dt.time.max).isoformat() + "Z"
+    # the Lagos day (UTC+1) as UTC bounds
+    day_start = (dt.datetime.combine(target_date, dt.time.min) - dt.timedelta(hours=1)).isoformat() + "Z"
+    day_end   = (dt.datetime.combine(target_date, dt.time.max) - dt.timedelta(hours=1)).isoformat() + "Z"
 
     # Walk-ins today
     walk_ins: list[dict] = []
@@ -1538,7 +1563,7 @@ def daily_report(
     try:
         inv_resp = (
             db.table("frontdesk_invoices")
-            .select("id,total_amount,status,items,payment_method,created_at")
+            .select("id,walk_in_id,invoice_number,total_amount,discount_amount,delivery_charge,tax_amount,status,items,payment_method,created_at")
             .gte("created_at", day_start)
             .lte("created_at", day_end)
             .execute()
@@ -1547,15 +1572,38 @@ def daily_report(
     except Exception as exc:
         logger.error("Daily report invoice query error: %s", exc)
 
-    # Compute summary stats
-    total_revenue = sum(
-        float(inv.get("total_amount") or 0)
-        for inv in invoices
-        if inv.get("status") in ("completed", "finance_approved")
-    )
-    pending_qc       = sum(1 for wi in walk_ins if wi["status"] in ("qc_pending",))
-    pending_finance  = sum(1 for wi in walk_ins if wi["status"] in ("finance_pending",))
-    completed_today  = sum(1 for wi in walk_ins if wi["status"] == "completed")
+    # Compute summary stats - from the invoices themselves (a walk-in's own status lags its invoice, and
+    # quick requests from Customer Workspace have no visit to count)
+    # Revenue = sales of goods less discount allowed, as ACE Books reports sales (the delivery charge is
+    # other income, 40800; sales tax is not revenue). Counted once Finance approves (when it is posted).
+    def _sales(inv: dict) -> float:
+        return float(inv.get("total_amount") or 0) - float(inv.get("discount_amount") or 0)
+    approved = ("finance_approved", "dispatched", "completed")
+    total_revenue = sum(_sales(inv) for inv in invoices if inv.get("status") in approved)
+    # what is waiting is waiting whenever it was raised - not only today's
+    queue: list[dict] = []
+    try:
+        queue = (db.table("frontdesk_invoices").select("id,status")
+                 .in_("status", ["draft", "qc_pending", "qc_passed", "finance_pending"]).execute().data or [])
+    except Exception as exc:
+        logger.error("Daily report queue query error: %s", exc)
+    pending_qc       = sum(1 for i in queue if i["status"] in ("draft", "qc_pending"))
+    pending_finance  = sum(1 for i in queue if i["status"] in ("qc_passed", "finance_pending"))
+    completed_today  = sum(1 for inv in invoices if inv.get("status") in approved)
+
+    # each visit opens its invoice from the queue
+    by_visit = {}
+    for inv in invoices:
+        if inv.get("walk_in_id") and (inv["walk_in_id"] not in by_visit or inv.get("status") != "cancelled"):
+            by_visit[inv["walk_in_id"]] = inv
+    for wi in walk_ins:
+        inv = by_visit.get(wi["id"])
+        if inv:
+            wi["invoice_id"] = inv["id"]
+            wi["invoice_number"] = inv.get("invoice_number")
+            wi["invoice_total"] = round(float(inv.get("total_amount") or 0) - float(inv.get("discount_amount") or 0)
+                                        + float(inv.get("delivery_charge") or 0) + float(inv.get("tax_amount") or 0), 2)
+            wi["invoice_status"] = inv.get("status")
 
     # Top requested products (from walk-in products_requested + invoice items)
     product_counts: dict[str, int] = {}
@@ -1580,7 +1628,7 @@ def daily_report(
     return {
         "date":              target_date.isoformat(),
         "walk_in_count":     len(walk_ins),
-        "invoice_count":     len(invoices),
+        "invoice_count":     sum(1 for inv in invoices if inv.get("status") != "cancelled"),
         "total_revenue":     round(total_revenue, 2),
         "pending_qc":        pending_qc,
         "pending_finance":   pending_finance,
@@ -1645,7 +1693,7 @@ def cancel_walk_in(
         db.table("frontdesk_invoices").update(
             {"status": "cancelled", "updated_at": now}
         ).eq("walk_in_id", walk_in_id).in_("status", [
-            "draft", "qc_pending", "finance_pending"
+            "draft", "qc_pending", "qc_passed", "qc_failed", "finance_pending", "finance_rejected"
         ]).execute()
     except Exception:
         pass
@@ -1664,7 +1712,141 @@ def cancel_walk_in(
     except Exception:
         pass
 
+    push_frontdesk("walk_in_cancelled", None, walk_in_id, "cancelled")
     return {"walk_in_id": walk_in_id, "status": "cancelled"}
+
+
+@router.get("/ship-methods")
+def ship_methods(_u=Depends(verify_jwt)):
+    """The "Ship via" choices for invoice forms (maintained in Maintain -> Shipping methods)."""
+    default = ["Airborne", "Courier", "Hand Delivery", "Cust. Pickup", "UPS Ground", "UPS Red", "UPS Blue", "US Mail", "Fed-EX", "Best Way"]
+    try:
+        from src.fin.db import q1, tx
+        with tx() as conn:
+            r = q1(conn, "SELECT ship_methods FROM fin_settings ORDER BY legal_entity_id LIMIT 1")
+        return {"methods": (r or {}).get("ship_methods") or default}
+    except Exception:
+        return {"methods": default}
+
+
+class InvoiceModifyIn(BaseModel):
+    items: list[dict]
+    delivery_charge: Optional[float] = Field(default=None, ge=0)
+    discount_amount: Optional[float] = Field(default=None, ge=0)
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+@router.put("/invoices/{invoice_id}/items", status_code=200)
+def modify_invoice(invoice_id: str, payload: InvoiceModifyIn, user=Depends(verify_jwt)):
+    """Modify an invoice Finance has not approved yet: add, remove or change items, the delivery charge or the
+    discount. The total is worked out again; if QC had already checked it, it goes back to QC (what was
+    checked has changed). Once approved it is an ACE Books invoice - modified there (Add items /
+    Return / remove items), which changes what the customer owes."""
+    actor_id = user.get("sub") if isinstance(user, dict) else str(user)
+    roles = set((user.get("roles") or []) if isinstance(user, dict) else [])
+    if not roles & {"admin", "finance", "management", "frontdesk", "sales"}:
+        raise HTTPException(status_code=403, detail="Frontdesk, sales or finance modify invoices")
+    try:
+        rows = db.table("frontdesk_invoices").select("*").eq("id", invoice_id).limit(1).execute().data or []
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to fetch invoice")
+    if not rows:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = rows[0]
+    if inv["status"] in ("finance_approved", "dispatched", "completed"):
+        raise HTTPException(status_code=409, detail="This invoice is approved and in ACE Books - modify it there (Add items / Return / remove items)")
+    if inv["status"] == "cancelled":
+        raise HTTPException(status_code=409, detail="This invoice is void")
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="An invoice needs at least one item - void it instead")
+    line_items: list[dict] = []
+    total = 0.0
+    for item in payload.items:
+        _p, _q, _u, li = _extract_line_item(item)
+        total += li["line_total"]
+        line_items.append(li)
+    line_items = _fill_batch_details(line_items)
+    back_to_qc = inv["status"] in ("qc_passed", "finance_pending", "finance_rejected", "qc_failed")
+    upd = {"items": line_items, "total_amount": round(total, 2), "updated_at": _now()}
+    if payload.delivery_charge is not None:
+        upd["delivery_charge"] = round(payload.delivery_charge, 2)
+    if payload.discount_amount is not None:
+        upd["discount_amount"] = round(min(payload.discount_amount, total), 2)
+    if back_to_qc:
+        upd.update({"status": "qc_pending", "qc_passed": None})
+    try:
+        db.table("frontdesk_invoices").update(upd).eq("id", invoice_id).execute()
+    except Exception as exc:
+        logger.error("Modify invoice error: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to modify invoice")
+    try:
+        audit_event("frontdesk_invoice_modified", {"reason": payload.reason, "before_total": inv.get("total_amount"), "after_total": round(total, 2),
+                                                   "items_before": len(inv.get("items") or []), "items_after": len(line_items), "back_to_qc": back_to_qc},
+                    actor_id=actor_id, event_class="frontdesk", action="modify_invoice", subject_type="frontdesk_invoice", subject_id=invoice_id)
+    except Exception:
+        pass
+    if back_to_qc:
+        _notify_qc_waiting({**inv, **upd}, actor_id)
+    push_frontdesk("invoice_modified", invoice_id, inv.get("walk_in_id"), upd.get("status", inv["status"]))
+    return {"invoice_id": invoice_id, "total_amount": round(total, 2), "status": upd.get("status", inv["status"]), "back_to_qc": back_to_qc}
+
+
+@router.post("/invoices/{invoice_id}/void", status_code=200)
+def void_frontdesk_invoice(
+    invoice_id: str,
+    reason: str = Body(..., embed=True),
+    user=Depends(verify_jwt),
+):
+    """Void a Frontdesk invoice wherever it is in QC -> Finance -> dispatch, and everywhere it shows.
+
+    Not yet approved: the request is cancelled (leaves the QC queue, Frontdesk and Customer Workspace)
+    and its number is given back if it was the last one. Already approved / posted: the ACE Books
+    invoice is voided - stock and postings reversed - which voids this request with it. Finance,
+    management or admin; whoever raised it may void it while it has not reached Finance approval."""
+    actor_id = user.get("sub") if isinstance(user, dict) else str(user)
+    roles = set((user.get("roles") or []) if isinstance(user, dict) else [])
+    reason = (reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Say why this invoice is being voided")
+    from src.fin.context import system_context
+    from src.fin.db import q1, tx
+    from src.fin.errors import FinError
+    from src.fin import sales
+    with tx() as conn:
+        inv = q1(conn, """SELECT id::text AS id, walk_in_id::text AS walk_in_id, invoice_number, status, created_by::text AS created_by
+                          FROM frontdesk_invoices WHERE id::text=%s FOR UPDATE""", (invoice_id,))
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if inv["status"] == "cancelled":
+            raise HTTPException(status_code=409, detail="This invoice is already void")
+        approved = inv["status"] in ("finance_approved", "dispatched", "completed")
+        finance = bool(roles & {"admin", "finance", "management"})
+        # Frontdesk voids what it raised until Finance approves it; after that it is in the books and finance voids it
+        frontdesk = bool(roles & {"frontdesk", "sales"}) or inv["created_by"] == str(actor_id)
+        if not finance and not (not approved and frontdesk):
+            raise HTTPException(status_code=403, detail="This invoice is approved and in the books - finance voids it")
+        ctx = system_context(conn, actor=str(actor_id))
+        ace = q1(conn, """SELECT id::text AS id FROM fin_sales_invoices WHERE legal_entity_id=%s AND status <> 'VOID'
+                          AND ((source_type='FRONTDESK' AND source_id=%s) OR invoice_number=%s) LIMIT 1""",
+                 (ctx.entity_id, inv["id"], inv["invoice_number"]))
+        try:
+            if ace:
+                sales.void_invoice(conn, ctx, ace["id"], reason)        # voids this request too
+            else:
+                sales.void_frontdesk_twin(conn, ctx, {"id": inv["id"], "invoice_number": inv["invoice_number"],
+                                                      "source_type": "FRONTDESK", "source_id": inv["id"], "voided_at": None}, reason)
+        except FinError as e:
+            raise HTTPException(status_code=409, detail=e.message)
+    if inv["walk_in_id"]:
+        _release_frontdesk_numbers(inv["walk_in_id"], actor_id)
+    try:
+        audit_event("frontdesk_invoice_voided", {"reason": reason, "previous_status": inv["status"], "posted": bool(ace)},
+                    actor_id=actor_id, event_class="frontdesk", action="void_invoice", subject_type="frontdesk_invoice",
+                    subject_id=invoice_id)
+    except Exception:
+        pass
+    push_frontdesk("invoice_voided", invoice_id, inv["walk_in_id"], "cancelled")
+    return {"invoice_id": invoice_id, "status": "cancelled", "ace_invoice_voided": bool(ace)}
 
 
 # ---------------------------------------------------------------------------

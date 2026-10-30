@@ -6,7 +6,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowUpRight, Download, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Download, EyeOff, Eye, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { books, BooksError, Dict, downloadCsv, fmtDate, monthStart, naira, num, today } from "@/lib/books-api";
 import { DrillTarget, sourceTarget, useDrill } from "./drill-context";
+import { isVoidStatus } from "@/lib/voided";
 import { GlAccountDetail } from "./gl";
 
 /** A figure or reference that opens the record behind it (financial lineage). */
@@ -92,6 +93,10 @@ export function Amount({ value, className = "", bold = false, blankZero = false 
 }
 
 const STATUS_TONE: Record<string, string> = {
+  AWAITING_QC: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
+  AWAITING_FINANCE: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
+  QC_FAILED: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  NOT_POSTED: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
   POSTED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
   PAID: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
   RECONCILED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
@@ -121,7 +126,8 @@ const STATUS_TONE: Record<string, string> = {
 export function StatusBadge({ status }: { status?: string }) {
   if (!status) return null;
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[status] ?? "bg-muted text-muted-foreground"}`}>
+    <span data-void-status={isVoidStatus(status) || undefined}
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[status] ?? "bg-muted text-muted-foreground"}`}>
       {status.replace(/_/g, " ").toLowerCase()}
     </span>
   );
@@ -200,11 +206,13 @@ export function DateRange({ from, to, onChange, single, presets = true }: { from
  *  the same headings, rows and text the user sees (amounts as plain numbers) - never the raw
  *  record with internal fields. With `columns`, those fields of `rows`. */
 export function CsvButton({ filename, rows, columns }: { filename: string; rows: Dict[] | undefined; columns?: { key: string; label: string }[] }) {
+  // voided records never go into an export (lib/voided.ts), whether or not the list shows them
+  const said = (n: number) => { if (n > 0) toast.info(`${n} voided ${n === 1 ? "record" : "records"} left out of the CSV`); };
   const click = (e: { currentTarget: HTMLElement }) => {
-    if (columns && rows) return downloadCsv(filename, rows, columns);
-    const out = tablesNear(e.currentTarget);
-    if (out.length) return downloadRows(filename, out);
-    if (rows) downloadCsv(filename, rows, columns);
+    if (columns && rows) return said(downloadCsv(filename, rows, columns));
+    const { rows: out, skipped } = tablesNear(e.currentTarget);
+    if (out.length) { downloadRows(filename, out); return said(skipped); }
+    if (rows) said(downloadCsv(filename, rows, columns));
   };
   return (
     <Button size="sm" variant="outline" disabled={!rows?.length} onClick={click}>
@@ -213,11 +221,12 @@ export function CsvButton({ filename, rows, columns }: { filename: string; rows:
   );
 }
 
-/** The visible table(s) in the nearest container around `el`, as rows of cell text. */
-function tablesNear(el: HTMLElement): string[][] {
+/** The visible table(s) in the nearest container around `el`, as rows of cell text - without the
+ *  voided rows (a row marked data-voided, or holding a void status badge). */
+function tablesNear(el: HTMLElement): { rows: string[][]; skipped: number } {
   let scope: HTMLElement | null = el.parentElement;
   while (scope && !scope.querySelector("table")) scope = scope.parentElement;
-  if (!scope) return [];
+  if (!scope) return { rows: [], skipped: 0 };
   const cell = (c: Element) => {
     const t = ((c as HTMLElement).innerText ?? c.textContent ?? "").replace(/\s*\n+\s*/g, " · ").trim();
     // ₦1,234.56 -> 1234.56 and (₦1,234.56) -> -1234.56, so the sheet can add them up
@@ -226,15 +235,30 @@ function tablesNear(el: HTMLElement): string[][] {
     return t;
   };
   const out: string[][] = [];
+  let skipped = 0;
   scope.querySelectorAll("table").forEach((table, i) => {
     if (table.closest("[hidden]")) return;
     if (i > 0) out.push([]);
     table.querySelectorAll("tr").forEach((tr) => {
+      if (tr.matches("[data-voided]") || tr.querySelector("[data-void-status]")) { skipped += 1; return; }
       const cells = Array.from(tr.querySelectorAll("th,td")).map(cell);
       if (cells.some((c) => c !== "")) out.push(cells);
     });
   });
-  return out;
+  return { rows: out, skipped };
+}
+
+/** "Clear voided (n)" on a list: hides its voided records (remembered on this computer); "Show voided"
+ *  brings them back. Nothing is deleted. Use with useClearVoided (lib/voided.ts). */
+export function ClearVoidedButton({ cleared, count, onToggle }: { cleared: boolean; count: number; onToggle: () => void }) {
+  if (!count) return null;
+  return (
+    <Button size="sm" variant="outline" onClick={onToggle} data-tour-label="Clear voided"
+            title={cleared ? "Show the voided records again" : "Hide voided records from this list - they stay in the books' history and never go into a CSV"}>
+      {cleared ? <Eye className="mr-1.5 h-4 w-4" /> : <EyeOff className="mr-1.5 h-4 w-4" />}
+      {cleared ? `Show voided (${count})` : `Clear voided (${count})`}
+    </Button>
+  );
 }
 
 function downloadRows(filename: string, rows: string[][]) {
@@ -394,7 +418,8 @@ export const CustomerPick = (p: { label?: string; value: Dict | null; onChange: 
 );
 export const SupplierPick = (p: { label?: string; value: Dict | null; onChange: (v: Dict | null) => void }) => (
   <SearchPick path="/suppliers" label={p.label ?? "Supplier"} value={p.value} onChange={p.onChange} placeholder="Supplier name"
-              render={(s) => s.name} sub={(s) => [s.supplier_code, s.payment_terms].filter(Boolean).join(" · ")} />
+              render={(s) => `${s.name}${s.supplier_code && s.supplier_code !== s.name ? ` · Vendor ID ${s.supplier_code}` : ""}`}
+              sub={(s) => [s.supplier_code ? `Vendor ID ${s.supplier_code}` : null, s.payment_terms].filter(Boolean).join(" · ")} />
 );
 /** Product search with the same prefills as the Frontdesk request form: stock on hand, the batch to
  *  sell next (earliest expiry first) and the price this customer last paid (else list / recent price). */

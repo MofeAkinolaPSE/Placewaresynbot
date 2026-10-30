@@ -26,6 +26,7 @@ import { motionTransitions } from "@/lib/motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AccessPreview, defaultDepartment, RoleDef, RolePicker } from "@/components/admin/RolePicker";
+import { TourPreview } from "@/components/tour/TourPreview";
 
 type UserRecord = {
   id: string;
@@ -345,6 +346,8 @@ const AdminUsers = () => {
           {createUserMutation.isPending ? "Creating..." : "Create User"}
         </Button>
       </div>
+
+      <TourPreview />
 
       <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
         <h2 className="text-lg font-semibold text-foreground">Current Users</h2>

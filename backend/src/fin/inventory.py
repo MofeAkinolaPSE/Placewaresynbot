@@ -929,6 +929,28 @@ def update_batch(conn, ctx, batch_id: str, data: Dict[str, Any]) -> Dict[str, An
     return q1(conn, "SELECT * FROM fin_batches WHERE id=%s", (batch_id,))
 
 
+def assign_batch(conn, ctx, sku: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Stock held without a batch record gets one: the number on the pack and the dates entered on the batch
+    screen; the item's stock (and its movements) are attached to it."""
+    ctx.require("inventory.batch.edit")
+    if not q1(conn, "SELECT 1 FROM fin_cost_layers WHERE legal_entity_id=%s AND sku=%s AND batch_id IS NULL AND qty_remaining > 0",
+              (ctx.entity_id, sku)):
+        raise invalid(f"{sku} has no stock without a batch")
+    from src.fin.maintain import lot_of
+    lot = lot_of(sku)
+    number = (str(data.get("pack_batch_number") or "").strip()) or (lot[1] + (lot[2] or "") if lot else None) or "UNBATCHED"
+    batch_id = ensure_batch(conn, ctx.entity_id, sku, number, expiry_date=data.get("expiry_date") or None,
+                            manufacture_date=data.get("manufacture_date") or None)
+    ex(conn, """UPDATE fin_batches SET pack_batch_number=COALESCE(%s, pack_batch_number), lot_code=COALESCE(lot_code, %s),
+                manufacture_date=COALESCE(%s, manufacture_date), expiry_date=COALESCE(%s, expiry_date) WHERE id=%s""",
+       ((str(data.get("pack_batch_number") or "").strip() or None), lot[1] if lot else None, data.get("manufacture_date") or None,
+        data.get("expiry_date") or None, batch_id))
+    ex(conn, "UPDATE fin_cost_layers SET batch_id=%s WHERE legal_entity_id=%s AND sku=%s AND batch_id IS NULL", (batch_id, ctx.entity_id, sku))
+    ex(conn, "UPDATE fin_inventory_transactions SET batch_id=%s WHERE legal_entity_id=%s AND sku=%s AND batch_id IS NULL", (batch_id, ctx.entity_id, sku))
+    audit.record(conn, ctx, "BATCH_ASSIGNED", "batch", batch_id, ref=f"{sku} {number}", after={k: str(v) for k, v in data.items()})
+    return q1(conn, "SELECT * FROM fin_batches WHERE id=%s", (batch_id,))
+
+
 def require_sellable(conn, entity_id: str, batch_id: Optional[str]) -> None:
     if not batch_id:
         return

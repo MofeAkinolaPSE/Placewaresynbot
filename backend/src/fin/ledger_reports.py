@@ -186,7 +186,14 @@ def _ace_party_docs(conn, entity_id: str, kind: str, after: dt.date, t: dt.date,
             UNION ALL SELECT d.supplier_id::text, d.note_date, d.debit_note_number, 'PJ', 'debitnote', d.id::text, d.total, 0
             FROM fin_debit_notes d WHERE d.legal_entity_id=%(e)s AND d.journal_id IS NOT NULL
         ) x WHERE x.date > %(a)s AND x.date <= %(t)s {pf} ORDER BY x.date, x.trans_no"""
-    return q(conn, sql, p)
+    rows = q(conn, sql, p)
+    # a document voided on its own date (the document and its void, same day, same amount) nets to
+    # nothing: neither line is listed, so the statement and its CSV show only what stands
+    seen: Dict[Any, int] = {}
+    for r in rows:
+        k = (r["link"], r["doc_id"], r["date"])
+        seen[k] = seen.get(k, 0) + 1
+    return [r for r in rows if seen[(r["link"], r["doc_id"], r["date"])] < 2]
 
 
 def party_ledger(conn, entity_id: str, kind: str, f: dt.date, t: dt.date, party_id: Optional[str] = None,
@@ -421,7 +428,7 @@ def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optio
     ar = q1(conn, """SELECT a.code FROM fin_account_mappings m JOIN fin_accounts a ON a.id=m.account_id
                      WHERE m.legal_entity_id=%s AND m.mapping_key='AR_CONTROL'""", (e,))
     ace = q(conn, """SELECT i.id::text AS invoice_id, i.invoice_number AS number, i.invoice_date AS date, i.due_date, i.customer_id,
-                            c.name AS customer, COALESCE(i.original_total, i.total) AS amount, i.total - i.amount_settled AS balance,
+                            c.name AS customer, COALESCE(i.original_total, i.total) AS amount, CASE WHEN i.status = 'VOID' THEN 0 ELSE i.total - i.amount_settled END AS balance,
                             i.status, i.source_type, i.is_opening, i.journal_id::text AS journal_id, j.journal_number
                      FROM fin_sales_invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN fin_journals j ON j.id=i.journal_id
                      WHERE i.legal_entity_id=%s AND i.invoice_date BETWEEN %s AND %s""", (e, f, t))
@@ -442,7 +449,7 @@ def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optio
                 "number": s["number"], "date": s["date"], "customer_id": s["customer_id"] or (o or {}).get("customer_id"),
                 "customer": s["customer"] or (o or {}).get("customer"), "amount": s["amount"],
                 "balance": o["balance"] if o else ZERO, "kind": "credit memo" if credit else "invoice",
-                "status": ("OPEN" if o and money(o["balance"]) != 0 else "PAID") if not credit else "CREDIT",
+                "status": ("VOID" if o and o["status"] == "VOID" else "OPEN" if o and money(o["balance"]) != 0 else "PAID") if not credit else "CREDIT",
                 "source": "sage", "invoice_id": o["invoice_id"] if o else None, "journal_number": None, "journal_id": None,
                 "due_date": o["due_date"] if o else None}
     for r in ace:
@@ -452,9 +459,32 @@ def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optio
         rows[key if r["is_opening"] else f"ace:{r['invoice_id']}"] = {
             "number": r["number"], "date": r["date"], "customer_id": r["customer_id"], "customer": r["customer"],
             "amount": r["amount"], "balance": r["balance"], "kind": "invoice",
-            "status": r["status"] if not r["is_opening"] else ("OPEN" if money(r["balance"]) != 0 else "PAID"),
+            "status": r["status"] if not r["is_opening"] or r["status"] == "VOID" else ("OPEN" if money(r["balance"]) != 0 else "PAID"),
             "source": "sage" if r["is_opening"] else ("frontdesk" if r["source_type"] == "FRONTDESK" else "ace"),
             "invoice_id": r["invoice_id"], "journal_number": r["journal_number"], "journal_id": r["journal_id"], "due_date": r["due_date"]}
+    # Frontdesk invoices that are not (yet) ACE Books invoices: raised and waiting for QC / Finance,
+    # rejected, voided before approval - or approved but not posted (the reason is shown, so nothing
+    # raised on Frontdesk is missing from the books without anyone seeing why).
+    fd_stage = {"draft": "AWAITING_QC", "qc_pending": "AWAITING_QC", "qc_failed": "QC_FAILED", "qc_passed": "AWAITING_FINANCE",
+                "finance_pending": "AWAITING_FINANCE", "finance_rejected": "REJECTED", "cancelled": "VOID",
+                "finance_approved": "NOT_POSTED", "dispatched": "NOT_POSTED", "completed": "NOT_POSTED"}
+    for r in q(conn, """SELECT f.id::text AS fid, f.invoice_number AS number, (f.created_at AT TIME ZONE 'Africa/Lagos')::date AS date,
+                               f.status, w.customer_id, COALESCE(c.name, f.company_name, f.customer_name) AS customer,
+                               f.total_amount - COALESCE(f.discount_amount,0) + COALESCE(f.delivery_charge,0) + COALESCE(f.tax_amount,0) AS amount,
+                               p.status AS posting_status, p.message AS posting_message
+                        FROM frontdesk_invoices f
+                        LEFT JOIN frontdesk_walk_ins w ON w.id=f.walk_in_id LEFT JOIN customers c ON c.id=w.customer_id
+                        LEFT JOIN fin_source_postings p ON p.legal_entity_id=%s AND p.source_type='FRONTDESK' AND p.source_id=f.id::text
+                        WHERE (f.created_at AT TIME ZONE 'Africa/Lagos')::date BETWEEN %s AND %s
+                          AND NOT EXISTS (SELECT 1 FROM fin_sales_invoices i WHERE i.legal_entity_id=%s AND i.source_type='FRONTDESK'
+                                          AND i.source_id=f.id::text)""", (e, f, t, e)):
+        if r["number"] and str(r["number"]) in {str(x["number"]) for x in rows.values()}:
+            continue
+        rows[f"fd:{r['fid']}"] = {
+            "number": r["number"], "date": r["date"], "customer_id": r["customer_id"], "customer": r["customer"],
+            "amount": r["amount"], "balance": ZERO, "kind": "request", "status": fd_stage.get(r["status"], r["status"].upper()),
+            "source": "frontdesk", "invoice_id": None, "frontdesk_id": r["fid"], "journal_number": None, "journal_id": None,
+            "due_date": None, "posting_message": r["posting_message"] if r["status"] in ("finance_approved", "dispatched", "completed") else None}
     out = list(rows.values())
     if customer_id:
         out = [r for r in out if r["customer_id"] == customer_id]
@@ -467,6 +497,7 @@ def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optio
         r["paid"] = money(r["amount"]) - money(r["balance"]) if r["kind"] == "invoice" else ZERO
     from src.fin import numbering
     return {"date_from": f, "date_to": t, "count": len(out), "rows": out[:limit],
-            "total": sum((money(r["amount"]) for r in out if r["kind"] == "invoice"), ZERO),
+            "total": sum((money(r["amount"]) for r in out if r["kind"] == "invoice" and r["status"] != "VOID"), ZERO),
+            "awaiting": sum((money(r["amount"]) for r in out if r["kind"] == "request" and r["status"] in ("AWAITING_QC", "AWAITING_FINANCE")), ZERO),
             "open": sum((money(r["balance"]) for r in out), ZERO),
             "last_invoice": numbering.last_invoice(conn, e), "next_invoice_number": numbering.next_invoice_preview(conn, e)}

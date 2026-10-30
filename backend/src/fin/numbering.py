@@ -129,7 +129,7 @@ def release_if_last(conn, ctx, doc_type: str, number: str, table: str, column: s
         return None   # not the last number issued
     if doc_type == "SALES_INVOICE" and check_frontdesk:
         # a Frontdesk request still holding the number keeps it
-        held = q1(conn, """SELECT 1 FROM frontdesk_invoices f WHERE f.invoice_number=%s AND NOT EXISTS (
+        held = q1(conn, """SELECT 1 FROM frontdesk_invoices f WHERE f.invoice_number=%s AND f.status <> 'cancelled' AND NOT EXISTS (
                                SELECT 1 FROM fin_source_postings p WHERE p.source_type='FRONTDESK' AND p.source_id=f.id::text
                                AND p.document_id::text=%s)""", (raw, str(row_id)))
         if held:
@@ -139,6 +139,9 @@ def release_if_last(conn, ctx, doc_type: str, number: str, table: str, column: s
         k += 1
         renamed = f"{raw}-VOID-{k}"
     ex(conn, f"UPDATE {table} SET {column}=%s WHERE id=%s", (renamed, row_id))
+    if doc_type == "SALES_INVOICE" and table != "frontdesk_invoices":
+        # the voided sale's Frontdesk request (voided with it) lets the number go too
+        ex(conn, "UPDATE frontdesk_invoices SET invoice_number=%s WHERE invoice_number=%s AND status='cancelled'", (renamed, raw))
     ex(conn, "UPDATE fin_number_sequences SET next_value=%s WHERE legal_entity_id=%s AND doc_type=%s", (value, ctx.entity_id, doc_type))
     audit.record(conn, ctx, "DOCUMENT_NUMBER_RELEASED", table, row_id, ref=raw,
                  metadata={"renamed_to": renamed, "next_number": raw})

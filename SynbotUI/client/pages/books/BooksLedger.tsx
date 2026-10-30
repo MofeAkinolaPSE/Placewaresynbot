@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useState } from "react";
 import { historyTarget, useDrill } from "@/components/books/drill-context";
-import { SageTag } from "@/components/books/kit";
+import {
+  ClearVoidedButton, SageTag,
+} from "@/components/books/kit";
+import { isVoided, useClearVoided } from "@/lib/voided";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, CheckCircle2, ChevronDown, ChevronRight, Plus, Search, Trash2, XCircle } from "lucide-react";
@@ -65,8 +68,9 @@ function JournalList({ onOpen }: { onOpen: (id: string) => void }) {
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const { data, isLoading, error } = useBooks<any>(["journals", search, status, type, range], "/journals",
     { search, status: status || undefined, journal_type: type || undefined, from: range.from, to: range.to, limit: 300 });
+  const vd = useClearVoided("books.journals", data?.items as Dict[] | undefined);
   return (
-    <Section title={`Journals${data ? ` (${data.total})` : ""}`} actions={<CsvButton filename="journals.csv" rows={data?.items} />}>
+    <Section title={`Journals${data ? ` (${data.total})` : ""}`} actions={<><ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} /><CsvButton filename="journals.csv" rows={data?.items} /></>}>
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Journal no., description, source ref" }}
           selects={[
@@ -76,11 +80,11 @@ function JournalList({ onOpen }: { onOpen: (id: string) => void }) {
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
-      {data && (data.items.length === 0 ? <Empty>No journals match.</Empty> : (
+      {data && (vd.rows.length === 0 ? <Empty>No journals match.</Empty> : (
         <Table>
           <TableHeader><TableRow><TableHead>Journal</TableHead><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Description</TableHead><TableHead>Source</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{data.items.map((j: Dict) => (
-            <TableRow key={j.id ?? `s:${j.journal_date}:${j.source_ref}`} className="cursor-pointer hover:bg-muted/50"
+          <TableBody>{vd.rows.map((j: Dict) => (
+            <TableRow key={j.id ?? `s:${j.journal_date}:${j.source_ref}`} data-voided={isVoided(j) || undefined} className="cursor-pointer hover:bg-muted/50"
                       onClick={() => (j.id ? onOpen(j.id) : drill?.open(historyTarget("journal", j)))}>
               <TableCell className="font-mono text-xs">{j.journal_number}{j.source === "SAGE" && <SageTag />}</TableCell><TableCell className="whitespace-nowrap">{fmtDate(j.journal_date)}</TableCell>
               <TableCell className="text-xs">{j.source === "SAGE" ? "general (Sage)" : j.journal_type.toLowerCase()}</TableCell>

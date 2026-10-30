@@ -13,7 +13,8 @@ import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
 import { NewRequestSheet, type CustomerSearchResult } from "@/components/workspace/NewRequestSheet";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
-import { DrillLink } from "@/components/books/kit";
+import { ClearVoidedButton, DrillLink } from "@/components/books/kit";
+import { useClearVoided } from "@/lib/voided";
 import { DrillProvider } from "@/components/books/lineage";
 import { ActivitySheet, NewCustomerSheet, NewDealSheet, ReminderSheet, StageChip } from "@/components/crm/crm-kit";
 
@@ -40,7 +41,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   finance_approved:  { label: "Finance Approved",  color: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" },
   finance_rejected:  { label: "Finance Rejected",  color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
   completed:         { label: "Completed",         color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
-  cancelled:         { label: "Cancelled",         color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  cancelled:         { label: "Voided",            color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
   dispatched:        { label: "Dispatched",        color: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300" },
 };
 
@@ -118,7 +119,9 @@ function CustomerWorkspaceInner() {
     enabled: !!selectedCustomer,
   });
 
-  const orders: OrderRow[] = (context as any)?.orders ?? [];
+  const allOrders: OrderRow[] = (context as any)?.orders ?? [];
+  const vd = useClearVoided("workspace.orders", allOrders as any[]);
+  const orders = vd.rows as OrderRow[];
 
   // A ?customer= preselect arrives with only an id -- fill in the name once
   // customer_360 has it.
@@ -390,7 +393,8 @@ function CustomerWorkspaceInner() {
                   )}
 
                   <div>
-                    <div className="text-xs font-semibold text-muted-foreground mb-2">RECENT ORDERS</div>
+                    <div className="mb-2 flex items-center justify-between gap-2"><div className="text-xs font-semibold text-muted-foreground">RECENT ORDERS</div>
+                      <ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} /></div>
                     {orders.length === 0 && (
                       <p className="text-xs text-muted-foreground py-4 text-center border rounded-lg">
                         No Frontdesk requests raised for this customer yet.

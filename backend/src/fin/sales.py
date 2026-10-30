@@ -357,8 +357,8 @@ def amend_invoice(conn, ctx, invoice_id: str, data: Dict[str, Any]) -> Dict[str,
     if inv["status"] not in ("POSTED", "PARTIALLY_PAID", "PAID"):
         raise FinError("INVALID_STATE_TRANSITION", f"A {inv['status'].lower()} invoice cannot take more items"
                        + (" - edit the draft instead" if inv["status"] == "DRAFT" else ""))
-    if inv["is_opening"]:
-        raise FinError("INVALID_STATE_TRANSITION", "This invoice was raised in Sage: raise a new invoice for the extra items")
+    # an invoice raised in Sage and carried into ACE Books takes more items too (client, 28 Oct): same number,
+    # the addition is ACE Books' own entry on it; what Sage recorded is not touched
     reason = (data.get("reason") or "").strip()
     if not reason:
         raise invalid("Say why items are being added (e.g. customer added to the order)")
@@ -398,12 +398,110 @@ def amend_invoice(conn, ctx, invoice_id: str, data: Dict[str, Any]) -> Dict[str,
                             idempotency_key=f"SALES_INVOICE_AMENDED:{invoice_id}:{_uuid.uuid4().hex}")
     inventory.link_journal(conn, txns, j["id"])
     ex(conn, """UPDATE fin_sales_invoices SET subtotal=subtotal+%s, discount_total=discount_total+%s, charge_total=charge_total+%s,
-                total=total+%s WHERE id=%s""", (added_sub, added_disc, added_chg, added, invoice_id))
+                total=total+%s, original_total=CASE WHEN original_total IS NULL THEN NULL ELSE original_total+%s END WHERE id=%s""",
+       (added_sub, added_disc, added_chg, added, added, invoice_id))
     _refresh_invoice_status(conn, invoice_id)
     ex(conn, """INSERT INTO fin_invoice_amendments (invoice_id, journal_id, amend_date, added_total, line_from, line_to, reason, created_by)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""", (invoice_id, j["id"], on, added, start + 1, start + len(priced), reason, ctx.actor_id))
     audit.record(conn, ctx, "INVOICE_AMENDED", "sales_invoice", invoice_id, ref=inv["invoice_number"], reason=reason,
                  metadata={"added": str(added), "lines": len(priced), "journal": j["journal_number"]})
+    return get_invoice(conn, ctx.entity_id, invoice_id)
+
+
+def void_frontdesk_twin(conn, ctx, inv: Dict[str, Any], reason: str) -> List[str]:
+    """The same sale raised on Frontdesk is voided with its ACE Books invoice, so it leaves the QC
+    queue, Frontdesk and Customer Workspace at once (client, 23 Oct). Matched on the posting link,
+    or on the invoice number for a request raised before the ACE invoice was voided. An undelivered
+    delivery for it is marked failed. Returns the Frontdesk invoice numbers voided."""
+    rows = q(conn, """SELECT f.id::text AS id, f.walk_in_id::text AS walk_in_id, f.invoice_number, f.delivery_id::text AS delivery_id
+                      FROM frontdesk_invoices f
+                      WHERE f.status <> 'cancelled'
+                        AND ((%s::text IS NOT NULL AND f.id::text = %s::text)
+                             OR (f.invoice_number = %s AND f.created_at <= COALESCE(%s::timestamptz, now())))""",
+             (inv["source_id"] if inv.get("source_type") == "FRONTDESK" else None,
+              inv["source_id"] if inv.get("source_type") == "FRONTDESK" else None,
+              inv["invoice_number"], inv.get("voided_at")))
+    done = []
+    for r in rows:
+        ex(conn, """UPDATE frontdesk_invoices SET status='cancelled', updated_at=now(),
+                    notes = trim(both ' ' from COALESCE(notes, '') || ' [Voided in ACE Books: ' || %s || ']') WHERE id::text=%s""",
+           (reason, r["id"]))
+        if r["walk_in_id"] and not q1(conn, """SELECT 1 FROM frontdesk_invoices WHERE walk_in_id::text=%s AND status <> 'cancelled'""",
+                                      (r["walk_in_id"],)):
+            ex(conn, "UPDATE frontdesk_walk_ins SET status='cancelled', updated_at=now() WHERE id::text=%s AND status <> 'cancelled'",
+               (r["walk_in_id"],))
+        if r["delivery_id"]:
+            ex(conn, "UPDATE deliveries SET status='failed' WHERE id::text=%s AND status NOT IN ('delivered','failed')", (r["delivery_id"],))
+        done.append(r["invoice_number"])
+    if done:
+        audit.record(conn, ctx, "FRONTDESK_INVOICE_VOIDED", "sales_invoice", str(inv["id"]), ref=inv["invoice_number"],
+                     reason=reason, metadata={"frontdesk": done})
+        try:
+            from src.services.realtime import realtime_hub
+            for r in rows:
+                realtime_hub.broadcast_threadsafe("frontdesk_updates", {"event": "invoice_voided", "invoice_id": r["id"],
+                                                                        "walk_in_id": r["walk_in_id"], "status": "cancelled"})
+        except Exception:
+            pass
+    return done
+
+
+def _void_opening(conn, ctx, inv: Dict[str, Any], reason: str, on: Optional[dt.date]) -> Dict[str, Any]:
+    """Void an invoice raised in Sage and carried into ACE Books unpaid (client, 28 Oct). Sage's own entry is
+    history and is not edited: a credit note against the invoice reverses the whole sale - Sage's lines come
+    off (goods back into their batches at what they cost), items added in ACE are reversed - and the invoice
+    is marked void. Refused when anything has been paid on it (in Sage or ACE Books)."""
+    invoice_id = str(inv["id"])
+    if money(inv["amount_settled"]) > 0:
+        raise FinError("INVALID_STATE_TRANSITION", "Payments are applied to this invoice; void those receipts first, or use Return / remove items")
+    from src.fin import ledger_reports
+    sage_no = (inv.get("source_id") or "").split(":")[-1] or inv["invoice_number"]
+    full = ledger_reports.sage_invoice(conn, ctx.entity_id, sage_no)
+    sage_lines = [l for l in full["lines"] if l.get("customer_id") in (None, inv["customer_id"]) and money(l.get("amount")) != 0]
+    added = sum((money(a["added_total"]) for a in q(conn, "SELECT added_total FROM fin_invoice_amendments WHERE invoice_id=%s AND NOT reversed",
+                                                   (invoice_id,))), ZERO)
+    sage_open = money(inv["total"]) - added
+    sage_sum = sum((money(l["amount"]) for l in sage_lines), ZERO)
+    if abs(sage_sum - sage_open) > Decimal("0.05"):
+        raise FinError("INVALID_STATE_TRANSITION",
+                       f"Part of invoice {inv['invoice_number']} was already paid or credited in Sage (open {sage_open}, invoiced {sage_sum}); "
+                       "use Return / remove items for what is left")
+    on = on or dt.date.today()
+    # items added in ACE Books: their own entries are reversed and the stock comes back
+    for a in q(conn, "SELECT id, journal_id, amend_date FROM fin_invoice_amendments WHERE invoice_id=%s AND NOT reversed", (invoice_id,)):
+        rev = posting.reverse(conn, ctx, str(a["journal_id"]), reversal_date=on, reason=f"Void invoice {inv['invoice_number']} (added items): {reason}",
+                              allow_system=True)
+        ex(conn, "UPDATE fin_invoice_amendments SET reversed=TRUE WHERE id=%s", (a["id"],))
+        for l in q(conn, "SELECT * FROM fin_sales_invoice_lines WHERE invoice_id=%s AND inventory_txn_id IS NOT NULL", (invoice_id,)):
+            t = inventory.restore(conn, ctx, original_txn_id=str(l["inventory_txn_id"]), quantity=l["quantity"], txn_type="RETURN_IN", txn_date=on,
+                                  source_type="SALES_INVOICE_VOID", source_id=invoice_id, reference=inv["invoice_number"],
+                                  customer_id=inv["customer_id"], reason="Invoice voided")
+            inventory.link_journal(conn, [str(t["id"])], rev["id"])
+    ex(conn, "UPDATE fin_sales_invoices SET total=total-%s WHERE id=%s", (added, invoice_id))
+    # Sage's part: one credit note for the whole sale, goods back into their batches
+    cn = None
+    if sage_lines:
+        lines = []
+        for l in sage_lines:
+            if l.get("sku") and money(l.get("quantity") or 0) > 0:
+                qn = Decimal(str(l["quantity"]))
+                lines.append({"line_type": "ITEM", "sku": l["sku"], "batch_id": l.get("batch_id"), "quantity": qn,
+                              "unit_price": (money(l["amount"]) / qn).quantize(Decimal("0.0001")),
+                              "unit_cost": (money(l["cost"]) / qn) if l.get("cost") else None,
+                              "description": l.get("product_name") or l.get("description")})
+            else:
+                # a line with no item (delivery charge etc.): reversed out of the very account Sage posted it to
+                acct = l.get("account_code") and q1(conn, "SELECT id FROM fin_accounts WHERE legal_entity_id=%s AND code=%s",
+                                                    (ctx.entity_id, l["account_code"]))
+                lines.append({"line_type": "CHARGE", "description": l.get("description") or "Sage invoice line", "quantity": 1,
+                              "unit_price": money(l["amount"]), **({"account_id": str(acct["id"])} if acct else {})})
+        cn = create_credit_note(conn, ctx, {"customer_id": inv["customer_id"], "invoice_id": invoice_id, "note_date": on,
+                                            "reason": f"Void of Sage invoice {inv['invoice_number']}: {reason}", "return_to_stock": True,
+                                            "lines": lines})
+    ex(conn, "UPDATE fin_sales_invoices SET status='VOID', voided_by=%s, voided_at=now(), void_reason=%s WHERE id=%s",
+       (ctx.actor_id, reason, invoice_id))
+    audit.record(conn, ctx, "INVOICE_VOIDED", "sales_invoice", invoice_id, ref=inv["invoice_number"], reason=reason,
+                 metadata={"sage_invoice": True, "credit_note": cn and cn["credit_note_number"], "added_reversed": str(added)})
     return get_invoice(conn, ctx.entity_id, invoice_id)
 
 
@@ -418,12 +516,13 @@ def void_invoice(conn, ctx, invoice_id: str, reason: str, on: Optional[dt.date] 
     if inv["status"] == "DRAFT":
         ex(conn, "UPDATE fin_sales_invoices SET status='VOID', voided_by=%s, voided_at=now(), void_reason=%s WHERE id=%s",
            (ctx.actor_id, reason, invoice_id))
+        void_frontdesk_twin(conn, ctx, inv, reason)
         audit.record(conn, ctx, "INVOICE_VOIDED", "sales_invoice", invoice_id, ref=inv["invoice_number"], reason=reason)
         return get_invoice(conn, ctx.entity_id, invoice_id)
     if inv["status"] == "VOID":
         raise FinError("INVALID_STATE_TRANSITION", "Invoice is already void")
     if inv["is_opening"]:
-        raise FinError("INVALID_STATE_TRANSITION", "Opening-balance items are corrected with a credit note")
+        return _void_opening(conn, ctx, inv, reason, on)
     if money(inv["amount_settled"]) > 0:
         raise FinError("INVALID_STATE_TRANSITION",
                        "Payments are applied to this invoice; unapply them or issue a credit note instead")
@@ -441,6 +540,7 @@ def void_invoice(conn, ctx, invoice_id: str, reason: str, on: Optional[dt.date] 
         inventory.link_journal(conn, [str(t["id"])], rev["id"])
     ex(conn, """UPDATE fin_sales_invoices SET status='VOID', void_journal_id=%s, voided_by=%s, voided_at=now(),
                 void_reason=%s WHERE id=%s""", (rev["id"], ctx.actor_id, reason, invoice_id))
+    void_frontdesk_twin(conn, ctx, inv, reason)   # before the number is released, so the request lets it go too
     released = numbering.release_if_last(conn, ctx, "SALES_INVOICE", inv["invoice_number"], "fin_sales_invoices",
                                          "invoice_number", invoice_id)
     audit.record(conn, ctx, "INVOICE_VOIDED", "sales_invoice", invoice_id, ref=inv["invoice_number"], reason=reason,
@@ -795,7 +895,14 @@ def create_credit_note(conn, ctx, data: Dict[str, Any]) -> Dict[str, Any]:
                 if invoice:
                     src = q1(conn, """SELECT inventory_txn_id FROM fin_sales_invoice_lines WHERE invoice_id=%s AND sku=%s
                                       AND inventory_txn_id IS NOT NULL ORDER BY line_no LIMIT 1""", (invoice["id"], l["sku"]))
-                batch_id = l.get("batch_id") or inventory.ensure_batch(conn, ctx.entity_id, l["sku"], l.get("batch_number"))
+                if src and not l.get("batch_id"):
+                    # sold first-to-expire: it goes back into the batch it actually left from
+                    shipped = q1(conn, """SELECT cl.batch_id FROM fin_layer_consumptions lc JOIN fin_cost_layers cl ON cl.id=lc.layer_id
+                                          WHERE lc.inventory_txn_id=%s AND cl.batch_id IS NOT NULL ORDER BY lc.quantity DESC LIMIT 1""",
+                                 (src["inventory_txn_id"],))
+                    batch_id = str(shipped["batch_id"]) if shipped else None
+                else:
+                    batch_id = l.get("batch_id") or inventory.ensure_batch(conn, ctx.entity_id, l["sku"], l.get("batch_number"))
                 if src:
                     t = inventory.restore(conn, ctx, original_txn_id=str(src["inventory_txn_id"]), quantity=l["quantity"],
                                           txn_type="RETURN_IN", txn_date=on, batch_id=batch_id, source_type="CREDIT_NOTE",
@@ -903,7 +1010,8 @@ def get_credit_note(conn, entity_id: str, cn_id: str) -> Dict[str, Any]:
 def list_credit_notes(conn, entity_id: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
     total = q1(conn, "SELECT COUNT(*) n FROM fin_credit_notes WHERE legal_entity_id=%s", (entity_id,))["n"]
     rows = q(conn, """SELECT n.id, n.credit_note_number, n.note_date, n.customer_id, c.name AS customer_name,
-                             i.invoice_number, n.reason, n.total, n.amount_settled, n.return_to_stock, n.status
+                             i.invoice_number, n.reason, n.total, n.amount_settled, n.return_to_stock, n.status,
+                             COALESCE(i.status = 'VOID', FALSE) AS voided
                       FROM fin_credit_notes n LEFT JOIN customers c ON c.id=n.customer_id
                       LEFT JOIN fin_sales_invoices i ON i.id=n.invoice_id
                       WHERE n.legal_entity_id=%s ORDER BY n.note_date DESC, n.credit_note_number DESC LIMIT %s OFFSET %s""",

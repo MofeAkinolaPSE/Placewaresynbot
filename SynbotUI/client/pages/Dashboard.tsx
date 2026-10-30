@@ -35,6 +35,7 @@ import { motionTransitions } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/workspace/PageHeader";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
+import { IncomingBatchSheet } from "@/components/quality/actions";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
 import type { DepartmentCard, WorkstationSummary } from "@shared/dashboard-types";
@@ -431,46 +432,9 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* Reorder Stock — the one Quick Action simple enough to embed here
-          directly (SKU search + qty, one endpoint) rather than navigating
-          away; reuses api.inventory.search / api.replenishment.create, both
-          already built for the Inventory Workspace. */}
-      <DetailSheet
-        open={reorderOpen}
-        onOpenChange={(open) => { setReorderOpen(open); if (!open) setReorderItem(null); }}
-        title="Reorder Stock"
-        description="Search for a SKU and submit a replenishment request."
-        icon={RotateCcw}
-        footer={
-          <Button
-            className="w-full"
-            disabled={!reorderItem || reorderMutation.isPending || !parseFloat(reorderQty)}
-            onClick={() => reorderMutation.mutate()}
-          >
-            {reorderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Submit Reorder Request
-          </Button>
-        }
-      >
-        <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">Item / SKU</label>
-          <EntityAutocomplete<InventorySearchResult>
-            fetchFn={(q) => api.inventory.search(q)}
-            getKey={(p) => p.sku ?? p.name}
-            getLabel={(p) => p.name}
-            getSubtitle={(p) => p.sku}
-            placeholder="Search inventory…"
-            onSelect={(p) => setReorderItem({ sku: p.sku || p.name, name: p.name })}
-          />
-          {reorderItem && (
-            <p className="text-xs text-muted-foreground">Selected: {reorderItem.name} ({reorderItem.sku})</p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">Quantity</label>
-          <Input type="number" min="1" value={reorderQty} onChange={(e) => setReorderQty(e.target.value)} />
-        </div>
-      </DetailSheet>
+      {/* Reorder Stock opens the incoming-batch panel (client, 28 Oct): supplier, their invoice, item and quantity,
+          linked to ACE Books - QC confirms arrival and finance records the supplier's bill from it. */}
+      <IncomingBatchSheet open={reorderOpen} onClose={() => setReorderOpen(false)} />
 
       {/* Operations Queue delivery detail — quick look + confirm, without
           leaving the dashboard for the full logistics workspace. */}

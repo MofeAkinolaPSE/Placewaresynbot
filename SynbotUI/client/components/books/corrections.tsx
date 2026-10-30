@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { books, Dict, fmtDate, naira, today } from "@/lib/books-api";
-import { AccountPick, act, Amount, BankSelect, BatchPick, CustomerPick, DrillLink, ProductPick, r2, useBooks, WhtPicker } from "./kit";
+import { books, Dict, fmtDate, naira, num, packBatch, today } from "@/lib/books-api";
+import { AccountPick, act, Amount, BankSelect, CustomerPick, DrillLink, ProductPick, r2, useBooks, WhtPicker } from "./kit";
 
 const box = "space-y-2 rounded-md border border-sky-300 bg-sky-50 p-3 text-xs dark:bg-sky-500/10";
 
@@ -20,6 +20,7 @@ type ItemLine = { kind: "ITEM" | "CHARGE" | "DISCOUNT"; product: Dict | null; ba
 const blank = (kind: ItemLine["kind"] = "ITEM"): ItemLine => ({
   kind, product: null, batch: null, quantity: kind === "ITEM" ? "" : "1", unit_price: "",
   description: kind === "CHARGE" ? "Delivery charge" : kind === "DISCOUNT" ? "Discount allowed" : "" });
+const sellable = (p: Dict | null): Dict[] => (p?.batches ?? []).filter((b: Dict) => b.sellable && Number(b.available) > 0);
 const lineValue = (l: ItemLine) => (l.kind === "ITEM" ? (l.product ? Number(l.quantity || 0) * Number(l.unit_price || 0) : 0)
   : l.kind === "CHARGE" ? Number(l.unit_price || 0) : -Number(l.unit_price || 0));
 
@@ -33,7 +34,8 @@ export function AddItems({ inv }: { inv: Dict }) {
   const set = (i: number, p: Partial<ItemLine>) => setLines((xs) => xs.map((x, k) => (k === i ? { ...x, ...p } : x)));
   const total = lines.reduce((s, l) => s + lineValue(l), 0);
   const ready = reason.trim() && total > 0
-    && lines.every((l) => (l.kind === "ITEM" ? !l.product || (Number(l.quantity) > 0 && Number(l.unit_price) >= 0) : Number(l.unit_price || 0) >= 0))
+    && lines.every((l) => (l.kind === "ITEM" ? !l.product || (Number(l.quantity) > 0 && Number(l.unit_price) >= 0 && !!l.batch && Number(l.quantity) <= Number(l.batch.available))
+                                             : Number(l.unit_price || 0) >= 0))
     && lines.some((l) => (l.kind === "ITEM" ? l.product && Number(l.quantity) > 0 : l.kind === "CHARGE" && Number(l.unit_price) > 0));
   const save = async () => {
     setBusy(true);
@@ -60,12 +62,32 @@ export function AddItems({ inv }: { inv: Dict }) {
           <Button size="icon" variant="ghost" aria-label="Remove line" onClick={() => setLines((xs) => (xs.length > 1 ? xs.filter((_, k) => k !== i) : [blank()]))}><Trash2 className="h-4 w-4" /></Button>
         </div>
       ) : (
-        <div key={i} className="grid items-end gap-2 md:grid-cols-[1.4fr_1fr_90px_120px_32px]">
-          <ProductPick label={i === 0 ? "Product" : undefined} value={l.product} onChange={(p) => set(i, { product: p, batch: null, unit_price: l.unit_price || String(p?.unit_price ?? p?.selling_price ?? "") })} />
-          <BatchPick label={i === 0 ? "Batch (FIFO if blank)" : undefined} value={l.batch} onChange={(b) => set(i, { batch: b })} />
-          <div>{i === 0 && <Label className="text-xs">Qty</Label>}<Input className="h-9" type="number" value={l.quantity} onChange={(e) => set(i, { quantity: e.target.value })} /></div>
-          <div>{i === 0 && <Label className="text-xs">Unit price</Label>}<Input className="h-9" type="number" value={l.unit_price} onChange={(e) => set(i, { unit_price: e.target.value })} /></div>
-          <Button size="icon" variant="ghost" onClick={() => setLines((xs) => (xs.length > 1 ? xs.filter((_, k) => k !== i) : [blank()]))}><Trash2 className="h-4 w-4" /></Button>
+        <div key={i} className="space-y-1">
+          <div className="grid items-end gap-2 md:grid-cols-[1.4fr_1.2fr_90px_120px_32px]">
+            {/* same prefills as a new invoice: only what can be sold, this customer's last price (else list price), first-to-expire batch */}
+            <ProductPick label={i === 0 ? "Product" : undefined} value={l.product} customerId={inv.customer_id} forSale
+                         onChange={(p) => set(i, { product: p, batch: sellable(p)[0] ?? null, quantity: p ? l.quantity || "1" : l.quantity,
+                                                   unit_price: p?.suggested_price != null ? String(p.suggested_price) : "" })} />
+            <div>{i === 0 && <Label className="text-xs">Batch</Label>}
+              <select className="h-9 w-full rounded-md border bg-background px-2 text-xs" disabled={!l.product} aria-label="Batch"
+                      value={l.batch?.id ?? ""} onChange={(e) => set(i, { batch: sellable(l.product).find((b) => b.id === e.target.value) ?? null })}>
+                {!l.product && <option value="">Choose the product first</option>}
+                {l.product && sellable(l.product).length === 0 && <option value="">No batch in stock</option>}
+                {sellable(l.product).map((b) => (
+                  <option key={b.id} value={b.id}>{packBatch(b) || `lot ${b.lot_code ?? b.batch_number}`} · exp {fmtDate(b.expiry_date)} · {num(b.available)} available</option>))}
+              </select></div>
+            <div>{i === 0 && <Label className="text-xs">Qty</Label>}<Input className={`h-9 ${l.batch && Number(l.quantity) > Number(l.batch.available) ? "border-red-500" : ""}`} type="number" min={1}
+                                                                         value={l.quantity} onChange={(e) => set(i, { quantity: e.target.value })} /></div>
+            <div>{i === 0 && <Label className="text-xs">Unit price</Label>}<Input className="h-9" type="number" value={l.unit_price} onChange={(e) => set(i, { unit_price: e.target.value })} /></div>
+            <Button size="icon" variant="ghost" onClick={() => setLines((xs) => (xs.length > 1 ? xs.filter((_, k) => k !== i) : [blank()]))}><Trash2 className="h-4 w-4" /></Button>
+          </div>
+          {l.product && (
+            <div className="text-[11px] text-muted-foreground">
+              {l.batch ? <>Batch no. {packBatch(l.batch) || "—"} · lot {l.batch.lot_code ?? l.batch.batch_number}{l.batch.manufacture_date ? ` · mfd ${fmtDate(l.batch.manufacture_date)}` : ""} · exp {fmtDate(l.batch.expiry_date)}</> : null}
+              {l.product.customer_last_price ? ` · this customer last paid ${naira(l.product.customer_last_price)}` : ""}
+              {l.batch && Number(l.quantity) > Number(l.batch.available) ? <span className="text-red-600"> · only {num(l.batch.available)} in this batch</span> : ""}
+              {l.quantity && l.unit_price ? <strong className="text-foreground"> · line {naira(Number(l.quantity) * Number(l.unit_price))}</strong> : ""}
+            </div>)}
         </div>
       ))}
       <div className="flex flex-wrap gap-2">
@@ -95,7 +117,14 @@ type RetLine = { qty: string };
 export function ReturnItems({ inv }: { inv: Dict }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const items: Dict[] = (inv.lines ?? []).filter((l: Dict) => l.line_type === "ITEM");
+  // ACE Books lines - and for an invoice raised in Sage, Sage's own lines (it was carried in without lines)
+  const items: Dict[] = [
+    ...(inv.history_lines ?? []).filter((l: Dict) => l.sku && Number(l.quantity) > 0).map((l: Dict) => ({
+      id: `s${l.line_no}`, sku: l.sku, description: l.product_name || l.description, quantity: Number(l.quantity), line_total: Number(l.amount),
+      unit_price: l.unit_price, batch_id: l.batch_id, unit_cost: Number(l.quantity) ? Number(l.cost || 0) / Number(l.quantity) : undefined,
+      batch_label: [packBatch(l), l.lot_code ? `lot ${l.lot_code}` : null].filter(Boolean).join(" · ") })),
+    ...(inv.lines ?? []).filter((l: Dict) => l.line_type === "ITEM").map((l: Dict) => ({ ...l,
+      batch_label: [l.pack_batch_number ?? l.shipped_pack ?? l.shipped_batch, (l.lot_code ?? l.shipped_lot) ? `lot ${l.lot_code ?? l.shipped_lot}` : null].filter(Boolean).join(" · ") }))];
   const returned: Record<string, number> = Object.fromEntries(Object.entries(inv.returned ?? {}).map(([k, v]) => [k, Number(v)]));
   // what is left to return per line: the item's returns are taken from its lines in order
   const left = useMemo(() => {
@@ -139,13 +168,22 @@ export function ReturnItems({ inv }: { inv: Dict }) {
             const q = Number(ret[k]?.qty || 0);
             return (
               <TableRow key={l.id}>
-                <TableCell><div>{l.description || l.sku}</div><div className="text-[11px] text-muted-foreground">{l.sku}</div></TableCell>
+                <TableCell><div>{l.description || l.sku}</div><div className="text-[11px] text-muted-foreground">{l.sku}{l.batch_label ? ` · batch ${l.batch_label}` : ""}</div></TableCell>
                 <TableCell className="text-right">{Number(l.quantity)}</TableCell>
                 <TableCell className="text-right">{Number(l.quantity) - left[k] || "—"}</TableCell>
                 <TableCell className="text-right">{naira(unit(l))}</TableCell>
-                <TableCell><Input className={`h-8 ${q > left[k] ? "border-red-500" : ""}`} type="number" min={0} max={left[k]} disabled={left[k] <= 0}
-                                  aria-label={`Quantity of ${l.sku} to return`} placeholder={left[k] > 0 ? `max ${left[k]}` : "none left"}
-                                  value={ret[k]?.qty ?? ""} onChange={(e) => setRet((x) => ({ ...x, [k]: { qty: e.target.value } }))} /></TableCell>
+                <TableCell><div className="flex items-center gap-1">
+                  {left[k] > 0 && left[k] <= 100 && Number.isInteger(left[k])
+                    ? <select className="h-8 w-20 rounded-md border bg-background px-1 text-xs" aria-label={`Quantity of ${l.sku} to return`}
+                              value={ret[k]?.qty ?? ""} onChange={(e) => setRet((x) => ({ ...x, [k]: { qty: e.target.value } }))}>
+                        <option value="">0</option>
+                        {Array.from({ length: left[k] }, (_, n) => n + 1).map((n) => <option key={n} value={String(n)}>{n}</option>)}
+                      </select>
+                    : <Input className={`h-8 w-20 ${q > left[k] ? "border-red-500" : ""}`} type="number" min={0} max={left[k]} disabled={left[k] <= 0}
+                             aria-label={`Quantity of ${l.sku} to return`} placeholder={left[k] > 0 ? `max ${left[k]}` : "none left"}
+                             value={ret[k]?.qty ?? ""} onChange={(e) => setRet((x) => ({ ...x, [k]: { qty: e.target.value } }))} />}
+                  {left[k] > 0 && <Button size="sm" variant="ghost" className="h-8 px-2 text-[11px]" onClick={() => setRet((x) => ({ ...x, [k]: { qty: String(left[k]) } }))}>All</Button>}
+                </div></TableCell>
                 <TableCell className="text-right">{q > 0 ? naira(r2(q * unit(l))) : ""}</TableCell>
               </TableRow>);
           })}</TableBody>

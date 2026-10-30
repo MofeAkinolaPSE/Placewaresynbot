@@ -5,7 +5,7 @@
  */
 import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CustomerPick } from "@/components/books/kit";
+import { CustomerPick, SupplierPick } from "@/components/books/kit";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, CalendarPlus, ChevronDown, ChevronRight, Loader2, PackageX, Plus, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -73,6 +73,7 @@ export function ReleaseQueue() {
   const detail = useQuery({ queryKey: ["quality", "qc-invoice", openInv], queryFn: () => api.frontdesk.getInvoice(openInv!), enabled: !!openInv });
   const { data, isLoading } = useQuery({ queryKey: ["quality", "batches"], queryFn: () => api.quality.batches() });
   const [rejecting, setRejecting] = useState<Dict | null>(null);
+  const [arriving, setArriving] = useState<Dict | null>(null);
   const [reason, setReason] = useState("");
   const pending: Dict[] = invoices.data?.invoices ?? [];
   const batches: Dict[] = data?.batches ?? [];
@@ -146,7 +147,10 @@ export function ReleaseQueue() {
                     <TableCell className="whitespace-nowrap text-xs">{b.expected_arrival_date ? fmtDate(b.expected_arrival_date) : "—"}</TableCell>
                     <TableCell className="text-right">{b.fin_batch_id ? num(b.on_hand) : b.quantity ? `${num(b.quantity)} due` : "—"}</TableCell>
                     <TableCell className="text-xs">{b.registered_by_name ?? "—"}<div className="text-[11px] text-muted-foreground">{fmtDate(b.created_at)}</div></TableCell>
-                    <TableCell className="space-x-1 whitespace-nowrap text-right">{isQa && (<>
+                    <TableCell className="space-x-1 whitespace-nowrap text-right">
+                      {b.stage === "expected" && b.sku && <Button size="sm" onClick={() => setArriving(b)}>Confirm arrived</Button>}
+                      {b.goods_receipt_id && <div className="text-[11px] text-emerald-700 dark:text-emerald-300">received {fmtDate(b.arrived_at)} · bill to come</div>}
+                      {isQa && (<>
                       <Button size="sm" variant="outline" onClick={() => act(() => api.quality.releaseBatch(b.id), `${b.product_name} lot ${b.batch_number} released`, refresh)}>Release</Button>
                       <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { setRejecting(b); setReason(""); }}>Reject</Button></>)}</TableCell>
                   </TableRow>
@@ -171,6 +175,8 @@ export function ReleaseQueue() {
           </CardContent>
         </Card>
       )}
+
+      <ArrivalSheet batch={arriving} onClose={(done) => { setArriving(null); if (done) refresh(); }} />
 
       <DetailSheet open={!!rejecting} onOpenChange={(o) => !o && setRejecting(null)} title={`Reject lot ${rejecting?.batch_number ?? ""}`}
                    description="The lot stays quarantined in ACE Books (it cannot be sold) and a deviation is raised for the investigation."
@@ -527,3 +533,49 @@ function DeviationSheet({ dev, onClose }: { dev: Dict | null; onClose: () => voi
     </DetailSheet>
   );
 }
+
+/** The registered delivery has arrived: received into its batch (held until QC releases it) with the supplier's
+ *  bill to come - finance sees it in Purchases & Payables -> Bills and records the bill from it. */
+function ArrivalSheet({ batch, onClose }: { batch: Dict | null; onClose: (done?: boolean) => void }) {
+  const [supplier, setSupplier] = useState<Dict | null>(null);
+  const [f, setF] = useState<Dict>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!batch) return;
+    setSupplier(batch.supplier_id ? { id: batch.supplier_id, name: batch.supplier } : null);
+    setF({ quantity: batch.quantity ?? "", unit_cost: batch.unit_cost ?? "", supplier_invoice_number: batch.supplier_invoice_number ?? "",
+           batch_number: String(batch.batch_number ?? "").startsWith("TBC-") ? "" : batch.batch_number ?? "", manufacture_date: batch.manufacture_date ?? "", expiry_date: batch.expiry_date ?? "",
+           received_date: new Date().toISOString().slice(0, 10) });
+  }, [batch]);
+  const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await books.post(`/inventory/incoming/${batch!.id}/arrived`, { ...f, supplier_id: supplier?.id,
+        quantity: Number(f.quantity), unit_cost: f.unit_cost === "" ? undefined : Number(f.unit_cost),
+        manufacture_date: f.manufacture_date || undefined, expiry_date: f.expiry_date || undefined });
+      toast.success(`${batch!.product_name} batch ${f.batch_number} received - held until QC releases it; finance records the bill`);
+      onClose(true);
+    } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <DetailSheet open={!!batch} onOpenChange={(o) => !o && onClose()} title={`Confirm arrived · ${batch?.product_name ?? ""}`}
+                 description="The stock goes into this batch now (held until QC releases it). Finance sees it in Purchases & Payables -> Bills, waiting on the supplier's bill."
+                 footer={<Button className="w-full" disabled={busy || !supplier || !(Number(f.quantity) > 0)} onClick={submit}>{busy ? "Receiving…" : "Confirm arrived"}</Button>}>
+      <div className="space-y-3">
+        <SupplierPick label="Supplier (vendor)" value={supplier} onChange={setSupplier} />
+        <div className="grid grid-cols-2 gap-3">
+          {([["supplier_invoice_number", "Supplier's invoice / delivery note no.", "text"], ["quantity", "Quantity arrived", "number"],
+             ["unit_cost", "Unit cost (₦, as on their invoice)", "number"], ["batch_number", "Batch number on the pack", "text"],
+             ["manufacture_date", "Manufacture date", "date"], ["expiry_date", "Expiry date", "date"], ["received_date", "Date received", "date"]] as [string, string, string][])
+            .map(([k, label, type]) => (
+              <div key={k} className="space-y-1"><Label className="text-xs">{label}</Label>
+                <Input type={type} value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} /></div>
+            ))}
+        </div>
+        <p className="text-xs text-muted-foreground">Unit cost blank = the item's last cost. The books record the goods as received with the bill to come; the bill clears it.</p>
+      </div>
+    </DetailSheet>
+  );
+}
+

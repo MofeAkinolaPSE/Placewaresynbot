@@ -9,6 +9,9 @@ import { api } from "@/lib/api-client";
 import { useAuth } from "@/components/AuthProvider";
 import { myUserId } from "@/lib/auth-client";
 import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontdeskInvoice";
+import { askText } from "@/lib/ask";
+import { Link } from "react-router-dom";
+import { ModifyInvoiceSheet } from "@/components/frontdesk/ModifyInvoice";
 
 /**
  * Role-aware QC/Finance/Dispatch action panel for a single Frontdesk
@@ -79,6 +82,34 @@ export function InvoiceActionPanel({
   const canQc = roles.includes("admin") || roles.includes("quality_assurance") || roles.includes("qa");
   const canFinance = roles.includes("admin") || roles.includes("finance");
   const canDispatch = roles.includes("admin") || roles.includes("finance") || roles.includes("ops");
+  const approved = ["finance_approved", "dispatched", "completed"].includes(String((invoice as any).status));
+  const canVoid = String((invoice as any).status) !== "cancelled"
+    && (roles.includes("admin") || roles.includes("finance") || roles.includes("management")
+        || ((raisedByMe || roles.includes("frontdesk") || roles.includes("sales")) && !approved));
+  const voidMutation = useMutation({
+    mutationFn: (reason: string) => api.frontdesk.voidInvoice(invoice.id, reason),
+    onSuccess: (r: any) => {
+      toast({ title: "Invoice voided", description: r?.ace_invoice_voided
+        ? "Voided in ACE Books too - stock and postings reversed. It has left QC, Frontdesk and the customer's orders."
+        : "It has left the QC queue, Frontdesk and the customer's orders." });
+      qc.invalidateQueries({ queryKey: ["fd-invoices"] });
+      qc.invalidateQueries({ queryKey: ["quality"] });
+      qc.invalidateQueries({ queryKey: ["books"] });
+      onActioned();
+    },
+    onError: (e: any) => toast({ title: "Could not void", description: e?.message, variant: "destructive" }),
+  });
+  // before Finance approval the invoice itself is changed; after, it is an ACE Books invoice (Add items / Return / remove items)
+  const canModify = !approved && String((invoice as any).status) !== "cancelled"
+    && (roles.includes("admin") || roles.includes("finance") || roles.includes("management") || roles.includes("frontdesk") || roles.includes("sales"));
+  const aceModify = approved && !!(invoice as any).ace_invoice_id && (roles.includes("admin") || roles.includes("finance") || roles.includes("management"));
+  const [modifying, setModifying] = useState(false);
+  const voidIt = async () => {
+    const reason = await askText(approved
+      ? "Why is this invoice being voided? It is already approved: its ACE Books invoice is voided too (stock and postings reversed)."
+      : "Why is this invoice being voided? It leaves the QC queue, Frontdesk and the customer's orders.");
+    if (reason && reason.trim()) voidMutation.mutate(reason.trim());
+  };
 
   const qcMutation = useMutation({
     mutationFn: (passed: boolean) => api.frontdesk.submitQc(invoice.id, {
@@ -123,7 +154,18 @@ export function InvoiceActionPanel({
 
   return (
     <>
-      {showPrint && <div className="flex justify-end"><PrintFrontdeskInvoiceButton invoiceId={invoice.id} /></div>}
+      <ModifyInvoiceSheet invoice={invoice} open={modifying} onClose={(changed) => { setModifying(false); if (changed) { qc.invalidateQueries({ queryKey: ["fd-invoices"] }); qc.invalidateQueries({ queryKey: ["quality"] }); onActioned(); } }} />
+      {(showPrint || canVoid || canModify || approved) && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {canModify && <Button size="sm" variant="outline" onClick={() => setModifying(true)}>Modify invoice</Button>}
+          {aceModify && <Button asChild size="sm" variant="outline"><Link to={`/finance/books/sales?tab=register&invoice=${(invoice as any).ace_invoice_id}`}>Modify invoice (ACE Books)</Link></Button>}
+          {approved && !aceModify && String((invoice as any).status) !== "cancelled" &&
+            <Button size="sm" variant="outline" onClick={() => toast({ title: "Approved - finance modifies it",
+              description: "It is posted in ACE Books: Invoice register -> this invoice -> Add items / Return / remove items." })}>Modify invoice</Button>}
+          {canVoid && <Button size="sm" variant="destructive" disabled={voidMutation.isPending} onClick={voidIt}>Void invoice</Button>}
+          {showPrint && <PrintFrontdeskInvoiceButton invoiceId={invoice.id} />}
+        </div>
+      )}
       {/* Always rendered regardless of status -- this is the only place in
           the panel that shows anything at all for qc_failed/finance_rejected/
           completed/cancelled invoices, which otherwise render an empty

@@ -9,7 +9,7 @@
  * Migrated (opening) documents show their line detail from the Sage journals.
  */
 import { ReactNode, useCallback, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ArrowUpRight, ChevronLeft, Pencil, Printer, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { act, Amount, BankSelect, CsvButton, DateRange, DrillLink, ErrorNote, Lo
 import { GlAccountDetail } from "./gl";
 import { DataIssueBody } from "./data-issues";
 import { RecallBody, RecallNotice } from "./recall-panel";
+import { FrontdeskInvoiceBody } from "@/components/frontdesk/FrontdeskInvoicePanel";
 import { AddItems, Amendments, CorrectReceipt, CorrectVoucher, CreditNotesOn, ReturnItems } from "./corrections";
 import { askConfirm, askText } from "@/lib/ask";
 
@@ -31,7 +32,7 @@ const TITLES: Record<string, string> = {
   journal: "Journal", account: "Account", invoice: "Sales invoice", receipt: "Customer receipt", creditnote: "Credit note",
   bill: "Supplier bill", payment: "Supplier payment", debitnote: "Debit note", voucher: "Voucher", customer: "Customer",
   supplier: "Supplier", product: "Product", batch: "Batch", adjustment: "Stock adjustment", loan: "Stock loan", asset: "Fixed asset",
-  sageinvoice: "Invoice", sagebill: "Supplier invoice", sagereceipt: "Receipt", sagetxn: "Transaction", dataissue: "Data issue", recall: "Recall",
+  sageinvoice: "Invoice", sagebill: "Supplier invoice", sagereceipt: "Receipt", sagetxn: "Transaction", dataissue: "Data issue", recall: "Recall", frontdesk: "Frontdesk invoice",
 };
 
 export function DrillProvider({ children }: { children: ReactNode }) {
@@ -81,6 +82,7 @@ export function RecordView({ t }: { t: DrillTarget }) {
     case "asset": return <AssetBody id={t.id} />;
     case "sageinvoice": return <SageInvoiceBody number={t.id} />;
     case "sagebill": return <SageBillBody id={t.id} />;
+    case "frontdesk": return <FrontdeskInvoiceBody id={t.id} />;
     case "sagereceipt": return <SageReceiptBody id={t.id} />;
     case "sagetxn": return <SageTxnBody id={t.id} />;
     case "dataissue": return <DataIssueBody id={t.id} />;
@@ -186,7 +188,10 @@ function SagePayments({ rows, customer }: { rows?: Dict[]; customer?: string }) 
 }
 
 function PageLink({ to }: { to: string | null }) {
-  return to ? <Link className="inline-flex items-center text-xs text-muted-foreground hover:underline" to={to}>open in its page <ArrowUpRight className="h-3 w-3" /></Link> : null;
+  const here = useLocation();
+  // already on that page (the panel is that page's own view): a link would only open the same thing again
+  if (!to || here.pathname === to.split("?")[0]) return null;
+  return <Link className="inline-flex items-center text-xs text-muted-foreground hover:underline" to={to}>open in its page <ArrowUpRight className="h-3 w-3" /></Link>;
 }
 
 function Totals({ rows }: { rows: [string, any, boolean?][] }) {
@@ -336,7 +341,7 @@ export function InvoiceBody({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-2"><StatusBadge status={i.status} /><span className="font-mono text-base font-semibold">{i.invoice_number}</span>
             {i.source_type === "FRONTDESK" && <Badge variant="outline">from Frontdesk</Badge>}</div>
           <div className="flex items-center gap-2"><PrintInvoiceButton kind="ace" id={id} />
-            {["DRAFT", "POSTED"].includes(i.status) && !i.is_opening && Number(i.amount_settled) === 0 && <VoidButton path={`/sales/invoices/${id}`} what="invoice" />}</div>
+            {["DRAFT", "POSTED", "OPEN"].includes(i.status) && Number(i.amount_settled) === 0 && <VoidButton path={`/sales/invoices/${id}`} what="invoice" />}</div>
         </div>
         {i.status !== "VOID" && !i.is_opening && Number(i.amount_settled) > 0 && (i.allocations ?? []).some((a: Dict) => a.source_type === "RECEIPT" && !a.reversed) && (
           <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:bg-amber-500/10">
@@ -350,8 +355,11 @@ export function InvoiceBody({ id }: { id: string }) {
         )}
         {Number(i.balance_due) > 0 && i.status !== "VOID" && i.status !== "DRAFT" &&
           <QuickReceipt invoiceId={id} invoiceNumber={i.invoice_number} customerId={i.customer_id} balance={Number(i.balance_due)} />}
-        {["POSTED", "PARTIALLY_PAID", "PAID"].includes(i.status) && !i.is_opening && (
-          <div className="flex flex-wrap items-start gap-2"><AddItems inv={i} /><ReturnItems inv={i} /></div>)}
+        {["POSTED", "PARTIALLY_PAID", "PAID", "OPEN"].includes(i.status) && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2">
+            <span className="text-xs font-semibold">Modify this invoice:</span><AddItems inv={i} /><ReturnItems inv={i} />
+            <span className="text-[11px] text-muted-foreground">the customer's balance and the books follow</span></div>)}
+
         <Amendments rows={i.amendments} />
         <CreditNotesOn rows={i.credit_notes} />
         <RecallNotice recalls={i.recalls} />
@@ -407,10 +415,12 @@ function SageInvoiceBody({ number }: { number: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-mono text-base font-semibold">{d.invoice_number}</span>
           <div className="flex gap-2">{d.ace_invoice_id && <DrillLink to={{ type: "invoice", id: d.ace_invoice_id, label: d.invoice_number }}>open item in ACE Books</DrillLink>}
-            <PrintInvoiceButton kind="sage" id={number} /></div>
+            <PrintInvoiceButton kind="sage" id={number} />
+            {d.ace_invoice_id && Number(d.paid || 0) === 0 && Number(d.balance) > 0 && <VoidButton path={`/sales/invoices/${d.ace_invoice_id}`} what="invoice" />}</div>
         </div>
         {d.customer_id && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2">
+            <span className="text-xs font-semibold">Modify this invoice:</span>
             <Button asChild size="sm" variant="outline"><Link to={`/finance/books/sales?tab=credit&new=creditnote&cn_customer=${d.customer_id}&cn_name=${encodeURIComponent(d.customer_name ?? "")}&cn_invoice=${encodeURIComponent(d.invoice_number)}`}>Return / remove items</Link></Button>
             <Button asChild size="sm" variant="outline"><Link to="/finance/books/sales?tab=register&new=invoice">Add items (new invoice)</Link></Button>
             <span className="text-xs text-muted-foreground">This invoice was raised in Sage: items come off it with a credit note against it; extra items go on a new invoice.</span>

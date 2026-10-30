@@ -6,6 +6,7 @@
  * only formatted here, never re-calculated: the backend is the financial
  * authority (Backend & Frontend spec, Rule A).
  */
+import { withoutVoided } from "@/lib/voided";
 import { authClient } from "@/lib/auth-client";
 import { apiUrl } from "@/lib/api-base";
 import { ApiError } from "@/lib/api-client";
@@ -115,8 +116,11 @@ export const today = () => ymd(new Date());
 export const monthStart = (d = new Date()) => ymd(new Date(d.getFullYear(), d.getMonth(), 1));
 export const yearStart = (d = new Date()) => `${d.getFullYear()}-01-01`;
 
-export function downloadCsv(filename: string, rows: Dict[], columns?: { key: string; label: string }[]) {
-  const cols = columns ?? Object.keys(rows[0] ?? {}).map((k) => ({ key: k, label: k }));
+/** Writes `rows` to a CSV file. Voided records never go into a file (lib/voided.ts): returns how many
+ *  were left out, so the caller can say so. */
+export function downloadCsv(filename: string, all: Dict[], columns?: { key: string; label: string }[]): number {
+  const rows = withoutVoided(all);
+  const cols = columns ?? Object.keys(rows[0] ?? all[0] ?? {}).filter((k) => k !== "voided").map((k) => ({ key: k, label: k }));
   const esc = (v: any) => {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -128,6 +132,7 @@ export function downloadCsv(filename: string, rows: Dict[], columns?: { key: str
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+  return all.length - rows.length;
 }
 
 export function newIdemKey() {

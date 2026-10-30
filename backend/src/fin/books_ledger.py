@@ -20,6 +20,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.fin import journal_map
 from src.fin.db import ZERO, money, q, q1
+from src.fin.ledger import same_day_void
 
 ONE = dt.timedelta(days=1)
 
@@ -191,10 +192,8 @@ def lines(conn, entity_id: str, code: str, f: dt.date, t: dt.date, search: Optio
                                     g.debit, g.credit, g.customer_id, g.supplier_id, g.product_sku, {journal_map.code_sql()} AS jrnl
                              FROM fin_v_general_ledger g WHERE g.legal_entity_id=%s AND g.account_code=%s
                              AND g.journal_date BETWEEN %s AND %s {sf_a}
-                             -- an entry deleted the same day (posted, then reversed on its own date) nets to nothing:
-                             -- neither it nor its reversal is listed; both stay in Journals and the audit trail
-                             AND NOT EXISTS (SELECT 1 FROM fin_journals jx JOIN fin_journals jy ON jy.id = COALESCE(jx.reversed_by_id, jx.reversal_of_id)
-                                             WHERE jx.id = g.journal_id AND jy.journal_date = jx.journal_date)
+                             -- an entry voided / deleted the same day nets to nothing: neither it nor its reversal is listed
+                             AND NOT {same_day_void("g.journal_id")}
                              ORDER BY g.journal_date, g.journal_number, g.line_no LIMIT %s""", p):
             out.append({"date": r["journal_date"], "reference": r["source_ref"] or r["journal_number"],
                         "jrnl": r["jrnl"], "description": r["description"],

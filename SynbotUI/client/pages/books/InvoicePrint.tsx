@@ -3,11 +3,14 @@
  * company header · INVOICE · Invoice Number / Date / Page · Bill To / Ship To ·
  * Customer ID | Customer PO | Payment Terms · Sales Rep ID | Shipping Method | Ship Date | Due Date ·
  * Qty | Description | Batch Number | Man. Date | Exp. Date | Unit Price | Amount ·
- * Subtotal / Sales Tax / Total Invoice Amount / Payment/Credit Applied / TOTAL ·
+ * Subtotal / Delivery Charge / Discount / Sales Tax / Total Invoice Amount / Payment/Credit Applied / TOTAL ·
  * Prepared by / Authorised by / Delivered / Customer Name / Customer Sign · notes and bank details.
  * Works for ACE Books invoices and for any invoice in the Sage history.
  */
-import { useParams } from "react-router-dom";
+import { useEffect } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api-client";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBooks } from "@/components/books/kit";
@@ -26,36 +29,73 @@ function address(c: Dict | null | undefined): string[] {
   return lines;
 }
 
+/** A Frontdesk invoice in the same shape as an ACE Books invoice, so every invoice prints from this one layout
+ *  (client, 28 Oct): items, then the delivery charge and the discount as their own lines. */
+function frontdeskAsInvoice(d: Dict): Dict {
+  const f = d.invoice; const w = d.walk_in ?? {};
+  const disc = Number(f.discount_amount ?? 0), del = Number(f.delivery_charge ?? 0), tax = Number(f.tax_amount ?? 0);
+  const total = Number(f.total_amount ?? 0) - disc + del + tax;
+  const lines: Dict[] = (f.items ?? []).map((it: Dict) => ({ line_type: "ITEM", quantity: it.quantity, description: it.product, pack_batch_number: it.pack_batch_number,
+    batch_number: it.batch_number, manufacture_date: it.manufacture_date ? (String(it.manufacture_date).length === 7 ? `${it.manufacture_date}-01` : it.manufacture_date) : null,
+    expiry_date: it.expiry_date, unit_price: it.unit_price, line_total: it.line_total ?? Number(it.quantity) * Number(it.unit_price) }));
+  if (del > 0) lines.push({ line_type: "CHARGE", description: "DELIVERY CHARGE", line_total: del });
+  if (disc > 0) lines.push({ line_type: "DISCOUNT", description: "DISCOUNT ALLOWED", line_total: -disc });
+  return {
+    invoice_number: f.invoice_number, invoice_date: String(f.created_at ?? "").slice(0, 10), due_date: f.due_date,
+    customer: { name: f.company_name || f.customer_name, customer_code: w.customer_code, contact_details: { address: f.billing_address } },
+    customer_name: f.company_name || f.customer_name, customer_code: w.customer_code, customer_po: f.customer_po, ship_to: f.shipping_address,
+    shipping_method: f.shipping_method, tax_total: tax, total, original_total: total, balance_due: total, terms_text: f.payment_terms,
+    signoff: { prepared_by: f.created_by_name ?? (f.created_by_email ? String(f.created_by_email).split("@")[0] : null), prepared_at: f.created_at,
+               qc_by: f.qc_inspector ?? null, qc_at: f.qc_at ?? null, authorised_by: f.finance_approver ?? null, authorised_at: f.finance_at ?? null },
+    lines,
+  };
+}
+
 export default function InvoicePrint() {
   const { kind = "ace", id = "" } = useParams();
+  const [params] = useSearchParams();
   const path = kind === "sage" ? `/sage-history/invoices/${encodeURIComponent(id)}` : `/sales/invoices/${id}`;
-  const { data: inv, error } = useBooks<Dict>(["print", kind, id], path);
+  const { data: booksInv, error: booksErr } = useBooks<Dict>(["print", kind, id], path, undefined, kind !== "frontdesk");
+  const { data: fdInv, error: fdErr } = useQuery({ queryKey: ["print-fd", id], enabled: kind === "frontdesk",
+                                                  queryFn: () => api.frontdesk.getInvoice(id).then(frontdeskAsInvoice) });
+  const inv = kind === "frontdesk" ? fdInv : booksInv;
+  const error = kind === "frontdesk" ? fdErr : booksErr;
   const { data: lay } = useBooks<Dict>(["invoice-layout"], "/settings/invoice-layout");
+  const ready = !!inv;
+  useEffect(() => {
+    if (ready && params.get("print") === "1") { const t = setTimeout(() => window.print(), 600); return () => clearTimeout(t); }
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   const custId = inv?.customer_id;
   const { data: cust } = useBooks<Dict>(["print-cust", custId], `/customers/${custId}/overview`, undefined, !!custId && kind === "sage");
   if (error) return <div className="p-8 text-sm text-red-600">Could not load the invoice.</div>;
   if (!inv || !lay) return <div className="p-8 text-sm text-muted-foreground">Preparing the invoice…</div>;
   const L = lay.layout;
   const customer = kind === "sage" ? cust?.customer : inv.customer;
-  const lines: Dict[] = kind === "sage" ? inv.lines.map((l: Dict) => ({
+  // Sage-history line with no item: a delivery charge or discount by its wording
+  const extraKind = (l: Dict) => l.sku ? undefined : /deliver/i.test(l.description ?? "") ? "CHARGE" : /discount/i.test(l.description ?? "") ? "DISCOUNT" : undefined;
+  const all: Dict[] = kind === "sage" ? inv.lines.map((l: Dict) => ({ kind: extraKind(l),
     quantity: l.quantity, description: l.product_name || l.description, batch: packBatch(l),
     mfg: l.manufacture_date, exp: l.expiry_date ?? l.batch_expiry ?? l.lot_expiry, price: l.unit_price ?? (l.quantity ? Number(l.amount) / Number(l.quantity) : null), amount: l.amount,
-  })) : [...(inv.lines ?? []).map((l: Dict) => ({
+  })) : [...(inv.lines ?? []).map((l: Dict) => ({ kind: l.line_type,
     quantity: l.line_type === "ITEM" || l.line_type === "SERVICE" ? l.quantity : null, description: l.description || l.sku,
     batch: packBatch({ pack_batch_number: l.pack_batch_number ?? l.shipped_pack, batch_number: l.batch_number ?? l.shipped_batch, lot_code: l.lot_code ?? l.shipped_lot }),
     mfg: l.manufacture_date ?? l.shipped_mfg, exp: l.expiry_date ?? l.shipped_expiry,
     price: l.line_type === "ITEM" || l.line_type === "SERVICE" ? l.unit_price : null, amount: l.line_total,
-  })), ...(inv.history_lines ?? []).map((l: Dict) => ({
+  })), ...(inv.history_lines ?? []).map((l: Dict) => ({ kind: extraKind(l),
     quantity: l.quantity, description: l.product_name || l.description, batch: packBatch(l), mfg: l.manufacture_date, exp: l.expiry_date ?? l.batch_expiry ?? l.lot_expiry,
     price: l.unit_price, amount: l.amount,
   }))];
   const number = kind === "sage" ? inv.invoice_number : inv.invoice_number;
   const date = inv.invoice_date;
+  // delivery charge and discount sit in the totals box under Subtotal, not in the items grid (client, 28 Oct)
+  const lines = all.filter((l) => l.kind !== "CHARGE" && l.kind !== "DISCOUNT");
+  const delivery = all.filter((l) => l.kind === "CHARGE").reduce((s, l) => s + Number(l.amount || 0), 0);
+  const discount = all.filter((l) => l.kind === "DISCOUNT").reduce((s, l) => s + Math.abs(Number(l.amount || 0)), 0);
   const subtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
   const total = kind === "sage" ? Number(inv.total) : Number(inv.original_total ?? inv.total);
   const tax = kind === "sage" ? 0 : Number(inv.tax_total || 0);
   const applied = kind === "sage" ? Number(inv.paid || 0) : total - Number(inv.balance_due ?? 0);
-  const terms = kind === "sage" ? "" : inv.terms_days === 0 ? "C.O.D." : inv.terms_days ? `Net ${inv.terms_days} Days` : "";
+  const terms = kind === "sage" ? "" : inv.terms_text ? inv.terms_text : inv.terms_days === 0 ? "C.O.D." : inv.terms_days ? `Net ${inv.terms_days} Days` : "";
   const bill = [customer?.name ?? inv.customer_name, ...address(customer)];
   const ship = inv.ship_to ? [customer?.name ?? inv.customer_name, ...String(inv.ship_to).split(/\n|,(?=\s*\S)/).map((s) => s.trim())] : bill.slice(1);
   const blank = Math.max(0, 14 - lines.length);
@@ -96,8 +136,8 @@ export default function InvoicePrint() {
           <tbody>
             <tr className="bg-neutral-200 font-semibold"><td className={cell}>Customer ID</td><td className={cell}>Customer PO</td><td className={cell} colSpan={2}>Payment Terms</td></tr>
             <tr><td className={cell}>{customer?.customer_code ?? inv.customer_code ?? ""}</td><td className={cell}>{inv.customer_po ?? inv.reference ?? ""}</td><td className={cell} colSpan={2}>{terms}</td></tr>
-            <tr className="bg-neutral-200 font-semibold"><td className={cell}>Sales Rep ID</td><td className={cell}>Shipping Method</td><td className={cell}>Ship Date</td><td className={cell}>Due Date</td></tr>
-            <tr><td className={cell}>{inv.sales_rep ?? ""}</td><td className={cell}>{inv.shipping_method ?? L.default_shipping_method ?? ""}</td><td className={cell} /><td className={cell}>{mdy(inv.due_date)}</td></tr>
+            <tr className="bg-neutral-200 font-semibold"><td className={cell}>Prepared by</td><td className={cell}>Shipping Method</td><td className={cell}>Ship Date</td><td className={cell}>Due Date</td></tr>
+            <tr><td className={cell}>{inv.signoff?.prepared_by ?? inv.sales_rep ?? ""}</td><td className={cell}>{inv.shipping_method ?? L.default_shipping_method ?? ""}</td><td className={cell} /><td className={cell}>{mdy(inv.due_date)}</td></tr>
           </tbody>
         </table>
         {/* lines */}
@@ -108,17 +148,17 @@ export default function InvoicePrint() {
           <tbody>
             {lines.map((l, i) => (
               <tr key={i} className="align-top">
-                <td className="border-x border-neutral-500 px-1.5 text-right">{qty(l.quantity)}</td>
-                <td className="border-x border-neutral-500 px-1.5">{l.description}</td>
-                <td className="border-x border-neutral-500 px-1.5">{l.batch}</td>
-                <td className="border-x border-neutral-500 px-1.5">{mmyy(l.mfg)}</td>
-                <td className="border-x border-neutral-500 px-1.5">{mmyy(l.exp)}</td>
-                <td className="border-x border-neutral-500 px-1.5 text-right">{money(l.price)}</td>
-                <td className="border-x border-neutral-500 px-1.5 text-right">{money(l.amount)}</td>
+                <td className="border border-neutral-500 px-1.5 text-right">{qty(l.quantity)}</td>
+                <td className="border border-neutral-500 px-1.5">{l.description}</td>
+                <td className="border border-neutral-500 px-1.5">{l.batch}</td>
+                <td className="border border-neutral-500 px-1.5">{mmyy(l.mfg)}</td>
+                <td className="border border-neutral-500 px-1.5">{mmyy(l.exp)}</td>
+                <td className="border border-neutral-500 px-1.5 text-right">{money(l.price)}</td>
+                <td className="border border-neutral-500 px-1.5 text-right">{money(l.amount)}</td>
               </tr>
             ))}
             {Array.from({ length: blank }).map((_, i) => (
-              <tr key={`b${i}`}>{Array.from({ length: 7 }).map((__, k) => <td key={k} className="h-5 border-x border-neutral-500" />)}</tr>
+              <tr key={`b${i}`}>{Array.from({ length: 7 }).map((__, k) => <td key={k} className="h-5 border border-neutral-500" />)}</tr>
             ))}
             <tr>{Array.from({ length: 7 }).map((_, k) => <td key={k} className="border-b border-neutral-500" />)}</tr>
           </tbody>
@@ -130,13 +170,15 @@ export default function InvoicePrint() {
             {inv.signoff?.qc_by && <Sig label="QC checked by" name={inv.signoff.qc_by} at={inv.signoff.qc_at} />}
             <Sig label="Authorised by" name={inv.signoff?.authorised_by} at={inv.signoff?.authorised_at} />
             <div>Delivered ..................................................</div>
-            <div>Customer Name ..................................................</div>
-            <div>Customer Sign ..................................................</div>
+            <div>Received by (Name) ..............................................</div>
+            <div>Received by (Sign) ...............................................</div>
             <div className="pt-4 text-[13px] font-bold">{L.footer_left}</div>
           </div>
           <div>
             <table className="w-full border-collapse"><tbody>
               <tr><td className={`${cell} text-right`}>Subtotal</td><td className={`${cell} text-right`}>{money(subtotal)}</td></tr>
+              <tr><td className={`${cell} text-right`}>Delivery Charge</td><td className={`${cell} text-right`}>{delivery ? money(delivery) : ""}</td></tr>
+              <tr><td className={`${cell} text-right`}>Discount</td><td className={`${cell} text-right`}>{discount ? `-${money(discount)}` : ""}</td></tr>
               <tr><td className={`${cell} text-right`}>Sales Tax</td><td className={`${cell} text-right`}>{tax ? money(tax) : ""}</td></tr>
               <tr><td className={`${cell} text-right`}>Total Invoice Amount</td><td className={`${cell} text-right`}>{money(total)}</td></tr>
               <tr><td className={`${cell} text-right`}>Payment/Credit Applied</td><td className={`${cell} text-right`}>{applied ? money(applied) : ""}</td></tr>

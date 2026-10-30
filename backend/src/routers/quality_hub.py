@@ -93,6 +93,12 @@ def open_recall(payload: Dict[str, Any] = Body(...), user=Depends(_need(QA_ROLES
     return _call(qh.initiate_recall, user, payload)
 
 
+@router.post("/recalls/from-invoice", status_code=201)
+def recall_from_invoice(payload: Dict[str, Any] = Body(...), user=Depends(_need(QA_ROLES | {"finance", "management"}))):
+    """Recall the items ticked on one customer invoice: each opens (or joins) its batch's recall and is credited."""
+    return _call(qh.recall_from_invoice, user, payload)
+
+
 @router.post("/recalls/{recall_id}/returns")
 def recall_return(recall_id: str, payload: Dict[str, Any] = Body(...), user=Depends(_need(QA_ROLES | {"finance", "management"}))):
     """A customer brings recalled stock back: credit note on the invoice they bought it on."""
