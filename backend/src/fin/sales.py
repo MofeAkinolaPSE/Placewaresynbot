@@ -408,6 +408,15 @@ def amend_invoice(conn, ctx, invoice_id: str, data: Dict[str, Any]) -> Dict[str,
     return get_invoice(conn, ctx.entity_id, invoice_id)
 
 
+def clear_invoice_notifications(conn, number: Optional[str]) -> None:
+    """A voided invoice leaves the bell too: nobody stays asked to check or approve it. Runs before the
+    number is released, while the notifications still name it."""
+    if number:
+        like = str(number).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        ex(conn, """DELETE FROM staff_notifications WHERE kind IN ('qc_check','finance_approval','qc_result')
+                    AND title LIKE %s""", (f"Invoice {like} %",))
+
+
 def void_frontdesk_twin(conn, ctx, inv: Dict[str, Any], reason: str) -> List[str]:
     """The same sale raised on Frontdesk is voided with its ACE Books invoice, so it leaves the QC
     queue, Frontdesk and Customer Workspace at once (client, 23 Oct). Matched on the posting link,
@@ -432,6 +441,7 @@ def void_frontdesk_twin(conn, ctx, inv: Dict[str, Any], reason: str) -> List[str
                (r["walk_in_id"],))
         if r["delivery_id"]:
             ex(conn, "UPDATE deliveries SET status='failed' WHERE id::text=%s AND status NOT IN ('delivered','failed')", (r["delivery_id"],))
+        clear_invoice_notifications(conn, r["invoice_number"])
         done.append(r["invoice_number"])
     if done:
         audit.record(conn, ctx, "FRONTDESK_INVOICE_VOIDED", "sales_invoice", str(inv["id"]), ref=inv["invoice_number"],

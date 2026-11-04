@@ -87,13 +87,14 @@ def _release_frontdesk_numbers(walk_in_id: str, actor: Optional[str]) -> None:
     """A cancelled request that holds the last invoice number gives it back, so the next invoice
     takes it and no number is skipped (the cancelled request is renamed "<number>-VOID")."""
     try:
-        from src.fin import numbering
+        from src.fin import numbering, sales
         from src.fin.context import system_context
         from src.fin.db import q, tx
         with tx() as conn:
             ctx = system_context(conn, actor=str(actor or "frontdesk"))
             for r in q(conn, """SELECT id::text AS id, invoice_number FROM frontdesk_invoices
                                 WHERE walk_in_id::text=%s AND status='cancelled' AND invoice_number IS NOT NULL""", (str(walk_in_id),)):
+                sales.clear_invoice_notifications(conn, r["invoice_number"])
                 numbering.release_if_last(conn, ctx, "SALES_INVOICE", r["invoice_number"], "frontdesk_invoices", "invoice_number",
                                           r["id"], check_frontdesk=False)
     except Exception as exc:
@@ -152,6 +153,9 @@ WALK_IN_STATUSES = {
     "completed",
     "cancelled",
 }
+
+# The invoice statuses Finance can still approve or reject
+FINANCE_DECIDABLE = ("qc_passed", "finance_pending", "finance_rejected")
 
 WALK_IN_TRANSITIONS: dict[str, set[str]] = {
     "arrived":          {"invoiced", "cancelled"},
@@ -612,10 +616,13 @@ async def submit_qc(
     }
 
     try:
-        db.table("frontdesk_invoices").update(qc_update).eq("id", invoice_id).execute()
+        saved = (db.table("frontdesk_invoices").update(qc_update).eq("id", invoice_id)
+                 .in_("status", ["qc_pending", "qc_failed"]).execute().data or [])
     except Exception as exc:
         logger.error("QC update error: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to save QC result")
+    if not saved:  # voided in the same moment
+        raise HTTPException(status_code=409, detail="This invoice is not waiting for a QC check")
 
     # Advance walk-in
     new_wi_status = "finance_pending" if payload.passed else "qc_failed"
@@ -685,6 +692,11 @@ async def finance_approval(
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     inv = inv_rows[0]
+    # A screen that has not refreshed must not bring a voided invoice back or post it twice
+    if inv.get("status") == "cancelled":
+        raise HTTPException(status_code=409, detail="This invoice was voided - it can no longer be approved")
+    if inv.get("status") not in FINANCE_DECIDABLE:
+        raise HTTPException(status_code=409, detail="Finance has already approved this invoice")
     if not inv.get("qc_passed"):
         raise HTTPException(status_code=409, detail="Invoice must pass QC before finance approval")
 
@@ -702,10 +714,13 @@ async def finance_approval(
     }
 
     try:
-        db.table("frontdesk_invoices").update(fin_update).eq("id", invoice_id).execute()
+        saved = (db.table("frontdesk_invoices").update(fin_update).eq("id", invoice_id)
+                 .in_("status", list(FINANCE_DECIDABLE)).execute().data or [])
     except Exception as exc:
         logger.error("Finance approval error: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to save finance decision")
+    if not saved:  # voided or decided by someone else in the same moment
+        raise HTTPException(status_code=409, detail="This invoice has just changed - refresh and check it again")
 
     # Advance walk-in
     wi_new_status = "finance_approved" if payload.approved else "finance_rejected"
@@ -1308,6 +1323,99 @@ def list_invoices(
         raise HTTPException(status_code=500, detail="Failed to list invoices")
 
     return {"count": len(rows), "invoices": rows}
+
+
+# Stages that need someone to act on them: they stay at the top of All Invoices whatever day they were raised
+_WAITING = ("AWAITING_QC", "AWAITING_FINANCE", "QC_FAILED", "REJECTED")
+_STATUS_GROUPS = {"open": ("OPEN", "POSTED", "PARTIALLY_PAID"), "paid": ("PAID",), "void": ("VOID",), "credit": ("CREDIT",),
+                  "awaiting_qc": ("AWAITING_QC", "QC_FAILED"), "awaiting_finance": ("AWAITING_FINANCE", "REJECTED"), "not_posted": ("NOT_POSTED",)}
+
+
+@router.get("/invoices/recent")
+def recent_invoices(
+    days: int = Query(default=30, ge=1, le=800),
+    limit: int = Query(default=20, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    status: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+    include_void: bool = Query(default=False),
+    _u=Depends(verify_jwt),
+):
+    """All Invoices: the Invoice register's own list (Sage's, ACE Books' and Frontdesk's invoices, from the same
+    function, so the two always agree) - what is waiting for QC or Finance first, whatever day it was raised,
+    then the most recent. A search looks back two years. Open to every signed-in role, read-only."""
+    from src.fin import ledger_reports
+    from src.fin.context import resolve_entity
+    from src.fin.db import q as fq, q1 as fq1, tx
+    today = dt.date.today()
+    since = today - dt.timedelta(days=(730 if q else days - 1))
+    with tx() as conn:
+        e = resolve_entity(conn, None)
+        reg = ledger_reports.invoice_register(conn, e, since, today, q or None)
+        rows = list(reg["rows"])
+        older = fq1(conn, """SELECT MIN((created_at AT TIME ZONE 'Africa/Lagos')::date) AS d FROM frontdesk_invoices
+                             WHERE status IN ('draft','qc_pending','qc_failed','qc_passed','finance_pending','finance_rejected')""")["d"]
+        if older and older < since:
+            rows += [r for r in ledger_reports.invoice_register(conn, e, older, since - dt.timedelta(days=1), q or None)["rows"]
+                     if r["status"] in _WAITING]
+        # an invoice raised on Frontdesk keeps its Frontdesk panel (QC, Finance, dispatch) after it posts
+        ace = [r["invoice_id"] for r in rows if r.get("invoice_id") and r["source"] == "frontdesk"]
+        twin = {r["id"]: r["fid"] for r in fq(conn, """SELECT id::text AS id, source_id AS fid FROM fin_sales_invoices
+                                                       WHERE id::text = ANY(%s) AND source_type='FRONTDESK'""", (ace,))} if ace else {}
+        for r in rows:
+            r["frontdesk_id"] = r.get("frontdesk_id") or twin.get(r.get("invoice_id"))
+        fids = [r["frontdesk_id"] for r in rows if r["frontdesk_id"]]
+        stage = {r["id"]: r["status"] for r in fq(conn, "SELECT id::text AS id, status FROM frontdesk_invoices WHERE id::text = ANY(%s)", (fids,))} if fids else {}
+    for r in rows:
+        r["frontdesk_status"] = stage.get(r["frontdesk_id"])
+    waiting = [r for r in rows if r["status"] in _WAITING]
+    # newest first as the register has it, with what needs acting on above the rest
+    rows.sort(key=lambda r: r["status"] not in _WAITING)
+    shown = rows
+    if status:
+        wanted = _STATUS_GROUPS.get(status, (status.upper(),))
+        shown = [r for r in shown if r["status"] in wanted]
+    elif not include_void:
+        shown = [r for r in shown if r["status"] != "VOID"]
+    return {
+        "rows": shown[offset:offset + limit], "count": len(shown), "days": days, "date_from": since, "date_to": today,
+        "summary": {"invoices": sum(1 for r in reg["rows"] if r["kind"] == "invoice" and r["status"] != "VOID"), "total": reg["total"],
+                    "open": reg["open"], "voided": sum(1 for r in rows if r["status"] == "VOID"),
+                    "pending_qc": sum(1 for r in waiting if r["status"] in ("AWAITING_QC", "QC_FAILED")),
+                    "pending_finance": sum(1 for r in waiting if r["status"] in ("AWAITING_FINANCE", "REJECTED"))},
+    }
+
+
+@router.get("/invoices/booked")
+def booked_invoice(invoice_id: Optional[str] = Query(default=None), number: Optional[str] = Query(default=None), _u=Depends(verify_jwt)):
+    """An invoice that was not raised on Frontdesk (Sage's or ACE Books' own), read-only, for All Invoices."""
+    from src.fin import ledger_reports, sales
+    from src.fin.context import resolve_entity
+    from src.fin.db import q1 as fq1, tx
+    from src.fin.errors import FinError
+    with tx() as conn:
+        e = resolve_entity(conn, None)
+        inv = fq1(conn, "SELECT id::text AS id, is_opening, invoice_number FROM fin_sales_invoices WHERE id::text=%s AND legal_entity_id=%s",
+                  (invoice_id, e)) if invoice_id else None
+        try:
+            if inv and not inv["is_opening"]:
+                d = sales.get_invoice(conn, e, inv["id"])
+                return {"number": d["invoice_number"], "date": d["invoice_date"], "customer": d["customer_name"], "total": d["total"],
+                        "balance": d["balance_due"], "raised_in": "ACE Books",
+                        "lines": [{"description": l.get("description") or l.get("sku"), "sku": l.get("sku"), "quantity": l.get("quantity"),
+                                   "unit_price": l.get("unit_price"), "amount": l.get("line_total"), "batch": l.get("shipped_pack") or l.get("shipped_lot"),
+                                   "expiry": l.get("shipped_expiry")} for l in d["lines"]]}
+            ref = (inv["invoice_number"] if inv else number or "").split("/")[0]
+            if not ref:
+                raise HTTPException(status_code=400, detail="Say which invoice")
+            d = ledger_reports.sage_invoice(conn, e, ref)
+            return {"number": d["invoice_number"], "date": d["invoice_date"], "customer": d["customer_name"], "total": d.get("total"),
+                    "balance": d.get("balance"), "raised_in": "Sage",
+                    "lines": [{"description": l.get("description") or l.get("product_name"), "sku": l.get("sku"), "quantity": l.get("quantity"),
+                               "unit_price": l.get("unit_price"), "amount": l.get("amount"), "batch": l.get("pack_batch_number") or l.get("lot_code"),
+                               "expiry": l.get("expiry_date")} for l in d["lines"]]}
+        except FinError as exc:
+            raise HTTPException(status_code=404, detail=exc.message)
 
 
 # ---------------------------------------------------------------------------

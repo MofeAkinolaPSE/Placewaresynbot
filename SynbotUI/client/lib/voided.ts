@@ -32,13 +32,14 @@ export function withoutVoided<T extends Record<string, any>>(rows: T[] | undefin
 }
 
 const storeKey = (list: string) => `ace.clearVoided.${list}`;
-const read = (list: string) => { try { return localStorage.getItem(storeKey(list)) === "1"; } catch { return false; } };
-const write = (list: string, v: boolean) => { try { v ? localStorage.setItem(storeKey(list), "1") : localStorage.removeItem(storeKey(list)); } catch { /* private window */ } };
+const read = (list: string, fallback: boolean) => { try { const v = localStorage.getItem(storeKey(list)); return v === null ? fallback : v === "1"; } catch { return fallback; } };
+const write = (list: string, v: boolean) => { try { localStorage.setItem(storeKey(list), v ? "1" : "0"); } catch { /* private window */ } };
 
-/** `rows` with the voided ones taken out once the list is cleared, plus what the Clear button needs. */
-export function useClearVoided<T extends Record<string, any>>(list: string, rows: T[] | undefined | null) {
-  const [cleared, setCleared] = useState(() => read(list));
-  useEffect(() => setCleared(read(list)), [list]);
+/** `rows` with the voided ones taken out once the list is cleared, plus what the Clear button needs.
+ *  `clearedByDefault`: a working list that starts without them, until someone asks to see them. */
+export function useClearVoided<T extends Record<string, any>>(list: string, rows: T[] | undefined | null, clearedByDefault = false) {
+  const [cleared, setCleared] = useState(() => read(list, clearedByDefault));
+  useEffect(() => setCleared(read(list, clearedByDefault)), [list, clearedByDefault]);
   const toggle = useCallback(() => setCleared((c) => { write(list, !c); return !c; }), [list]);
   const voidedCount = useMemo(() => (rows ?? []).filter(isVoided).length, [rows]);
   const visible = useMemo(() => (cleared ? withoutVoided(rows) : rows ?? []), [rows, cleared]);

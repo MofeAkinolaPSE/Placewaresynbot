@@ -43,6 +43,20 @@ def _generate_rider_code() -> str:
 # Geo helpers
 # ---------------------------------------------------------------------------
 
+def _refuse_if_invoice_voided(delivery_id: str) -> None:
+    """A delivery whose invoice was voided is over: a rider's open link or a stale screen cannot carry on with it."""
+    try:
+        d = db.table('deliveries').select('source,source_ref_id').eq('id', delivery_id).limit(1).execute().data or []
+        if d and d[0].get('source') == 'frontdesk_walk_in' and d[0].get('source_ref_id'):
+            inv = (db.table('frontdesk_invoices').select('status').eq('id', d[0]['source_ref_id']).limit(1).execute().data or [])
+            if inv and inv[0].get('status') == 'cancelled':
+                raise HTTPException(status_code=409, detail='The invoice for this delivery was voided - do not deliver it')
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # a failed lookup must not stop a real delivery
+
+
 def _complete_linked_invoice(delivery: dict, actor_id: str | None = None) -> None:
     """When a delivery reaches 'delivered' (geofence auto-detect or manual
     confirm), reflect that back on the originating frontdesk invoice --
@@ -60,7 +74,10 @@ def _complete_linked_invoice(delivery: dict, actor_id: str | None = None) -> Non
     if not invoice_id:
         return
     try:
-        db.table('frontdesk_invoices').update({'status': 'completed'}).eq('id', invoice_id).execute()
+        done = (db.table('frontdesk_invoices').update({'status': 'completed'}).eq('id', invoice_id)
+                .in_('status', ['finance_approved', 'dispatched']).execute().data or [])
+        if not done:  # voided (it stays voided) or already completed
+            return
     except Exception:
         return
     # Every earlier lifecycle step (create/QC/finance/dispatch) already logs
@@ -377,6 +394,7 @@ async def update_delivery_status(request: Request, delivery_id: str, payload: di
     # timeline. Re-confirming is now a no-op that reports the settled state.
     if tok_row and tok_row.get('status') == 'delivered' and payload.get('status') == 'delivered':
         return {'status': 'already_delivered', 'delivery_id': delivery_id}
+    _refuse_if_invoice_voided(delivery_id)
 
     try:
         new_status = payload.get('status')
@@ -435,6 +453,7 @@ def compute_route_endpoint(request: Request, payload: dict):
 async def start_delivery(request: Request, delivery_id: str):
     """Mark delivery in_transit, mint a tracking token, return the PWA URL."""
     verify_jwt(request, required_role='ops')
+    _refuse_if_invoice_voided(delivery_id)
     token = str(uuid.uuid4())
     try:
         resp = db.table('deliveries').update({

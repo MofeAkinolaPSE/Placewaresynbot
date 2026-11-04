@@ -9,7 +9,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
 
 const FRONTDESK_KEYS = [["fd-invoices"], ["fd-daily-report"], ["fd-invoice-detail"], ["invoice-history"], ["quality"], ["customer-360"],
-  ["customer-workspace"], ["books"], ["workstation"]];
+  ["customer-workspace"], ["books"], ["workstation"], ["ws", "inbox"]]; // the bell: a voided invoice leaves it at once
 
 export function LiveUpdates() {
   const { isAuthenticated } = useAuth();

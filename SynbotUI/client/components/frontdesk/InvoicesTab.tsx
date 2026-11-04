@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/components/AuthProvider";
 import { ClearVoidedButton } from "@/components/books/kit";
 import { useClearVoided } from "@/lib/voided";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -98,6 +100,13 @@ export const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   finance_rejected:  { label: "Finance Rejected",  color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
   completed:         { label: "Completed",         color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
   cancelled:         { label: "Voided",            color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  // the Invoice register's own statuses, for invoices not raised on Frontdesk
+  VOID:              { label: "Voided",            color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  OPEN:              { label: "Open",              color: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300" },
+  POSTED:            { label: "Open",              color: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300" },
+  PARTIALLY_PAID:    { label: "Part paid",         color: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300" },
+  PAID:              { label: "Paid",              color: "bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300" },
+  CREDIT:            { label: "Credit memo",       color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
   draft:             { label: "Draft",             color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
 
@@ -339,6 +348,46 @@ export function printInvoiceLegacy(invoice: Invoice, walkIn?: WalkIn | null, tar
 // Tab: All Invoices
 // ---------------------------------------------------------------------------
 
+const fmtDay = (d?: string | null) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "");
+
+/** An invoice raised in Sage or in ACE Books itself: what was sold and what is owed, read-only. Changing it
+ *  (Add items, Return / remove items, Void, Record receipt) is done in ACE Books, by Finance. */
+function BookedInvoice({ row }: { row: any }) {
+  const { roles } = useAuth();
+  const canOpen = roles.some((r: string) => ["admin", "finance", "management", "sales"].includes(r));
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["fd-invoices", "booked", row.invoice_id, row.number],
+    queryFn: () => api.frontdesk.bookedInvoice({ invoice_id: row.invoice_id, number: row.number }),
+  });
+  if (isLoading) return <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (error || !data) return <p className="text-sm text-red-600">{(error as any)?.message ?? "Invoice not found"}</p>;
+  const lines: any[] = data.lines ?? [];
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-0.5"><div className="text-xs text-muted-foreground">Invoice #</div><div className="font-mono font-bold">{row.number}</div></div>
+        <div className="space-y-0.5"><div className="text-xs text-muted-foreground">Status</div><StatusPill status={row.status} /></div>
+        <div className="space-y-0.5"><div className="text-xs text-muted-foreground">Customer</div><div className="font-medium">{row.customer}</div></div>
+        <div className="space-y-0.5"><div className="text-xs text-muted-foreground">Date · raised in</div><div>{fmtDay(row.date)} · {data.raised_in}</div></div>
+      </div>
+      <div className="space-y-1 rounded-lg border p-3">
+        {lines.length === 0 && <p className="text-xs text-muted-foreground">Sage's item lines for this invoice are not loaded.</p>}
+        {lines.map((l, i) => (
+          <div key={i} className="flex items-start justify-between gap-3 border-b py-1 last:border-0">
+            <div className="min-w-0"><div className="truncate font-medium">{l.description}</div>
+              <div className="text-xs text-muted-foreground">{l.quantity != null ? `${Number(l.quantity)} × ${fmt(Number(l.unit_price ?? 0))}` : ""}{l.batch ? ` · batch ${l.batch}` : ""}{l.expiry ? ` · exp ${fmtDay(l.expiry)}` : ""}</div></div>
+            <span className="flex-shrink-0 font-mono">{fmt(Number(l.amount ?? 0))}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between font-semibold"><span>Total</span><span className="font-mono">{fmt(Number(row.amount ?? 0))}</span></div>
+      <div className="flex justify-between"><span>Still owing</span><span className="font-mono">{fmt(Number(row.balance ?? 0))}</span></div>
+      <p className="rounded-md border bg-muted/30 p-2 text-xs">Raised in {data.raised_in}. Finance changes it in ACE Books → Invoice register (Add items, Return / remove items, Void, Record receipt).</p>
+      {canOpen && <Button variant="outline" className="w-full" asChild><Link to={`/finance/books/sales?tab=register`}>Open the Invoice register</Link></Button>}
+    </div>
+  );
+}
+
 /** `openInvoiceId`: open this invoice's detail as soon as it is set (e.g. one
  *  just raised from Frontdesk's New Invoice sheet); `onOpened` clears it. */
 export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: string | null; onOpened?: () => void } = {}) {
@@ -347,38 +396,34 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
 
   const [statusFilter, setStatusFilter] = useState("");
   const [searchQ,      setSearchQ]      = useState("");
+  const [period,       setPeriod]       = useState("");
+  const [shown,        setShown]        = useState(20);
+  const [booked,       setBooked]       = useState<any | null>(null);
   const [selected,     setSelected]     = useState<Invoice | null>(null);
   const [detailData,   setDetailData]   = useState<{ invoice: Invoice; walk_in?: WalkIn } | null>(null);
 
+  const days = Number(period) || 30;
+  // A working list: voided invoices stay out until someone asks to see them (remembered on this computer). Nothing is deleted.
+  const vd = useClearVoided("frontdesk.all-invoices", [], true);
+
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["fd-invoices", statusFilter, searchQ],
-    queryFn: () => api.frontdesk.listInvoices({
-      status: statusFilter || undefined,
-      q:      searchQ      || undefined,
-      // Bumped to the backend's hard max (default was unset -> server default
-      // 100). The KPI strip below is derived from this same array, so it
-      // needs to see as close to "all matching rows" as the API allows —
-      // same reasoning as ar_receipts.py's list endpoint's summary block.
-      limit: 500,
+    queryKey: ["fd-invoices", statusFilter, searchQ, days, shown, vd.cleared],
+    // The Invoice register's own list (Sage's, ACE Books' and Frontdesk's): what is waiting for QC or
+    // Finance first, whatever day it was raised, then the most recent. A search looks back two years.
+    queryFn: () => api.frontdesk.recentInvoices({
+      days, limit: shown, status: statusFilter || undefined, q: searchQ || undefined, include_void: !vd.cleared,
     }),
     staleTime: 15_000,
   });
 
-  const allInvoices: Invoice[] = (data as any)?.invoices ?? [];
-  // Clear voided hides voided invoices from the list (remembered on this computer); choosing the
-  // Cancelled status still shows them. Nothing is deleted.
-  const vd = useClearVoided("frontdesk.all-invoices", allInvoices as any[]);
-  const invoices: Invoice[] = statusFilter === "cancelled" ? allInvoices : (vd.rows as Invoice[]);
+  const rows: any[] = (data as any)?.rows ?? [];
+  const sum = (data as any)?.summary ?? {};
+  const periodLabel = days === 365 ? "last 12 months" : `last ${days} days`;
 
-  const kpis = useMemo(() => ({
-    // voided invoices are not counted, whether or not the list shows them
-    total: invoices.filter((inv) => inv.status !== "cancelled").length,
-    // voided invoices are not worth anything; each invoice at its full value (goods - discount + delivery + tax)
-    totalValue: invoices.filter((inv) => inv.status !== "cancelled").reduce((sum, inv) => sum + Number(inv.total_amount || 0)
-      - Number(inv.discount_amount ?? 0) + Number(inv.delivery_charge ?? 0) + Number(inv.tax_amount ?? 0), 0),
-    pendingQc: invoices.filter((inv) => inv.status === "qc_pending" || inv.status === "draft").length,
-    pendingFinance: invoices.filter((inv) => inv.status === "finance_pending" || inv.status === "qc_passed").length,
-  }), [invoices]);
+  function openRow(r: any) {
+    if (r.frontdesk_id) { setBooked(null); openDetail({ id: r.frontdesk_id } as Invoice); }
+    else { setSelected(null); setDetailData(null); setBooked(r); }
+  }
 
   async function openDetail(inv: Invoice) {
     setSelected(inv);
@@ -416,34 +461,42 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
   // is represented as "" here — FilterBar owns the "__all__" sentinel
   // translation internally now, so this list no longer needs its own "all" row.
   const STATUS_FILTERS = [
-    { value: "qc_pending",       label: "Pending QC"      },
-    { value: "finance_pending",  label: "Pending Finance" },
-    { value: "finance_approved", label: "Approved"        },
-    { value: "dispatched",       label: "Dispatched"      },
-    { value: "completed",        label: "Completed"       },
-    { value: "cancelled",        label: "Cancelled"       },
+    { value: "awaiting_qc",      label: "Pending QC"      },
+    { value: "awaiting_finance", label: "Pending Finance" },
+    { value: "open",             label: "Open (owing)"    },
+    { value: "paid",             label: "Paid"            },
+    { value: "credit",           label: "Credit memos"    },
+    { value: "not_posted",       label: "Approved, not posted" },
+    { value: "void",             label: "Voided"          },
   ];
 
   return (
     <div className="space-y-4">
       <KpiStrip
         items={[
-          { label: "Total Invoices", value: kpis.total },
-          { label: "Total Value", value: fmt(kpis.totalValue), tone: "success" },
-          { label: "Pending QC", value: kpis.pendingQc, tone: "warning" },
-          { label: "Pending Finance", value: kpis.pendingFinance, tone: "warning" },
+          { label: `Invoices, ${periodLabel}`, value: sum.invoices ?? 0 },
+          { label: `Value, ${periodLabel}`, value: fmt(Number(sum.total ?? 0)), tone: "success" },
+          { label: "Pending QC", value: sum.pending_qc ?? 0, tone: "warning" },
+          { label: "Pending Finance", value: sum.pending_finance ?? 0, tone: "warning" },
         ]}
       />
 
       <FilterBar
-        search={{ value: searchQ, onChange: setSearchQ, placeholder: "Search client name…" }}
+        search={{ value: searchQ, onChange: (v: string) => { setSearchQ(v); setShown(20); }, placeholder: "Invoice no. or client…" }}
         selects={[
           {
             label: "status",
             value: statusFilter,
-            onChange: setStatusFilter,
+            onChange: (v: string) => { setStatusFilter(v); setShown(20); },
             placeholder: "All Statuses",
             options: STATUS_FILTERS,
+          },
+          {
+            label: "period",
+            value: period,
+            onChange: (v: string) => { setPeriod(v); setShown(20); },
+            placeholder: "Last 30 days",
+            options: [{ value: "7", label: "Last 7 days" }, { value: "90", label: "Last 90 days" }, { value: "365", label: "Last 12 months" }],
           },
         ]}
       />
@@ -451,25 +504,28 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">
         {/* List / Queue Panel */}
         <Card className="lg:max-h-[600px] flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm">Invoices</CardTitle>
-            <ClearVoidedButton cleared={vd.cleared} count={vd.voidedCount} onToggle={vd.toggle} />
+          <CardHeader className="space-y-1 pb-2">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm">Invoices</CardTitle>
+              {statusFilter !== "void" && <ClearVoidedButton cleared={vd.cleared} count={sum.voided ?? 0} onToggle={vd.toggle} />}
+            </div>
+            <p className="text-[11px] text-muted-foreground">Waiting first, then the most recent{(data as any)?.count != null ? ` · ${rows.length} of ${(data as any).count}` : ""}</p>
           </CardHeader>
           <CardContent className="overflow-y-auto space-y-2 flex-1">
             {isLoading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading invoices…
               </div>
-            ) : invoices.length === 0 ? (
+            ) : rows.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">No invoices found.</div>
             ) : (
-              invoices.map((inv) => (
+              rows.map((inv) => (
                 <button
-                  key={inv.id}
+                  key={`${inv.source}:${inv.number}:${inv.invoice_id ?? inv.frontdesk_id ?? ""}`}
                   data-tour-row
-                  onClick={() => openDetail(inv)}
+                  onClick={() => openRow(inv)}
                   className={`w-full text-left rounded-lg border bg-card px-4 py-3 hover:bg-muted/40 transition-colors space-y-1 ${
-                    selected?.id === inv.id ? "border-primary bg-muted/40" : ""
+                    (inv.frontdesk_id && selected?.id === inv.frontdesk_id) || (booked && booked === inv) ? "border-primary bg-muted/40" : ""
                   }`}
                 >
                   {/* Every line gets its own full-width row and `truncate` --
@@ -480,22 +536,24 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                       break long text one character per line instead of
                       overflowing cleanly. */}
                   <div className="flex items-center justify-between gap-2 min-w-0">
-                    <span className="font-mono text-xs text-muted-foreground truncate min-w-0">{inv.invoice_number}</span>
+                    <span className="font-mono text-xs text-muted-foreground truncate min-w-0">{inv.number}</span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <StatusPill status={inv.status} />
+                      <StatusPill status={inv.frontdesk_status ?? inv.status} />
                       <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                     </div>
                   </div>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-sm truncate">{inv.customer_name}</span>
-                    {inv.company_name && <span className="text-xs text-muted-foreground hidden sm:inline truncate">· {inv.company_name}</span>}
+                    <span className="font-semibold text-sm truncate">{inv.customer}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2 min-w-0">
-                    <span className="text-xs text-muted-foreground truncate">{fmtDate(inv.created_at)}</span>
-                    <span className="font-bold font-mono text-sm flex-shrink-0">{fmt(Number(inv.total_amount) - Number(inv.discount_amount ?? 0) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
+                    <span className="text-xs text-muted-foreground truncate">{fmtDay(inv.date)} · {inv.source === "sage" ? "Sage" : inv.source === "frontdesk" ? "Frontdesk" : "ACE Books"}</span>
+                    <span className="font-bold font-mono text-sm flex-shrink-0">{fmt(Number(inv.amount ?? 0))}</span>
                   </div>
                 </button>
               ))
+            )}
+            {rows.length < ((data as any)?.count ?? 0) && (
+              <Button variant="outline" size="sm" className="w-full" onClick={() => setShown(shown + 20)}>Show 20 more</Button>
             )}
           </CardContent>
         </Card>
@@ -506,9 +564,10 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
             intentionally no close button here, matching ARReceipts.tsx. */}
         <Card>
           <CardContent className="pt-6">
-            {!selected && (
+            {!selected && !booked && (
               <p className="text-sm text-muted-foreground text-center py-12">Select an invoice to view details.</p>
             )}
+            {booked && <BookedInvoice row={booked} />}
             {selected && !detailData && (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

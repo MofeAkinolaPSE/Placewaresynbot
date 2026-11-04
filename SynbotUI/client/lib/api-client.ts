@@ -1541,6 +1541,22 @@ export const api = {
     clientHistory: (walkInId: string) =>
       fetchRaw<any>(`/frontdesk/clients/${walkInId}/history`),
 
+    /** All Invoices: the Invoice register's list, what is waiting first, then the most recent. */
+    recentInvoices: (params: { days?: number; limit?: number; status?: string; q?: string; include_void?: boolean }) => {
+      const qs = new URLSearchParams();
+      if (params.days) qs.set("days", String(params.days));
+      if (params.limit) qs.set("limit", String(params.limit));
+      if (params.status) qs.set("status", params.status);
+      if (params.q) qs.set("q", params.q);
+      if (params.include_void) qs.set("include_void", "true");
+      return fetchRaw<any>(`/frontdesk/invoices/recent?${qs.toString()}`);
+    },
+    bookedInvoice: (params: { invoice_id?: string | null; number?: string | null }) => {
+      const qs = new URLSearchParams();
+      if (params.invoice_id) qs.set("invoice_id", params.invoice_id);
+      if (params.number) qs.set("number", params.number);
+      return fetchRaw<any>(`/frontdesk/invoices/booked?${qs.toString()}`);
+    },
     listInvoices: (params?: {
       status?: string;
       date_from?: string;
