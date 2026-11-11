@@ -206,7 +206,7 @@ function ItemsMaintain({ initial }: { initial: string | null }) {
                     <F label="GL inventory account"><GlSelect kind="inventory" label="GL inventory account" value={f.inventory_gl} onChange={(v) => set("inventory_gl", v)} /></F>
                     <F label="GL cost of sales account"><GlSelect kind="cogs" label="GL cost of sales account" value={f.cogs_gl} onChange={(v) => set("cogs_gl", v)} /></F>
                     <F label="Qty on hand"><RO value={num(item.on_hand)} /></F>
-                    <F label="Held for invoices awaiting QC / Finance"><RO value={num(item.held_for_invoices)} /></F>
+                    <F label="Held for invoices awaiting Finance"><RO value={num(item.held_for_invoices)} /></F>
                     <F label="Qty available"><RO value={<strong>{num(item.available)}</strong>} /></F>
                     <F label="On loan to customers"><RO value={num(item.on_loan)} /></F>
                     <F label="Minimum stock (reorder level)"><Input type="number" value={f.reorder_level} onChange={(e) => set("reorder_level", e.target.value)} /></F>

@@ -51,19 +51,37 @@ class RealtimeHub:
             return False
 
     async def _listen(self, pubsub) -> None:
-        try:
-            async for msg in pubsub.listen():
-                if msg.get("type") != "message":
-                    continue
+        """Deliver bus messages to this worker's sockets. If the Redis connection drops, subscribe again
+        (with a short back-off) instead of going quiet: before, a worker whose listener died delivered
+        nothing until someone happened to connect or publish on that same worker - so a Finance screen held
+        by that worker stopped updating and had to be refreshed by hand."""
+        delay = 1.0
+        while True:
+            try:
+                async for msg in pubsub.listen():
+                    delay = 1.0
+                    if msg.get("type") != "message":
+                        continue
+                    try:
+                        data = json.loads(msg["data"])
+                        await self._deliver(data["channel"], data["message"])
+                    except Exception as exc:
+                        logger.warning("realtime: bad bus message: %s", exc)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("realtime: Redis bus listener stopped (%s); resubscribing in %.0fs", exc, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+            try:
                 try:
-                    data = json.loads(msg["data"])
-                    await self._deliver(data["channel"], data["message"])
-                except Exception as exc:
-                    logger.warning("realtime: bad bus message: %s", exc)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning("realtime: Redis bus listener stopped (%s); will resubscribe on next use", exc)
+                    await pubsub.close()
+                except Exception:
+                    pass
+                pubsub = self._redis.pubsub()
+                await pubsub.subscribe(_BUS)
+            except Exception as exc:
+                logger.warning("realtime: resubscribe failed (%s)", exc)
 
     async def connect(self, channel: str, websocket: WebSocket) -> None:
         await websocket.accept()

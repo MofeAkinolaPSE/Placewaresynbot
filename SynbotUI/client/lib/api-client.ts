@@ -319,6 +319,21 @@ export interface SageExportBatch {
 }
 
 export const api = {
+  // phone / desktop notifications (Web Push) - lib/push.ts
+  branches: {
+    /** The branch this tab works in, the person's home branch and the branches they may switch to. */
+    mine: () => fetchRaw<import("./branch").MyBranches>("/branches/me"),
+    all: () => fetchRaw<{ branches: import("./branch").Branch[] }>("/branches").then((r) => r.branches || []),
+    /** Admin: where a login works (home branch + any extra branches). */
+    setForUser: (userId: string, home_entity_id: string, extra_entity_ids: string[], approval_reason: string) =>
+      sendJson<any>(`/users/${encodeURIComponent(userId)}/branches`, "PUT", { home_entity_id, extra_entity_ids, approval_reason }),
+  },
+  push: {
+    publicKey: () => fetchJson<{ public_key: string }>("/push/public-key"),
+    subscribe: (subscription: any) => sendJson<any>("/push/subscribe", "POST", { subscription }),
+    unsubscribe: (endpoint?: string) => sendJson<any>("/push/unsubscribe", "POST", { endpoint }),
+    test: () => sendJson<{ sent: number; failed: number; removed: number }>("/push/test", "POST", {}),
+  },
   dashboard: {
     workstation: () => fetchRaw<{ data: WorkstationSummary }>("/dashboard/workstation").then((r) => r.data),
     inventory: () => fetchJson<InventoryDashboardData>("/dashboard/inventory"),
@@ -461,6 +476,9 @@ export const api = {
       full_name?: string;
       department?: string;
       job_title?: string;
+      /** Branch (Lagos / Abuja) the person works in, and extra branches they may switch to. */
+      home_entity_id?: string;
+      extra_entity_ids?: string[];
     }) => sendJson<any>("/users", "POST", payload),
     resetPassword: (
       userId: string,

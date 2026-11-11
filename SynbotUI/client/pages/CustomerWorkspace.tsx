@@ -17,6 +17,7 @@ import { ClearVoidedButton, DrillLink } from "@/components/books/kit";
 import { useClearVoided } from "@/lib/voided";
 import { DrillProvider } from "@/components/books/lineage";
 import { ActivitySheet, NewCustomerSheet, NewDealSheet, ReminderSheet, StageChip } from "@/components/crm/crm-kit";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 // Matches Frontdesk.tsx / ARReceipts.tsx's existing currency-formatting convention.
 const fmt = (n: number | null | undefined) =>
@@ -35,8 +36,9 @@ const fmtDate = (iso?: string | null) =>
 // to qc_pending). See ACE-Workspace-Standard.md Ch.10.5 on why small
 // presentation helpers like this aren't extracted into a shared module yet.
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  qc_pending:        { label: "Pending QC",        color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300" },
-  qc_failed:         { label: "QC Failed",         color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
+  // no QC stage since 6 Nov: a request from before it still in these states waits for Finance
+  qc_pending:        { label: "Pending Finance",   color: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300" },
+  qc_failed:         { label: "Pending Finance",   color: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300" },
   finance_pending:   { label: "Pending Finance",   color: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300" },
   finance_approved:  { label: "Finance Approved",  color: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" },
   finance_rejected:  { label: "Finance Rejected",  color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
@@ -107,8 +109,7 @@ function CustomerWorkspaceInner() {
   // the older wizard path). Matches InvoicesTab's own KPI derivation.
   const todayInvoices: any[] = (today as any)?.invoices ?? [];
   const kpis = useMemo(() => ({
-    pendingQc:      todayInvoices.filter((i) => i.status === "qc_pending").length,
-    pendingFinance: todayInvoices.filter((i) => i.status === "finance_pending").length,
+    pendingFinance: todayInvoices.filter((i) => ["finance_pending", "qc_pending", "qc_passed", "qc_failed"].includes(i.status)).length,
     dispatched:     todayInvoices.filter((i) => i.status === "dispatched").length,
     total:          todayInvoices.length,
   }), [todayInvoices]);
@@ -183,7 +184,6 @@ function CustomerWorkspaceInner() {
 
       <KpiStrip
         items={[
-          { label: "Pending QC Today", value: kpis.pendingQc, tone: "warning" },
           { label: "Pending Finance Today", value: kpis.pendingFinance, tone: "warning" },
           { label: "Dispatched Today", value: kpis.dispatched, tone: "success" },
           { label: "Total Requests Today", value: kpis.total },
@@ -412,7 +412,7 @@ function CustomerWorkspaceInner() {
                               <div className="text-xs text-muted-foreground">{fmtDate(o.created_at)}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold text-sm">{fmt(o.total_amount)}</span>
+                              <span className="font-semibold text-sm">{fmt(invoiceTotal(o))}</span>
                               <StatusPill status={o.status} />
                             </div>
                           </button>

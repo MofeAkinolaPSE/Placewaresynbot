@@ -35,6 +35,7 @@ import Settings from "./pages/Settings";
 import AdminUsers from "./pages/AdminUsers";
 import Maintain from "./pages/Maintain";
 import { LiveUpdates } from "./components/LiveUpdates";
+import { IdleSignOut } from "@/components/IdleSignOut";
 import StockReportsPage from "./pages/StockReportsPage";
 import DataIntelligence from "./pages/DataIntelligence";
 import CustomerWorkspace from "./pages/CustomerWorkspace";
@@ -99,6 +100,7 @@ const App = () => (
         <AuthProvider>
           <SessionPrewarm />
           <LiveUpdates />
+          <IdleSignOut />
           <PresenceHeartbeat />
           <LicenseGate>
           <HashRouter>

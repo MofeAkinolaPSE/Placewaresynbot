@@ -100,7 +100,8 @@ def _local_set(key: str, value: Any, ttl: int) -> None:
 
 def shared_response(key: str, ttl_seconds: int, build: Callable[[], Any]) -> Any:
     """Return the cached value for key, building it (once across all workers) when missing."""
-    full = f"{_PREFIX}{data_version()}:{key}"
+    from src.branch import cache_key  # each branch has its own cached figures
+    full = f"{_PREFIX}{data_version()}:{cache_key(key)}"
     r = _redis()
     if r is None:
         hit = _local_get(full)

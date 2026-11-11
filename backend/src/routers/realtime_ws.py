@@ -31,7 +31,11 @@ _ALLOWED_CHANNELS: dict[str, set[str]] = {
     # forever. Role set covers everyone who touches the invoice pipeline
     # (frontdesk/QC/finance/dispatch) plus CustomerWorkspace's own
     # audience (crm/sales), matching frontdesk.py's actual role gates.
-    "frontdesk_updates": {"admin", "management", "finance", "ops", "quality_assurance", "qa", "crm", "sales", "frontdesk"},
+    "frontdesk_updates": {"admin", "management", "finance", "ops", "quality_assurance", "qa", "crm", "sales", "frontdesk",
+                          "procurement", "operations"},
+    # ACE Books saves (an invoice posted, a receipt recorded, a void...): only says "refresh", never the content.
+    "books_updates": {"admin", "management", "finance", "ops", "operations", "procurement", "quality_assurance", "qa",
+                      "crm", "sales", "frontdesk", "inventory"},
     # Staff Workspace: every signed-in team member has one. Messages only say
     # "refresh" (with the user ids concerned), never the content itself.
     "workspace_updates": {"admin", "management", "manager", "finance", "ops", "operations", "procurement", "hr",
@@ -86,15 +90,14 @@ async def realtime_channel_ws(websocket: WebSocket, channel: str):
         return
 
     await realtime_hub.connect(channel, websocket)
-    await realtime_hub.broadcast(
-        channel,
-        {
-            "event": "subscriber_joined",
-            "channel": channel,
-            "user": payload.get("sub"),
-            "at": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        },
-    )
+    # Told to the new socket only. It used to be broadcast to every subscriber, so each sign-in or
+    # reconnect made every open screen on the channel reload its data at once.
+    await websocket.send_text(json.dumps({
+        "event": "subscriber_joined",
+        "channel": channel,
+        "user": payload.get("sub"),
+        "at": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+    }))
 
     try:
         while True:

@@ -46,11 +46,10 @@ export const STOCK_GUIDES: PageGuide[] = [
   {
     route: "/quality-control",
     title: "Quality Control",
-    intro: "QC's desk: Frontdesk invoices waiting for their QC check, incoming batches to confirm and release, expiry by product, recalls and cold-chain temperature.",
+    intro: "QC's desk: incoming batches to confirm and release, expiry by product, recalls and cold-chain temperature. (Frontdesk invoices go straight to Finance - no QC check since 6 Nov.)",
     steps: [
-      tab("Release queue", "Release queue", "Frontdesk invoices waiting for QC, and incoming batches - waiting to arrive, held (QUARANTINED) after arrival, or received on a bill but not yet checked. Recent decisions are listed below."),
-      openRow("Open an item in the queue", "Click an invoice to check it, or a batch to confirm or decide it.", { cue: "Click any row in the queue" }),
-      careful("Pass QC", "Pass QC / Fail QC (invoices)", "You sign with your own login; your name and the date print on the invoice. The person who raised an invoice cannot QC it. Pass sends it to Finance; Fail sends it back with your reason.", { kind: "button" }),
+      tab("Release queue", "Release queue", "Incoming batches - waiting to arrive, held (QUARANTINED) after arrival, or received on a bill but not yet checked. Recent decisions are listed below."),
+      openRow("Open an item in the queue", "Click a batch to confirm or decide it.", { cue: "Click any row in the queue" }),
       careful("Confirm arrived", "Confirm arrived (batches)", "When the goods arrive: supplier, their invoice number, quantity, unit cost, batch number on the pack, manufacture and expiry dates. The stock goes into its batch at once, held until you release it, and Finance sees it waiting for the supplier's bill.", { kind: "button" }),
       careful("Release", "Release or Reject", "Release makes the batch sellable (oldest unexpired first). Reject keeps it held and raises a deviation.", { kind: "button" }),
       see("Register incoming batch", "Register incoming batch", "Registers a delivery before it arrives: supplier first, their invoice number, item (or New item), quantity, expected date.", { kind: "button" }),
@@ -83,7 +82,7 @@ export const STOCK_GUIDES: PageGuide[] = [
       tryIt("Search item ID or description", "Find an item", "Type part of the item ID or the product name.", { kind: "field" }),
       see("New item", "New item", "Adds an item - it always opens blank. \"A new product\", or \"Next lot of an existing product\" to copy that product's name, class, price and accounts with the next lot code.", { kind: "button" }),
       see("New lot", "New lot", "Creates the next lot of the item on screen (e.g. CLEXANE 40mg(Z)v), copying its details.", { kind: "button" }),
-      tab("General", "General", "Description, class, sales description, price levels 1-3, last unit cost, cost method (FIFO), quantities (on hand, held for invoices awaiting QC / Finance, available, on loan), minimum stock and reorder quantity, U/M, location, weight, preferred vendor."),
+      tab("General", "General", "Description, class, sales description, price levels 1-3, last unit cost, cost method (FIFO), quantities (on hand, held for invoices awaiting Finance, available, on loan), minimum stock and reorder quantity, U/M, location, weight, preferred vendor."),
       see("GL sales account", "GL accounts", "GL sales, inventory and cost of sales accounts: click the box, then type the account number or part of its name to find it.", { kind: "button" }),
       careful("Save", "Save", "Saves the item's changes - prices, accounts and reorder levels apply at once.", { kind: "button" }),
       careful("Delete item", "Delete item", "Deletes an item or lot created by mistake - only while nothing has been received, sold or recorded on it. One with history cannot be deleted: the box says what uses it and offers Make it inactive (it drops out of the pick lists, its history stays).", { kind: "button" }),

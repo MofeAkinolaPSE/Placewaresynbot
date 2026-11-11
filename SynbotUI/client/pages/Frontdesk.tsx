@@ -49,6 +49,7 @@ import {
   type WalkIn,
   type InvoiceItem,
 } from "@/components/frontdesk/InvoicesTab";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,7 +75,6 @@ interface StockResult {
 const WIZARD_STEPS = [
   { label: "Walk-in", icon: UserPlus },
   { label: "Invoice", icon: ClipboardList },
-  { label: "QC",      icon: CheckCircle2 },
   { label: "Finance", icon: DollarSign },
 ];
 
@@ -214,7 +214,7 @@ function ClientHistoryPanel({ walkInId, onClose }: { walkInId: string; onClose: 
               {invoices.slice(0, 3).map((inv) => (
                 <div key={inv.id} className="flex items-center justify-between text-xs bg-background rounded px-2 py-1.5 border">
                   <span className="font-mono text-muted-foreground">{inv.invoice_number}</span>
-                  <span className="font-semibold">{fmt(inv.total_amount)}</span>
+                  <span className="font-semibold">{fmt(invoiceTotal(inv))}</span>
                   <StatusPill status={inv.status} />
                 </div>
               ))}
@@ -460,7 +460,7 @@ function StepInvoice({
         discount_amount: discount || undefined,
       }),
     onSuccess: (data: any) => {
-      toast({ title: "Invoice created", description: `Total: ${fmt(Number(data.invoice?.total_amount ?? 0) - Number(data.invoice?.discount_amount ?? 0) + Number(data.invoice?.delivery_charge ?? 0))}` });
+      toast({ title: "Invoice created", description: `Total: ${fmt(invoiceTotal(data.invoice))}` });
       onSuccess(data as { invoice: Invoice });
     },
     onError: (e: any) => {
@@ -656,7 +656,7 @@ function StepInvoice({
 
         <Button className="w-full gap-2" disabled={!valid || createInvoice.isPending} onClick={() => createInvoice.mutate()}>
           {createInvoice.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
-          Create Invoice & Send for QC
+          Create Invoice & Send to Finance
         </Button>
       </CardContent>
     </Card>
@@ -664,24 +664,22 @@ function StepInvoice({
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: QC Check
+// Step 3: handed to Finance (the client dropped the QC stage on 6 Nov: Frontdesk -> Finance)
 // ---------------------------------------------------------------------------
 
-function StepQC({ invoiceId, onNewWalkIn }: { invoiceId: string; onNewWalkIn: () => void }) {
-  // Whoever raised an invoice cannot QC it (frontdesk.py refuses it), and here that is always the person at the
-  // desk - so this step hands it over instead of offering Pass / Fail buttons that could only fail (28 Oct).
+function StepSentToFinance({ invoiceId, onNewWalkIn }: { invoiceId: string; onNewWalkIn: () => void }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2 text-base">
-          <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> Sent for QC</span>
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> Sent to Finance</span>
           <span className="flex gap-2"><ModifyInvoiceButton invoiceId={invoiceId} /><PrintFrontdeskInvoiceButton invoiceId={invoiceId} /></span>
         </CardTitle>
-        <CardDescription>A QC colleague checks it next, then Finance approves it.</CardDescription>
+        <CardDescription>Finance approves it next; approval posts it to ACE Books.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-          You raised this invoice, so a QC colleague checks it - it is in their Quality Control queue and they have been notified.
+          It is in Finance's queue and Finance (and the CFO/CEO) have been notified - on their phones too if they turned that on.
           The stock is held for this customer meanwhile. Follow it in Today's Queue; you can still Modify or Print it above until Finance approves it.
         </div>
         <Button variant="outline" className="w-full" onClick={onNewWalkIn}>Next customer: start a new walk-in</Button>
@@ -776,7 +774,7 @@ function StepComplete({ invoiceId, walkInName }: { invoiceId: string; walkInName
           <CheckCircle2 className="h-5 w-5" /> Transaction Complete
         </CardTitle>
         <CardDescription>
-          All steps completed for <strong>{walkInName}</strong>. Invoice registered, QC-checked, and finance-approved.
+          All steps completed for <strong>{walkInName}</strong>. Invoice registered and finance-approved.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -788,7 +786,7 @@ function StepComplete({ invoiceId, walkInName }: { invoiceId: string; walkInName
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-green-600 dark:text-green-300">{fmt(Number(invoice.total_amount) - Number((invoice as any).discount_amount ?? 0) + Number((invoice as any).delivery_charge ?? 0))}</span>
+              <span className="font-bold text-green-600 dark:text-green-300">{fmt(invoiceTotal(invoice))}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Payment</span>
@@ -858,7 +856,7 @@ function NewWalkInTab() {
         <ClientHistoryPanel walkInId={historyId} onClose={() => setHistoryId(null)} />
       )}
 
-      <StepIndicator current={step < 4 ? step : 3} />
+      <StepIndicator current={Math.min(step, 2)} />
 
       {step > 0 && (
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={reset}>
@@ -880,7 +878,7 @@ function NewWalkInTab() {
           />
         )}
         {step === 2 && invoiceId && (
-          <StepQC invoiceId={invoiceId} onNewWalkIn={reset} />
+          <StepSentToFinance invoiceId={invoiceId} onNewWalkIn={reset} />
         )}
         {step === 3 && invoiceId && (
           <StepFinance invoiceId={invoiceId} onSuccess={(approved) => { if (approved) setStep(4); }} />
@@ -895,7 +893,7 @@ function NewWalkInTab() {
           <span>Walk-in: <code className="font-mono">{walkIn.id.slice(-10)}</code></span>
           {invoiceId && <span>Invoice: <code className="font-mono">{invoiceId.slice(-10)}</code></span>}
           <Badge variant={step === 4 ? "default" : "secondary"} className="text-[10px]">
-            {["registering","invoicing","qc pending","finance pending","completed"][step] ?? ""}
+            {["registering","invoicing","finance pending","finance pending","completed"][step] ?? ""}
           </Badge>
         </div>
       )}
@@ -942,7 +940,6 @@ function QueueTab() {
     { tourId: "frontdesk-walkins-today", label: "Walk-ins Today",  value: report?.walk_in_count  ?? 0,              icon: Users,      color: "text-blue-600 dark:text-blue-300"   },
     { tourId: "frontdesk-invoices-raised", label: "Invoices Raised", value: report?.invoice_count  ?? 0,              icon: FileText,   color: "text-purple-600 dark:text-purple-300" },
     { tourId: "frontdesk-revenue-today", label: "Revenue Today",   value: fmt(report?.total_revenue ?? 0),          icon: TrendingUp, color: "text-green-600 dark:text-green-300"  },
-    { tourId: "frontdesk-pending-qc", label: "Pending QC",      value: report?.pending_qc     ?? 0,              icon: Clock,      color: "text-yellow-600 dark:text-yellow-300" },
     { tourId: "frontdesk-pending-finance", label: "Pending Finance", value: report?.pending_finance ?? 0,             icon: DollarSign, color: "text-orange-600 dark:text-orange-300" },
     { tourId: "frontdesk-completed", label: "Completed",       value: report?.completed_today ?? 0,             icon: CheckCheck, color: "text-green-600 dark:text-green-300"  },
   ];
@@ -1220,9 +1217,6 @@ function ReportsTab() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-1">
-                {report.pending_qc > 0 && (
-                  <p>• <strong>{report.pending_qc}</strong> walk-in(s) waiting for QC inspection</p>
-                )}
                 {report.pending_finance > 0 && (
                   <p>• <strong>{report.pending_finance}</strong> invoice(s) awaiting Finance approval</p>
                 )}
@@ -1256,7 +1250,7 @@ export default function Frontdesk() {
             <Users className="h-6 w-6 text-primary" /> Frontdesk & Client Reception
           </h1>
           <p className="text-sm text-muted-foreground">
-            Walk-in intake · Invoicing · QC → Finance pipeline · Client history · Reports
+            Walk-in intake · Invoicing · Finance approval · Client history · Reports
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

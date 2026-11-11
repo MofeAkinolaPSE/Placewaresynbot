@@ -1,0 +1,399 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+All right, so like I said, we're going to walk through a day-to-day and what the software would feel like. We'll go from front desk to QC, finance and books and we'll try to walk a customer's request from their request from the invoice, from the front desk via the invoice and how it works in finance and so on. So what ACE offers is one system for every department and one set of books or two eventually. 
+
+You have the front desk, you have quality control, ACE books which is for the finance inventory and maintain where you can interact with your stock. You have operations where you can reorder stock, track your deliveries and your riders. You have the customer relationship and sales where you can interact with your customer's data, look who's who's owing, who's doing what. 
+
+And we have the HR in my workspace where you have basically the workspaces where each team has a dashboard, they can interact with their tasks for the day and monitor the entire system based on the features that they are all they need. And then we also have ask ACE which is your AI assistant which will definitely guide you and assist you moving forward while you use the software. So every page has a similar setup. 
+
+You have your menu which will fit to your role, the top bar which will have your show me how, the wall clock and the bell for notifications. Once you click on the role, you get the side panel that pops up. Again, during the practical after this, I'll show you the different aspects of the software. 
+
+We have the green fields for typing so the input fields are highlighted green so you can easily find where you impute information and your screen updates themselves. So if front desk raises an invoice, the QC automatically gets the update that your invoice has been raised and would need you to confirm. The same with the find out and every user gets their own login details. 
+
+Now so the journey of one order, it goes from the counter which is the front desk all the way to books and finally dispatch. The front desk raises the invoice, the QC will check to confirm the stock is in hand. Finance will approve that invoice and the records are kept in ACE books after which it will go to dispatch for delivery and payment before we record the receipts.
+
+So again, so step one is the front desk will raise that invoice whether it is a walk-in or an existing customer. They can either use the walk-in to register a new customer and then produce to create an invoice. You have an automated item list where you can interact with the product, quantity, impute the unit price, batch number, manufacturing, also add the delivery charge and discount amount before it moves to bill, ship to the purchase order in terms of ship via, after which you then create the invoice. 
+
+The stock is held until finance approves and which is how until it's held until QC approves and then which finance then approves. We'll see this in the practical. In the QC page, QC is notified once that invoice comes in and then they can interact with that particular invoice. 
+
+They can either approve or fill that invoice based on their, well based on whether the stock is available or whether it's expired or whether there's a problem with the stock that we were not aware of. So that's where the QC goes in and QC's, well whoever, basically the way it works now is that whoever raises that invoice doesn't necessarily have the ability to QC pass it. The QC has to confirm before it goes to finance and then before they can now move to delivery and dispatch.
+
+So again, the finance sees all the pending invoices and then approves it, approves them. Only then does it affect your stock, right? And then your stock starts to count. So if your order a particular stock of 10, once finance approves that particular invoice, the inventory moves and then the stock is then removed from the books until payment is recorded and the receipts are recorded before and then the accounts balance. 
+
+So again, finance can either approve or reject and every user that approves an invoice, your login is stated on the invoice of which you're approved. So this is Acebooks. Acebooks works partly for the finance department, right? And then for example, when an invoice is created, it moves and flows basically how you have designed your accounts to flow from the account receivables, the sales discounts, and then you have your sales, other incomes, and your delivery goes to the delivery account that you have designated. 
+
+Also your cost of sales and the inventory stock that leaves the batch, right? So again, this is a lot of finance, the account and balancing. It's not my strong suit, but I hope the table makes sense. I'll also show you the invoice register where you can see all the active invoices and then interact with them to record receipts. 
+
+You can also void or modify those invoices. But again, I'll show you later on. After the final posting has happened, the invoice now gets sent to dispatch for delivery and then the payment is received and then the receipts are recorded. 
+
+And if there's a need to or update an invoice, you can add an item or remove an item from that invoice and automatically your books are updated. If there is a need to cancel the invoice, you can void that invoice and it will not reflect in your books. Also, the print invoice button is on every essential page.
+
+So anybody that's interacting with invoices on a day-to-day can in fact print an invoice. Alright, so learning is on the job. So what we have done for this software is we have built helpers that will help you get used to the system. 
+
+And once you sign up or sign in, you have a welcome tool which shows you your different pages that you will interact with on a day-to-day. And you also have your show me how button. And that button is at the top of every page and it shows you all features that have or all the features that are pertaining to that page and to how you work per day. 
+
+And finally, you have the ask ace which is your AI assistant. Basically, any questions that you need to ask the system, you can just ask the AI assistant and it will properly guide you into how you can achieve that particular task. So again, you press the show me how at the top of the bar and then it will show you highlights of different features, the different buttons and how you can interact with the software to best suit you. 
+
+You can also take the tour again if you need it. I'll show you where to find it. You can take a tour of any pages, any page and so on.
+
+And so we have six rules that keep your books right, right? There are different hands for each step where the front desk raises an invoice.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Yes, from the right stock. So you can add new items in the maintain folder if you want to add a new product or update an existing product. Then you have your batch numbers and dates. 
+
+So if you want to add... So that's maintaining? Yes, that's maintain. Maintain your vendors, shipping methods, and then for the chart of accounts this will just lead you to the setting pages for all those. Because the chart of accounts comes first before all other things.
+
+As you started, are you getting? So that is why I was noting all those things. I didn't want to go through the whole financial books. Because the financial books are all concerned, everybody does.
+
+That's why you started with what concerns most of the people. Then from accounting side, then you now come back to the chart of accounts. Yeah, we'll discuss the... The chart of accounts is for you and Suzanne.
+
+For you and Suzanne. Yeah, yeah, multiple payments, invoicing, all those things. Yeah.
+
+And so that you... So you're just saying if you want to split a payment into different invoices, for different invoices that we should... How do you want to set that up? First into this invoice, no? Yes. If already created an invoice, then you write the invoice, first invoice, second one, and the customer paid for the two. Together, okay.
+
+That you're getting. So under the receipt, normally you call up the customer's name, and all the outstanding invoices will be formed. Okay.
+
+Then you pay them. Yeah, we did something. Yeah, we did like the... So that's for the receipts page.
+
+Receipt page. That's not the individual ledger that we're thinking about. Individual ledger.
+
+That should be on the individual ledger now. Receipt. You see all the invoices that you'll... So yeah, you can... Sorry.
+
+You know that on each invoice, if already created even, you make an avenue for the payment. If it is on cash basis, that customer pay immediately. You have done that.
+
+But if it requires two invoices at a time. Okay, so you want to split the bill for two invoices. So you can click on the two of them here now, and see, split the bill.
+
+So is that what you're saying, sir? So if you click on the two of them, you can split the bill, the payment, to the two different accounts. Is that what you're trying to say, sir? No. Yes, now that's... You imagine the two invoices together for me.
+
+Yeah, for the customer. I think it's what you're trying to do. So this will work for it? That will work.
+
+Once you select two invoices together, then you make the payment, which you should. Okay, yeah. So it's to show about... Like this one is OEM 190 and 391.
+
+And the person paid 193 Naira. So we can pick these two. Yeah, and then it puts... And to show the accounts.
+
+Yes, and we can... Yeah, so that will work, sir. I feel this invoice now. Yeah, I'll go back to that.
+
+Sir, before you look at this invoice at your page, there is this thing. I printed a copy from the last... We automated the... Depend by... Yes, I have. So we look at the name? Yes.
+
+Because someone else may use... Your account to... Or to create the invoice. Okay. Thank you.
+
+That would be so much. Yeah. Because you're assigned to your... Everybody have their account.
+
+Anybody using your system... When you're logged into your system... It automatically uses your name. Yes, it automatically prints my name out. Yeah, but you see, it makes sense.
+
+In the idea that if anybody else logs... So it means that automatically you must log off. When you are leaving your system, you must log off. But there is no log-in log-off.
+
+There is. There is. Oh, so if you can sign out... So you can sign out, yeah.
+
+Yes. Once you sign out, everybody else has to use it. It also helps tracking users.
+
+This is what the invoice will look like. You can see prepared by at the bottom. So whoever prepared the invoice, the name will appear here.
+
+And then otherwise... It was just a sign. Yes, it was just a sign. But eventually, we will have your signatures updated into the system.
+
+So that once your name pops up, your signature will pop up as well. And have you corrected the printing on two pages? Yes, so I think the other day was your setup. Is this blind? Is this a... Okay, so it's a blank.
+
+Instead of a blank, it's a blank instead of... Instead of this, it's a... I'd like to cancel this one. Can you tell what you're saying? This space. Because that gives you a problem in the sense that automatically, you need to run to another page.
+
+So are you saying because there's only one item, there should only be one row? No, there shouldn't be rows at all. No, rows at all. Okay, so it's just... So it's just a grid line.
+
+Yes. The red line is from the description and the quality of the material Is it still being used for the same purpose? No, it's just that the system will just remove the red line That's just it The rule of code should still be there Yeah, but it just won't be visible It won't be visible So the manner in which they are using it is like this? Yeah, I'm just saying No, I'm just saying that the way they are using it is like this We are just trying to... It's going to come out though Because all those wear boots It's going to re-handle The one that I showed you The edges of the paper, the wear boots, the date Okay, yeah, it should be gone This is how it should come out It's the exact replica of what you currently have This is the print preview now This is how it should be Okay, all this Okay, that's all she's talking about I'll take it up Okay, you mean the... Yeah, extra writing I'll take it up Yeah, I'll take it up The extra writing Yeah, so that's for the accounts You can open it again You can print You can No, there's nothing stopping you from interacting with the invoices Yeah, so it's there but it's... You have the ability to adjust it There's no limitation Yeah, there's no limitation Yeah, so this is that page But you can open it whenever you want I'm just remembering this part of what I just noted What was that? List of items sold to customers Or maybe later I'll explain it to you I'll explain it to you before you I'll explain it to you So is it like a list of... Items sold to customers Is it not inventory? So it would be your inventory or your customer relationship Is there a... How do you say inventory? No inventory Items sold to customers Okay Can you say customer or this product Yeah, this is... This is... This would be where... For the invoice I think I've told you before So this would be your... This is where to look at your customer's card So you can see their previous invoices All the interactions If you click on it, you can see the details of that invoice every print invoice And it has been received The product coming out on a page I mean Yeah This is sort of recall Also power customers if you want to is it like you want to modify the invoice I'll explain it. I will show you so that you understand So back on the invoice again, we can modify that invoice if you want to The invoice you can this is the delete so if I avoid it if you want to I just give you a reason for Delete I forgot to accuse his dashboard, which is Yeah Yeah, so that's what we're going to Well, it's for the others trail so then the invoice you see the people that interacted with that particular So you naturally it won't just show it won't be it will be that QC has to pass it And then confirm and finance now confirm finally before it can be so as you can see it says you have raises invoice So QC needs to check it Confirm it if it's a viable So once QC has confirmed it, so this is the invoice right here, so this is QC's dashboard page Yes, currently active so she clicks on it she can then the QC can now interact and then Fill or pass the invoice so you can add the batch number And I don't have a notes, but I'll just go ahead to pass it Okay Yeah, so it doesn't go through Okay, we're coming for us Okay, so because I'm using the same account yeah, that's why it's not working That should pass that So I can open a different account, so this is the QC's test account, so if I check the inventory Quality I'll see the invoice So it's passed Invoice is passed QC Quality control just to make sure
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+I'm just looking at, there can't be an omission, that now they are printing invoices, not yet everybody printed them. So we cannot overlook. Yeah, you cannot overlook that.
+
+We can't overlook it. Yes, you need to finance, you need to approve. I'm just looking at it.
+
+You have it on your phone. Yeah, you can have it on your phone. You have it on your phone.
+
+You can access it anywhere. So if they call you to approve, you can approve anywhere you want. Because if they say, you are a church, you can't have it on your phone.
+
+So what it means is that I will have it on my phone, whenever I need it. You can't have it on your phone. No, no, no, no.
+
+So are you saying that we can't print the invoices? No, you can't print them. You can't print them. Otherwise, you would need to reflect on P&L and other things that you have.
+
+But what will happen is that, is there a way that you can create a PIP or an alert? You understand what I'm saying? Okay, a notification. A notification. I'll send a notification.
+
+Once it is done, it will send a notification to Yemi, send a notification to me. Okay, that's possible. That way, you must be aware that I don't need to carry a phone like this to do it.
+
+Yeah. But it doesn't stop you from quitting, Yemi. It doesn't stop you from quitting.
+
+It doesn't stop you from quitting. I can approve later. Can it be approved later? Yes, you can approve later.
+
+You can approve later. And is it that there will be a page where all unapproved invoices will be there until they are approved? Yes, all the invoices will show you. I'm waiting for an ad.
+
+I'm waiting. Why is this one showing unapproved savings? So, it's because there's a setting for it, that's why I'm trying to fix it. Okay.
+
+Let's see the piano. Yes, that's what I'm going to see. Yeah, go to the piano.
+
+Let's see. Income, that income statement. Let's see the piano.
+
+So, it hasn't changed yet. One, four, four. It hasn't changed yet.
+
+It has changed? Yeah. Okay, I'm going to make your team. Okay, that was a fixer.
+
+It didn't change. It didn't change. One, four, four.
+
+The severance is five, nine, eight, nine, seven. It didn't change. It didn't change.
+
+That's to make your team. Because it's not communicating internet. That's a good question.
+
+That's a good question. So, now we're going to change it. It's supposed to be placed where it'll go.
+
+Okay. So, in general, that's supposed to be placed where it'll go. Okay.
+
+Yeah, it's done. One, four, four. Okay, okay.
+
+Which printer is the other one? Yeah, which one is the other one? Show it to us. What does it say? Huh? Huh? Okay. Okay.
+
+Tell me what's he intent on? So, it's not reflecting. It's not reflecting. Yeah, it's not reslacting.
+
+All reflect. Liberating, it's not reflecting. Yeah, no.
+
+But interaction, the main choice. Okay. Okay.
+
+I don't need to sign it. You don't. I need to sign it.
+
+You can't sign it. I'm not signing it. You can't.
+
+You can't sign it. You can't sign it. I used to eat a lot of chicken with rice in Busaye I used to eat Qator I loved eating Qator What kind of Qator? What Qator? I don't know I don't know I don't think it was that good Okay, I don't know You don't like it? It was not that good I didn't like it It was... I ate chicken with rice Yes... It was not that good Really? You have to have amazing voice to find out, so we need to run that process through.
+
+There are many trainings in how to raise a voice. You take a zoom over and reflect and find out if it's what you want. Now that there's no need, there's no reflection, there's no gap.
+
+Nice to see you. There are some things that have to be restricted. You see what it is doing? You have to authorise this, you have to authorise that, so that we have an idea.
+
+For example, they want to get out of here, delete all the calls that have been cut off. I think there's a problem with the invoice. You should just leave the batch number off for now, if it's not there.
+
+Because I think it's affecting the way the books see the data. Is it possible? Okay, you don't see that number. The actual, yeah.
+
+There's a format for that batch number. Yeah. You're supposed to use the same format.
+
+If it's not in the books, yeah. It's what you want to use. Okay, you didn't recognise that batch number.
+
+Yes, because it's not the same format. I'm manufacturing. Okay, I can keep, I can keep.
+
+So why don't you just speak from the stock? You understand? When you're listening to the voice, just speak from the stock. You speak from the stock, but you just have a piece. I speak from the stock.
+
+There's no batch number. I'm supposed to approach it. I'm supposed to check whether the batch number matches.
+
+I'm supposed to check whether the batch number matches. You should come and maintain the batch number. Yeah, I'm going to maintain it.
+
+I'm maintaining it. I'm going to maintain it. That's why I said, look for a product that has the correct batch number and use it for the invoicing.
+
+Okay. If we have some product from what you have up to date, we have something that matches. I don't think there's anything.
+
+Did you know anyone that has a batch? There should be. Okay, there's no batch number that has that. I can try.
+
+Okay, then you go back there, so you go and commit. Sometimes it's not that true. Don't type in, let's see if it has that.
+
+Does it have that? No, it doesn't have anything. No, I mean you're paying any one of them. No, what is the, why is he looking for batch number? What is the cost? Because there's no batch, they're not saved.
+
+But when did you get all the expiration dates? I think it comes in one of those Excel files, but those Excel files don't have batch numbers. So why didn't you create a batch number? No, but this one has. No, what's your example? So I'm looking at if there are any ones that have a batch number on it.
+
+Why didn't you just create, you can't create a batch number. But we can, but it needs to match with the books. Which books? So the problem I have now is that because the invoice didn't match with the records in your books, it wasn't able to post the current invoice.
+
+Which books? This one. Yes, this one. So the only zero celerics on hand in batch.
+
+Does not have that batch. Yeah, so that's why it was. So what does it mean for? You can void it and do it again.
+
+Okay. You want us to recreate it again? Yeah, you can post it again. You can post it again.
+
+Yeah. I have a question. Okay.
+
+Oh, there is one for HR. So this is the HR part. They have the overview, the staff directory and the timesheet.
+
+So when team members record their time, you see the updates here. So you can see each team member with their celeric credentials and their activity. What about when they are not on the team? That one.
+
+They are not on the team. As long as you don't start your clock, it won't show that you are working. What about the employee documentation and their credentials? So you should have, once you update the team members information, phone number, branch started.
+
+So you can edit it and add their details into it. So their department, job titles and so on. Just leave that out for now.
+
+And I feel like there should be, instead of Mr. Emi sending someone to come and give me a job, I feel like the app should be like, if you want to give me a job, you should be able to assign me a job. So that's why you have a workspace. So if you want to add a task for someone, you can add a task.
+
+What needs to be done, the dates, are you going to repeat it or not, and who the task is for. So once you click that, it will show up on the person's dashboard that this is what needs to be done. Sorry, we don't have, but I think you only get... Something like Evan would have.
+
+He said that there was two rugby rates for each of us. Yes, yes. You will get two, two, two, two.
+
+Yes. So something like Evan, instead of writing personal information on a book that you might be surprised, I feel like there should be a dashboard for you to learn to write notes. Oh yes, so my workspace also has your notes.
+
+So you have your notes, you have your reminders, and you can ask. So you can just save your notes, whatever you need to write, and it will show up here. Okay.
+
+So my daily tasks will be showing in my workspace. Yes, the activity for the day. Right.
+
+So you can see it down here for my role from the system. When the system updates you and there are things that need to be checked, the maintenance, if there's a stock that's about to expire, you have that notification on that page. So we are raising requests.
+
+So I'll prove everything now and see how it works. You can continue raising. I can't.
+
+You can continue raising. I can't raise. Raise another request.
+
+Why do I want to raise it? Why do I want to raise it up? Because if I raise... Yes. So you don't have it. So you're raising my request.
+
+It doesn't stop you from raising answers. But I have it now. Okay.
+
+But will I be able to do reconciliation if it is not approved? Because all those things... Attend to the customer. She's talking about... Before you can do any reconciliation, you can't do reconciliation without the approval. Because if that's it, you might not be able to do it.
+
+That's what it's all about. Without the approval. The payment we don't put inside.
+
+All the payments, all those things we don't put. We don't put. We don't reflect.
+
+What are you going to reconcile? It's all gone. It's all gone. You have to wait for the approval in case there's any error.
+
+No, don't call Mr. Emi, say the approval. The approval. Mr. Emi should reflect.
+
+No. The point is, this thing is online. It's something you can just go through.
+
+Why are you clamouring on this? Because you know how Mr. Emi's money is. This all will come. All this Mr. Emi.
+
+It's usually in the media we know. So that's why we're saying this. Possibly we can give access to some money.
+
+Access to... Somebody else can help you pay. See, I can pass products. The problem is you only reflect on it.
+
+I'm the one that approves. The name of the person that approves it all. And how to do those things.
+
+The reason why we are doing this is because in case of... No. Without even doing this, we'll use it to practise. In the sense that... It's good.
+
+So we do it daily. The problem about all this new system is because we are not certain using it. We are not used to that system.
+
+But when you start using it and you are used to the system, you always know that we have to keep waiting for our money. Once we have money, we'll do it. Then you'll get it.
+
+That's how it's supposed to be. So what are we doing? I'm trying. I think the internet is just fine.
+
+So QC has passed now. QC has passed? So you can even approve from here. You can approve from here, but you need that... You show the person that... I said I saw one... I'm keeping you for a time.
+
+I'm just trying to explain to you. But I want to... You don't listen to me. You don't know where I'm pointing.
+
+I saw it. Ah, there's something. Okay, you're still working on something.
+
+You let me write this one. Let me write it down. Yeah, write it down.
+
+I need to get something from this guy. He's bouncing. Say that one.
+
+Yeah, I saw it. Why do you want to disappear? So, sorry, when you are creating a new voice... My brother married you, but... Okay, so... If we're doing the inventory... Sorry, if you don't mind. This is something I will be sure to tell you.
+
+It takes several days. You can see this one has zero stops. So you have to pick another hand.
+
+So you have to pick this one. So you don't want to show it to others. So it has to be one hand.
+
+So that's what this is. It stops here, it stops. It can't stop.
+
+But this is one that we have stopped at. So you don't want to affect the books. So you have to go into the information.
+
+Those are the most popular ones. So you can clean it up. But I don't want it to be your previous book because of the record.
+
+So since you don't enter this one, you just leave one of them. So you see that if I say I will print out the book. You will print it.
+
+But you won't just show it to others. You have to leave it. Because I don't say if I saw one.
+
+Yeah. Yeah, no, it's okay. So we just need to create an invoice.
+
+I'll pick the phone batch each. Sorry. So I'll avoid this one.
+
+I'm taking my... I'm taking it off. So I'm giving my daddy's operation. The phone is on the chassis.
+
+So after a while, when we were passing through, he said, you take my sponge. Mummy said... They said, he was talking, he was not looking at my sponge. Is he okay? It's okay.
+
+It's just a big block. Oh, yeah. I can't see it.
+
+I can't see it. It's just a block. I'm going to sleep.
+
+I have to get up. You're going to sleep? No, don't worry. I'm going to sleep.
+
+Good night. Good night. Sleep well.
+
+Good night. Good night. Sleep well.
+
+Good night. Good night.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Once the stock comes in, they put the quantity that came in. So as you are selling, it decreases that quantity. And when it gets to zero, you should not be able to import it from that stock again.
+
+Yes, that was what was happening, so make sure, yeah. Don't click on that, because it has been deleted. Is that delivery that she included in that product? I don't know, probably it should be delivery accounts.
+
+Okay, if it reflects. Okay. I'm not sure if it's delivery accounts.
+
+Other income. Yes. Okay, let's check.
+
+Other income. Double click on it, so that we'll know whether that one came in. Which customer did you use? Subo.
+
+Subo? Is it down or up? It's down. Is it down? It's only 1,500. I think there was 1,500.
+
+Double click on it, double click on it. It's already open. Yes, that's it.
+
+You just click on the invoice number, so that will show you the invoice. Okay. So just click on the invoice number.
+
+So our void is now. Please click on it. Just click on it.
+
+And you can void it. We have to write that down. Yes, it's for the audit trail, so that you can know why you voided it.
+
+Why you had to void it. So if you click on it and click on void, it will just say why it was. So if you check the books now, it should naturally just be the same.
+
+But it will still reflect on the customer's account as void. It won't show anymore on the customer's account. Okay.
+
+It won't show. Because if you check the CRM. And you search for.
+
+Once it's voided, you can't see it on the customer's account. Yes. So it's not there anymore.
+
+Oh. So you can see this is voided. Okay.
+
+Okay, it's showing as void, okay. Yes, so. You can, okay, sure.
+
+But these are your current ones. So you can actually view. View what? That void, is it going to remain there for a long time? Or daily, it's going to delete itself? I can set it up to delete daily.
+
+If that's, if it makes your books need to. Delete what? So any void, any voided receipt or invoice should leave the list completely. So I'll work on that.
+
+You can leave the list completely. But you should be able to view those invoices or receipts that you voided. Okay.
+
+We used to view it. We used to view it. So you have a record for what? Yes.
+
+Delete it completely and show it to me. No, no, no. No, no, no.
+
+We'll delete it. So, so, so. If there's any issue with that.
+
+For historical. Yeah, yeah, yeah. It used to show, normally.
+
+Any void, it should have a record. Yeah, it's saved, it's saved here. You can still see it.
+
+You can show the void, receipt and all that's in the void there. Yeah. But the figure will not have impact.
+
+No, so they have. There is a from whom. I've already removed the from.
+
+There is a from whom. That's what I'm saying. That's what I'm saying.
+
+That's the essence of what this is. You can hear this from voice from anywhere. No, what is happening from whom? I'm not saying we won't come to whom.
+
+You're not particularly. We're not using the voice from whom at that point. I thought that I'm saying that this is on the phone.
+
+So I need to say, I'm back with my recording on the shelf. Then can this thing, the what you call it, can it be converted into an iPhone? We have created an iPhone. I just, I said to you, no.
+
+No, but I have. You don't need to download it. I will install it.
+
+I will install it for you. I just installed it. I will install it for this guy here.
+
+Hello. Hello. Hello.
+
+Hello. Hello. Hello.
+
+Hello. Hello. Hello.
+
+Hello. What? No, I have not. I have not got it.
+
+Send that name to me. Send that name and designation. I don't know how to do it.
+
+So how we going? If you're fine with that, I'm sorry. I can send you a file. Next time.
+
+One stock. One stock. How do I get inventory? Inventory? Conflict on inventory.
+
+Inventory is there. Inventory is there. Stock reports and everything is there.
+
+No, it's Alelu to Mari Stock Reports Commission. Item costing and activities reporting. I need to check Alelu to Mari.
+
+One stock for me to Mari. If you like this video, please subscribe to my channel.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)

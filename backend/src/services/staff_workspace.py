@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
 import time
 from collections import defaultdict
@@ -135,13 +136,22 @@ def journal(conn, user_id: str, kind: str, summary: str, entity_type: Optional[s
 def notify(conn, user_ids: Iterable[Optional[str]], kind: str, level: str, title: str, body: Optional[str] = None,
            link_type: Optional[str] = None, link_id: Optional[str] = None, actor: Optional[str] = None) -> int:
     n = 0
+    told = []
     for uid in {str(u) for u in user_ids if u and _is_uuid(u)}:
         if actor and uid == str(actor):
             continue
         ex(conn, """INSERT INTO staff_notifications (user_id, kind, level, title, body, link_type, link_id, actor)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
            (uid, kind, level, title[:300], (body or "")[:1000] or None, link_type, link_id, actor))
+        told.append(uid)
         n += 1
+    # Things to act on also go to the person's phone / desktop if they turned notifications on (client, 6 Nov).
+    try:
+        from src.services import web_push
+        if told and level in web_push.PUSH_LEVELS:
+            web_push.send(told, title, body, link_id if link_type == "path" else "/workspace", tag=kind)
+    except Exception as exc:  # a notification must never fail the work that raised it
+        logging.getLogger(__name__).debug("web push skipped: %s", exc)
     return n
 
 
@@ -689,6 +699,8 @@ _CACHE_TTL = 60
 
 
 def _cached(key: str, fn: Callable[[], List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    from src.branch import cache_key  # queue counts are per branch
+    key = cache_key(key)
     hit = _CACHE.get(key)
     if hit and time.monotonic() - hit[0] < _CACHE_TTL:
         return hit[1]

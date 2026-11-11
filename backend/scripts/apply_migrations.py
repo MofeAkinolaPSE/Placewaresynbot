@@ -130,6 +130,23 @@ def apply_sql_file(conn, path: pathlib.Path):
             raise
 
 
+def apply_branch_security(conn):
+    """Branch isolation (migration 150) for anything a later migration added: grants for the web role,
+    row-level security on every table with a legal_entity_id, security_invoker on every view. Idempotent."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regprocedure('pw_apply_branch_security()') IS NOT NULL")
+        if not cur.fetchone()[0]:
+            return
+        try:
+            cur.execute("SELECT pw_apply_branch_security()")
+            conn.commit()
+            print("Branch security checked.")
+        except Exception as e:
+            conn.rollback()
+            print(f"Branch security check failed: {e}")
+            raise
+
+
 def main():
     db_url = get_database_url()
     print(f"Using DATABASE_URL={redact_dsn(db_url)}")
@@ -157,6 +174,7 @@ def main():
             apply_sql_file(conn, f)
             record_applied(conn, name)
             print(f"Applied: {name}")
+        apply_branch_security(conn)
     finally:
         conn.close()
 

@@ -62,7 +62,10 @@ def _run(request: Request, fn: Callable, perm: Optional[str] = None, cache_ttl: 
                 params = "&".join(f"{k}={v}" for k, v in sorted(request.query_params.multi_items()))
                 key = f"fin:resp:{ctx.entity_id}:{request.url.path}?{params}"
                 return shared_response(key, cache_ttl, lambda: plain(fn(conn, ctx)))
-            return plain(fn(conn, ctx))
+            result = plain(fn(conn, ctx))
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            _push_books(request)
+        return result
     except FinError as e:
         raise HTTPException(status_code=e.status, detail=e.to_detail())
     except psycopg2.Error as e:
@@ -74,6 +77,17 @@ def _run(request: Request, fn: Callable, perm: Optional[str] = None, cache_ttl: 
             raise HTTPException(status_code=400, detail={"code": "VALIDATION_FAILED",
                                                          "message": "A value in the request is not valid (check the ids and dates)"})
         raise
+
+
+def _push_books(request: Request) -> None:
+    """A save in ACE Books (after its transaction committed) tells every open screen to refresh what it
+    shows - another user's Invoice register, ledgers and stock update without a page reload."""
+    try:
+        from src.services.realtime import realtime_hub
+        realtime_hub.broadcast_threadsafe("books_updates", {"event": "books_changed", "path": request.url.path,
+                                                            "method": request.method})
+    except Exception:
+        pass
 
 
 def _today() -> dt.date:
@@ -563,9 +577,9 @@ def customer_overview(customer_id: int, request: Request):
                               GROUP BY l.sku, p.name ORDER BY amount DESC LIMIT 50""", (ctx.entity_id, customer_id))
         loans = q(conn, """SELECT id, loan_number, sku, loan_date, quantity - quantity_returned AS outstanding, status FROM fin_stock_loans
                            WHERE legal_entity_id=%s AND customer_id=%s AND status IN ('OPEN','PARTIALLY_RETURNED')""", (ctx.entity_id, customer_id))
-        frontdesk = q(conn, """SELECT f.id, f.invoice_number, f.status, f.total_amount AS total, f.created_at::date AS date
+        frontdesk = q(conn, """SELECT f.id, f.invoice_number, f.status, f.grand_total AS total, f.created_at::date AS date
                                FROM frontdesk_invoices f JOIN frontdesk_walk_ins w ON w.id=f.walk_in_id
-                               WHERE w.customer_id=%s AND f.status IN ('draft','qc_pending','qc_passed','finance_pending')
+                               WHERE w.customer_id=%s AND f.status IN ('draft','qc_pending','qc_passed','qc_failed','finance_pending','finance_rejected')
                                ORDER BY f.created_at DESC""", (customer_id,))
         return {"customer": c, "balance": sum((i["open_amount"] for i in items), 0),
                 "exposure": sales.customer_exposure(conn, ctx.entity_id, customer_id),
@@ -1272,8 +1286,17 @@ def recall_return(recall_id: str, request: Request, payload: Dict[str, Any] = Bo
 @router.get("/settings/invoice-layout")
 def invoice_layout(request: Request):
     return _run(request, lambda c, x: {"layout": setup.invoice_layout(c, x.entity_id),
+                                       # False while this branch still prints the built-in (Lagos) company details
+                                       "customised": bool(setup.get_settings(c, x.entity_id).get("invoice_layout")),
+                                       "can_edit": x.can("finance.settings.edit"),
                                        "next_invoice_number": numbering.next_invoice_preview(c, x.entity_id),
                                        "last_invoice": numbering.last_invoice(c, x.entity_id)})
+
+
+@router.put("/settings/invoice-numbering")
+def set_invoice_numbering(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Where this branch's invoice numbers continue from (before its Sage history is loaded)."""
+    return _run(request, lambda c, x: numbering.set_first_invoice_number(c, x, payload.get("next")))
 
 
 @router.put("/settings/invoice-layout")

@@ -12,9 +12,11 @@ import { PrintFrontdeskInvoiceButton } from "@/components/frontdesk/PrintFrontde
 import { ShipViaSelect } from "@/components/frontdesk/ShipViaSelect";
 import { ModifyInvoiceButton } from "@/components/frontdesk/ModifyInvoice";
 import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 /**
- * "Make New Request" -- raise an invoice for a customer and queue it for QC.
+ * "Make New Request" -- raise an invoice for a customer; it goes straight to Finance for approval
+ * (the client dropped the QC stage on 6 Nov).
  * One form, shared by the Customer Workspace (opened from a customer's record)
  * and Frontdesk (opened from the page header, customer picked in the sheet),
  * so both entry points create exactly the same invoice via
@@ -127,6 +129,8 @@ export function NewRequestSheet({
   }
 
   function applyItemSuggestion(idx: number, sug: InventorySuggestion) {
+    // out of stock / expired lots can't be sold (client, 6 Nov) - shown greyed, not picked
+    if (sug.sellable === false) return;
     setItems((prev) => prev.map((r, i) =>
       i === idx ? {
         ...r, product: sug.name, sku: sug.sku ?? r.sku,
@@ -151,6 +155,9 @@ export function NewRequestSheet({
   // returns address/city/terms). Keyed by customer id so switching customers
   // re-fills, while a re-render mid-edit leaves what's being typed alone.
   const prefilledForRef = useRef<number | null>(null);
+  // Payment terms chosen by hand stay chosen: the customer's record used to arrive a moment later and
+  // switch them back (the "glitch" seen in the 6 Nov meeting).
+  const termsTouched = useRef(false);
   useEffect(() => {
     const cust = (context as any)?.customer;
     if (!cust || !customer || prefilledForRef.current === customer.id) return;
@@ -160,7 +167,7 @@ export function NewRequestSheet({
     // customer's address after switching -- which is exactly wrong.
     setBillingAddress(buildBillingAddress(cust));
     const terms = resolveCustomerTerms(cust);
-    if (terms) setPaymentTerms(terms);
+    if (terms && !termsTouched.current) setPaymentTerms(terms);
   }, [context, customer]);
 
   // A customer's stored terms won't always be one of the preset options (they
@@ -194,7 +201,7 @@ export function NewRequestSheet({
       discount_amount: Math.min(discountAmount, goods) || undefined,
     }),
     onSuccess: (data: any) => {
-      toast({ title: "Request created", description: "Invoice raised and queued for QC." });
+      toast({ title: "Invoice raised", description: "Sent to Finance for approval - they have been notified." });
       // stay open on a "created" view so the invoice can be printed straight away
       setCreated(data?.invoice ?? null);
       if (!data?.invoice) onOpenChange(false);
@@ -206,6 +213,7 @@ export function NewRequestSheet({
       setShippingMethod("");
       setDeliveryCharge(0);
       setDiscountAmount(0);
+      termsTouched.current = false;
       onCreated?.(data);
     },
     onError: (e: any) => toast({ title: "Request failed", description: e?.message, variant: "destructive" }),
@@ -213,8 +221,7 @@ export function NewRequestSheet({
 
   const canSubmitRequest = !!customer && items.some((it) => it.product.trim() && it.quantity > 0);
   const [created, setCreated] = useState<any>(null);
-  const createdTotal = created ? Number(created.total_amount ?? 0) - Number(created.discount_amount ?? 0)
-    + Number(created.delivery_charge ?? 0) + Number(created.tax_amount ?? 0) : 0;
+  const createdTotal = invoiceTotal(created);
 
   return (
     <DetailSheet
@@ -241,7 +248,7 @@ export function NewRequestSheet({
       {created ? (
         <div className="space-y-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm dark:bg-emerald-500/10">
           <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-5 w-5 text-emerald-600" />Invoice {created.invoice_number} raised</div>
-          <p>{created.customer_name} · <strong>{fmt(createdTotal)}</strong> · queued for QC, then Finance.</p>
+          <p>{created.customer_name} · <strong>{fmt(createdTotal)}</strong> · waiting for Finance's approval.</p>
           <PrintFrontdeskInvoiceButton invoiceId={created.id} size="default" className="w-full" />
           <ModifyInvoiceButton invoiceId={created.id} className="w-full" />
         </div>
@@ -300,7 +307,9 @@ export function NewRequestSheet({
                     {itemSuggestions.results.map((sug) => (
                       <li
                         key={sug.sku ?? sug.name}
-                        className="p-2 hover:bg-accent/10 cursor-pointer"
+                        aria-disabled={sug.sellable === false}
+                        title={sug.sellable === false ? `Can't be sold: ${sug.stock_note ?? "no stock"}` : undefined}
+                        className={sug.sellable === false ? "p-2 cursor-not-allowed opacity-50" : "p-2 hover:bg-accent/10 cursor-pointer"}
                         onMouseDown={(e) => { e.preventDefault(); applyItemSuggestion(idx, sug); }}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -406,7 +415,7 @@ export function NewRequestSheet({
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">Payment Terms</label>
-              <Select value={paymentTerms} onValueChange={setPaymentTerms}>
+              <Select value={paymentTerms} onValueChange={(v) => { termsTouched.current = true; setPaymentTerms(v); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {termsOptions.map((t) => (

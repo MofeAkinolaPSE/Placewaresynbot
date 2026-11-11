@@ -1694,7 +1694,7 @@ def upsert_budget_target(request: Request, body: BudgetTargetIn):
         }
         result = (
             db.table("fin_budget_targets")
-            .upsert(row, on_conflict="department,category,period")
+            .upsert(row, on_conflict="legal_entity_id,department,category,period")
             .execute()
             .data
         )

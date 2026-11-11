@@ -5,6 +5,7 @@ import { api } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,7 @@ import { motionTransitions } from "@/lib/motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AccessPreview, defaultDepartment, RoleDef, RolePicker } from "@/components/admin/RolePicker";
+import { BranchPicker } from "@/components/admin/BranchPicker";
 import { TourPreview } from "@/components/tour/TourPreview";
 
 type UserRecord = {
@@ -35,6 +37,8 @@ type UserRecord = {
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+  home_entity_id?: string | null;
+  extra_entity_ids?: string[] | null;
 };
 
 const DEFAULT_ATTESTATION = "I attest this access management action is authorized and policy-compliant.";
@@ -110,14 +114,33 @@ const AdminUsers = () => {
   const catalog: RoleDef[] = rolesQuery.data?.roles ?? [];
   const departments = rolesQuery.data?.departments ?? FALLBACK_DEPARTMENTS;
   const roleLabel = (k: string) => catalog.find((r) => r.key === k)?.label ?? k;
+  // Branches (Lagos / Abuja): where each login works
+  const branchesQuery = useQuery({ queryKey: ["branches", "all"], queryFn: () => api.branches.all(), staleTime: 600_000 });
+  const branches = branchesQuery.data ?? [];
+  const primaryBranch = branches.find((b) => b.is_primary)?.id ?? branches[0]?.id ?? "";
+  const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.branch_name ?? "";
+  const [newHome, setNewHome] = useState("");
+  const [newExtra, setNewExtra] = useState<string[]>([]);
 
-  // Edit access (roles) of an existing account
+  // Edit access (roles + branch) of an existing account
   const [accessUserId, setAccessUserId] = useState("");
   const [accessRoles, setAccessRoles] = useState<string[]>([]);
   const [accessReason, setAccessReason] = useState("");
-  const openAccess = (u: UserRecord) => { setAccessUserId(u.id); setAccessRoles(u.roles); setAccessReason(""); };
+  const [accessHome, setAccessHome] = useState("");
+  const [accessExtra, setAccessExtra] = useState<string[]>([]);
+  const openAccess = (u: UserRecord) => {
+    setAccessUserId(u.id); setAccessRoles(u.roles); setAccessReason("");
+    setAccessHome(u.home_entity_id || primaryBranch); setAccessExtra(u.extra_entity_ids || []);
+  };
   const accessMutation = useMutation({
-    mutationFn: () => api.users.setRoles(accessUserId, accessRoles, accessReason.trim()),
+    mutationFn: async () => {
+      const u = users.find((x) => x.id === accessUserId);
+      const rolesChanged = !u || [...u.roles].sort().join(",") !== [...accessRoles].sort().join(",");
+      const branchChanged = !!accessHome && (!u || (u.home_entity_id || primaryBranch) !== accessHome
+        || [...(u.extra_entity_ids || [])].sort().join(",") !== [...accessExtra].sort().join(","));
+      if (rolesChanged) await api.users.setRoles(accessUserId, accessRoles, accessReason.trim());
+      if (branchChanged) await api.branches.setForUser(accessUserId, accessHome, accessExtra, accessReason.trim());
+    },
     onSuccess: () => {
       toast.success("Access updated - it applies when their session next refreshes (or at their next sign-in)");
       setAccessUserId("");
@@ -153,6 +176,8 @@ const AdminUsers = () => {
         full_name: newFullName.trim() || undefined,
         department: newDepartment || undefined,
         job_title: newJobTitle.trim() || undefined,
+        home_entity_id: (newHome || primaryBranch) || undefined,
+        extra_entity_ids: newExtra,
       });
     },
     onSuccess: (data: any) => {
@@ -171,12 +196,21 @@ const AdminUsers = () => {
       setNewFullName("");
       setNewDepartment("");
       setNewJobTitle("");
+      setNewHome("");
+      setNewExtra([]);
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to create user");
     },
   });
+
+  // Closing the box forgets the reason, so it never carries over to the next person
+  const closeStatusChange = () => {
+    setSelectedUserId("");
+    setStatusReason("");
+    setStatusAttestation(DEFAULT_ATTESTATION);
+  };
 
   const statusMutation = useMutation({
     mutationFn: (params: { userId: string; nextActive: boolean }) =>
@@ -187,9 +221,7 @@ const AdminUsers = () => {
       }),
     onSuccess: (_, vars) => {
       toast.success(vars.nextActive ? "User activated" : "User deactivated");
-      setSelectedUserId("");
-      setStatusReason("");
-      setStatusAttestation(DEFAULT_ATTESTATION);
+      closeStatusChange();
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (error: any) => {
@@ -213,6 +245,14 @@ const AdminUsers = () => {
     if (reason && reason.trim()) deleteMutation.mutate({ userId: user.id, reason: reason.trim() });
   };
 
+  // Closing the box forgets what was typed, so one person's password or reason never carries over to the next
+  const closePasswordReset = () => {
+    setPasswordUserId("");
+    setNewUserPassword("");
+    setPasswordReason("");
+    setPasswordAttestation(DEFAULT_ATTESTATION);
+  };
+
   const passwordMutation = useMutation({
     mutationFn: (userId: string) =>
       api.users.resetPassword(userId, {
@@ -222,10 +262,7 @@ const AdminUsers = () => {
       }),
     onSuccess: () => {
       toast.success("Password updated");
-      setPasswordUserId("");
-      setNewUserPassword("");
-      setPasswordReason("");
-      setPasswordAttestation(DEFAULT_ATTESTATION);
+      closePasswordReset();
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (error: any) => {
@@ -292,6 +329,8 @@ const AdminUsers = () => {
                 }} />
             )}
             <AccessPreview roles={parseRoles(newRoles)} />
+            <BranchPicker branches={branches} home={newHome || primaryBranch} extra={newExtra} roles={parseRoles(newRoles)}
+                          onChange={(h, x) => { setNewHome(h); setNewExtra(x); }} />
           </div>
           <Input
             value={createReason}
@@ -428,6 +467,7 @@ const AdminUsers = () => {
                 <TableRow>
                   <TableHead className="sticky left-0 z-10 min-w-[260px] bg-muted/90">Email</TableHead>
                   <TableHead className="min-w-[220px]">Roles</TableHead>
+                  {branches.length > 1 && <TableHead className="min-w-[120px]">Branch</TableHead>}
                   <TableHead className="min-w-[100px]">Status</TableHead>
                   <TableHead className="min-w-[240px]">Actions</TableHead>
                 </TableRow>
@@ -439,6 +479,13 @@ const AdminUsers = () => {
                       <EmailText email={user.email} />
                     </TableCell>
                     <TableCell>{user.roles.map(roleLabel).join(", ")}</TableCell>
+                    {branches.length > 1 && (
+                      <TableCell>
+                        {user.roles.some((r) => r === "admin" || r === "management")
+                          ? "All branches"
+                          : [branchName(user.home_entity_id || primaryBranch), ...(user.extra_entity_ids || []).map(branchName)].filter(Boolean).join(" + ")}
+                      </TableCell>
+                    )}
                     <TableCell>{user.is_active ? "active" : "inactive"}</TableCell>
                     <TableCell className="space-x-2">
                       <Button
@@ -464,104 +511,147 @@ const AdminUsers = () => {
         )}
       </div>
 
-      {accessUserId && (
-        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-foreground">
-            Edit access - {users.find((u) => u.id === accessUserId)?.email}
-          </h2>
-          <RolePicker catalog={catalog} value={accessRoles} onChange={setAccessRoles} />
-          <AccessPreview roles={accessRoles} />
-          <Input value={accessReason} onChange={(e) => setAccessReason(e.target.value)} placeholder="Reason for the change (recorded in the audit log)" aria-label="Access change reason" />
-          <div className="flex gap-3">
-            <Button onClick={() => accessMutation.mutate()} disabled={accessMutation.isPending || !accessRoles.length || !accessReason.trim()}>
+      <Dialog open={!!accessUserId} onOpenChange={(open) => { if (!open) setAccessUserId(""); }}>
+        {/* the role list is long: the box scrolls inside the screen */}
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit access</DialogTitle>
+            <DialogDescription>
+              {users.find((u) => u.id === accessUserId)?.email} - tick every role this person needs; the preview shows the menus they will see. Choose the branch they work in.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <RolePicker catalog={catalog} value={accessRoles} onChange={setAccessRoles} />
+            <AccessPreview roles={accessRoles} />
+            <BranchPicker branches={branches} home={accessHome} extra={accessExtra} roles={accessRoles}
+                          onChange={(h, x) => { setAccessHome(h); setAccessExtra(x); }} />
+            <Input
+              value={accessReason}
+              onChange={(e) => setAccessReason(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && accessRoles.length && accessReason.trim() && !accessMutation.isPending) accessMutation.mutate();
+              }}
+              placeholder="Reason for the change (recorded in the audit log)"
+              aria-label="Access change reason"
+            />
+          </div>
+          {/* stays in view while the roles scroll */}
+          <DialogFooter className="sticky -bottom-6 -mb-6 gap-2 border-t bg-background py-4">
+            <Button type="button" variant="ghost" onClick={() => setAccessUserId("")}>Cancel</Button>
+            <Button type="button" onClick={() => accessMutation.mutate()} disabled={accessMutation.isPending || !accessRoles.length || !accessReason.trim()}>
               {accessMutation.isPending ? "Saving..." : "Save access"}
             </Button>
-            <Button variant="ghost" onClick={() => setAccessUserId("")}>Cancel</Button>
-          </div>
-        </div>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {selectedUserId && (
-        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-foreground">Confirm Status Change</h2>
-          <Input
-            value={statusReason}
-            onChange={(e) => setStatusReason(e.target.value)}
-            placeholder="Approval reason"
-            aria-label="Status approval reason"
-          />
-          <Textarea
-            value={statusAttestation}
-            onChange={(e) => setStatusAttestation(e.target.value)}
-            className="min-h-20"
-            aria-label="Status attestation"
-          />
-          <div className="flex gap-3">
-            <Button
-              onClick={() => {
-                const target = users.find((u) => u.id === selectedUserId);
-                if (!target) {
-                  toast.error("Selected user not found");
-                  return;
-                }
-                if (!statusReason.trim() || !statusAttestation.trim()) {
-                  toast.error("Approval reason and attestation are required");
-                  return;
-                }
-                statusMutation.mutate({ userId: target.id, nextActive: !target.is_active });
-              }}
-              disabled={statusMutation.isPending}
-            >
-              Confirm
-            </Button>
-            <Button variant="ghost" onClick={() => setSelectedUserId("")}>Cancel</Button>
-          </div>
-        </div>
-      )}
+      {(() => {
+        const target = users.find((u) => u.id === selectedUserId);
+        const verb = target?.is_active ? "Deactivate" : "Activate";
+        return (
+          <Dialog open={!!selectedUserId} onOpenChange={(open) => { if (!open) closeStatusChange(); }}>
+            <DialogContent className="max-w-lg">
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!target) {
+                    toast.error("Selected user not found");
+                    return;
+                  }
+                  if (!statusReason.trim() || !statusAttestation.trim()) {
+                    toast.error("Approval reason and attestation are required");
+                    return;
+                  }
+                  statusMutation.mutate({ userId: target.id, nextActive: !target.is_active });
+                }}
+              >
+                <DialogHeader>
+                  <DialogTitle>{verb} user</DialogTitle>
+                  <DialogDescription>
+                    {target?.email} - {target?.is_active
+                      ? "they can no longer sign in and are signed out on their next click. Their records stay, and Activate undoes this."
+                      : "they can sign in again with their existing password."}
+                  </DialogDescription>
+                </DialogHeader>
+                <Input
+                  autoFocus
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  placeholder="Approval reason"
+                  aria-label="Status approval reason"
+                />
+                <Textarea
+                  value={statusAttestation}
+                  onChange={(e) => setStatusAttestation(e.target.value)}
+                  className="min-h-20"
+                  aria-label="Status attestation"
+                />
+                <DialogFooter className="gap-2">
+                  <Button type="button" variant="ghost" onClick={closeStatusChange}>Cancel</Button>
+                  <Button type="submit" disabled={statusMutation.isPending}>
+                    {statusMutation.isPending ? "Saving..." : `${verb} user`}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
-      {passwordUserId && (
-        <div className="pw-surface-interactive rounded-xl p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-foreground">Reset User Password</h2>
-          <Input
-            type="password"
-            value={newUserPassword}
-            onChange={(e) => setNewUserPassword(e.target.value)}
-            placeholder="New password"
-            aria-label="New password"
-          />
-          <Input
-            value={passwordReason}
-            onChange={(e) => setPasswordReason(e.target.value)}
-            placeholder="Approval reason"
-            aria-label="Password approval reason"
-          />
-          <Textarea
-            value={passwordAttestation}
-            onChange={(e) => setPasswordAttestation(e.target.value)}
-            className="min-h-20"
-            aria-label="Password reset attestation"
-          />
-          <div className="flex gap-3">
-            <Button
-              onClick={() => {
-                if (!newUserPassword.trim()) {
-                  toast.error("New password is required");
-                  return;
-                }
-                if (!passwordReason.trim() || !passwordAttestation.trim()) {
-                  toast.error("Approval reason and attestation are required");
-                  return;
-                }
-                passwordMutation.mutate(passwordUserId);
-              }}
-              disabled={passwordMutation.isPending}
-            >
-              Confirm Password Reset
-            </Button>
-            <Button variant="ghost" onClick={() => setPasswordUserId("")}>Cancel</Button>
-          </div>
-        </div>
-      )}
+      <Dialog open={!!passwordUserId} onOpenChange={(open) => { if (!open) closePasswordReset(); }}>
+        <DialogContent className="max-w-lg">
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!newUserPassword.trim()) {
+                toast.error("New password is required");
+                return;
+              }
+              if (!passwordReason.trim() || !passwordAttestation.trim()) {
+                toast.error("Approval reason and attestation are required");
+                return;
+              }
+              passwordMutation.mutate(passwordUserId);
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Reset User Password</DialogTitle>
+              <DialogDescription>
+                {users.find((u) => u.id === passwordUserId)?.email} - they are signed out everywhere and use the new password from their next sign-in.
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              type="password"
+              autoFocus
+              autoComplete="new-password"
+              value={newUserPassword}
+              onChange={(e) => setNewUserPassword(e.target.value)}
+              placeholder="New password"
+              aria-label="New password"
+            />
+            <Input
+              value={passwordReason}
+              onChange={(e) => setPasswordReason(e.target.value)}
+              placeholder="Approval reason"
+              aria-label="Password approval reason"
+            />
+            <Textarea
+              value={passwordAttestation}
+              onChange={(e) => setPasswordAttestation(e.target.value)}
+              className="min-h-20"
+              aria-label="Password reset attestation"
+            />
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="ghost" onClick={closePasswordReset}>Cancel</Button>
+              <Button type="submit" disabled={passwordMutation.isPending}>
+                {passwordMutation.isPending ? "Resetting…" : "Confirm Password Reset"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };

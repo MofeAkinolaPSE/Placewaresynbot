@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { FilterBar } from "@/components/workspace/FilterBar";
 import { BooksShell } from "@/components/books/BooksShell";
@@ -83,6 +84,21 @@ function InvoiceRegister() {
   const { data, isLoading, error } = useBooks<Dict>(["invoice-register", range, search], "/sales/invoice-register",
     { from: range.from, to: range.to, search: search || undefined });
   const [status, setStatus] = useState("");
+  const regQc = useQueryClient();
+  // A branch whose invoice numbers are not set yet (e.g. Abuja before its Sage data is loaded): Finance gives
+  // the number its invoices continue from - Sage's plain running numbers, like Lagos's 53543.
+  const setNextNumber = async () => {
+    const v = await askText("Next invoice number for this branch - the number after its last Sage invoice (e.g. 20451).", "");
+    if (v === null || !v.trim()) return;
+    try {
+      const r = await books.put<{ next_invoice_number: string }>("/settings/invoice-numbering", { next: v.trim() });
+      regQc.invalidateQueries({ queryKey: ["books"] });
+      setNumberMsg(`Next invoice: ${r.next_invoice_number}`);
+    } catch (e) {
+      setNumberMsg(e instanceof BooksError ? e.message : "Could not set the invoice number");
+    }
+  };
+  const [numberMsg, setNumberMsg] = useState("");
   const STATUS: Record<string, string[]> = { open: ["OPEN", "POSTED", "PARTIALLY_PAID"], paid: ["PAID"], void: ["VOID"], draft: ["DRAFT"], credit: ["CREDIT"],
     awaiting: ["AWAITING_QC", "AWAITING_FINANCE", "QC_FAILED", "NOT_POSTED"] };
   const v = useClearVoided("books.invoice-register", data?.rows as Dict[] | undefined);
@@ -95,15 +111,22 @@ function InvoiceRegister() {
       {data && (
         <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
           {data.last_invoice && <span>Last invoice raised: <strong className="font-mono">{data.last_invoice.number}</strong> on {fmtDate(data.last_invoice.date)}{data.last_invoice.customer ? ` · ${data.last_invoice.customer}` : ""}</span>}
-          <span>Next invoice: <strong className="font-mono">{data.next_invoice_number}</strong></span>
-          <span className="ml-auto">Invoiced <strong>{naira(data.total)}</strong> · still open <strong>{naira(data.open)}</strong>{Number(data.awaiting) > 0 && <> · on Frontdesk awaiting QC / Finance <strong>{naira(data.awaiting)}</strong></>}</span>
+          <span>Next invoice: <strong className="font-mono">{data.next_invoice_number}</strong>
+            {data.next_invoice_set === false && <>
+              {" "}<span className="text-muted-foreground">- follows this branch's Sage numbers once its data is loaded</span>
+              {" "}<Button size="sm" variant="outline" className="ml-1 h-6 px-2 text-xs" onClick={setNextNumber}>Set</Button>
+            </>}
+            {numberMsg && <span className="ml-2 text-xs text-muted-foreground">{numberMsg}</span>}
+          </span>
+          <a href="#/finance/books/setup?tab=invoice-layout" className="text-xs text-primary underline-offset-2 hover:underline">Invoice layout</a>
+          <span className="ml-auto">Invoiced <strong>{naira(data.total)}</strong> · still open <strong>{naira(data.open)}</strong>{Number(data.awaiting) > 0 && <> · on Frontdesk awaiting Finance <strong>{naira(data.awaiting)}</strong></>}</span>
         </div>
       )}
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="flex-1"><FilterBar search={{ value: search, onChange: setSearch, placeholder: "Invoice no. or customer" }}
           selects={[{ label: "Status", value: status, onChange: setStatus, options: [{ value: "open", label: "Open (owing)" }, { value: "paid", label: "Paid" },
             { value: "credit", label: "Credit memos" }, { value: "void", label: "Void" }, { value: "draft", label: "Draft" },
-            { value: "awaiting", label: "Frontdesk - awaiting QC / Finance" }] }]} /></div>
+            { value: "awaiting", label: "Frontdesk - awaiting Finance" }] }]} /></div>
         <DateRange from={range.from} to={range.to} onChange={(f, t) => setRange({ from: f ?? range.from, to: t })} />
       </div>
       {isLoading && <Loading />}<ErrorNote error={error} />
@@ -261,35 +284,76 @@ function lineTotal(l: Line) {
   return gross - Number(l.discount_amount || 0);
 }
 
+/** Payment terms as on the Frontdesk form; the books keep them as days (0 = due on receipt). */
+const TERMS = ["Due on Receipt", "Net 7 Days", "Net 15 Days", "Net 30 Days", "Net 60 Days"];
+const termsLabel = (days: number | null | undefined) => (days == null ? null : Number(days) === 0 ? "Due on Receipt" : `Net ${Number(days)} Days`);
+const termsDays = (label: string) => (/receipt/i.test(label) ? 0 : Number(/(\d+)/.exec(label)?.[1] ?? 30));
+const custAddress = (c: Dict | null | undefined) => {
+  const d = c?.contact_details ?? {};
+  return [d.address ?? d.billing_address, d.city].filter(Boolean).join(", ");
+};
+
+/**
+ * New sales invoice - laid out like the Frontdesk "Make New Request" panel (client, 6 Nov: one invoice form
+ * across the system): Customer, Items, Delivery charge & discount, Invoice details, Notes, Total. What only
+ * ACE Books does stays: the invoice date, the batch to ship, the credit check, Save draft / Post / Post & print.
+ */
 function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: string) => void }) {
   const qc = useQueryClient();
   const [customer, setCustomer] = useState<Dict | null>(null);
   const [date, setDate] = useState(today());
   const [reference, setReference] = useState("");
   const [shipping, setShipping] = useState("Hand Delivery");
+  const [sameAsBilling, setSameAsBilling] = useState(true);
   const [shipTo, setShipTo] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("Due on Receipt");
+  const [termsTouched, setTermsTouched] = useState(false);
+  const [delivery, setDelivery] = useState("");
+  const [discount, setDiscount] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [credit, setCredit] = useState<Dict | null>(null);
   const [override, setOverride] = useState("");
   const [idem] = useState(newIdemKey);
   const L = useLines<Line>(blankLine);
-  const total = L.lines.reduce((s, l) => s + lineTotal(l), 0);
   const { data: layout } = useBooks<Dict>(["invoice-layout"], "/settings/invoice-layout", undefined, open);
-  useEffect(() => { if (!open) { setCustomer(null); L.reset(); setCredit(null); setOverride(""); setReference(""); setNotes(""); setShipTo(""); } }, [open]);
+  // same query as CustomerPanel below: the customer's address and terms
+  const { data: overview } = useBooks<Dict>(["cust-overview", customer?.id], `/customers/${customer?.id}/overview`, undefined, !!customer);
+  const billTo = custAddress(overview?.customer ?? customer);
+  useEffect(() => {
+    if (!open) {
+      setCustomer(null); L.reset(); setCredit(null); setOverride(""); setReference(""); setNotes(""); setShipTo(""); setSameAsBilling(true);
+      setDelivery(""); setDiscount(""); setPaymentTerms("Due on Receipt"); setTermsTouched(false);
+    }
+  }, [open]);
+  // the customer's own terms, unless already chosen by hand
+  useEffect(() => {
+    const t = termsLabel(overview?.customer?.payment_terms_days);
+    if (t && !termsTouched) setPaymentTerms(t);
+  }, [overview?.customer?.payment_terms_days]);
+  const termsOptions = TERMS.includes(paymentTerms) ? TERMS : [...TERMS, paymentTerms];
+
+  const goods = L.lines.reduce((s, l) => s + lineTotal(l), 0);
+  const disc = Math.min(Number(discount || 0), Math.max(goods, 0));
+  const del = Number(delivery || 0);
+  const total = goods - disc + del;
 
   const payload = (post: boolean) => ({
     customer_id: customer?.id, invoice_date: date, reference, customer_po: reference || undefined, shipping_method: shipping || undefined,
-    ship_to: shipTo || undefined, notes, post,
+    ship_to: (sameAsBilling ? "" : shipTo.trim()) || undefined, notes, post, terms_days: termsDays(paymentTerms),
     override_credit: !!override, override_reason: override || undefined,
-    lines: L.lines.filter((l) => l.line_type !== "ITEM" || l.product).map((l) => ({
-      line_type: l.line_type, sku: l.product?.sku, description: l.description || undefined,
-      quantity: l.line_type === "CHARGE" || l.line_type === "DISCOUNT" ? 1 : l.quantity,
-      unit_price: l.unit_price || 0, discount_amount: l.discount_amount || 0,
-      batch_id: l.batch_id || ((l.pack_batch_number || l.manufacture_date) ? (l.product?.batches ?? []).find((x: Dict) => x.sellable)?.id : undefined) || undefined,
-      batch_number: l.batch_id ? undefined : l.batch_number || undefined,
-      pack_batch_number: l.pack_batch_number?.trim() || undefined, manufacture_date: l.manufacture_date || undefined,
-    })),
+    lines: [
+      ...L.lines.filter((l) => l.line_type !== "ITEM" || l.product).map((l) => ({
+        line_type: l.line_type, sku: l.product?.sku, description: l.description || undefined,
+        quantity: l.quantity, unit_price: l.unit_price || 0, discount_amount: 0,
+        batch_id: l.batch_id || ((l.pack_batch_number || l.manufacture_date) ? (l.product?.batches ?? []).find((x: Dict) => x.sellable)?.id : undefined) || undefined,
+        batch_number: l.batch_id ? undefined : l.batch_number || undefined,
+        pack_batch_number: l.pack_batch_number?.trim() || undefined, manufacture_date: l.manufacture_date || undefined,
+      })),
+      // the two totals fields post as on Frontdesk: delivery to Other Income, discount to Sales Discount
+      ...(del > 0 ? [{ line_type: "CHARGE", charge_kind: "DELIVERY", description: "Delivery charge", quantity: 1, unit_price: del }] : []),
+      ...(disc > 0 ? [{ line_type: "DISCOUNT", description: "Discount allowed", quantity: 1, unit_price: disc }] : []),
+    ],
   });
   const submit = async (post: boolean, print = false) => {
     if (!customer) return;
@@ -310,9 +374,10 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
       setBusy(false);
     }
   };
+  const head = "text-xs font-semibold text-muted-foreground";
   return (
     <DetailSheet open={open} onOpenChange={(o) => !o && onClose()} title={`New sales invoice${layout?.next_invoice_number ? ` · No. ${layout.next_invoice_number}` : ""}`}
-                 description="Posting records AR, revenue, discounts, delivery income, cost of sales and stock in one step. Numbers continue the invoice sequence."
+                 description="Posting records what the customer owes, revenue, discount, delivery income, cost of sales and stock in one step."
                  footer={<div className="flex w-full items-center justify-between gap-2">
                    <span className="text-sm">Total <strong>{naira(total)}</strong></span>
                    <div className="flex gap-2">
@@ -322,66 +387,118 @@ function InvoiceForm({ open, onClose }: { open: boolean; onClose: (createdId?: s
                    </div>
                  </div>}>
       <div className="space-y-3">
-        <CustomerPick value={customer} onChange={setCustomer} />
-        <CustomerPanel customer={customer} />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="space-y-1"><Label className="text-xs">Invoice date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-          <div className="space-y-1"><Label className="text-xs">Customer PO</Label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
-          <div className="space-y-1"><Label className="text-xs">Ship via</Label><ShipViaSelect value={shipping} onChange={setShipping} /></div>
-          <div className="space-y-1"><Label className="text-xs">Ship to (if not the billing address)</Label><Input value={shipTo} onChange={(e) => setShipTo(e.target.value)} /></div>
+        <div className="space-y-1.5">
+          <div className={head}>CUSTOMER</div>
+          <CustomerPick label="" value={customer} onChange={setCustomer} />
+          <CustomerPanel customer={customer} />
         </div>
-        <div className="space-y-2">
-          {L.lines.map((l, i) => {
-            const b: Dict | undefined = (l.product?.batches ?? []).find((x: Dict) => x.id === l.batch_id) ?? (l.product?.batches ?? []).find((x: Dict) => x.sellable);
-            return (
-            <div key={i} className="space-y-2 rounded-lg border p-2">
-              <div className="flex items-center gap-2">
-                <select className="h-8 rounded-md border bg-background px-2 text-xs" value={l.line_type} onChange={(e) => L.update(i, { line_type: e.target.value })}>
-                  <option value="ITEM">Stock item</option><option value="SERVICE">Service</option><option value="CHARGE">Delivery charge (other income)</option><option value="DISCOUNT">Discount allowed</option>
-                </select>
-                <div className="flex-1">{l.line_type === "ITEM"
+
+        <div className={head}>ITEMS</div>
+        {L.lines.map((l, i) => {
+          const b: Dict | undefined = (l.product?.batches ?? []).find((x: Dict) => x.id === l.batch_id) ?? (l.product?.batches ?? []).find((x: Dict) => x.sellable);
+          const isItem = l.line_type === "ITEM";
+          return (
+            <div key={i} className="space-y-1 rounded-lg border p-2">
+              <div className="grid grid-cols-[1fr_80px_120px_36px] gap-2 text-[11px] font-medium text-muted-foreground">
+                <span>{isItem ? "Product (item)" : "Service"}</span><span>Qty</span><span>Unit price (₦)</span><span />
+              </div>
+              <div className="grid grid-cols-[1fr_80px_120px_36px] items-start gap-2">
+                <div className="min-w-0">{isItem
                   ? <ProductPick value={l.product} customerId={customer?.id} forSale
                                  onChange={(p) => L.update(i, { product: p, unit_price: p?.suggested_price ? String(p.suggested_price) : l.unit_price,
                                                                 batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined, pack_batch_number: undefined, manufacture_date: undefined })} />
-                  : <Input className="h-8" placeholder={l.line_type === "CHARGE" ? "e.g. Delivery charge" : "Description"} value={l.description} onChange={(e) => L.update(i, { description: e.target.value })} />}</div>
-                <Button size="icon" variant="ghost" onClick={() => L.remove(i)}><Trash2 className="h-4 w-4" /></Button>
+                  : <Input placeholder="Description" value={l.description} onChange={(e) => L.update(i, { description: e.target.value })} />}</div>
+                <Input type="number" min={1} value={l.quantity} onChange={(e) => L.update(i, { quantity: e.target.value })} />
+                <Input type="number" min={0} value={l.unit_price} onChange={(e) => L.update(i, { unit_price: e.target.value })} />
+                <Button size="icon" variant="ghost" aria-label="Remove line" disabled={L.lines.length === 1} onClick={() => L.remove(i)}><Trash2 className="h-4 w-4" /></Button>
               </div>
-              {l.line_type === "ITEM" && l.product && (
+              {isItem && l.product && (
                 <PendingReceiptNote product={l.product} onReload={(p) => L.update(i, { product: p, batch_id: undefined, batch_number: p?.next_batch ?? "", expiry: p?.next_expiry ?? undefined, pack_batch_number: undefined, manufacture_date: undefined })} />
               )}
-              {l.line_type === "ITEM" && l.product && (
+              {isItem && l.product && (<>
                 <BatchSelect product={l.product} value={l.batch_id}
                              onChange={(bb) => L.update(i, { batch_id: bb?.id, batch_number: bb?.batch_number ?? l.product?.next_batch ?? "", expiry: bb?.expiry_date ?? l.product?.next_expiry, pack_batch_number: undefined, manufacture_date: undefined })} />
-              )}
-              <div className="grid grid-cols-3 gap-2">
-                {(l.line_type === "ITEM" || l.line_type === "SERVICE") && <div><Label className="text-[11px]">Qty</Label><Input className="h-8" type="number" value={l.quantity} onChange={(e) => L.update(i, { quantity: e.target.value })} /></div>}
-                <div><Label className="text-[11px]">{l.line_type === "DISCOUNT" || l.line_type === "CHARGE" ? "Amount" : "Unit price"}</Label>
-                  <Input className="h-8" type="number" value={l.unit_price} onChange={(e) => L.update(i, { unit_price: e.target.value })} /></div>
-                {(l.line_type === "ITEM" || l.line_type === "SERVICE") && <div><Label className="text-[11px]">Discount ₦</Label><Input className="h-8" type="number" value={l.discount_amount} onChange={(e) => L.update(i, { discount_amount: e.target.value })} /></div>}
-              </div>
-              {l.line_type === "ITEM" && l.product && (<>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><Label className="text-[11px]">Batch no. on the pack (printed on the invoice)</Label>
-                    <Input className={`h-8 ${!(l.pack_batch_number ?? packBatch(b)) ? "border-amber-400" : ""}`} placeholder="e.g. 51B25028A"
-                           value={l.pack_batch_number ?? packBatch(b)} onChange={(e) => L.update(i, { pack_batch_number: e.target.value })} /></div>
-                  <div><Label className="text-[11px]">Man. date (month)</Label>
-                    <Input className="h-8" type="month" value={(l.manufacture_date ?? b?.manufacture_date ?? "").slice(0, 7)}
-                           onChange={(e) => L.update(i, { manufacture_date: e.target.value ? `${e.target.value}-01` : "" })} /></div>
+                <div className="grid grid-cols-3 gap-2 pl-1 text-[11px] font-medium text-muted-foreground"><span>Batch number (on the pack)</span><span>Manufacture date</span><span>Expiry date</span></div>
+                <div className="grid grid-cols-3 gap-2 pl-1">
+                  <Input className={`h-8 text-xs ${!(l.pack_batch_number ?? packBatch(b)) ? "border-amber-400" : ""}`} placeholder="filled from Maintain"
+                         value={l.pack_batch_number ?? packBatch(b)} onChange={(e) => L.update(i, { pack_batch_number: e.target.value })} />
+                  <Input className="h-8 text-xs" type="month" aria-label="Manufacture date" value={(l.manufacture_date ?? b?.manufacture_date ?? "").slice(0, 7)}
+                         onChange={(e) => L.update(i, { manufacture_date: e.target.value ? `${e.target.value}-01` : "" })} />
+                  <Input className="h-8 text-xs" readOnly aria-label="Expiry date (from the batch)" value={fmtDate(b?.expiry_date ?? l.expiry) || ""} />
                 </div>
-                <div className="grid grid-cols-2 items-center gap-x-4 gap-y-1 rounded bg-muted/40 px-2 py-1 text-[11px] sm:grid-cols-4">
+                <div className="flex flex-wrap gap-x-4 pl-1 text-[11px] text-muted-foreground">
                   <span>Lot <strong>{b?.lot_code ?? b?.batch_number ?? l.batch_number ?? "—"}</strong></span>
-                  <span>Exp. date <strong>{fmtDate(b?.expiry_date ?? l.expiry) || "—"}</strong></span>
                   <span>Unit cost <strong>{b?.unit_cost ? naira(b.unit_cost) : "—"}</strong></span>
                   <span className={Number(l.quantity) > Number(l.product.sellable_qty ?? l.product.on_hand) ? "text-red-600" : ""}>Can sell <strong>{num(l.product.sellable_qty ?? l.product.on_hand)}</strong></span>
                 </div>
               </>)}
-              <div className="flex justify-end text-xs text-muted-foreground"><span>Line {naira(lineTotal(l))}</span></div>
             </div>
-            );
-          })}
-          <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={L.add}><Plus className="mr-1 h-4 w-4" />Add line</Button><Button size="sm" variant="outline" onClick={() => L.setLines((ls) => [...ls, { ...blankLine(), line_type: "CHARGE", description: "Delivery charge", quantity: "1" }])}><Plus className="mr-1 h-4 w-4" />Delivery charge <span className="ml-1 text-[11px] text-muted-foreground">(other income)</span></Button><Button size="sm" variant="outline" onClick={() => L.setLines((ls) => [...ls, { ...blankLine(), line_type: "DISCOUNT", description: "Discount allowed", quantity: "1" }])}><Plus className="mr-1 h-4 w-4" />Discount allowed</Button></div>
+          );
+        })}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={L.add}><Plus className="mr-1 h-4 w-4" />Add item</Button>
+          <Button size="sm" variant="outline" onClick={() => L.setLines((ls) => [...ls, { ...blankLine(), line_type: "SERVICE" }])}><Plus className="mr-1 h-4 w-4" />Add service</Button>
         </div>
-        <div className="space-y-1"><Label className="text-xs">Notes</Label><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+
+        <div className={head}>DELIVERY CHARGE & DISCOUNT</div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Delivery charge (₦)</label>
+            <Input type="number" min={0} step="0.01" placeholder="0.00" value={delivery} onChange={(e) => setDelivery(e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">Billed to the customer; posts to Other Income.</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Discount allowed (₦)</label>
+            <Input type="number" min={0} step="0.01" placeholder="0.00" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">Taken off the goods; posts to Sales Discount.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+          <div className={head}>INVOICE DETAILS</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Bill To</label>
+              <Textarea rows={2} readOnly placeholder="The customer's address" value={billTo} title="From the customer's record (Maintain > Customers)" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Ship To</label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-500/30" checked={sameAsBilling} onChange={(e) => setSameAsBilling(e.target.checked)} />
+                  Same as Bill To
+                </label>
+              </div>
+              <Textarea rows={2} placeholder="Shipping address" value={sameAsBilling ? billTo : shipTo} disabled={sameAsBilling} onChange={(e) => setShipTo(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="space-y-1"><label className="text-sm font-medium">Invoice date</label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="space-y-1"><label className="text-sm font-medium">Customer PO</label><Input placeholder="Optional" value={reference} onChange={(e) => setReference(e.target.value)} /></div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Payment Terms</label>
+              <Select value={paymentTerms} onValueChange={(v) => { setTermsTouched(true); setPaymentTerms(v); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{termsOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><label className="text-sm font-medium">Ship via</label><ShipViaSelect value={shipping} onChange={setShipping} /></div>
+          </div>
+        </div>
+
+        <Textarea placeholder="Notes (optional)" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+
+        {(del > 0 || disc > 0) && (
+          <div className="space-y-0.5 border-t pt-2 text-sm text-muted-foreground">
+            <div className="flex justify-between"><span>Goods</span><span>{naira(goods)}</span></div>
+            {disc > 0 && <div className="flex justify-between"><span>Discount allowed</span><span>−{naira(disc)}</span></div>}
+            {del > 0 && <div className="flex justify-between"><span>Delivery charge</span><span>{naira(del)}</span></div>}
+          </div>
+        )}
+        <div className="flex justify-between border-t pt-2 font-bold">
+          <span>Total</span><span className="text-green-600 dark:text-green-300">{naira(total)}</span>
+        </div>
+
         {credit && (
           <div className="space-y-2 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:bg-amber-500/10">
             <div className="flex items-center gap-2 font-medium text-amber-800 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />Credit limit would be exceeded by {naira(credit.excess)}</div>

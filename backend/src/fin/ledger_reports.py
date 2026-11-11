@@ -465,12 +465,13 @@ def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optio
     # Frontdesk invoices that are not (yet) ACE Books invoices: raised and waiting for QC / Finance,
     # rejected, voided before approval - or approved but not posted (the reason is shown, so nothing
     # raised on Frontdesk is missing from the books without anyone seeing why).
-    fd_stage = {"draft": "AWAITING_QC", "qc_pending": "AWAITING_QC", "qc_failed": "QC_FAILED", "qc_passed": "AWAITING_FINANCE",
+    # No QC stage since 6 Nov: anything raised and not decided waits for Finance.
+    fd_stage = {"draft": "AWAITING_FINANCE", "qc_pending": "AWAITING_FINANCE", "qc_failed": "AWAITING_FINANCE", "qc_passed": "AWAITING_FINANCE",
                 "finance_pending": "AWAITING_FINANCE", "finance_rejected": "REJECTED", "cancelled": "VOID",
                 "finance_approved": "NOT_POSTED", "dispatched": "NOT_POSTED", "completed": "NOT_POSTED"}
     for r in q(conn, """SELECT f.id::text AS fid, f.invoice_number AS number, (f.created_at AT TIME ZONE 'Africa/Lagos')::date AS date,
                                f.status, w.customer_id, COALESCE(c.name, f.company_name, f.customer_name) AS customer,
-                               f.total_amount - COALESCE(f.discount_amount,0) + COALESCE(f.delivery_charge,0) + COALESCE(f.tax_amount,0) AS amount,
+                               f.grand_total AS amount,
                                p.status AS posting_status, p.message AS posting_message
                         FROM frontdesk_invoices f
                         LEFT JOIN frontdesk_walk_ins w ON w.id=f.walk_in_id LEFT JOIN customers c ON c.id=w.customer_id
@@ -500,4 +501,5 @@ def invoice_register(conn, entity_id: str, f: dt.date, t: dt.date, search: Optio
             "total": sum((money(r["amount"]) for r in out if r["kind"] == "invoice" and r["status"] != "VOID"), ZERO),
             "awaiting": sum((money(r["amount"]) for r in out if r["kind"] == "request" and r["status"] in ("AWAITING_QC", "AWAITING_FINANCE")), ZERO),
             "open": sum((money(r["balance"]) for r in out), ZERO),
-            "last_invoice": numbering.last_invoice(conn, e), "next_invoice_number": numbering.next_invoice_preview(conn, e)}
+            "last_invoice": numbering.last_invoice(conn, e), "next_invoice_number": numbering.next_invoice_preview(conn, e),
+            "next_invoice_set": numbering.invoice_numbering_set(conn, e)}

@@ -160,7 +160,7 @@ def customer_360(customer_id: int, request: Request):
             if walk_in_ids:
                 orders = (
                     db.db.table('frontdesk_invoices')
-                    .select('id,invoice_number,walk_in_id,status,total_amount,created_at')
+                    .select('id,invoice_number,walk_in_id,status,total_amount,grand_total,created_at')
                     .in_('walk_in_id', walk_in_ids)
                     .order('created_at', desc=True)
                     .limit(20)

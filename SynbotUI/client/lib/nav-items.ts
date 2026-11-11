@@ -72,6 +72,7 @@ export const NAV_DEFINED: NavItem[] = [
         { label: "Fixed Assets", href: "/finance/books/assets" },
         { label: "Close & Controls", href: "/finance/books/close" },
         { label: "Setup & Migration", href: "/finance/books/setup" },
+        { label: "Invoice Layout", href: "/finance/books/setup?tab=invoice-layout" },
         { label: "Sage Import / Export", href: "/finance/sage-import" },
       ],
     },

@@ -6,6 +6,7 @@
  * only formatted here, never re-calculated: the backend is the financial
  * authority (Backend & Frontend spec, Rule A).
  */
+import { branchHeader } from "@/lib/branch";
 import { withoutVoided } from "@/lib/voided";
 import { authClient } from "@/lib/auth-client";
 import { apiUrl } from "@/lib/api-base";
@@ -29,13 +30,9 @@ async function token(): Promise<string> {
   return t;
 }
 
+// The branch (Lagos / Abuja) this tab works in - lib/branch.ts.
 function entityHeader(): Record<string, string> {
-  try {
-    const e = localStorage.getItem("ace_books_entity");
-    return e ? { "X-Legal-Entity": e } : {};
-  } catch {
-    return {};
-  }
+  return branchHeader();
 }
 
 async function request<T>(method: string, path: string, body?: unknown, form?: FormData, idem?: string): Promise<T> {

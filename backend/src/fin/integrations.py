@@ -57,7 +57,7 @@ def exclude_frontdesk_invoice(conn, ctx, frontdesk_invoice_id: str, reason: str)
 
 def unposted_frontdesk(conn, entity_id: str) -> list:
     """Approved Frontdesk invoices on/after cut-over with no posting record at all."""
-    return q(conn, """SELECT f.id, f.invoice_number, f.status, f.customer_name, f.total_amount AS total, (f.created_at AT TIME ZONE 'Africa/Lagos')::date AS invoice_date
+    return q(conn, """SELECT f.id, f.invoice_number, f.status, f.customer_name, f.grand_total AS total, (f.created_at AT TIME ZONE 'Africa/Lagos')::date AS invoice_date
                       FROM frontdesk_invoices f, fin_settings s
                       WHERE s.legal_entity_id=%s AND s.cutover_date IS NOT NULL
                         AND f.status IN ('finance_approved','dispatched','completed')
@@ -67,10 +67,26 @@ def unposted_frontdesk(conn, entity_id: str) -> list:
                       ORDER BY f.created_at""", (entity_id,))
 
 
+def _invoice_branch(frontdesk_invoice_id: str):
+    """The branch (legal entity) a Frontdesk invoice belongs to - its books are the ones it posts to."""
+    try:
+        with tx() as conn:
+            r = q1(conn, "SELECT legal_entity_id::text AS e FROM frontdesk_invoices WHERE id=%s", (str(frontdesk_invoice_id),))
+        return r["e"] if r else None
+    except Exception:
+        return None
+
+
 def post_frontdesk_invoice(frontdesk_invoice_id: str, actor: str = "frontdesk", automatic: bool = False) -> Dict[str, Any]:
-    """Post (or retry) one Frontdesk invoice. Raises nothing: returns the outcome.
+    """Post (or retry) one Frontdesk invoice into its own branch's books. Raises nothing: returns the outcome.
     `automatic` is the Frontdesk approval hook; it respects the auto-post setting
     (paused while a period is being loaded from Sage). Manual retry/backfill does not."""
+    from src import branch
+    with branch.scoped(_invoice_branch(frontdesk_invoice_id) or branch.current()):
+        return _post_frontdesk_invoice(frontdesk_invoice_id, actor, automatic)
+
+
+def _post_frontdesk_invoice(frontdesk_invoice_id: str, actor: str, automatic: bool) -> Dict[str, Any]:
     ref = None
     try:
         with tx() as conn:

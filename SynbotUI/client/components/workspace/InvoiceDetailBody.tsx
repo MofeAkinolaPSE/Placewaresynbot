@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 /**
  * Read-only invoice detail — customer/shipping context + itemized line
@@ -136,7 +137,7 @@ export function InvoiceDetailBody({ invoice, loading }: { invoice: DetailInvoice
 
       <div className="flex items-center justify-between border-t pt-2">
         <span className="text-xs text-muted-foreground">{invoice.payment_method ? `Payment: ${invoice.payment_method}` : ""}</span>
-        <span className="font-bold">{fmt(invoice.total_amount)}</span>
+        <span className="font-bold">{fmt(invoiceTotal(invoice))}</span>
       </div>
     </div>
   );

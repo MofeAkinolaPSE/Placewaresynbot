@@ -1,4 +1,5 @@
 # --- Tracking Webhook Models (registered after app is created below) ---
+from src.branch import carry as _branch_carry  # thread-pool work keeps the request's branch
 from pydantic import BaseModel as _BaseModel
 
 
@@ -453,6 +454,8 @@ from src.routers.data_explorer import router as data_explorer_router
 from src.routers.backup import router as backup_router
 from src.routers.calendar_tasks import router as calendar_router, tasks_router
 from src.routers.realtime_ws import router as realtime_ws_router
+from src.routers.push import router as push_router
+from src.routers.branches import router as branches_router
 from src.routers.presence import router as presence_router
 from src.routers.kg_graph import router as kg_graph_router
 from src.routers.data_ingest import router as data_ingest_router
@@ -516,6 +519,8 @@ app.include_router(backup_router)
 app.include_router(calendar_router)
 app.include_router(tasks_router)
 app.include_router(realtime_ws_router)
+app.include_router(push_router)  # phone / desktop notifications (Web Push)
+app.include_router(branches_router)  # Lagos / Abuja branch switcher and who works where
 app.include_router(presence_router)
 app.include_router(kg_graph_router)
 app.include_router(data_ingest_router)
@@ -823,6 +828,9 @@ app.add_middleware(RequestTimingMiddleware)
 app.add_middleware(DataVersionMiddleware)  # any save makes cached reports stale (src/utils/shared_response.py)
 # Licence lock sits inside CORS so its 403s still carry CORS headers (src/licensing).
 app.add_middleware(LicenseGuardMiddleware)
+# Which branch (Lagos / Abuja) each request works in; the database then shows only that branch (src/branch.py).
+from src.branch import BranchMiddleware  # noqa: E402
+app.add_middleware(BranchMiddleware)
 allow_credentials = CORS_ALLOW_ORIGINS != ["*"]
 app.add_middleware(
     CORSMiddleware,
@@ -1663,7 +1671,7 @@ def _run_orchestration_plan(
     if plan:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(len(plan), 8) or 1) as pool:
-            tool_results = list(pool.map(_run_one_tool, plan))
+            tool_results = list(pool.map(_branch_carry(_run_one_tool), plan))
         for r in tool_results:
             (outputs if r["kind"] == "output" else errors).append(r["value"])
 
@@ -1726,7 +1734,7 @@ def _run_orchestration_plan(
         if agent_names:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=min(len(agent_names), 8) or 1) as pool:
-                agent_results = list(pool.map(_run_one_agent, agent_names))
+                agent_results = list(pool.map(_branch_carry(_run_one_agent), agent_names))
             for r in agent_results:
                 if r["kind"] == "insight":
                     agent_insights.append(r["value"])
@@ -5974,6 +5982,10 @@ class UserCreate(BaseModel):
     # completely different concept from a human job title.
     full_name: str | None = None
     department: str | None = None
+    # The branch (Lagos / Abuja) the person works in; extra branches they may switch to. Admin and
+    # management always see every branch.
+    home_entity_id: str | None = None
+    extra_entity_ids: list[str] = []
     job_title: str | None = None
 
 
@@ -6064,6 +6076,18 @@ def create_new_user(request: Request, payload: UserCreate):
     )
 
     result = {"id": user_id, "email": email, "roles": roles}
+    try:
+        from src import branch as _branch
+        from src.fin.db import ex as _ex, tx as _tx
+        ids = {b["id"] for b in _branch.all_branches(fresh=True)}
+        home = payload.home_entity_id if payload.home_entity_id in ids else (_branch.current() or _branch.primary_branch())
+        extra = sorted({e for e in payload.extra_entity_ids if e in ids and e != home})
+        with _branch.unscoped(), _tx() as conn:
+            _ex(conn, "UPDATE placeware_users SET home_entity_id=%s::uuid, extra_entity_ids=%s::uuid[] WHERE id::text=%s",
+                (home, extra, user_id))
+        result["home_entity_id"] = home
+    except Exception as exc:
+        logging.warning(f"Setting the branch for new user {email} failed: {exc}")
     # Everyone registered here is on the team: the HR profile is linked to the login
     # (an existing HR record with the same email is linked, otherwise one is created,
     # named from the form or from the email until HR completes it).

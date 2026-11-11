@@ -1,5 +1,10 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { registerServiceWorker } from "./lib/push";
+import { installBranchFetch } from "./lib/branch";
+
+// every signed-in API call carries the branch (Lagos / Abuja) this tab works in - before anything fetches
+installBranchFetch();
 
 const root = document.getElementById("root");
 if (!root) {
@@ -13,3 +18,6 @@ if (startRoute && !window.location.hash) {
 }
 
 createRoot(root).render(<App />);
+
+// phone / desktop notifications and "Add to Home Screen" (only on the secure https address)
+if (import.meta.env.PROD) window.addEventListener("load", () => { void registerServiceWorker(); });

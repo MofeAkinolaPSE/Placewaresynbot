@@ -17,6 +17,7 @@ import { KpiStrip } from "@/components/workspace/KpiStrip";
 import { FilterBar } from "@/components/workspace/FilterBar";
 import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 // ---------------------------------------------------------------------------
 // Types — shared with Frontdesk.tsx (walk-in / invoice creation flows also
@@ -92,9 +93,10 @@ export interface Invoice {
 export const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   arrived:           { label: "Arrived",          color: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300" },
   invoiced:          { label: "Invoiced",          color: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300" },
-  qc_pending:        { label: "Pending QC",        color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300" },
-  qc_passed:         { label: "QC Passed",         color: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300" },
-  qc_failed:         { label: "QC Failed",         color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
+  // no QC stage since 6 Nov: an older request still in these states is waiting for Finance
+  qc_pending:        { label: "Pending Finance",   color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300" },
+  qc_passed:         { label: "Pending Finance",   color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300" },
+  qc_failed:         { label: "Pending Finance",   color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300" },
   finance_pending:   { label: "Pending Finance",   color: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300" },
   finance_approved:  { label: "Finance Approved",  color: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" },
   finance_rejected:  { label: "Finance Rejected",  color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
@@ -202,7 +204,7 @@ export function printInvoiceLegacy(invoice: Invoice, walkIn?: WalkIn | null, tar
   const taxAmount = Number(invoice.tax_amount ?? 0);
   const deliveryCharge = Number(invoice.delivery_charge ?? 0);
   const discountAmount = Number(invoice.discount_amount ?? 0);
-  const grandTotal = Number(invoice.total_amount) - discountAmount + taxAmount + deliveryCharge;
+  const grandTotal = invoiceTotal(invoice);
   const customerId = walkIn?.customer_code || "WALK-IN";
   // the person who raised (prepared) the invoice: their HR name, else their login
   const salesRep = (invoice as any).created_by_name || (invoice.created_by_email ? invoice.created_by_email.split("@")[0] : "—");
@@ -258,8 +260,8 @@ export function printInvoiceLegacy(invoice: Invoice, walkIn?: WalkIn | null, tar
   .sig-line{border-top:1px solid #999;padding-top:4px;color:#888}
   .footer{margin-top:10px;padding-top:8px;border-top:1px solid #eee;font-size:10.5px;color:#999;display:flex;justify-content:space-between;gap:24px}
   .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#d1fae5;color:#065f46}
-  @page{size:A4;margin:10mm}
-  @media print{body{padding:0;font-size:11px}button{display:none!important}.no-print{display:none!important}.totals,.sig-grid,.footer{break-inside:avoid}}
+  @page{size:A4;margin:0}
+  @media print{body{padding:10mm;font-size:11px;-webkit-box-decoration-break:clone;box-decoration-break:clone}button{display:none!important}.no-print{display:none!important}.totals,.sig-grid,.footer{break-inside:avoid}}
 </style>
 </head><body>
 <div class="header">
@@ -461,7 +463,6 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
   // is represented as "" here — FilterBar owns the "__all__" sentinel
   // translation internally now, so this list no longer needs its own "all" row.
   const STATUS_FILTERS = [
-    { value: "awaiting_qc",      label: "Pending QC"      },
     { value: "awaiting_finance", label: "Pending Finance" },
     { value: "open",             label: "Open (owing)"    },
     { value: "paid",             label: "Paid"            },
@@ -476,7 +477,6 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
         items={[
           { label: `Invoices, ${periodLabel}`, value: sum.invoices ?? 0 },
           { label: `Value, ${periodLabel}`, value: fmt(Number(sum.total ?? 0)), tone: "success" },
-          { label: "Pending QC", value: sum.pending_qc ?? 0, tone: "warning" },
           { label: "Pending Finance", value: sum.pending_finance ?? 0, tone: "warning" },
         ]}
       />
@@ -632,7 +632,7 @@ export function InvoicesTab({ openInvoiceId, onOpened }: { openInvoiceId?: strin
                         </div>)}
                       <div className="flex justify-between font-bold px-3 py-2 border-t mt-1">
                         <span>Total</span>
-                        <span className="text-green-600 dark:text-green-300">{fmt(Number(inv.total_amount) - Number(inv.discount_amount ?? 0) + Number(inv.tax_amount ?? 0) + Number(inv.delivery_charge ?? 0))}</span>
+                        <span className="text-green-600 dark:text-green-300">{fmt(invoiceTotal(inv))}</span>
                       </div>
                     </div>
                   </div>

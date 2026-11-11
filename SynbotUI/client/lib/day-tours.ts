@@ -60,9 +60,9 @@ const DAYS: Record<string, DayStep[]> = {
     {
       title: "Start of day: Today's queue",
       href: "/frontdesk",
-      body: "Today's queue is the Frontdesk's home: every visit and the stage it is at. It updates by itself when QC, Finance or anyone else changes an invoice.",
+      body: "Today's queue is the Frontdesk's home: every visit and the stage it is at. It updates by itself when Finance or anyone else changes an invoice.",
       points: [
-        "Cards: Walk-ins Today, Invoices Raised, Revenue Today, Pending QC, Pending Finance, Completed.",
+        "Cards: Walk-ins Today, Invoices Raised, Revenue Today, Pending Finance, Completed.",
         "Click a visit in the queue to open its invoice; Show voided brings back voided visits.",
       ],
     },
@@ -74,13 +74,13 @@ const DAYS: Record<string, DayStep[]> = {
         "Search first - a returning customer has their history and details already.",
         "Items: Product, Qty, Unit price; Batch number, Manufacture and Expiry dates fill from Maintain.",
         "Delivery charge (₦) and Discount allowed (₦); then Bill to, Ship to, Customer PO, Payment terms, Ship via.",
-        "Create Invoice & Send for QC: the stock is held for this customer so it is not sold twice.",
+        "Create Invoice & Send to Finance: the stock is held for this customer so it is not sold twice.",
       ],
     },
     {
-      title: "Follow each order: QC, then Finance, then dispatch",
+      title: "Follow each order: Finance, then dispatch",
       href: "/frontdesk",
-      body: "Every invoice goes QC → Finance → Dispatch, each step done by its own role. The person who raised an invoice cannot QC it. Finance approving it posts it to ACE Books.",
+      body: "Every invoice goes Finance → Dispatch, each step done by its own role. Finance approving it posts it to ACE Books.",
       points: ["Open a visit to see its stage; Print invoice is at the top of its panel.", "Pending QC and Pending Finance count everything still waiting, whatever day it was raised."],
     },
     {
@@ -119,7 +119,7 @@ const DAYS: Record<string, DayStep[]> = {
     {
       title: "Raise an order for a customer",
       href: "/customers/workspace",
-      body: "Make new request raises an invoice for a customer. It follows the same route as a walk-in: QC → Finance → Dispatch.",
+      body: "Make new request raises an invoice for a customer. It follows the same route as a walk-in: Finance → Dispatch.",
       points: ["Make new request → items → delivery charge and discount → invoice details → Raise Request.", "After Raise Request the panel shows the new invoice with Print invoice."],
     },
     {
@@ -134,7 +134,7 @@ const DAYS: Record<string, DayStep[]> = {
       body: "Leads & Prospecting finds pharmacies and hospitals near you (GPS) or in an area, so you can call them and add them to the pipeline.",
       points: ["Find prospects → call → Add to pipeline.", "Worked prospects and Website enquiries are their own tabs."],
     },
-    { title: "Walk-ins at the Frontdesk", href: "/frontdesk", body: "Sales can serve walk-ins too: the New walk-in tab works exactly as for the Frontdesk team.", points: ["New walk-in → Create Invoice & Send for QC."] },
+    { title: "Walk-ins at the Frontdesk", href: "/frontdesk", body: "Sales can serve walk-ins too: the New walk-in tab works exactly as for the Frontdesk team.", points: ["New walk-in → Create Invoice & Send to Finance."] },
     WORKSPACE,
     HELP,
   ],
@@ -156,7 +156,7 @@ const DAYS: Record<string, DayStep[]> = {
     {
       title: "The Invoice register",
       href: "/finance/books/sales?tab=register",
-      body: "Every invoice - Sage's, ACE Books' and Frontdesk's (awaiting QC or Finance) - in one list. Open one to see its lines, batches, payments and journal.",
+      body: "Every invoice - Sage's, ACE Books' and Frontdesk's (awaiting Finance) - in one list. Open one to see its lines, batches, payments and journal.",
       points: ["In an invoice: Add items, Return / remove items, Record receipt, Print invoice.", "Void only while nothing has been paid on it."],
     },
     {
@@ -202,12 +202,6 @@ const DAYS: Record<string, DayStep[]> = {
       href: "/workspace",
       body: "My Day's \"For your role\" lists batches to release, deviations, audits, maintenance, recalls and expired stock. Take it assigns an item to you.",
       points: ["Start work when you arrive; End work when you leave.", "Take it on an item makes it yours."],
-    },
-    {
-      title: "QC check of Frontdesk invoices",
-      href: "/quality-control",
-      body: "Invoices raised at the Frontdesk wait in the Release queue for QC. You sign with your own login; the person who raised an invoice cannot QC it.",
-      points: ["Pass QC sends it on to Finance; Fail QC sends it back with your reason.", "Your name and the date print on the invoice."],
     },
     {
       title: "Incoming batches: Confirm arrived, then Release or Reject",
@@ -286,7 +280,7 @@ const DAYS: Record<string, DayStep[]> = {
     {
       title: "How an order becomes cash",
       href: "/frontdesk",
-      body: "Frontdesk raises the invoice (stock held) → QC checks it → Finance approves and it posts to ACE Books → dispatch delivers → Finance records the receipt.",
+      body: "Frontdesk raises the invoice (stock held) → Finance approves and it posts to ACE Books → dispatch delivers → Finance records the receipt.",
       points: ["Today's queue shows each order's stage live."],
     },
     { title: "The books", href: "/finance/books", body: "Finance Control Tower: ACE Books' revenue, profit, cash and what needs attention. Every figure opens the records behind it." },

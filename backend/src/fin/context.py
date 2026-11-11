@@ -77,6 +77,13 @@ def permissions_for(roles: Iterable[str]) -> Set[str]:
 
 
 def resolve_entity(conn, requested: Optional[str]) -> str:
+    """The legal entity (branch) to work in. With nothing requested: the running web request's branch
+    (src/branch.py - already checked against the person's access); outside a request, the primary branch."""
+    if not requested:
+        from src import branch
+        cur = branch.current()
+        if cur:
+            return cur
     if requested:
         try:
             uuid.UUID(requested)
@@ -87,7 +94,7 @@ def resolve_entity(conn, requested: Optional[str]) -> str:
             # Never fall back to another company's books.
             raise FinError("RESOURCE_NOT_FOUND", f"Legal entity not found: {requested}")
         return str(row["id"])
-    row = q1(conn, "SELECT id FROM fin_legal_entities WHERE status='ACTIVE' ORDER BY created_at LIMIT 1")
+    row = q1(conn, "SELECT id FROM fin_legal_entities WHERE status='ACTIVE' ORDER BY is_primary DESC, created_at LIMIT 1")
     if not row:
         raise FinError("RESOURCE_NOT_FOUND", "No legal entity is set up yet")
     return str(row["id"])
@@ -101,7 +108,9 @@ def build_context(request: Request, conn) -> FinContext:
         raise FinError("PERMISSION_DENIED", "Your role has no access to ACE Books")
     actor = str(payload.get("sub") or "unknown")
     name = payload.get("name") or payload.get("email") or actor
-    entity = resolve_entity(conn, request.headers.get("X-Legal-Entity"))
+    # The branch middleware has already resolved X-Legal-Entity against this person's access.
+    from src import branch
+    entity = branch.current() or resolve_entity(conn, request.headers.get("X-Legal-Entity"))
     rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:16]
     ip = request.client.host if request.client else None
     return FinContext(actor, str(name), roles, entity, perms, rid, ip)

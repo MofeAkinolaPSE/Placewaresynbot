@@ -16,7 +16,7 @@ export default function AllInvoices() {
       <PageHeader
         icon={FileText}
         title="All Invoices"
-        subtitle="View invoice status and history across every department. QC, Finance, and Dispatch actions still require the relevant role."
+        subtitle="View invoice status and history across every department. Finance approval and Dispatch actions still require the relevant role."
       />
       <InvoicesTab />
     </div>

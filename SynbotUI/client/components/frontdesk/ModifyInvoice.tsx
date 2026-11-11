@@ -1,7 +1,7 @@
 /**
  * Modify an invoice before Finance approves it: add, remove or change items, the delivery charge or the
- * discount; the total is worked out again (the customer's invoice goes up or down) and, if QC had already
- * checked it, it goes back to QC. Approved invoices are ACE Books invoices - modified there with
+ * discount; the total is worked out again (the customer's invoice goes up or down) and it waits for
+ * Finance's approval again. Approved invoices are ACE Books invoices - modified there with
  * Add items / Return / remove items, which posts the change to the customer's account.
  */
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { api } from "@/lib/api-client";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 type Row = { product: string; sku?: string; quantity: number; unit_price: number; batch_number?: string; manufacture_date?: string; expiry_date?: string };
 const fmt = (n: number) => `₦${Number(n || 0).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
@@ -38,20 +39,20 @@ export function ModifyInvoiceSheet({ invoice, open, onClose }: { invoice: any; o
     timer.current = setTimeout(() => api.inventory.search(v.trim()).then((r: any) => setSug({ idx: i, results: (r ?? []).slice(0, 8) })).catch(() => setSug(null)), 300);
   };
   const goods = rows.reduce((s, r) => s + r.quantity * r.unit_price, 0);
-  const before = Number(invoice?.total_amount ?? 0) - Number(invoice?.discount_amount ?? 0) + Number(invoice?.delivery_charge ?? 0);
-  const after = goods - Math.min(discount, goods) + delivery;
+  const before = invoiceTotal(invoice);
+  const after = goods - Math.min(discount, goods) + delivery + Number(invoice?.tax_amount ?? 0);
   const ready = reason.trim().length >= 3 && rows.length > 0 && rows.every((r) => r.product.trim() && r.quantity > 0 && r.unit_price >= 0);
   const save = async () => {
     setBusy(true);
     try {
       const r = await api.frontdesk.modifyInvoice(invoice.id, { items: rows, delivery_charge: delivery, discount_amount: discount, reason });
-      toast.success(`Invoice ${invoice.invoice_number} modified: ${fmt(before)} → ${fmt(after)}${r?.back_to_qc ? " - back with QC to check the change" : ""}`);
+      toast.success(`Invoice ${invoice.invoice_number} modified: ${fmt(before)} → ${fmt(after)}${r?.back_to_finance ? " - back with Finance to approve" : ""}`);
       onClose(true);
     } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   };
   return (
     <DetailSheet open={open} onOpenChange={(o) => !o && onClose()} title={`Modify invoice ${invoice?.invoice_number ?? ""}`}
-                 description="Add, remove or change items, the delivery charge or the discount. The invoice total is worked out again; if QC already checked it, it goes back to QC."
+                 description="Add, remove or change items, the delivery charge or the discount. The invoice total is worked out again and Finance approves the changed invoice."
                  footer={<div className="flex w-full items-center justify-between gap-2">
                    <span className="text-sm">{fmt(before)} → <strong>{fmt(after)}</strong></span>
                    <Button disabled={busy || !ready} onClick={save}>{busy ? "Saving…" : "Save changes"}</Button></div>}>
@@ -66,10 +67,14 @@ export function ModifyInvoiceSheet({ invoice, open, onClose }: { invoice: any; o
                 {sug?.idx === i && sug.results.length > 0 && (
                   <ul className="absolute z-50 mt-1 max-h-56 w-80 overflow-auto rounded border bg-popover text-sm shadow">
                     {sug.results.map((x: any) => (
-                      <li key={x.sku ?? x.name} className="cursor-pointer px-2 py-1 hover:bg-accent" onMouseDown={(e) => { e.preventDefault();
+                      <li key={x.sku ?? x.name} aria-disabled={x.sellable === false}
+                          title={x.sellable === false ? `Can't be sold: ${x.stock_note ?? "no stock"}` : undefined}
+                          className={x.sellable === false ? "cursor-not-allowed px-2 py-1 opacity-50" : "cursor-pointer px-2 py-1 hover:bg-accent"}
+                          onMouseDown={(e) => { e.preventDefault(); if (x.sellable === false) return;
                         set(i, { product: x.name, sku: x.sku, unit_price: x.selling_price ?? r.unit_price, batch_number: x.batch_number ?? undefined,
                                  manufacture_date: x.manufacture_date ?? undefined, expiry_date: x.expiry_date ?? undefined }); setSug(null); }}>
                         <div className="font-medium">{x.name}</div><div className="font-mono text-[11px] text-muted-foreground">{x.sku} · stock {x.current_stock ?? "—"}</div>
+                        {x.stock_note && <div className="text-[11px] text-red-600 dark:text-red-300">{x.stock_note}</div>}
                       </li>))}
                   </ul>)}
               </div>

@@ -1673,7 +1673,7 @@ def list_users(limit: int = 50) -> list[dict]:
     try:
         resp = (
             db.table(TABLE_USERS)
-            .select("id,email,roles,is_active,created_at,updated_at")
+            .select("id,email,roles,is_active,created_at,updated_at,home_entity_id,extra_entity_ids::text[] AS extra_entity_ids")
             .order("created_at", desc=True)
             .limit(limit)
             .execute()

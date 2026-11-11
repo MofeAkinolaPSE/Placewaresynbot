@@ -158,6 +158,7 @@ function printReport(title: string, subtitle: string, node: HTMLElement | null) 
     table{width:100%;border-collapse:collapse} th,td{padding:4px 6px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}
     th{border-bottom:2px solid #333;font-size:10px;text-transform:uppercase} .text-right{text-align:right}
     a{color:#111;text-decoration:none} button{display:none}
+    @page{margin:0} @media print{body{margin:0;padding:12mm;-webkit-box-decoration-break:clone;box-decoration-break:clone}}
   </style></head><body><div style="text-align:center;font-weight:bold">PLACEWARE NIGERIA LIMITED</div><h1></h1><h2></h2></body></html>`);
   win.document.querySelector("h1")!.textContent = title;
   win.document.querySelector("h2")!.textContent = subtitle;

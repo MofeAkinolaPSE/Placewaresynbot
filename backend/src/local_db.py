@@ -1,10 +1,39 @@
+import contextvars
 import os
 import threading
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+import psycopg2.errors
 import logging
 from urllib.parse import urlparse
+
+
+# The branch (ACE Books legal entity id) the running web request works in - set by src.branch.BranchMiddleware.
+# None outside a web request.
+branch_var: contextvars.ContextVar = contextvars.ContextVar("pw_branch", default=None)
+_UNSET = object()
+
+
+def _apply_branch(conn, scopes: dict) -> None:
+    """Put a connection into the running request's branch (migration 150): role ace_app + app.entity_id, so
+    row-level security shows only that branch. Outside a request: the owner role, unfiltered. Done in autocommit
+    so the setting cannot be undone by the request's later rollback; skipped when the connection is already set."""
+    want = branch_var.get()
+    key = (id(conn), conn.get_backend_pid())
+    if scopes.get(key, _UNSET) == want:
+        return
+    was = conn.autocommit
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            if want:
+                cur.execute("SET ROLE ace_app; SELECT set_config('app.entity_id', %s, false)", (str(want),))
+            else:
+                cur.execute("RESET ROLE; SELECT set_config('app.entity_id', '', false)")
+    finally:
+        conn.autocommit = was
+    scopes[key] = want
 
 
 class WaitingConnectionPool(psycopg2.pool.ThreadedConnectionPool):
@@ -16,18 +45,33 @@ class WaitingConnectionPool(psycopg2.pool.ThreadedConnectionPool):
     def __init__(self, minconn, maxconn, *args, wait_seconds: float = 30.0, **kwargs):
         super().__init__(minconn, maxconn, *args, **kwargs)
         self._slots = threading.BoundedSemaphore(maxconn)
+        self._scopes: dict = {}
         self._wait = wait_seconds
 
     def getconn(self, key=None):
         if not self._slots.acquire(timeout=self._wait):
             raise psycopg2.pool.PoolError(f"no database connection free after {self._wait:.0f}s")
         try:
-            return super().getconn(key)
+            conn = super().getconn(key)
         except Exception:
             self._slots.release()
             raise
+        try:
+            _apply_branch(conn, self._scopes)
+        except psycopg2.errors.UndefinedObject:
+            # role ace_app not created yet (migration 150 not applied): work unfiltered as before
+            self._scopes[(id(conn), conn.get_backend_pid())] = branch_var.get()
+        except Exception:
+            self.putconn(conn, close=True)
+            raise
+        return conn
 
     def putconn(self, conn=None, key=None, close=False):
+        if close or (conn is not None and conn.closed):
+            try:
+                self._scopes.pop((id(conn), conn.get_backend_pid()), None)
+            except Exception:
+                pass
         super().putconn(conn, key, close)
         try:
             self._slots.release()

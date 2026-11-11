@@ -81,7 +81,8 @@ const SelectContent = React.forwardRef<
       position={position}
       {...props}
     >
-      <SelectScrollUpButton />
+      {/* No scroll arrows: they appear and disappear inside the list's layout, so the rows jumped 24px as soon as
+          anyone scrolled. A slim scrollbar (global.css) shows there is more, and nothing changes size. */}
       <SelectPrimitive.Viewport
         className={cn(
           "p-1",
@@ -91,7 +92,6 @@ const SelectContent = React.forwardRef<
       >
         {children}
       </SelectPrimitive.Viewport>
-      <SelectScrollDownButton />
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));

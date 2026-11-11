@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, CheckCircle2, Truck, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
@@ -14,11 +13,9 @@ import { Link } from "react-router-dom";
 import { ModifyInvoiceSheet } from "@/components/frontdesk/ModifyInvoice";
 
 /**
- * Role-aware QC/Finance/Dispatch action panel for a single Frontdesk
- * invoice. Extracted from Frontdesk.tsx's InvoicesTab so the QC/Finance/
- * Delivery mutation logic is shared, not duplicated, between InvoicesTab
- * and the Centralized Customer Workspace — a correctness concern for
- * financial/QC actions, not just DRY. See ACE-Workspace-Standard.md Ch.10.
+ * Role-aware Finance/Dispatch action panel for a single Frontdesk invoice, shared by every screen that shows
+ * one. Frontdesk raises the invoice and Finance (or the CFO/CEO) approves it - the client dropped the QC
+ * stage on 6 Nov - and approval posts it to ACE Books.
  */
 export interface ActionableInvoice {
   id: string;
@@ -71,16 +68,14 @@ export function InvoiceActionPanel({
   });
   const events: { event_type: string; outcome?: string; created_at: string }[] = historyQuery.data?.events ?? [];
 
-  const [qcInspector, setQcInspector] = useState("");
-  const [qcBatches, setQcBatches] = useState("");
-  const [qcNotes, setQcNotes] = useState("");
   const [financeApprover, setFinanceApprover] = useState("");
   const [financeReason, setFinanceReason] = useState("");
 
-  // QC can't be done by the person who raised the invoice (the server refuses it too)
   const raisedByMe = !!myUserId() && String((invoice as any).created_by ?? "") === myUserId();
-  const canQc = roles.includes("admin") || roles.includes("quality_assurance") || roles.includes("qa");
-  const canFinance = roles.includes("admin") || roles.includes("finance");
+  // Finance approves; the CFO/CEO (management) can sign off when Finance is away
+  const canFinance = roles.includes("admin") || roles.includes("finance") || roles.includes("management");
+  // waiting for Finance - including a request raised before the QC stage was dropped
+  const awaitingFinance = ["finance_pending", "finance_rejected", "draft", "qc_pending", "qc_passed", "qc_failed"].includes(invoice.status);
   const canDispatch = roles.includes("admin") || roles.includes("finance") || roles.includes("ops");
   const approved = ["finance_approved", "dispatched", "completed"].includes(String((invoice as any).status));
   const canVoid = String((invoice as any).status) !== "cancelled"
@@ -90,8 +85,8 @@ export function InvoiceActionPanel({
     mutationFn: (reason: string) => api.frontdesk.voidInvoice(invoice.id, reason),
     onSuccess: (r: any) => {
       toast({ title: "Invoice voided", description: r?.ace_invoice_voided
-        ? "Voided in ACE Books too - stock and postings reversed. It has left QC, Frontdesk and the customer's orders."
-        : "It has left the QC queue, Frontdesk and the customer's orders." });
+        ? "Voided in ACE Books too - stock and postings reversed. It has left Finance's queue, Frontdesk and the customer's orders."
+        : "It has left Finance's queue, Frontdesk and the customer's orders." });
       qc.invalidateQueries({ queryKey: ["fd-invoices"] });
       qc.invalidateQueries({ queryKey: ["quality"] });
       qc.invalidateQueries({ queryKey: ["books"] });
@@ -107,25 +102,10 @@ export function InvoiceActionPanel({
   const voidIt = async () => {
     const reason = await askText(approved
       ? "Why is this invoice being voided? It is already approved: its ACE Books invoice is voided too (stock and postings reversed)."
-      : "Why is this invoice being voided? It leaves the QC queue, Frontdesk and the customer's orders.");
+      : "Why is this invoice being voided? It leaves Finance's queue, Frontdesk and the customer's orders.");
     if (reason && reason.trim()) voidMutation.mutate(reason.trim());
   };
 
-  const qcMutation = useMutation({
-    mutationFn: (passed: boolean) => api.frontdesk.submitQc(invoice.id, {
-      passed,
-      inspector_name: qcInspector.trim() || undefined,
-      notes: qcNotes.trim() || undefined,
-      batch_numbers: qcBatches.trim() ? qcBatches.split(",").map((b) => b.trim()).filter(Boolean) : undefined,
-    }),
-    onSuccess: (_data, passed) => {
-      toast({ title: passed ? "QC passed" : "QC failed", description: `Invoice moved to ${passed ? "Finance" : "QC Failed"}.` });
-      setQcInspector(""); setQcBatches(""); setQcNotes("");
-      qc.invalidateQueries({ queryKey: ["invoice-history", invoice.id] });
-      onActioned();
-    },
-    onError: (e: any) => toast({ title: "QC submission failed", description: e?.message, variant: "destructive" }),
-  });
 
   const financeMutation = useMutation({
     mutationFn: (approved: boolean) => api.frontdesk.financeApproval(invoice.id, {
@@ -133,8 +113,15 @@ export function InvoiceActionPanel({
       approver_name: financeApprover.trim() || undefined,
       reason: financeReason.trim() || undefined,
     }),
-    onSuccess: (_data, approved) => {
-      toast({ title: approved ? "Invoice approved" : "Invoice rejected" });
+    onSuccess: (data: any, approved) => {
+      const books = data?.books;
+      if (approved && books && books.status !== "POSTED") {
+        // approved, but the books did not take it - say so instead of a silent "approved"
+        toast({ title: "Approved - not yet in ACE Books", description: `${books.message ?? books.status}. It is listed in the Invoice register as Not posted, with Retry.`, variant: "destructive" });
+      } else {
+        toast({ title: approved ? "Invoice approved" : "Invoice rejected",
+                description: approved && books?.invoice_number ? `Posted to ACE Books as invoice ${books.invoice_number}.` : undefined });
+      }
       setFinanceApprover(""); setFinanceReason("");
       qc.invalidateQueries({ queryKey: ["invoice-history", invoice.id] });
       onActioned();
@@ -194,38 +181,8 @@ export function InvoiceActionPanel({
         )}
       </div>
 
-      {invoice.status === "qc_pending" && canQc && raisedByMe && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-          You raised this invoice, so a QC colleague checks it. It is in their Quality Control queue and they have been notified.
-        </div>
-      )}
 
-      {invoice.status === "qc_pending" && canQc && !raisedByMe && (
-        <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
-          <div className="text-xs font-semibold text-muted-foreground">QC CHECK <span className="font-normal">· signed with your login</span></div>
-          <Input placeholder="Batch numbers (comma-separated)" value={qcBatches} onChange={(e) => setQcBatches(e.target.value)} />
-          <Textarea placeholder="Notes" rows={2} value={qcNotes} onChange={(e) => setQcNotes(e.target.value)} />
-          <div className="flex gap-2">
-            <Button
-              size="sm" variant="destructive" className="flex-1"
-              disabled={qcMutation.isPending}
-              onClick={() => qcMutation.mutate(false)}
-            >
-              Fail QC
-            </Button>
-            <Button
-              size="sm" className="flex-1"
-              disabled={qcMutation.isPending}
-              onClick={() => qcMutation.mutate(true)}
-            >
-              {qcMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              Pass QC
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {invoice.status === "finance_pending" && canFinance && (
+      {awaitingFinance && canFinance && (
         <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
           <div className="text-xs font-semibold text-muted-foreground">FINANCE APPROVAL <span className="font-normal">· signed with your login</span></div>
           <Textarea placeholder="Reason (required for rejection)" rows={2} value={financeReason} onChange={(e) => setFinanceReason(e.target.value)} />

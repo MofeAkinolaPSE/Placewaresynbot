@@ -49,7 +49,8 @@ class RedisTTLCache:
 
     @staticmethod
     def _k(key: str) -> str:
-        return f"{_KEY_PREFIX}{key}"
+        from src.branch import cache_key  # each branch keeps its own cached values
+        return f"{_KEY_PREFIX}{cache_key(key)}"
 
     def _circuit_available(self) -> bool:
         return time.time() >= self._circuit_open_until

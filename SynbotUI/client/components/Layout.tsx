@@ -5,6 +5,8 @@ import { ClockPill } from "./staff/ws-kit";
 import { API_BASE_URL } from "@/lib/api-base";
 import { useAuth } from "./AuthProvider";
 import { BackupReminder } from "./admin/BackupPanel";
+import { PushNotificationsButton, PushOffer } from "./PushNotifications";
+import { BranchSwitcher } from "./BranchSwitcher";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Menu, Circle, ArrowLeft, ArrowRight, Bell } from "lucide-react";
@@ -98,12 +100,14 @@ const Layout = () => {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <BranchSwitcher />
             <ShowMeHow />
             <ClockPill />
             <Link to="/workspace?tab=inbox" title="Inbox" className="relative flex h-7 w-7 items-center justify-center rounded-md border border-border/40 bg-muted/30 hover:bg-muted/60">
               <Bell className="h-3.5 w-3.5" />
               {unread > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">{unread > 99 ? "99+" : unread}</span>}
             </Link>
+            <PushNotificationsButton />
             <ThemeToggle />
             <div className="relative">
               <button
@@ -147,6 +151,7 @@ const Layout = () => {
         {/* Page content */}
         <div className="relative z-10 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-5">
           <BackupReminder />
+          <PushOffer />
           <Outlet />
         </div>
       </main>

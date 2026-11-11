@@ -568,7 +568,8 @@ class ReportGenerationAgent(BaseAgent):
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=min(len(sections), 8) or 1) as pool:
-            results = list(pool.map(_generate_one, sections))
+            from src.branch import carry
+            results = list(pool.map(carry(_generate_one), sections))
 
         results.sort(key=lambda r: r["order"])
         return results

@@ -21,6 +21,8 @@ class _TTLCache:
         self._lock = threading.RLock()
 
     def get(self, key: Hashable) -> Any | None:
+        from src.branch import cache_key  # each branch keeps its own cached values
+        key = cache_key(key)
         now = time.time()
         with self._lock:
             item = self._store.get(key)
@@ -35,6 +37,8 @@ class _TTLCache:
             return value
 
     def set(self, key: Hashable, value: Any, ttl_seconds: int, tags: Iterable[str] | None = None) -> None:
+        from src.branch import cache_key
+        key = cache_key(key)
         expires_at = time.time() + ttl_seconds
         with self._lock:
             self._store[key] = (expires_at, value)

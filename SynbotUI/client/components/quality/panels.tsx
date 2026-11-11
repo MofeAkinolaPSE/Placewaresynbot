@@ -21,8 +21,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { DetailSheet } from "@/components/workspace/DetailSheet";
 import { ReportButton } from "@/components/reports/ReportButton";
 import { KpiStrip } from "@/components/workspace/KpiStrip";
-import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
-import { InvoiceDetailBody } from "@/components/workspace/InvoiceDetailBody";
 import { DrillLink } from "@/components/books/kit";
 import { Facts } from "@/components/books/lineage";
 import { RecallBody } from "@/components/books/recall-panel";
@@ -57,7 +55,8 @@ async function act(fn: () => Promise<any>, ok: string, refresh: () => void) {
 }
 
 // ---------------------------------------------------------------------------
-// Release queue: invoices waiting for QC + incoming batches waiting for release
+// Release queue: incoming batches waiting for release. (Invoices no longer pass through QC - the client
+// dropped that stage on 6 Nov: Frontdesk -> Finance.)
 // ---------------------------------------------------------------------------
 
 const STAGE: Record<string, [string, "sky" | "amber" | "green" | "red"]> = {
@@ -68,14 +67,10 @@ export function ReleaseQueue() {
   const isQa = useIsQa();
   const qa = useQualityActions();
   const refresh = useQualityRefresh();
-  const [openInv, setOpenInv] = useState<string | null>(null);
-  const invoices = useQuery({ queryKey: ["quality", "qc-invoices"], queryFn: () => api.frontdesk.listInvoices({ status: "qc_pending", limit: 50 }), refetchInterval: 30000 });
-  const detail = useQuery({ queryKey: ["quality", "qc-invoice", openInv], queryFn: () => api.frontdesk.getInvoice(openInv!), enabled: !!openInv });
   const { data, isLoading } = useQuery({ queryKey: ["quality", "batches"], queryFn: () => api.quality.batches() });
   const [rejecting, setRejecting] = useState<Dict | null>(null);
   const [arriving, setArriving] = useState<Dict | null>(null);
   const [reason, setReason] = useState("");
-  const pending: Dict[] = invoices.data?.invoices ?? [];
   const batches: Dict[] = data?.batches ?? [];
   const received: Dict[] = data?.received_unreleased ?? [];
   const open = batches.filter((b) => b.stage !== "released" && b.stage !== "rejected");
@@ -84,36 +79,12 @@ export function ReleaseQueue() {
   return (
     <div className="space-y-5">
       <KpiStrip items={[
-        { label: "Invoices waiting for QC", value: pending.length, tone: pending.length ? "warning" : "success", sub: "Frontdesk requests to check against stock" },
         { label: "Batches expected", value: open.filter((b) => b.stage === "expected").length, sub: `${open.filter((b) => b.late).length} late` },
         { label: "Received, awaiting release", value: open.filter((b) => b.stage === "awaiting_release").length + received.length,
           tone: open.some((b) => b.stage === "awaiting_release") || received.length ? "warning" : "default", sub: "quarantined in ACE Books until released" },
         { label: "Released this list", value: done.filter((b) => b.stage === "released").length, sub: `${done.filter((b) => b.stage === "rejected").length} rejected` },
       ]} />
 
-      {pending.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Invoice requests waiting for QC ({pending.length})</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {pending.map((inv) => (
-              <div key={inv.id} className="overflow-hidden rounded-lg border">
-                <button className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-muted/40" onClick={() => setOpenInv(openInv === inv.id ? null : inv.id)}>
-                  <div className="min-w-0"><div className="truncate font-mono text-xs text-muted-foreground">{inv.invoice_number}</div>
-                    <div className="truncate text-sm font-medium">{inv.company_name || inv.customer_name}</div></div>
-                  <div className="flex items-center gap-2"><span className="text-sm font-semibold">{naira(inv.total_amount)}</span>
-                    {openInv === inv.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</div>
-                </button>
-                {openInv === inv.id && (
-                  <div className="space-y-3 border-t bg-muted/20 p-3">
-                    <InvoiceDetailBody invoice={detail.data?.invoice} loading={detail.isLoading} />
-                    <div className="border-t pt-3"><InvoiceActionPanel invoice={inv as any} onActioned={() => invoices.refetch()} /></div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

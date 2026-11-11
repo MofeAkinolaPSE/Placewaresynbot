@@ -134,7 +134,7 @@ def _sync_placeware_invoices(batch_id: str) -> None:
     ]
     if upsert_rows:
         db.table("placeware_invoices").upsert(
-            upsert_rows, on_conflict="invoice_id"
+            upsert_rows, on_conflict="legal_entity_id,invoice_id"
         ).execute()
 
 
@@ -1139,7 +1139,7 @@ async def upload_csv(
             ]
             if supplier_rows:
                 db.table("suppliers").upsert(
-                    supplier_rows, on_conflict="external_vendor_id"
+                    supplier_rows, on_conflict="legal_entity_id,external_vendor_id"
                 ).execute()
                 logger.info(
                     f"upload_csv: upserted {len(supplier_rows)} rows into "
@@ -1438,7 +1438,7 @@ async def upload_batch_zip(
                     for v in mapped_rows if v.get("vendor_id", "").strip()
                 ]
                 if supplier_rows:
-                    db.table("suppliers").upsert(supplier_rows, on_conflict="external_vendor_id").execute()
+                    db.table("suppliers").upsert(supplier_rows, on_conflict="legal_entity_id,external_vendor_id").execute()
             except Exception as exc:
                 logger.warning(f"upload_batch_zip: suppliers upsert failed (non-fatal): {exc}")
 

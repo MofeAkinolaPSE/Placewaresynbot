@@ -26,7 +26,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from src.db import db, audit_event
-from src.middleware import verify_jwt, require_role
+from src.middleware import verify_jwt, require_role, require_any_role
 from src.constants import BOT_BRAND, COMPLIANCE_QA_ROLES
 from src.services.realtime import realtime_hub
 
@@ -63,24 +63,47 @@ def _signer_name(user: dict, typed: Optional[str] = None) -> str:
 
 
 def _notify_roles(roles: set, title: str, body: str, path: str, actor: Optional[str], kind: str = "frontdesk") -> None:
-    """In-app notification (inbox + bell) to everyone holding one of these roles."""
+    """In-app notification (inbox + bell) to everyone holding one of these roles who works in this branch."""
     try:
+        from src import branch
         from src.fin.db import tx, q
         from src.services.staff_workspace import notify
+        e = branch.current()
         with tx() as conn:
-            ids = [r["id"] for r in q(conn, "SELECT id::text AS id FROM placeware_users WHERE is_active AND roles && %s",
-                                      (list(roles),))]
-            notify(conn, ids, kind, "action", title, body, "path", path, actor)
+            if e:
+                ids = [r["id"] for r in q(conn, f"""SELECT u.id::text AS id FROM placeware_users u
+                                                   WHERE u.is_active AND u.roles && %s AND {branch.users_sql('u')}""",
+                                          (list(roles), e, e))]
+            else:
+                ids = [r["id"] for r in q(conn, "SELECT id::text AS id FROM placeware_users WHERE is_active AND roles && %s",
+                                          (list(roles),))]
+            notify(conn, ids, kind, "action", branch.tag(title, e), body, "path", branch.link(path, e), actor)
     except Exception as exc:  # a notification must never block the workflow
         logger.warning("frontdesk notification failed: %s", exc)
 
 
-def _notify_qc_waiting(created: dict, actor_id: Optional[str]) -> None:
-    """A new invoice request goes to QC: everyone with the QC role is told, with a link to their queue."""
+def grand_total(inv: dict) -> float:
+    """What the customer is billed: goods - discount + delivery + tax. The database keeps it as
+    frontdesk_invoices.grand_total (migration 148); this covers a row built before it was read back."""
+    if inv.get("grand_total") is not None:
+        return round(float(inv["grand_total"]), 2)
+    return round(float(inv.get("total_amount") or 0) - float(inv.get("discount_amount") or 0)
+                 + float(inv.get("delivery_charge") or 0) + float(inv.get("tax_amount") or 0), 2)
+
+
+# Who signs off an invoice: Finance, and the CFO/CEO (management) and admins who approve when Finance is away.
+FINANCE_APPROVERS = {"finance", "management", "admin"}
+
+
+def _notify_finance_waiting(created: dict, actor_id: Optional[str], modified: bool = False) -> None:
+    """A new invoice goes straight to Finance (the client dropped the QC stage, 6 Nov): everyone who can
+    approve it is told - in the bell and, on a phone with notifications on, as a push notification."""
     who = created.get("company_name") or created.get("customer_name") or "a customer"
-    _notify_roles({"quality_assurance", "qa"}, f"Invoice {created.get('invoice_number') or ''} for {who} is waiting for your QC check",
-                  f"Check the items, batches and expiry against stock, then pass or fail it (total ₦{float(created.get('total_amount') or 0):,.2f}).",
-                  "/quality-control?tab=release", actor_id, kind="qc_check")
+    number = created.get("invoice_number") or ""
+    _notify_roles(FINANCE_APPROVERS,
+                  f"Invoice {number} for {who} {'was changed and ' if modified else ''}is waiting for your approval",
+                  f"Total ₦{grand_total(created):,.2f}. Approve it to post it to ACE Books.",
+                  "/finance/books/sales", actor_id, kind="finance_approval")
 
 
 def _release_frontdesk_numbers(walk_in_id: str, actor: Optional[str]) -> None:
@@ -103,10 +126,11 @@ def _release_frontdesk_numbers(walk_in_id: str, actor: Optional[str]) -> None:
 
 def _notify_users(user_ids: list, title: str, body: str, path: str, actor: Optional[str], kind: str = "frontdesk") -> None:
     try:
+        from src import branch
         from src.fin.db import tx
         from src.services.staff_workspace import notify
         with tx() as conn:
-            notify(conn, user_ids, kind, "info", title, body, "path", path, actor)
+            notify(conn, user_ids, kind, "info", branch.tag(title), body, "path", branch.link(path), actor)
     except Exception as exc:
         logger.warning("frontdesk notification failed: %s", exc)
 
@@ -135,6 +159,8 @@ def push_frontdesk(event: str, invoice_id: Optional[str] = None, walk_in_id: Opt
         logger.debug("frontdesk_updates push failed (non-fatal)", exc_info=True)
 
 
+from src import branch as _branch  # noqa: E402  (Lagos / Abuja - src/branch.py)
+
 router = APIRouter(prefix="/frontdesk", tags=["Frontdesk"])
 
 # ---------------------------------------------------------------------------
@@ -154,15 +180,16 @@ WALK_IN_STATUSES = {
     "cancelled",
 }
 
-# The invoice statuses Finance can still approve or reject
-FINANCE_DECIDABLE = ("qc_passed", "finance_pending", "finance_rejected")
+# The invoice statuses Finance can still approve or reject. There is no QC stage any more (client, 6 Nov): a new
+# invoice waits at finance_pending. The old QC statuses stay decidable for a request raised before the change.
+FINANCE_DECIDABLE = ("finance_pending", "finance_rejected", "draft", "qc_pending", "qc_passed", "qc_failed")
 
 WALK_IN_TRANSITIONS: dict[str, set[str]] = {
-    "arrived":          {"invoiced", "cancelled"},
-    "invoiced":         {"qc_pending", "cancelled"},
-    "qc_pending":       {"qc_passed", "qc_failed", "cancelled"},
-    "qc_passed":        {"finance_pending", "cancelled"},
-    "qc_failed":        {"qc_pending", "cancelled"},
+    "arrived":          {"invoiced", "finance_pending", "cancelled"},
+    "invoiced":         {"finance_pending", "qc_pending", "cancelled"},
+    "qc_pending":       {"qc_passed", "qc_failed", "finance_pending", "finance_approved", "finance_rejected", "cancelled"},
+    "qc_passed":        {"finance_pending", "finance_approved", "finance_rejected", "cancelled"},
+    "qc_failed":        {"qc_pending", "finance_pending", "finance_approved", "finance_rejected", "cancelled"},
     "finance_pending":  {"finance_approved", "finance_rejected", "cancelled"},
     "finance_approved": {"completed"},
     "finance_rejected": {"finance_pending", "cancelled"},
@@ -245,7 +272,11 @@ def _next_invoice_number() -> Optional[str]:
         from src.fin.numbering import next_number
         with tx() as conn:
             return next_number(conn, resolve_entity(conn, None), "SALES_INVOICE")
-    except Exception as exc:  # never block Frontdesk on numbering
+    except Exception as exc:  # never block Frontdesk on numbering...
+        from src.fin.errors import FinError
+        if isinstance(exc, FinError) and "not set yet" in str(getattr(exc, "message", exc)):
+            # ...except a branch whose numbers are not set up: never give it a made-up number
+            raise HTTPException(status_code=409, detail=exc.message)
         logger.warning("invoice numbering unavailable, using the default: %s", exc)
         return None
 
@@ -466,7 +497,7 @@ async def create_invoice(
     payload: InvoiceCreateIn,
     user: dict = Depends(verify_jwt),
 ):
-    """Create a frontdesk invoice for a walk-in customer and advance to qc_pending."""
+    """Create a frontdesk invoice for a walk-in customer; it goes straight to Finance for approval."""
     actor_id = user.get("sub")
 
     # Validate walk-in exists and is in 'arrived' state
@@ -494,6 +525,7 @@ async def create_invoice(
         total_amount += line_item["line_total"]
         line_items.append(line_item)
     line_items = _fill_batch_details(line_items)
+    _refuse_unsellable(line_items)
 
     invoice_id = str(uuid.uuid4())
     created_at = _now()
@@ -515,12 +547,8 @@ async def create_invoice(
         "tax_amount":       round(payload.tax_amount, 2),
         "delivery_charge":  round(payload.delivery_charge, 2),
         "discount_amount":  round(min(payload.discount_amount, total_amount), 2),
-        # Set directly to qc_pending, not "draft" — discovered via live
-        # verification that nothing ever transitioned the invoice's own
-        # status column afterward (only the walk-in's status advanced), so
-        # invoice.status silently never took the "qc_pending" value the
-        # frontend's status filter / role-aware action panel depend on.
-        "status":         "qc_pending",
+        # Straight to Finance: the client dropped the QC stage (6 Nov).
+        "status":         "finance_pending",
         "qc_passed":      None,
         "finance_approved": None,
         "created_by":     actor_id,
@@ -540,7 +568,7 @@ async def create_invoice(
 
     # Advance walk-in status
     try:
-        _transition_walk_in(walk_in_id, "qc_pending", actor_id)
+        _transition_walk_in(walk_in_id, "finance_pending", actor_id)
     except Exception as exc:
         logger.warning("Walk-in status transition failed after invoice creation: %s", exc)
 
@@ -557,8 +585,9 @@ async def create_invoice(
     except Exception:
         pass
 
-    await _broadcast_frontdesk("invoice_qc_pending", invoice_id, walk_in_id, "qc_pending")
-    _notify_qc_waiting(created, actor_id)
+    created["grand_total"] = grand_total(created)
+    await _broadcast_frontdesk("invoice_finance_pending", invoice_id, walk_in_id, "finance_pending")
+    _notify_finance_waiting(created, actor_id)
 
     return {"status": "created", "invoice": created}
 
@@ -674,10 +703,11 @@ async def submit_qc(
 async def finance_approval(
     invoice_id: str,
     payload: FinanceApprovalIn,
-    user: dict = Depends(require_role("finance")),
+    # Finance, or the CFO/CEO (management) signing off when Finance is away - from a phone too (admin always passes)
+    user: dict = Depends(require_any_role("finance", "management")),
 ):
     """
-    Finance approves or rejects an invoice after QC.
+    Finance approves or rejects an invoice raised by Frontdesk (no QC stage since 6 Nov).
     Approval completes the walk-in workflow; rejection returns to finance_pending.
     """
     actor_id = user.get("sub")
@@ -697,8 +727,6 @@ async def finance_approval(
         raise HTTPException(status_code=409, detail="This invoice was voided - it can no longer be approved")
     if inv.get("status") not in FINANCE_DECIDABLE:
         raise HTTPException(status_code=409, detail="Finance has already approved this invoice")
-    if not inv.get("qc_passed"):
-        raise HTTPException(status_code=409, detail="Invoice must pass QC before finance approval")
 
     walk_in_id = inv["walk_in_id"]
     new_status = "finance_approved" if payload.approved else "finance_rejected"
@@ -757,6 +785,8 @@ async def finance_approval(
         from starlette.concurrency import run_in_threadpool
         from src.fin.integrations import post_frontdesk_invoice
         books = await run_in_threadpool(post_frontdesk_invoice, invoice_id, actor_id or "frontdesk", True)
+        # the screens refreshed on the approval above; refresh them again now the invoice is in the books
+        await _broadcast_frontdesk("invoice_posted", invoice_id, walk_in_id, new_status)
 
     return {
         "invoice_id":   invoice_id,
@@ -793,7 +823,7 @@ def notify_executive(
     try:
         inv_resp = (
             db.table("frontdesk_invoices")
-            .select("id,walk_in_id,customer_name,total_amount,payment_method,finance_approved,items")
+            .select("id,walk_in_id,customer_name,total_amount,grand_total,payment_method,finance_approved,items")
             .eq("id", invoice_id).limit(1).execute()
         )
         inv_rows = inv_resp.data or []
@@ -813,9 +843,9 @@ def notify_executive(
 
     message = payload.message or (
         f"Walk-in sale completed for {inv.get('customer_name', 'N/A')}.\n"
-        f"Invoice #{invoice_id[:8]}... | Total: \u20a6{inv.get('total_amount', 0):,} "
+        f"Invoice #{invoice_id[:8]}... | Total: \u20a6{grand_total(inv):,.2f} "
         f"| Payment: {inv.get('payment_method', 'N/A')}\n\n"
-        f"Approved by Finance. All QC checks passed.\n\n"
+        f"Approved by Finance.\n\n"
         f"This is an automated notification from {BOT_BRAND} Frontdesk System."
     )
 
@@ -970,6 +1000,90 @@ def _fill_batch_details(items: list) -> list:
         if not it.get("expiry_date") and b.get("expiry_date"):
             it["expiry_date"] = str(b["expiry_date"])[:10]
     return items
+
+
+def _refuse_unsellable(items: list, exclude_invoice_id: Optional[str] = None) -> None:
+    """An invoice may only sell stock the books can ship (client, 6 Nov): a lot with nothing left, an expired,
+    recalled or quarantined lot, or a batch number that is not one of the product's batches in stock is refused
+    here - otherwise Finance's approval fails to post later ("only 0 on hand in batch ..."). Stock already
+    promised on other invoices waiting for Finance counts as taken. Products ACE Books does not keep stock
+    for (and a books outage) are let through, so Frontdesk is never blocked by the check itself."""
+    wanted: dict[str, float] = {}
+    lines = []
+    unknown = []
+    for it in items or []:
+        sku = _resolve_item_sku(it)
+        if not sku:
+            unknown.append(it.get("product"))
+            continue
+        wanted[sku] = wanted.get(sku, 0.0) + float(it.get("quantity") or 0)
+        lines.append((it, sku))
+    try:
+        from src.fin.db import q as fq, tx
+        from src.fin.maintain import PENDING_REQUEST
+        with tx() as conn:
+            # Each branch sells only its own items (the database shows this branch's products only)
+            if not fq(conn, "SELECT 1 FROM fin_products WHERE product_type='INVENTORY' LIMIT 1"):
+                if items and len(_branch.all_branches()) > 1:
+                    raise HTTPException(status_code=409, detail=f"{_branch.branch_label(_branch.current()) or 'This branch'}'s items are "
+                                                               "not set up in ACE yet - its stock must be loaded before Frontdesk can invoice")
+                return
+            if unknown:
+                raise HTTPException(status_code=400, detail=f"'{unknown[0]}' is not an item in stock - pick it from the list")
+            if not wanted:
+                return
+            known = {r["sku"]: r["product_type"] for r in fq(conn, "SELECT sku, product_type FROM fin_products WHERE sku = ANY(%s)",
+                                                             (list(wanted),))}
+            missing = [k for k in wanted if k not in known]
+            if missing:
+                raise HTTPException(status_code=400, detail=f"'{missing[0]}' is not an item in this branch's stock - pick it from the list")
+            stocked = {k for k, t in known.items() if t == "INVENTORY"}
+            if not stocked:
+                return
+            batches = fq(conn, """SELECT b.sku, b.batch_number, b.pack_batch_number, b.lot_code, b.status, b.expiry_date,
+                                         COALESCE((SELECT SUM(l.qty_remaining) FROM fin_cost_layers l WHERE l.batch_id=b.id), 0) AS qty
+                                  FROM fin_batches b WHERE b.sku = ANY(%s)""", (list(stocked),))
+            free = {r["sku"]: float(r["qty"] or 0) for r in fq(conn, """
+                SELECT l.sku, SUM(l.qty_remaining) AS qty FROM fin_cost_layers l LEFT JOIN fin_batches b ON b.id=l.batch_id
+                WHERE l.sku = ANY(%s) AND l.qty_remaining > 0
+                  AND (b.id IS NULL OR (b.status='AVAILABLE' AND (b.expiry_date IS NULL OR b.expiry_date >= current_date)))
+                GROUP BY l.sku""", (list(stocked),))}
+            held = {r["sku"]: float(r["qty"] or 0) for r in fq(conn, """
+                SELECT it->>'sku' AS sku, SUM(COALESCE(NULLIF(it->>'quantity','')::numeric, 0)) AS qty
+                FROM frontdesk_invoices f, jsonb_array_elements(f.items) it
+                WHERE f.status = ANY(%s) AND it->>'sku' = ANY(%s) AND f.id::text <> %s
+                GROUP BY it->>'sku'""", (list(PENDING_REQUEST), list(stocked), str(exclude_invoice_id or "")))}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("stock check for a new invoice skipped: %s", exc)
+        return
+    today = dt.date.today()
+    for it, sku in lines:
+        if sku not in stocked:
+            continue
+        typed = str(it.get("batch_number") or "").strip().lower()
+        if typed:
+            b = next((b for b in batches if b["sku"] == sku and typed in {str(b.get(k) or "").strip().lower()
+                                                                           for k in ("batch_number", "pack_batch_number", "lot_code")}), None)
+            if not b:
+                raise HTTPException(status_code=409, detail=f"Batch {it['batch_number']} is not a batch of {it.get('product')} in stock. "
+                                                            "Pick the item from the list, or leave the batch blank to ship the first to expire.")
+            if b["expiry_date"] and b["expiry_date"] < today:
+                raise HTTPException(status_code=409, detail=f"Batch {it['batch_number']} of {it.get('product')} expired on {b['expiry_date']} - it can't be sold")
+            if b["status"] != "AVAILABLE":
+                raise HTTPException(status_code=409, detail=f"Batch {it['batch_number']} of {it.get('product')} is {str(b['status']).lower()} - it can't be sold")
+            if float(b["qty"] or 0) <= 0:
+                raise HTTPException(status_code=409, detail=f"Batch {it['batch_number']} of {it.get('product')} has no stock left")
+    for sku, qty in wanted.items():
+        if sku not in stocked:
+            continue
+        can_sell = free.get(sku, 0.0) - held.get(sku, 0.0)
+        if qty > can_sell + 1e-9:
+            name = next((it.get("product") for it, s in lines if s == sku), sku)
+            raise HTTPException(status_code=409, detail=(f"{name} is out of stock or expired - pick a lot that is in stock"
+                                                         if can_sell <= 0 else
+                                                         f"Only {can_sell:g} of {name} can be sold (in stock, in date, not held on other invoices) - you asked for {qty:g}"))
 
 
 def _record_dispatch_stock_events(
@@ -1260,7 +1374,7 @@ def client_history(
         try:
             inv_resp = (
                 db.table("frontdesk_invoices")
-                .select("id,invoice_number,walk_in_id,total_amount,payment_method,status,items,created_at")
+                .select("id,invoice_number,walk_in_id,total_amount,grand_total,payment_method,status,items,created_at")
                 .in_("walk_in_id", visit_ids)
                 .order("created_at", desc=True)
                 .execute()
@@ -1269,7 +1383,7 @@ def client_history(
         except Exception:
             pass
 
-    total_spend = sum(float(i.get("total_amount") or 0) for i in invoices if i.get("status") in ("completed", "finance_approved"))
+    total_spend = sum(grand_total(i) for i in invoices if i.get("status") in ("completed", "finance_approved", "dispatched"))
     visit_count = len(all_visits)
 
     return {
@@ -1303,7 +1417,7 @@ def list_invoices(
     try:
         query = db.table("frontdesk_invoices").select(
             "id,invoice_number,walk_in_id,customer_name,company_name,"
-            "total_amount,tax_amount,delivery_charge,discount_amount,payment_method,status,qc_passed,finance_approved,"
+            "total_amount,grand_total,tax_amount,delivery_charge,discount_amount,payment_method,status,qc_passed,finance_approved,"
             "created_at,updated_at"
         )
         if status:
@@ -1692,11 +1806,11 @@ def daily_report(
     queue: list[dict] = []
     try:
         queue = (db.table("frontdesk_invoices").select("id,status")
-                 .in_("status", ["draft", "qc_pending", "qc_passed", "finance_pending"]).execute().data or [])
+                 .in_("status", ["draft", "qc_pending", "qc_passed", "qc_failed", "finance_pending"]).execute().data or [])
     except Exception as exc:
         logger.error("Daily report queue query error: %s", exc)
-    pending_qc       = sum(1 for i in queue if i["status"] in ("draft", "qc_pending"))
-    pending_finance  = sum(1 for i in queue if i["status"] in ("qc_passed", "finance_pending"))
+    pending_qc       = 0  # no QC stage since 6 Nov
+    pending_finance  = len(queue)
     completed_today  = sum(1 for inv in invoices if inv.get("status") in approved)
 
     # each visit opens its invoice from the queue
@@ -1847,8 +1961,8 @@ class InvoiceModifyIn(BaseModel):
 @router.put("/invoices/{invoice_id}/items", status_code=200)
 def modify_invoice(invoice_id: str, payload: InvoiceModifyIn, user=Depends(verify_jwt)):
     """Modify an invoice Finance has not approved yet: add, remove or change items, the delivery charge or the
-    discount. The total is worked out again; if QC had already checked it, it goes back to QC (what was
-    checked has changed). Once approved it is an ACE Books invoice - modified there (Add items /
+    discount. The total is worked out again and it waits for Finance again (a rejected invoice goes back to
+    Finance's queue). Once approved it is an ACE Books invoice - modified there (Add items /
     Return / remove items), which changes what the customer owes."""
     actor_id = user.get("sub") if isinstance(user, dict) else str(user)
     roles = set((user.get("roles") or []) if isinstance(user, dict) else [])
@@ -1874,14 +1988,15 @@ def modify_invoice(invoice_id: str, payload: InvoiceModifyIn, user=Depends(verif
         total += li["line_total"]
         line_items.append(li)
     line_items = _fill_batch_details(line_items)
-    back_to_qc = inv["status"] in ("qc_passed", "finance_pending", "finance_rejected", "qc_failed")
+    _refuse_unsellable(line_items, exclude_invoice_id=invoice_id)
+    back_to_finance = inv["status"] != "finance_pending"
     upd = {"items": line_items, "total_amount": round(total, 2), "updated_at": _now()}
     if payload.delivery_charge is not None:
         upd["delivery_charge"] = round(payload.delivery_charge, 2)
     if payload.discount_amount is not None:
         upd["discount_amount"] = round(min(payload.discount_amount, total), 2)
-    if back_to_qc:
-        upd.update({"status": "qc_pending", "qc_passed": None})
+    if back_to_finance:
+        upd.update({"status": "finance_pending"})
     try:
         db.table("frontdesk_invoices").update(upd).eq("id", invoice_id).execute()
     except Exception as exc:
@@ -1889,14 +2004,20 @@ def modify_invoice(invoice_id: str, payload: InvoiceModifyIn, user=Depends(verif
         raise HTTPException(status_code=500, detail="Failed to modify invoice")
     try:
         audit_event("frontdesk_invoice_modified", {"reason": payload.reason, "before_total": inv.get("total_amount"), "after_total": round(total, 2),
-                                                   "items_before": len(inv.get("items") or []), "items_after": len(line_items), "back_to_qc": back_to_qc},
+                                                   "items_before": len(inv.get("items") or []), "items_after": len(line_items), "back_to_finance": back_to_finance},
                     actor_id=actor_id, event_class="frontdesk", action="modify_invoice", subject_type="frontdesk_invoice", subject_id=invoice_id)
     except Exception:
         pass
-    if back_to_qc:
-        _notify_qc_waiting({**inv, **upd}, actor_id)
+    if back_to_finance and inv.get("walk_in_id"):
+        try:
+            _transition_walk_in(inv["walk_in_id"], "finance_pending", actor_id)
+        except Exception as exc:
+            logger.warning("Walk-in transition after modify failed: %s", exc)
+    after = {**inv, **upd, "grand_total": None}
+    _notify_finance_waiting(after, actor_id, modified=True)
     push_frontdesk("invoice_modified", invoice_id, inv.get("walk_in_id"), upd.get("status", inv["status"]))
-    return {"invoice_id": invoice_id, "total_amount": round(total, 2), "status": upd.get("status", inv["status"]), "back_to_qc": back_to_qc}
+    return {"invoice_id": invoice_id, "total_amount": round(total, 2), "grand_total": grand_total(after),
+            "status": upd.get("status", inv["status"]), "back_to_finance": back_to_finance}
 
 
 @router.post("/invoices/{invoice_id}/void", status_code=200)
@@ -2058,6 +2179,7 @@ async def quick_request(
         total_amount += line_item["line_total"]
         line_items.append(line_item)
     line_items = _fill_batch_details(line_items)
+    _refuse_unsellable(line_items)
 
     now = _now()
     walk_in_id = str(uuid.uuid4())
@@ -2072,16 +2194,9 @@ async def quick_request(
         "purpose":             payload.purpose,
         "products_requested":  [it["product"] for it in line_items],
         "notes":               payload.notes,
-        # Inserted directly at "qc_pending", not "arrived" -> _transition_walk_in().
-        # WALK_IN_TRANSITIONS["arrived"] has no direct edge to "qc_pending"
-        # (only "invoiced"), which is what silently desyncs
-        # frontdesk_walk_ins.status in create_invoice() today if that's
-        # called while still "arrived" (see that function's own comment
-        # above). This endpoint sidesteps _transition_walk_in() entirely by
-        # inserting directly at the target status -- safe because no DB
-        # constraint enforces transition history on INSERT, only
-        # _transition_walk_in() does, and only on UPDATE.
-        "status":              "qc_pending",
+        # Inserted directly at its target status (no transition history is kept on INSERT): straight to
+        # Finance, as the client dropped the QC stage (6 Nov).
+        "status":              "finance_pending",
         "registered_by":       actor_id,
         "created_at":          now,
         "updated_at":          now,
@@ -2111,7 +2226,7 @@ async def quick_request(
         "tax_amount":       round(payload.tax_amount, 2),
         "delivery_charge":  round(payload.delivery_charge, 2),
         "discount_amount":  round(min(payload.discount_amount, total_amount), 2),
-        "status":           "qc_pending",
+        "status":           "finance_pending",
         "qc_passed":        None,
         "finance_approved": None,
         "created_by":       actor_id,
@@ -2141,8 +2256,9 @@ async def quick_request(
     except Exception:
         pass
 
-    await _broadcast_frontdesk("invoice_qc_pending", invoice_id, walk_in_id, "qc_pending")
-    _notify_qc_waiting(created, actor_id)
+    created["grand_total"] = grand_total(created)
+    await _broadcast_frontdesk("invoice_finance_pending", invoice_id, walk_in_id, "finance_pending")
+    _notify_finance_waiting(created, actor_id)
 
     return {"status": "created", "invoice": created, "walk_in_id": walk_in_id}
 

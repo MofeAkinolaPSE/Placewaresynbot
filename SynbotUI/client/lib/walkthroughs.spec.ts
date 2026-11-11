@@ -101,7 +101,7 @@ describe("walkthrough steps", () => {
   });
   it("journeys keep the rules people must not forget", () => {
     const text = JOURNEYS.flatMap((w) => w.steps.map((s) => s.body)).join(" ").toLowerCase();
-    for (const phrase of ["the person who raised an invoice cannot qc it", "posts to ace books", "40800", "49000", "quarantined"]) {
+    for (const phrase of ["only items in stock and in date can be picked", "posts to ace books", "40800", "49000", "quarantined"]) {
       expect(text, phrase).toContain(phrase);
     }
     const qc = PAGE_GUIDES.find((g) => g.route === "/quality-control")!.steps.map((s) => s.body).join(" ").toLowerCase();

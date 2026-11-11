@@ -47,6 +47,7 @@ DEFAULT_MAPPINGS = {
     "WHT_SUFFERED": "78200", "WHT_PAYABLE": "23700", "BANK_CHARGES": "62200",
     "RETAINED_EARNINGS": "39005", "OPENING_BALANCE_EQUITY": "39004", "ASSET_DISPOSAL": "90000",
     "STOCK_ON_LOAN": "12990",
+    "GOODS_RECEIVED_ACCRUAL": "23000",   # goods received before the supplier's bill (migration 131 gave Lagos this)
 }
 ASSET_CATEGORIES = [  # (code, name, asset, accumulated, expense)
     ("FURN", "Furniture & fixtures", "15000", "17000", "90100"),

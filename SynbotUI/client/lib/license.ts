@@ -59,8 +59,10 @@ let watching = false;
 export function watchFetchForLicenseLock(): void {
   if (watching || typeof window === "undefined") return;
   watching = true;
+  // chain onto the fetch in place now (e.g. lib/branch.ts, which adds the branch header), not the native one
+  const previous: typeof fetch = window.fetch.bind(window);
   window.fetch = async (...args: Parameters<typeof fetch>) => {
-    const res = await nativeFetch(...args);
+    const res = await previous(...args);
     if (res.status === 403 && Date.now() - lastRefresh > 10_000) void refreshLicense();
     return res;
   };

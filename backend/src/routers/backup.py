@@ -59,7 +59,7 @@ def _list_tables() -> List[str]:
     """Base tables in the public schema. Uses a raw cursor because the
     TableQuery helper prefixes every name with 'public.', which cannot address
     information_schema."""
-    conn = db.pool.getconn()
+    conn = _whole_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -72,6 +72,14 @@ def _list_tables() -> List[str]:
         conn.commit()
         db.pool.putconn(conn)
 
+
+
+def _whole_db_conn():
+    """A connection that sees every branch (Lagos and Abuja): a backup is of the whole database, whichever
+    branch the admin who pressed "Back up now" is working in (src/branch.py)."""
+    from src.branch import unscoped
+    with unscoped():
+        return db.pool.getconn()
 
 def _pg_dump_path() -> Optional[str]:
     return shutil.which("pg_dump")
@@ -104,7 +112,7 @@ def _build_csv_bundle(tables: List[str]) -> bytes:
     Uses COPY ... TO STDOUT, which runs client-side over the existing
     connection -- no superuser, no server-side file writes, no shelling out.
     """
-    conn = db.pool.getconn()
+    conn = _whole_db_conn()
     buf = io.BytesIO()
     manifest: List[Dict[str, Any]] = []
     try:
@@ -172,7 +180,7 @@ def _tz():
 
 class _Conn:
     def __enter__(self):
-        self.c = db.pool.getconn()
+        self.c = _whole_db_conn()
         return self.c
 
     def __exit__(self, exc_type, *_):
@@ -412,7 +420,7 @@ def backup_info(_u=Depends(_require_admin)):
     try:
         tables = _list_tables()
         size = None
-        conn = db.pool.getconn()
+        conn = _whole_db_conn()
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")

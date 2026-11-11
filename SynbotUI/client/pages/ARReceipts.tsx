@@ -39,6 +39,7 @@ import { EntityAutocomplete } from "@/components/workspace/EntityAutocomplete";
 import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
 import { InvoiceDetailBody } from "@/components/workspace/InvoiceDetailBody";
 import { useRealtimeChannel } from "@/hooks/use-realtime-channel";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 // Matches FinanceVendorPayments.tsx's existing currency-formatting convention.
 const fmt = (n: number | null | undefined) =>
@@ -101,7 +102,7 @@ export default function ARReceipts() {
   const [voidReason, setVoidReason] = useState("");
 
   // Invoices — invoice requests raised via the ACE Workstation/Customer
-  // Workspace pipeline (Frontdesk QC -> Finance -> Dispatch), distinct from
+  // Workspace pipeline (Frontdesk -> Finance -> Dispatch), distinct from
   // the Sage-imported AR invoices the rest of this page reconciles receipts
   // against. Started as a "Pending Finance Approval"-only queue (Finance had
   // no UI anywhere to act on these); broadened to a full status/customer
@@ -127,7 +128,6 @@ export default function ARReceipts() {
   useRealtimeChannel("frontdesk_updates", () => pendingFinanceQuery.refetch());
 
   const INVOICE_STATUS_FILTERS = [
-    { value: "qc_pending",       label: "Pending QC"      },
     { value: "finance_pending",  label: "Pending Finance" },
     { value: "finance_approved", label: "Approved"        },
     { value: "dispatched",       label: "Dispatched"      },
@@ -306,7 +306,7 @@ export default function ARReceipts() {
                     <div className="text-sm font-medium truncate">{inv.company_name || inv.customer_name}</div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="font-semibold text-sm">{fmt(inv.total_amount)}</span>
+                    <span className="font-semibold text-sm">{fmt(invoiceTotal(inv))}</span>
                     {expandedInvoiceId === inv.id ? (
                       <ChevronUp className="h-4 w-4 text-muted-foreground" />
                     ) : (

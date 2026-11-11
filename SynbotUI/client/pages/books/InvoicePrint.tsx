@@ -62,6 +62,13 @@ export default function InvoicePrint() {
   const error = kind === "frontdesk" ? fdErr : booksErr;
   const { data: lay } = useBooks<Dict>(["invoice-layout"], "/settings/invoice-layout");
   const ready = !!inv;
+  // "Save as PDF" names the file after the invoice, not the app
+  useEffect(() => {
+    if (!inv?.invoice_number) return;
+    const before = document.title;
+    document.title = `Invoice ${inv.invoice_number}`;
+    return () => { document.title = before; };
+  }, [inv?.invoice_number]);
   useEffect(() => {
     if (ready && params.get("print") === "1") { const t = setTimeout(() => window.print(), 600); return () => clearTimeout(t); }
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -105,7 +112,8 @@ export default function InvoicePrint() {
       <div className="mx-auto mb-3 flex max-w-[210mm] justify-end gap-2 print:hidden">
         <Button size="sm" onClick={() => window.print()}><Printer className="mr-1 h-4 w-4" />Print</Button>
       </div>
-      <div className="mx-auto max-w-[210mm] bg-white p-[10mm] text-[11px] leading-tight text-black shadow print:shadow-none" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+      <div className="print-sheet mx-auto max-w-[210mm] bg-white p-[10mm] text-[11px] leading-tight text-black shadow print:shadow-none"
+           style={{ fontFamily: "Arial, Helvetica, sans-serif", WebkitBoxDecorationBreak: "clone", boxDecorationBreak: "clone" }}>
         {/* header */}
         <div className="flex justify-between">
           <div>
@@ -140,34 +148,34 @@ export default function InvoicePrint() {
             <tr><td className={cell}>{inv.signoff?.prepared_by ?? inv.sales_rep ?? ""}</td><td className={cell}>{inv.shipping_method ?? L.default_shipping_method ?? ""}</td><td className={cell} /><td className={cell}>{mdy(inv.due_date)}</td></tr>
           </tbody>
         </table>
-        {/* lines */}
-        <table className="mt-3 w-full border-collapse">
+        {/* lines: ruled heading only - no grid lines between or across the item rows (client, 6 Nov); the
+            frame round the items stays so the columns still read as one block */}
+        <table className="mt-3 w-full border-collapse border border-neutral-500">
           <thead><tr className="bg-neutral-200 text-center font-semibold">
             <td className={cell}>Qty</td><td className={cell}>Description</td><td className={cell}>Batch Number</td><td className={cell}>Man. Date</td>
             <td className={cell}>Exp. Date</td><td className={cell}>Unit Price</td><td className={cell}>Amount</td></tr></thead>
           <tbody>
             {lines.map((l, i) => (
               <tr key={i} className="align-top">
-                <td className="border border-neutral-500 px-1.5 text-right">{qty(l.quantity)}</td>
-                <td className="border border-neutral-500 px-1.5">{l.description}</td>
-                <td className="border border-neutral-500 px-1.5">{l.batch}</td>
-                <td className="border border-neutral-500 px-1.5">{mmyy(l.mfg)}</td>
-                <td className="border border-neutral-500 px-1.5">{mmyy(l.exp)}</td>
-                <td className="border border-neutral-500 px-1.5 text-right">{money(l.price)}</td>
-                <td className="border border-neutral-500 px-1.5 text-right">{money(l.amount)}</td>
+                <td className="px-1.5 text-right">{qty(l.quantity)}</td>
+                <td className="px-1.5">{l.description}</td>
+                <td className="px-1.5">{l.batch}</td>
+                <td className="px-1.5">{mmyy(l.mfg)}</td>
+                <td className="px-1.5">{mmyy(l.exp)}</td>
+                <td className="px-1.5 text-right">{money(l.price)}</td>
+                <td className="px-1.5 text-right">{money(l.amount)}</td>
               </tr>
             ))}
             {Array.from({ length: blank }).map((_, i) => (
-              <tr key={`b${i}`}>{Array.from({ length: 7 }).map((__, k) => <td key={k} className="h-5 border border-neutral-500" />)}</tr>
+              <tr key={`b${i}`}>{Array.from({ length: 7 }).map((__, k) => <td key={k} className="h-5" />)}</tr>
             ))}
-            <tr>{Array.from({ length: 7 }).map((_, k) => <td key={k} className="border-b border-neutral-500" />)}</tr>
           </tbody>
         </table>
         {/* signatures + totals */}
         <div className="mt-2 grid grid-cols-[1fr_260px] gap-4">
           <div className="space-y-2 pt-2">
             <Sig label="Prepared by(Name/Sign)" name={inv.signoff?.prepared_by} at={inv.signoff?.prepared_at} />
-            {inv.signoff?.qc_by && <Sig label="QC checked by" name={inv.signoff.qc_by} at={inv.signoff.qc_at} />}
+            {/* no QC sign-off line any more: the client dropped the QC stage (6 Nov) */}
             <Sig label="Authorised by" name={inv.signoff?.authorised_by} at={inv.signoff?.authorised_at} />
             <div>Delivered ..................................................</div>
             <div>Received by (Name) ..............................................</div>

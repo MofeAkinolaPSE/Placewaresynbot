@@ -19,7 +19,9 @@ def batch_query(executor: Callable[[Any], Any], query_specs: Iterable[Any], para
 
     if parallel:
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = {ex.submit(executor, spec): spec for spec in query_specs}
+            from src.branch import carry
+            run = carry(executor)
+            futures = {ex.submit(run, spec): spec for spec in query_specs}
             for fut in as_completed(futures):
                 spec = futures[fut]
                 try:

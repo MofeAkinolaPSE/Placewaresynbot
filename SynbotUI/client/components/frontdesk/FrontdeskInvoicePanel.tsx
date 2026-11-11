@@ -1,17 +1,18 @@
 /**
  * A Frontdesk invoice opened from anywhere - ACE Books' Invoice register, the customer's account, a report:
- * what was ordered, where it is in QC -> Finance -> dispatch, and the actions the viewer's role allows
- * (Void, Print, QC, Finance approval). It posts to ACE Books when Finance approves it.
+ * what was ordered, where it is in Finance -> dispatch, and the actions the viewer's role allows
+ * (Void, Print, Modify, Finance approval). It posts to ACE Books when Finance approves it.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api-client";
 import { InvoiceActionPanel } from "@/components/workspace/InvoiceActionPanel";
+import { invoiceTotal } from "@/lib/invoice-total";
 
 const fmt = (n: number) => `₦${Number(n || 0).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const STAGE: Record<string, string> = {
-  draft: "Awaiting QC", qc_pending: "Awaiting QC", qc_failed: "Failed QC", qc_passed: "Awaiting Finance", finance_pending: "Awaiting Finance",
+  draft: "Awaiting Finance", qc_pending: "Awaiting Finance", qc_failed: "Awaiting Finance", qc_passed: "Awaiting Finance", finance_pending: "Awaiting Finance",
   finance_rejected: "Rejected by Finance", finance_approved: "Approved", dispatched: "Dispatched", completed: "Completed", cancelled: "Voided",
 };
 
@@ -23,7 +24,7 @@ export function FrontdeskInvoiceBody({ id }: { id: string }) {
   const inv = data.invoice;
   const items: any[] = inv.items ?? [];
   const discount = Number(inv.discount_amount ?? 0), delivery = Number(inv.delivery_charge ?? 0), tax = Number(inv.tax_amount ?? 0);
-  const total = Number(inv.total_amount) - discount + delivery + tax;
+  const total = invoiceTotal(inv);
   const posted = ["finance_approved", "dispatched", "completed"].includes(inv.status);
   return (
     <div className="space-y-3 text-sm">
@@ -35,7 +36,7 @@ export function FrontdeskInvoiceBody({ id }: { id: string }) {
       <p className="rounded-md border bg-muted/30 p-2 text-xs">
         {inv.status === "cancelled" ? "This invoice was voided; it is not in the books."
           : posted ? <>Approved by Finance. If it is not in ACE Books yet, see <Link className="underline" to="/finance/books/close?tab=frontdesk">Close & Controls → Frontdesk postings</Link> for the reason and Retry.</>
-          : "Raised on Frontdesk and waiting for QC and Finance. It posts to ACE Books (customer owes, stock leaves) when Finance approves it; until then its stock is held for it."}
+          : "Raised on Frontdesk and waiting for Finance's approval. It posts to ACE Books (customer owes, stock leaves) when Finance approves it; until then its stock is held for it."}
       </p>
       <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
         <div><div className="text-[11px] uppercase text-muted-foreground">Customer</div>{inv.company_name || inv.customer_name}</div>

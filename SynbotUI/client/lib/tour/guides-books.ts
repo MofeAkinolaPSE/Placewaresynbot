@@ -24,12 +24,12 @@ export const BOOKS_GUIDES: PageGuide[] = [
   {
     route: "/finance/books/sales",
     title: "Sales & Receivables",
-    intro: "Everything customers are invoiced and pay: the Invoice register (Sage's invoices and ACE Books' own, and Frontdesk invoices waiting for QC or Finance), receipts, credit notes, aged receivables and customer statements.",
+    intro: "Everything customers are invoiced and pay: the Invoice register (Sage's invoices and ACE Books' own, and Frontdesk invoices waiting for Finance), receipts, credit notes, aged receivables and customer statements.",
     steps: [
       BOOKS_BAR,
-      tab("Invoice register", "Invoice register", "The one list of every invoice: Sage's (paid and open), ACE Books' and Frontdesk's still awaiting QC or Finance. \"Last invoice raised\" and \"Next invoice\" show where numbering stands - it carries on from Sage automatically. Clear voided (n) hides voided ones from the list - Show voided brings them back; nothing is deleted, and voided records never go into the CSV."),
+      tab("Invoice register", "Invoice register", "The one list of every invoice: Sage's (paid and open), ACE Books' and Frontdesk's still awaiting Finance. \"Last invoice raised\" and \"Next invoice\" show where numbering stands - it carries on from Sage automatically. Clear voided (n) hides voided ones from the list - Show voided brings them back; nothing is deleted, and voided records never go into the CSV."),
       tryIt("Invoice no. or customer", "Search", "Type an invoice number or part of a customer's name to narrow the list.", { kind: "field" }),
-      see("All Status", "Status and dates", "Filter by status (open, paid, void, awaiting QC / Finance…) and by the From / To dates or a whole period. Voided invoices are left out of the totals."),
+      see("All Status", "Status and dates", "Filter by status (open, paid, void, awaiting Finance…) and by the From / To dates or a whole period. Voided invoices are left out of the totals."),
       tryIt("CSV", "Download CSV", "Downloads exactly the table on screen, for Excel."),
       openRow("Open an invoice", "Click an open invoice to open its panel: who it is for, what was sold (with batch numbers and expiry), payments, credit notes and the journal it posted.", { cue: "Click an open invoice in the list", target: "open" }),
       tryIt("Print invoice", "Print invoice", "Opens the printed invoice in the Placeware layout (one page for a short invoice) - it only prints, nothing changes.", { kind: "button" }),
@@ -74,7 +74,7 @@ export const BOOKS_GUIDES: PageGuide[] = [
     intro: "Stock in the books: quantities and value (FIFO), the Sage-style unit activity and item costing reports, batches and expiry, batch numbers and dates, adjustments, stock counts, stock on loan and recalls.",
     steps: [
       BOOKS_BAR,
-      tab("Stock status", "Stock status", "Every item: on hand, held for invoices awaiting QC / Finance, available, on loan and value. CSV downloads any stock tab."),
+      tab("Stock status", "Stock status", "Every item: on hand, held for invoices awaiting Finance, available, on loan and value. CSV downloads any stock tab."),
       tryIt("Search SKU or product", "Search", "Narrow any of the stock tabs to an item.", { kind: "field" }),
       tab("Valuation", "Valuation (FIFO)", "What the stock is worth at cost, layer by layer, oldest first - the figure on the balance sheet."),
       tab("Unit activity & item costing", "Unit activity & item costing", "Sage's two stock reports over Sage history and ACE Books together. Inventory unit activity: per item ID, beginning quantity, units sold, purchased, adjusted, on hand for any period. Item costing: every movement of an item in date order, with the customer or supplier and the document behind it - click it to open. Show runs the report, Columns picks what to show, Print prints it."),
@@ -194,13 +194,14 @@ export const BOOKS_GUIDES: PageGuide[] = [
   {
     route: "/finance/books/setup",
     title: "Setup & Migration",
-    intro: "How ACE Books is set up: the chart of accounts, posting rules, company settings, budgets and the Sage migration.",
+    intro: "How ACE Books is set up: the chart of accounts, posting rules, company settings, the invoice layout, budgets and the Sage migration.",
     steps: [
       BOOKS_BAR,
       tab("Chart of accounts", "Chart of accounts", "Every account with its balance. Search by code or name; New account adds one; Edit renames it, makes it inactive, or deletes one added by mistake (no postings, rules or history); CSV downloads the chart."),
       careful("New account", "New account", "Adds an account to the chart.", { kind: "button" }),
       tab("Posting rules", "Posting rules", "Which account each kind of posting uses (sales, delivery charge 40800, discount 49000, inventory, cost of sales…). Change only with the accountant."),
       tab("Settings", "Settings", "Company settings and the report \"as of\" date; Save settings."),
+      tab("Invoice layout", "Invoice layout", "What this branch's printed invoices show: company name, address, phones, email, website, bank details, payment note, footer and default ship via, with a preview; Save layout. Each branch (Lagos / Abuja) has its own - switch branch in the top bar to edit the other. Also where a new branch's next invoice number is set."),
       tab("Budgets", "Budgets", "New budget, Spread evenly across months; open one to edit amounts, Rename, Copy, Delete or Reopen for editing."),
       tab("Sage migration", "Sage migration", "The batches loaded from Sage 50: Stage, Sync products, Refresh opening dates, Attach batches & expiry; Approve or Discard a batch."),
     ],

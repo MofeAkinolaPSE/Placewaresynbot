@@ -13,6 +13,7 @@ import { AccountPick, AccountSheet, act, Amount, CsvButton, Empty, ErrorNote, Lo
 import { books, Dict, fmtDate, today, yearStart } from "@/lib/books-api";
 import { askConfirm, askText } from "@/lib/ask";
 import { DeleteRecord } from "@/components/books/delete-record";
+import { InvoiceLayoutEditor } from "@/components/books/invoice-layout";
 
 const SUBTYPES: [string, string][] = [
   ["CASH", "ASSET"], ["RECEIVABLE", "ASSET"], ["INVENTORY", "ASSET"], ["OTHER_CURRENT_ASSET", "ASSET"], ["FIXED_ASSET", "ASSET"],
@@ -32,12 +33,14 @@ export default function BooksSetup() {
           <TabsTrigger value="accounts">Chart of accounts</TabsTrigger>
           <TabsTrigger value="rules">Posting rules</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="invoice-layout">Invoice layout</TabsTrigger>
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
           <TabsTrigger value="migration">Sage migration</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts"><ChartOfAccounts /></TabsContent>
         <TabsContent value="rules"><PostingRules /></TabsContent>
         <TabsContent value="settings"><Settings /></TabsContent>
+        <TabsContent value="invoice-layout"><InvoiceLayoutEditor /></TabsContent>
         <TabsContent value="budgets"><Budgets /></TabsContent>
         <TabsContent value="migration"><Migration /></TabsContent>
       </Tabs>

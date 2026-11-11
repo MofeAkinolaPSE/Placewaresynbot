@@ -70,13 +70,58 @@ def last_invoice(conn, entity_id: str):
     return {**sage, "source": "sage"} if sage else None
 
 
+NOT_SET = "Not set yet"
+
+
+def _started(row) -> bool:
+    """A branch's invoice sequence has a real starting point: its Sage history, a first number set in Setup,
+    or invoices already raised in it (an older SI- style series keeps working)."""
+    return bool(row) and (int(row["next_value"]) > 1 or row["prefix"] != "SI-")
+
+
 def next_invoice_preview(conn, entity_id: str) -> str:
+    """The next invoice number, as every branch numbers them: Sage's plain running numbers (53542 -> 53543),
+    continued from the branch's own Sage history. A branch with no history yet and no first number shows
+    "Not set yet" (Finance sets it on the Invoice register, or it follows Sage once the branch's data is loaded)."""
     row = q1(conn, "SELECT prefix, next_value, pad FROM fin_number_sequences WHERE legal_entity_id=%s AND doc_type='SALES_INVOICE'",
              (entity_id,))
     floor = sage_invoice_floor(conn, entity_id)
     if floor:
         return str(max(floor, int(row["next_value"]) if row and row["prefix"] == "" else 0))
-    return f"{row['prefix']}{int(row['next_value']):0{int(row['pad'])}d}" if row else "SI-000001"
+    if not _started(row):
+        return NOT_SET
+    return f"{row['prefix']}{int(row['next_value']):0{int(row['pad'])}d}"
+
+
+def invoice_numbering_set(conn, entity_id: str) -> bool:
+    return next_invoice_preview(conn, entity_id) != NOT_SET
+
+
+def set_first_invoice_number(conn, ctx, value) -> dict:
+    """Finance sets where a branch's invoice numbers continue from (e.g. Abuja's last Sage invoice + 1) before
+    its Sage history is loaded. Never below a number already used in the branch's Sage or ACE invoices."""
+    from src.fin import audit
+    from src.fin.errors import FinError, invalid
+    ctx.require("finance.settings.edit")
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise invalid("Give the next invoice number as a whole number, e.g. 20451")
+    if n < 1 or n > 9_999_999:
+        raise invalid("The invoice number must be between 1 and 9,999,999")
+    floor = sage_invoice_floor(conn, ctx.entity_id)
+    used = q1(conn, r"""SELECT MAX(invoice_number::bigint) AS m FROM fin_sales_invoices
+                        WHERE legal_entity_id=%s AND invoice_number ~ '^[1-9][0-9]{0,6}$'""", (ctx.entity_id,))
+    lowest = max(floor, int((used or {}).get("m") or 0) + 1)
+    if n < lowest:
+        raise FinError("VALIDATION_FAILED", f"Invoice {lowest - 1} is already used in this branch - the next number must be {lowest} or more")
+    before = next_invoice_preview(conn, ctx.entity_id)
+    q1(conn, """INSERT INTO fin_number_sequences (legal_entity_id, doc_type, prefix, next_value, pad)
+                VALUES (%s, 'SALES_INVOICE', '', %s, 0)
+                ON CONFLICT (legal_entity_id, doc_type) DO UPDATE SET prefix='', pad=0, next_value=EXCLUDED.next_value
+                RETURNING next_value""", (ctx.entity_id, n))
+    audit.record(conn, ctx, "INVOICE_NUMBERING_SET", "settings", ctx.entity_id, before={"next": before}, after={"next": str(n)})
+    return {"next_invoice_number": next_invoice_preview(conn, ctx.entity_id)}
 
 
 def next_number(conn, entity_id: str, doc_type: str) -> str:
@@ -97,6 +142,14 @@ def next_number(conn, entity_id: str, doc_type: str) -> str:
                 value = int(q1(conn, """UPDATE fin_number_sequences SET next_value=next_value+1 WHERE legal_entity_id=%s
                                         AND doc_type='SALES_INVOICE' RETURNING next_value - 1 AS v""", (entity_id,))["v"])
             return str(value)
+        seq = q1(conn, "SELECT prefix, next_value FROM fin_number_sequences WHERE legal_entity_id=%s AND doc_type='SALES_INVOICE'",
+                 (entity_id,))
+        if not _started(seq):
+            # A new branch: never invent "SI-000001" - its invoices continue its own Sage numbers.
+            from src.fin.errors import FinError
+            raise FinError("VALIDATION_FAILED", "This branch's invoice numbers are not set yet. Finance sets the next "
+                                                "invoice number on ACE Books -> Sales -> Invoice register (Set), or they "
+                                                "follow the branch's Sage numbers once its data is loaded.")
     row = q1(conn, """
         INSERT INTO fin_number_sequences (legal_entity_id, doc_type, prefix, next_value)
         VALUES (%s, %s, %s, 2)

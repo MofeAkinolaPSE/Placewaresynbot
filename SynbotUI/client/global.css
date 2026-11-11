@@ -240,6 +240,15 @@
     background: transparent;
   }
 
+  /* Drop-down lists: Radix hides the scrollbar with its own rule, so this has to override it. */
+  [data-radix-select-viewport] {
+    scrollbar-width: thin !important;
+    -ms-overflow-style: auto !important;
+  }
+  [data-radix-select-viewport]::-webkit-scrollbar {
+    display: block !important;
+  }
+
   /* `overflow-wrap: anywhere` also shrinks an element's min-content width to
      a single character, which is what let badges collapse into "Act / ive"
      and split emails as "placeware.co / m". `break-word` still prevents a
@@ -470,3 +479,13 @@ input::placeholder, textarea::placeholder { color: hsl(var(--placeholder)); opac
 button[role="combobox"] > span[style*="pointer-events: none"] { color: hsl(var(--placeholder)); }
 input[type="checkbox"], input[type="radio"] { accent-color: hsl(var(--field-border)); width: 1.05rem; height: 1.05rem; }
 
+
+/* Printing (client, 9 Nov): no browser header/footer - the date, page title ("Warebot"), web address and page number
+   that Chrome prints in the page margin. With a zero page margin there is no room for them; the white border moves
+   inside the page (body padding, repeated on every page). A printed sheet that sets its own border (.print-sheet,
+   e.g. the invoice) keeps it. */
+@media print {
+  @page { margin: 0; }
+  body { padding: 12mm !important; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  body:has(.print-sheet) { padding: 0 !important; }
+}

@@ -39,6 +39,7 @@ Endpoints:
 
 from __future__ import annotations
 
+from src.branch import carry as _branch_carry  # thread-pool work keeps the request's branch
 import io
 import logging
 import uuid
@@ -196,7 +197,7 @@ async def _archive_document(
         # A thread rather than the event loop's executor: this also runs from sync handlers,
         # which have no running loop.
         threading.Thread(
-            target=lambda: _ingest_bytes(file_bytes, filename, ingest_meta, source="generated"),
+            target=_branch_carry(lambda: _ingest_bytes(file_bytes, filename, ingest_meta, source="generated")),
             daemon=True,
         ).start()
     except Exception as _exc:

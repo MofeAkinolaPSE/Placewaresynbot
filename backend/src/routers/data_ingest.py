@@ -246,7 +246,7 @@ def ingest_customers(payload: CustomerIngestPayload, request: Request):
                 "contact_details": contact_details,
                 "risk_score": 0,
             }
-            db.table("customers").upsert(crm_row, on_conflict="customer_code").execute()
+            db.table("customers").upsert(crm_row, on_conflict="legal_entity_id,customer_code").execute()
             upserted_crm += 1
         except Exception as exc:
             # CRM upsert is best-effort — snapshot already succeeded
